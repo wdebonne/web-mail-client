@@ -1,20 +1,22 @@
 import {
   format, isToday, isYesterday, isThisYear, isThisWeek, isThisMonth,
-  startOfMonth, subMonths, isSameMonth, isSameYear, startOfYear,
+  subMonths, subWeeks, subYears, isSameMonth, isSameYear, isAfter,
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
   Star, Paperclip, Trash2, Reply, ReplyAll, Forward, Mail, MailOpen,
   Flag, FolderInput, Copy, Archive, ChevronDown, ChevronRight,
-  ArrowDownAZ, ArrowUpAZ, SlidersHorizontal, Filter, FolderIcon,
+  ArrowUpDown, ListFilter, Calendar, CheckSquare, FolderIcon,
+  Check, MailCheck,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
 
-type SortField = 'date' | 'from' | 'subject';
+type SortField = 'date' | 'from' | 'subject' | 'size' | 'importance';
 type SortOrder = 'asc' | 'desc';
-type FilterType = 'all' | 'unread' | 'flagged' | 'attachments';
+type FilterType = 'all' | 'unread' | 'flagged' | 'attachments' | 'tome';
+type DateFilter = 'all' | 'today' | 'yesterday' | 'lastweek' | 'lastmonth' | 'lastyear' | 'custom';
 
 interface MessageListProps {
   messages: Email[];
@@ -40,6 +42,27 @@ interface MessageGroup {
   messages: Email[];
 }
 
+// --- Dropdown helper ---
+function DropdownMenu({ open, onClose, children, className = '' }: {
+  open: boolean; onClose: () => void; children: React.ReactNode; className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div ref={ref} className={`absolute top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-50 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
 export default function MessageList({
   messages, selectedMessage, loading,
   onSelectMessage, onToggleFlag, onDelete, folder, draggable = true,
@@ -50,7 +73,17 @@ export default function MessageList({
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [filterType, setFilterType] = useState<FilterType>('all');
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [customDate, setCustomDate] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedUids, setSelectedUids] = useState<Set<number>>(new Set());
+
+  // Dropdown visibility
+  const [openDropdown, setOpenDropdown] = useState<'sort' | 'filter' | 'date' | null>(null);
+
+  const toggleDropdown = (name: 'sort' | 'filter' | 'date') => {
+    setOpenDropdown(prev => prev === name ? null : name);
+  };
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => {
@@ -60,15 +93,46 @@ export default function MessageList({
     });
   };
 
+  const toggleSelection = (uid: number) => {
+    setSelectedUids(prev => {
+      const next = new Set(prev);
+      next.has(uid) ? next.delete(uid) : next.add(uid);
+      return next;
+    });
+  };
+
   // Filter messages
   const filteredMessages = useMemo(() => {
+    let result = messages;
+
+    // Type filter
     switch (filterType) {
-      case 'unread': return messages.filter(m => !m.flags?.seen);
-      case 'flagged': return messages.filter(m => m.flags?.flagged);
-      case 'attachments': return messages.filter(m => m.hasAttachments);
-      default: return messages;
+      case 'unread': result = result.filter(m => !m.flags?.seen); break;
+      case 'flagged': result = result.filter(m => m.flags?.flagged); break;
+      case 'attachments': result = result.filter(m => m.hasAttachments); break;
+      case 'tome': result = result; break; // placeholder — would require knowing user email
     }
-  }, [messages, filterType]);
+
+    // Date filter
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      let cutoff: Date;
+      switch (dateFilter) {
+        case 'today': cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate()); break;
+        case 'yesterday': cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1); break;
+        case 'lastweek': cutoff = subWeeks(now, 1); break;
+        case 'lastmonth': cutoff = subMonths(now, 1); break;
+        case 'lastyear': cutoff = subYears(now, 1); break;
+        case 'custom':
+          cutoff = customDate ? new Date(customDate) : new Date(0);
+          break;
+        default: cutoff = new Date(0);
+      }
+      result = result.filter(m => isAfter(new Date(m.date), cutoff));
+    }
+
+    return result;
+  }, [messages, filterType, dateFilter, customDate]);
 
   // Sort messages
   const sortedMessages = useMemo(() => {
@@ -83,6 +147,12 @@ export default function MessageList({
           break;
         case 'subject':
           cmp = (a.subject || '').localeCompare(b.subject || '');
+          break;
+        case 'size':
+          cmp = (a.size || 0) - (b.size || 0);
+          break;
+        case 'importance':
+          cmp = 0; // placeholder
           break;
       }
       return sortOrder === 'desc' ? -cmp : cmp;
@@ -102,7 +172,6 @@ export default function MessageList({
       groupMap.get(key)!.push(msg);
     }
 
-    // Build groups in display order
     const orderedKeys = getOrderedGroupKeys(now);
     for (const { key, label } of orderedKeys) {
       const msgs = groupMap.get(key);
@@ -111,7 +180,6 @@ export default function MessageList({
       }
     }
 
-    // Catch any remaining groups (old years, etc.)
     for (const [key, msgs] of groupMap) {
       if (!groups.find(g => g.key === key)) {
         groups.push({ key, label: key, messages: msgs });
@@ -125,8 +193,13 @@ export default function MessageList({
     const date = new Date(dateStr);
     if (isToday(date)) return format(date, 'HH:mm', { locale: fr });
     if (isYesterday(date)) return 'Hier';
-    if (isThisYear(date)) return format(date, 'd MMM', { locale: fr });
-    return format(date, 'd MMM yyyy', { locale: fr });
+    if (isThisYear(date)) return format(date, 'yyyy-MM-dd', { locale: fr });
+    return format(date, 'yyyy-MM-dd', { locale: fr });
+  };
+
+  const formatFullDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return format(date, 'EEE yyyy-MM-dd HH:mm', { locale: fr });
   };
 
   const getInitials = (name?: string, email?: string) => {
@@ -147,12 +220,11 @@ export default function MessageList({
     return colors[Math.abs(hash) % colors.length];
   };
 
-  const sortLabel = sortField === 'date' ? 'Date' : sortField === 'from' ? 'Expéditeur' : 'Objet';
-  const filterLabel = filterType === 'all' ? 'Tous' : filterType === 'unread' ? 'Non lus' : filterType === 'flagged' ? 'Suivis' : 'Pièces jointes';
+  const activeFilterCount = (filterType !== 'all' ? 1 : 0) + (dateFilter !== 'all' ? 1 : 0);
 
   if (loading) {
     return (
-      <div className="border-r border-outlook-border bg-white flex-shrink-0 overflow-hidden w-full">
+      <div className="bg-white flex-1 min-h-0 overflow-hidden w-full">
         <div className="p-3 border-b border-outlook-border">
           <div className="skeleton h-5 w-32 rounded" />
         </div>
@@ -173,105 +245,206 @@ export default function MessageList({
   }
 
   return (
-    <div className="border-r border-outlook-border bg-white flex-shrink-0 flex flex-col overflow-hidden w-full">
-      {/* Header with folder name + filter/sort toolbar */}
+    <div className="bg-white flex-1 min-h-0 flex flex-col overflow-hidden w-full">
+      {/* Header: folder name + toolbar icons */}
       <div className="border-b border-outlook-border flex-shrink-0">
-        <div className="px-3 pt-3 pb-1 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold text-outlook-text-primary">
+        <div className="px-3 pt-2.5 pb-1 flex items-center justify-between">
+          {/* Left: folder name + star */}
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-sm font-semibold text-outlook-text-primary">
               {getFolderDisplayName(folder)}
             </h2>
-            {filterType !== 'all' && (
-              <span className="text-2xs bg-outlook-blue/10 text-outlook-blue px-1.5 py-0.5 rounded font-medium">
-                {filterLabel}
-              </span>
-            )}
+            <Star size={14} className="text-outlook-text-disabled cursor-pointer hover:text-outlook-warning" />
           </div>
-          <span className="text-xs text-outlook-text-secondary">
-            {filteredMessages.length}{filteredMessages.length !== messages.length ? `/${messages.length}` : ''} message{filteredMessages.length !== 1 ? 's' : ''}
-          </span>
-        </div>
 
-        {/* Sort & Filter bar */}
-        <div className="px-3 pb-2 flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            {/* Filter button */}
+          {/* Right: toolbar icons */}
+          <div className="flex items-center gap-0.5">
+            {/* Selection mode toggle */}
+            <button
+              onClick={() => {
+                setSelectionMode(!selectionMode);
+                if (selectionMode) setSelectedUids(new Set());
+              }}
+              className={`p-1.5 rounded transition-colors ${selectionMode ? 'bg-outlook-blue/10 text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary'}`}
+              title="Sélectionner"
+            >
+              <CheckSquare size={15} />
+            </button>
+
+            {/* Date filter */}
             <div className="relative">
               <button
-                onClick={() => setShowFilterMenu(!showFilterMenu)}
-                className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors
-                  ${filterType !== 'all' ? 'bg-outlook-blue/10 text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                onClick={() => toggleDropdown('date')}
+                className={`p-1.5 rounded transition-colors ${dateFilter !== 'all' ? 'bg-outlook-blue/10 text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary'}`}
+                title="Filtrer par date"
               >
-                <Filter size={12} />
-                <span>Filtrer</span>
+                <Calendar size={15} />
               </button>
-              {showFilterMenu && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
-                  {([
-                    ['all', 'Tous les messages'],
-                    ['unread', 'Non lus'],
-                    ['flagged', 'Suivis (marqués)'],
-                    ['attachments', 'Avec pièces jointes'],
-                  ] as [FilterType, string][]).map(([value, label]) => (
+              <DropdownMenu open={openDropdown === 'date'} onClose={() => setOpenDropdown(null)} className="right-0 min-w-[200px]">
+                {([
+                  ['all', 'Toutes les dates'],
+                  ['today', 'Aujourd\'hui'],
+                  ['yesterday', 'Hier'],
+                  ['lastweek', 'La semaine dernière'],
+                  ['lastmonth', 'Le mois dernier'],
+                  ['lastyear', 'L\'année dernière'],
+                ] as [DateFilter, string][]).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => { setDateFilter(value); if (value !== 'custom') setOpenDropdown(null); }}
+                    className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover transition-colors
+                      ${dateFilter === value ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
+                  >
+                    {dateFilter === value && <Check size={12} className="flex-shrink-0" />}
+                    {dateFilter !== value && <span className="w-3 flex-shrink-0" />}
+                    {label}
+                  </button>
+                ))}
+                <div className="border-t border-gray-200 mt-1 pt-1 px-3 pb-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={customDate}
+                      onChange={e => setCustomDate(e.target.value)}
+                      className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-outlook-blue"
+                    />
                     <button
-                      key={value}
-                      onClick={() => { setFilterType(value); setShowFilterMenu(false); }}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover transition-colors
-                        ${filterType === value ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
+                      onClick={() => { setDateFilter('custom'); setOpenDropdown(null); }}
+                      className="text-xs bg-outlook-blue text-white px-2.5 py-1 rounded hover:bg-outlook-blue-dark transition-colors"
                     >
-                      {label}
+                      Go
                     </button>
-                  ))}
+                  </div>
                 </div>
-              )}
+              </DropdownMenu>
             </div>
 
-            {/* Unread quick filter */}
-            <button
-              onClick={() => setFilterType(filterType === 'unread' ? 'all' : 'unread')}
-              className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors
-                ${filterType === 'unread' ? 'bg-outlook-blue/10 text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Mail size={12} />
-              <span className="hidden sm:inline">Non lus</span>
-            </button>
-          </div>
+            {/* Filter */}
+            <div className="relative">
+              <button
+                onClick={() => toggleDropdown('filter')}
+                className={`p-1.5 rounded transition-colors ${filterType !== 'all' ? 'bg-outlook-blue/10 text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary'}`}
+                title="Filtrer"
+              >
+                <ListFilter size={15} />
+              </button>
+              <DropdownMenu open={openDropdown === 'filter'} onClose={() => setOpenDropdown(null)} className="right-0 min-w-[200px]">
+                {([
+                  ['all', 'Tous', <MailCheck size={14} key="all" />],
+                  ['unread', 'Non lu', <Mail size={14} key="unread" />],
+                  ['flagged', 'Avec indicateur', <Flag size={14} key="flagged" />],
+                  ['tome', 'À moi', <Reply size={14} key="tome" />],
+                  ['attachments', 'Contient des fichiers', <Paperclip size={14} key="attach" />],
+                ] as [FilterType, string, React.ReactNode][]).map(([value, label, icon]) => (
+                  <button
+                    key={value}
+                    onClick={() => { setFilterType(value); setOpenDropdown(null); }}
+                    className={`w-full flex items-center gap-2.5 text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover transition-colors
+                      ${filterType === value ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
+                  >
+                    {filterType === value && <Check size={12} className="flex-shrink-0" />}
+                    {filterType !== value && <span className="w-3 flex-shrink-0" />}
+                    <span className="flex-shrink-0 text-outlook-text-secondary">{icon}</span>
+                    {label}
+                  </button>
+                ))}
+              </DropdownMenu>
+            </div>
 
-          {/* Sort selector */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-              className="text-outlook-text-secondary hover:bg-outlook-bg-hover p-1 rounded transition-colors"
-              title={sortOrder === 'desc' ? 'Plus récent d\'abord' : 'Plus ancien d\'abord'}
-            >
-              {sortOrder === 'desc' ? <ArrowDownAZ size={14} /> : <ArrowUpAZ size={14} />}
-            </button>
-            <select
-              value={sortField}
-              onChange={e => setSortField(e.target.value as SortField)}
-              className="text-xs text-outlook-text-secondary bg-transparent border-none cursor-pointer focus:outline-none hover:text-outlook-text-primary"
-            >
-              <option value="date">Par Date</option>
-              <option value="from">Par Expéditeur</option>
-              <option value="subject">Par Objet</option>
-            </select>
+            {/* Sort */}
+            <div className="relative">
+              <button
+                onClick={() => toggleDropdown('sort')}
+                className={`p-1.5 rounded transition-colors text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary`}
+                title="Trier"
+              >
+                <ArrowUpDown size={15} />
+              </button>
+              <DropdownMenu open={openDropdown === 'sort'} onClose={() => setOpenDropdown(null)} className="right-0 min-w-[260px]">
+                <div className="px-3 py-1 text-xs font-semibold text-outlook-text-disabled uppercase tracking-wide">Trier par</div>
+                {([
+                  ['date', 'Date'],
+                  ['from', 'De'],
+                  ['subject', 'Objet'],
+                  ['size', 'Taille'],
+                  ['importance', 'Importance'],
+                ] as [SortField, string][]).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => { setSortField(value); }}
+                    className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover transition-colors
+                      ${sortField === value ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
+                  >
+                    {sortField === value && <Check size={12} className="flex-shrink-0" />}
+                    {sortField !== value && <span className="w-3 flex-shrink-0" />}
+                    {label}
+                  </button>
+                ))}
+                <div className="my-1 border-t border-gray-200" />
+                <div className="px-3 py-1 text-xs font-semibold text-outlook-text-disabled uppercase tracking-wide">Ordre de tri</div>
+                <button
+                  onClick={() => { setSortOrder('asc'); setOpenDropdown(null); }}
+                  className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover transition-colors
+                    ${sortOrder === 'asc' ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
+                >
+                  {sortOrder === 'asc' && <Check size={12} className="flex-shrink-0" />}
+                  {sortOrder !== 'asc' && <span className="w-3 flex-shrink-0" />}
+                  Par ordre chronologique croissant
+                </button>
+                <button
+                  onClick={() => { setSortOrder('desc'); setOpenDropdown(null); }}
+                  className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover transition-colors
+                    ${sortOrder === 'desc' ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
+                >
+                  {sortOrder === 'desc' && <Check size={12} className="flex-shrink-0" />}
+                  {sortOrder !== 'desc' && <span className="w-3 flex-shrink-0" />}
+                  Par ordre chronologique décroissant
+                </button>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Grouped message list */}
-      <div className="flex-1 overflow-y-auto">
-        {filteredMessages.length === 0 ? (
-          <div className="text-center text-outlook-text-disabled py-12">
-            <p className="text-sm">
-              {filterType !== 'all' ? 'Aucun message correspondant au filtre' : 'Aucun message'}
-            </p>
+        {/* Active filters indicator */}
+        {activeFilterCount > 0 && (
+          <div className="px-3 pb-1.5 flex items-center gap-1.5">
+            <span className="text-2xs text-outlook-text-secondary">Filtres actifs:</span>
             {filterType !== 'all' && (
               <button
                 onClick={() => setFilterType('all')}
+                className="text-2xs bg-outlook-blue/10 text-outlook-blue px-1.5 py-0.5 rounded-full hover:bg-outlook-blue/20 transition-colors"
+              >
+                {filterType === 'unread' ? 'Non lu' : filterType === 'flagged' ? 'Indicateur' : filterType === 'attachments' ? 'Fichiers' : 'À moi'} ✕
+              </button>
+            )}
+            {dateFilter !== 'all' && (
+              <button
+                onClick={() => { setDateFilter('all'); setCustomDate(''); }}
+                className="text-2xs bg-outlook-blue/10 text-outlook-blue px-1.5 py-0.5 rounded-full hover:bg-outlook-blue/20 transition-colors"
+              >
+                {dateFilter === 'today' ? "Aujourd'hui" : dateFilter === 'yesterday' ? 'Hier' : dateFilter === 'lastweek' ? 'Semaine' : dateFilter === 'lastmonth' ? 'Mois' : dateFilter === 'lastyear' ? 'Année' : customDate} ✕
+              </button>
+            )}
+            <span className="text-2xs text-outlook-text-disabled ml-auto">
+              {filteredMessages.length}/{messages.length}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Grouped message list — scrollable */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {filteredMessages.length === 0 ? (
+          <div className="text-center text-outlook-text-disabled py-12">
+            <p className="text-sm">
+              {activeFilterCount > 0 ? 'Aucun message correspondant aux filtres' : 'Aucun message'}
+            </p>
+            {activeFilterCount > 0 && (
+              <button
+                onClick={() => { setFilterType('all'); setDateFilter('all'); setCustomDate(''); }}
                 className="text-xs text-outlook-blue hover:underline mt-2"
               >
-                Afficher tous les messages
+                Effacer les filtres
               </button>
             )}
           </div>
@@ -303,31 +476,51 @@ export default function MessageList({
                 {!isCollapsed && group.messages.map((message) => {
                   const isSelected = selectedMessage?.uid === message.uid;
                   const isUnread = !message.flags?.seen;
+                  const isChecked = selectedUids.has(message.uid);
 
                   return (
                     <div
                       key={message.uid}
-                      onClick={() => onSelectMessage(message)}
+                      onClick={() => {
+                        if (selectionMode) {
+                          toggleSelection(message.uid);
+                        } else {
+                          onSelectMessage(message);
+                        }
+                      }}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setContextMenu({ x: e.clientX, y: e.clientY, message });
                       }}
-                      draggable={draggable}
+                      draggable={draggable && !selectionMode}
                       onDragStart={(e) => {
                         e.dataTransfer.setData('text/x-mail-uid', String(message.uid));
                         e.dataTransfer.effectAllowed = 'move';
                       }}
-                      className={`flex gap-3 px-3 py-2.5 cursor-pointer border-b border-outlook-border transition-colors group
-                        ${isSelected ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
-                        ${isUnread ? 'bg-white' : 'bg-outlook-bg-primary/30'}`}
+                      className={`flex gap-3 px-3 py-2.5 cursor-pointer border-b border-outlook-border transition-colors group relative
+                        ${isSelected && !selectionMode ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
+                        ${isChecked ? 'bg-blue-50' : ''}
+                        ${isUnread ? '' : 'bg-outlook-bg-primary/30'}`}
                     >
-                      {/* Avatar */}
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 mt-0.5"
-                        style={{ backgroundColor: getAvatarColor(message.from?.name, message.from?.address) }}
-                      >
-                        {getInitials(message.from?.name, message.from?.address)}
-                      </div>
+                      {/* Checkbox (selection mode) or Avatar */}
+                      {selectionMode ? (
+                        <div className="flex items-center justify-center w-10 h-10 flex-shrink-0 mt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelection(message.uid)}
+                            className="w-4 h-4 rounded border-gray-300 text-outlook-blue focus:ring-outlook-blue cursor-pointer"
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 mt-0.5"
+                          style={{ backgroundColor: getAvatarColor(message.from?.name, message.from?.address) }}
+                        >
+                          {getInitials(message.from?.name, message.from?.address)}
+                        </div>
+                      )}
 
                       {/* Content */}
                       <div className="flex-1 min-w-0">
@@ -335,9 +528,42 @@ export default function MessageList({
                           <span className={`text-sm truncate ${isUnread ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
                             {message.from?.name || message.from?.address || 'Inconnu'}
                           </span>
-                          <span className="text-2xs text-outlook-text-secondary flex-shrink-0">
+
+                          {/* Date — shown normally, hidden on hover (actions take its place) */}
+                          <span
+                            className="text-2xs text-outlook-text-secondary flex-shrink-0 group-hover:hidden"
+                            title={formatFullDate(message.date)}
+                          >
                             {formatDate(message.date)}
                           </span>
+
+                          {/* Hover actions — hidden by default, shown on hover */}
+                          <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
+                            {onMarkRead && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onMarkRead(message.uid, !message.flags?.seen); }}
+                                className="p-1 rounded hover:bg-gray-200 text-outlook-text-secondary hover:text-outlook-blue transition-colors"
+                                title={message.flags?.seen ? 'Marquer comme non lu' : 'Marquer comme lu'}
+                              >
+                                {message.flags?.seen ? <Mail size={14} /> : <MailOpen size={14} />}
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged); }}
+                              className={`p-1 rounded hover:bg-gray-200 transition-colors
+                                ${message.flags?.flagged ? 'text-outlook-warning' : 'text-outlook-text-secondary hover:text-outlook-warning'}`}
+                              title={message.flags?.flagged ? 'Retirer le drapeau' : 'Marquer d\'un drapeau'}
+                            >
+                              <Flag size={14} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onDelete(message.uid); }}
+                              className="p-1 rounded hover:bg-red-100 text-outlook-text-secondary hover:text-red-600 transition-colors"
+                              title="Supprimer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
 
                         <div className={`text-sm truncate ${isUnread ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
@@ -353,6 +579,10 @@ export default function MessageList({
                             {message.hasAttachments && (
                               <Paperclip size={12} className="text-outlook-text-disabled" />
                             )}
+                            {/* Reply indicator (non-hover) */}
+                            {message.flags?.answered && (
+                              <Reply size={12} className="text-outlook-text-disabled" />
+                            )}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -361,7 +591,7 @@ export default function MessageList({
                               className={`p-0.5 rounded transition-colors
                                 ${message.flags?.flagged
                                   ? 'text-outlook-warning'
-                                  : 'text-transparent group-hover:text-outlook-text-disabled hover:text-outlook-warning'
+                                  : 'text-transparent group-hover:text-outlook-text-disabled hover:!text-outlook-warning'
                                 }`}
                             >
                               <Star size={12} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
