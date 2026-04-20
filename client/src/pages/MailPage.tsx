@@ -9,6 +9,7 @@ import MessageList from '../components/mail/MessageList';
 import MessageView from '../components/mail/MessageView';
 import ComposeModal from '../components/mail/ComposeModal';
 import toast from 'react-hot-toast';
+import { ArrowLeft } from 'lucide-react';
 
 export default function MailPage() {
   const isOnline = useNetworkStatus();
@@ -212,40 +213,100 @@ export default function MailPage() {
     });
   };
 
+  // Mobile view state: 'folders' | 'list' | 'message'
+  const [mobileView, setMobileView] = useState<'folders' | 'list' | 'message'>('list');
+
+  // When selecting a folder on mobile, switch to list view
+  const handleSelectFolder = (folder: string) => {
+    selectFolder(folder);
+    setMobileView('list');
+  };
+
+  // When selecting a message on mobile, switch to message view
+  const handleSelectMessageMobile = async (message: any) => {
+    await handleSelectMessage(message);
+    setMobileView('message');
+  };
+
+  // Handle drag & drop move
+  const handleDropMessage = (uid: number, toFolder: string) => {
+    moveMutation.mutate({ uid, toFolder });
+  };
+
   return (
-    <div className="h-full flex">
-      {/* Folder pane */}
-      <FolderPane
-        accounts={accounts}
-        selectedAccount={selectedAccount}
-        folders={useMailStore(s => s.folders)}
-        selectedFolder={selectedFolder}
-        onSelectAccount={selectAccount}
-        onSelectFolder={selectFolder}
-        onCompose={() => openCompose()}
-      />
+    <div className="h-full flex overflow-hidden">
+      {/* Folder pane - hidden on mobile unless active */}
+      <div className={`
+        ${mobileView === 'folders' ? 'flex' : 'hidden'} md:flex
+        flex-col flex-shrink-0 w-full md:w-64
+      `}>
+        <FolderPane
+          accounts={accounts}
+          selectedAccount={selectedAccount}
+          folders={useMailStore(s => s.folders)}
+          selectedFolder={selectedFolder}
+          onSelectAccount={selectAccount}
+          onSelectFolder={handleSelectFolder}
+          onCompose={() => openCompose()}
+          onDropMessage={handleDropMessage}
+        />
+      </div>
 
-      {/* Message list pane */}
-      <MessageList
-        messages={messages}
-        selectedMessage={selectedMessage}
-        loading={loadingMessages}
-        onSelectMessage={handleSelectMessage}
-        onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
-        onDelete={(uid) => deleteMutation.mutate(uid)}
-        folder={selectedFolder}
-      />
+      {/* Message list pane - hidden on mobile unless active */}
+      <div className={`
+        ${mobileView === 'list' ? 'flex' : 'hidden'} md:flex
+        flex-col flex-shrink-0 w-full md:w-80 lg:w-96 border-r border-outlook-border
+      `}>
+        {/* Mobile header with folder toggle */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
+          <button
+            onClick={() => setMobileView('folders')}
+            className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <span className="text-sm font-medium text-outlook-text-primary truncate">
+            {selectedAccount?.assigned_display_name || selectedAccount?.name}
+          </span>
+        </div>
+        <MessageList
+          messages={messages}
+          selectedMessage={selectedMessage}
+          loading={loadingMessages}
+          onSelectMessage={handleSelectMessageMobile}
+          onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
+          onDelete={(uid) => deleteMutation.mutate(uid)}
+          folder={selectedFolder}
+        />
+      </div>
 
-      {/* Message reading pane */}
-      <MessageView
-        message={selectedMessage}
-        onReply={() => selectedMessage && handleReply(selectedMessage)}
-        onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
-        onForward={() => selectedMessage && handleForward(selectedMessage)}
-        onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
-        onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
-        onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
-      />
+      {/* Message reading pane - hidden on mobile unless active */}
+      <div className={`
+        ${mobileView === 'message' ? 'flex' : 'hidden'} md:flex
+        flex-col flex-1 min-w-0
+      `}>
+        {/* Mobile back button */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
+          <button
+            onClick={() => { setMobileView('list'); selectMessage(null); }}
+            className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <span className="text-sm font-medium text-outlook-text-primary truncate">
+            {selectedMessage?.subject || 'Retour'}
+          </span>
+        </div>
+        <MessageView
+          message={selectedMessage}
+          onReply={() => selectedMessage && handleReply(selectedMessage)}
+          onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
+          onForward={() => selectedMessage && handleForward(selectedMessage)}
+          onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
+          onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
+          onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
+        />
+      </div>
 
       {/* Compose modal */}
       {isComposing && composeData && (

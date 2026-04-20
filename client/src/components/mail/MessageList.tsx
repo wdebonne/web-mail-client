@@ -11,11 +11,12 @@ interface MessageListProps {
   onToggleFlag: (uid: number, flagged: boolean) => void;
   onDelete: (uid: number) => void;
   folder: string;
+  draggable?: boolean;
 }
 
 export default function MessageList({
   messages, selectedMessage, loading,
-  onSelectMessage, onToggleFlag, onDelete, folder,
+  onSelectMessage, onToggleFlag, onDelete, folder, draggable = true,
 }: MessageListProps) {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -45,7 +46,7 @@ export default function MessageList({
 
   if (loading) {
     return (
-      <div className="w-96 border-r border-outlook-border bg-white flex-shrink-0 overflow-hidden">
+      <div className="border-r border-outlook-border bg-white flex-shrink-0 overflow-hidden w-full">
         <div className="p-3 border-b border-outlook-border">
           <div className="skeleton h-5 w-32 rounded" />
         </div>
@@ -66,7 +67,7 @@ export default function MessageList({
   }
 
   return (
-    <div className="w-96 border-r border-outlook-border bg-white flex-shrink-0 flex flex-col overflow-hidden">
+    <div className="border-r border-outlook-border bg-white flex-shrink-0 flex flex-col overflow-hidden w-full">
       {/* Header */}
       <div className="p-3 border-b border-outlook-border flex items-center justify-between flex-shrink-0">
         <h2 className="text-base font-semibold text-outlook-text-primary">
@@ -92,6 +93,11 @@ export default function MessageList({
               <div
                 key={message.uid}
                 onClick={() => onSelectMessage(message)}
+                draggable={draggable}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/x-mail-uid', String(message.uid));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
                 className={`flex gap-3 px-3 py-2.5 cursor-pointer border-b border-outlook-border transition-colors group
                   ${isSelected ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
                   ${isUnread ? 'bg-white' : 'bg-outlook-bg-primary/30'}`}

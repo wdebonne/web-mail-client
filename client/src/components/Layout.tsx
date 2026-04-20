@@ -83,7 +83,8 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left navigation rail - Outlook style */}
-        <nav className={`bg-outlook-bg-primary border-r border-outlook-border flex flex-col items-center py-2 flex-shrink-0 transition-all ${sidebarCollapsed ? 'w-0 overflow-hidden lg:w-14' : 'w-14'}`}>
+        <nav className={`bg-outlook-bg-primary border-r border-outlook-border flex flex-col items-center py-2 flex-shrink-0 transition-all
+          ${sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-14'} md:w-14 md:overflow-visible`}>
           {navItems.map((item) => {
             const isActive = location.pathname.startsWith(item.path);
             const Icon = item.icon;

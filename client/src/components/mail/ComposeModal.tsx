@@ -162,7 +162,7 @@ export default function ComposeModal({
     <div className={`fixed z-50 bg-white border border-outlook-border shadow-2xl flex flex-col
       ${isFullscreen
         ? 'inset-0'
-        : 'bottom-0 right-4 w-[640px] h-[500px] rounded-t-lg'}`}>
+        : 'bottom-0 right-0 md:right-4 w-full md:w-[640px] h-full md:h-[500px] md:rounded-t-lg'}`}>
       {/* Title bar */}
       <div className="flex items-center justify-between px-4 py-2 bg-outlook-blue text-white rounded-t-lg flex-shrink-0">
         <span className="text-sm font-medium">{subject || 'Nouveau message'}</span>

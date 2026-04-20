@@ -13,6 +13,7 @@ interface FolderPaneProps {
   onSelectAccount: (account: MailAccount) => void;
   onSelectFolder: (folder: string) => void;
   onCompose: () => void;
+  onDropMessage?: (uid: number, toFolder: string) => void;
 }
 
 const FOLDER_ICONS: Record<string, any> = {
@@ -40,10 +41,11 @@ const FOLDER_LABELS: Record<string, string> = {
 
 export default function FolderPane({
   accounts, selectedAccount, folders, selectedFolder,
-  onSelectAccount, onSelectFolder, onCompose,
+  onSelectAccount, onSelectFolder, onCompose, onDropMessage,
 }: FolderPaneProps) {
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set(accounts.map(a => a.id)));
   const [showAccountPicker, setShowAccountPicker] = useState(false);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   const toggleAccount = (id: string) => {
     const next = new Set(expandedAccounts);
@@ -70,7 +72,7 @@ export default function FolderPane({
   };
 
   return (
-    <div className="w-64 bg-outlook-bg-primary border-r border-outlook-border flex flex-col flex-shrink-0 overflow-hidden">
+    <div className="w-full bg-outlook-bg-primary border-r border-outlook-border flex flex-col flex-shrink-0 overflow-hidden">
       {/* New message button */}
       <div className="p-3">
         <button
@@ -110,18 +112,35 @@ export default function FolderPane({
                 {sortFolders(folders).map((folder) => {
                   const Icon = getFolderIcon(folder);
                   const isSelected = folder.path === selectedFolder;
+                  const isDragOver = dragOverFolder === folder.path;
                   
                   return (
                     <button
                       key={folder.path}
                       onClick={() => onSelectFolder(folder.path)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        setDragOverFolder(folder.path);
+                      }}
+                      onDragLeave={() => setDragOverFolder(null)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDragOverFolder(null);
+                        const uid = parseInt(e.dataTransfer.getData('text/x-mail-uid'), 10);
+                        if (uid && onDropMessage && folder.path !== selectedFolder) {
+                          onDropMessage(uid, folder.path);
+                        }
+                      }}
                       className={`w-full flex items-center gap-2 px-3 py-1 text-sm rounded transition-colors
-                        ${isSelected
-                          ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
-                          : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'
+                        ${isDragOver
+                          ? 'bg-outlook-blue/10 ring-2 ring-outlook-blue ring-inset'
+                          : isSelected
+                            ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
+                            : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'
                         }`}
                     >
-                      <Icon size={14} className={isSelected ? 'text-outlook-blue' : ''} />
+                      <Icon size={14} className={isSelected || isDragOver ? 'text-outlook-blue' : ''} />
                       <span className="truncate">{getFolderLabel(folder)}</span>
                     </button>
                   );
