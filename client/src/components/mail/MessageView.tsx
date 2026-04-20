@@ -48,52 +48,15 @@ export default function MessageView({
 
   return (
     <div className="flex-1 flex flex-col bg-white overflow-hidden">
-      {/* Action toolbar */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-outlook-border flex-shrink-0 bg-outlook-bg-primary/30">
-        <ActionButton icon={Reply} label="Répondre" onClick={onReply} />
-        <ActionButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} />
-        <ActionButton icon={Forward} label="Transférer" onClick={onForward} />
-        
-        <div className="w-px h-6 bg-outlook-border mx-1" />
-        
-        <ActionButton icon={Trash2} label="Supprimer" onClick={onDelete} danger />
-        <ActionButton icon={Archive} label="Archiver" onClick={() => onMove('Archive')} />
-        <ActionButton
-          icon={Star}
-          label={message.flags?.flagged ? 'Retirer le drapeau' : 'Marquer d\'un drapeau'}
-          onClick={onToggleFlag}
-          active={message.flags?.flagged}
-        />
-        
-        <div className="flex-1" />
-        
-        <div className="relative">
-          <ActionButton icon={MoreHorizontal} label="Plus" onClick={() => setShowMore(!showMore)} />
-          {showMore && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowMore(false)} />
-              <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
-                <button onClick={() => { onMove('Archive'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
-                  <Archive size={14} /> Archiver
-                </button>
-                <button onClick={() => { onMove('Junk'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
-                  <Flag size={14} /> Marquer comme indésirable
-                </button>
-                <button onClick={() => { onMove('INBOX'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
-                  <FolderInput size={14} /> Déplacer vers...
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Message header */}
-      <div className="px-6 py-4 border-b border-outlook-border flex-shrink-0">
-        <h1 className="text-xl font-semibold text-outlook-text-primary mb-3">
+      {/* Subject bar */}
+      <div className="px-6 py-3 border-b border-outlook-border flex-shrink-0">
+        <h1 className="text-base font-semibold text-outlook-text-primary truncate">
           {message.subject || '(Sans objet)'}
         </h1>
-        
+      </div>
+
+      {/* Message header — sender info left, actions right */}
+      <div className="px-6 py-3 border-b border-outlook-border flex-shrink-0">
         <div className="flex items-start gap-3">
           <div
             className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
@@ -103,32 +66,25 @@ export default function MessageView({
           </div>
           
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="font-semibold text-sm text-outlook-text-primary">
-                  {message.from?.name || message.from?.address || 'Inconnu'}
-                </span>
-                {message.from?.name && (
-                  <span className="text-xs text-outlook-text-secondary ml-2">
-                    &lt;{message.from.address}&gt;
-                  </span>
-                )}
-              </div>
-              <span className="text-xs text-outlook-text-secondary flex-shrink-0">
-                {format(new Date(message.date), "EEEE d MMMM yyyy 'à' HH:mm", { locale: fr })}
+            <div className="flex items-center gap-1">
+              <span className="font-semibold text-sm text-outlook-text-primary">
+                {message.from?.name || message.from?.address || 'Inconnu'}
               </span>
+              {message.from?.name && (
+                <span className="text-xs text-outlook-text-secondary">
+                  &lt;{message.from.address}&gt;
+                </span>
+              )}
             </div>
-            
             <div className="text-xs text-outlook-text-secondary mt-0.5">
               <span>À : </span>
               {message.to?.map((addr, i) => (
                 <span key={i}>
                   {i > 0 && '; '}
-                  {addr.name || addr.address}
+                  <span className="text-outlook-blue">{addr.name || addr.address}</span>
                 </span>
               ))}
             </div>
-            
             {message.cc && message.cc.length > 0 && (
               <div className="text-xs text-outlook-text-secondary">
                 <span>Cc : </span>
@@ -140,6 +96,45 @@ export default function MessageView({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Right side: action buttons + date */}
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <div className="flex items-center gap-0.5">
+              <ActionButton icon={Reply} label="Répondre" onClick={onReply} />
+              <ActionButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} />
+              <ActionButton icon={Forward} label="Transférer" onClick={onForward} />
+              <div className="w-px h-5 bg-outlook-border mx-0.5" />
+              <ActionButton icon={Trash2} label="Supprimer" onClick={onDelete} danger />
+              <ActionButton
+                icon={Star}
+                label={message.flags?.flagged ? 'Retirer' : 'Indicateur'}
+                onClick={onToggleFlag}
+                active={message.flags?.flagged}
+              />
+              <div className="relative">
+                <ActionButton icon={MoreHorizontal} label="Plus" onClick={() => setShowMore(!showMore)} />
+                {showMore && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowMore(false)} />
+                    <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
+                      <button onClick={() => { onMove('Archive'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                        <Archive size={14} /> Archiver
+                      </button>
+                      <button onClick={() => { onMove('Junk'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                        <Flag size={14} /> Marquer comme indésirable
+                      </button>
+                      <button onClick={() => { onMove('INBOX'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                        <FolderInput size={14} /> Déplacer vers...
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            <span className="text-2xs text-outlook-text-secondary">
+              {format(new Date(message.date), "EEE dd/MM/yyyy HH:mm", { locale: fr })}
+            </span>
           </div>
         </div>
       </div>

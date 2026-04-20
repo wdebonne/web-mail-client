@@ -433,7 +433,7 @@ export default function MailPage() {
             data-pane="folders"
             className={`
               ${mobileView === 'folders' ? 'flex' : 'hidden'} md:flex
-              flex-col flex-shrink-0 w-full md:w-56 border-r border-outlook-border
+              flex-col flex-shrink-0 w-full md:w-56 border-r border-outlook-border bg-outlook-bg-primary
             `}
           >
             <FolderPane
@@ -452,69 +452,64 @@ export default function MailPage() {
           </div>
         )}
 
-        {/* Message list pane — resizable */}
+        {/* Message list pane — resizable on desktop, full width on mobile */}
+        {/* Mobile view */}
+        <div className={`${mobileView === 'list' ? 'flex' : 'hidden'} md:hidden flex-col w-full h-full`}>
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border">
+            <button
+              onClick={() => setMobileView('folders')}
+              className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <span className="text-sm font-medium text-outlook-text-primary truncate">
+              {selectedAccount?.assigned_display_name || selectedAccount?.name}
+            </span>
+          </div>
+          <MessageList
+            messages={messages}
+            selectedMessage={selectedMessage}
+            loading={loadingMessages}
+            onSelectMessage={handleSelectMessageMobile}
+            onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
+            onDelete={(uid) => deleteMutation.mutate(uid)}
+            folder={selectedFolder}
+            onReply={(msg) => handleReply(msg)}
+            onReplyAll={(msg) => handleReply(msg, true)}
+            onForward={(msg) => handleForward(msg)}
+            onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
+            onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
+            onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
+            folders={useMailStore(s => s.folders)}
+            onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
+            showFolderPane={showFolderPane}
+          />
+        </div>
+
+        {/* Desktop message list — uses pixel width from resize handle */}
         <div
-          className={`
-            ${mobileView === 'list' ? 'flex' : 'hidden'} md:flex
-            flex-col flex-shrink-0 w-full
-          `}
-          style={{ width: undefined }}
+          className="hidden md:flex flex-col flex-shrink-0 h-full"
+          style={{ width: listWidth }}
         >
-          <div className="hidden md:flex flex-col h-full" style={{ width: listWidth }}>
-            {/* Desktop: use resizable width */}
-            <MessageList
-              messages={messages}
-              selectedMessage={selectedMessage}
-              loading={loadingMessages}
-              onSelectMessage={handleSelectMessageMobile}
-              onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
-              onDelete={(uid) => deleteMutation.mutate(uid)}
-              folder={selectedFolder}
-              onReply={(msg) => handleReply(msg)}
-              onReplyAll={(msg) => handleReply(msg, true)}
-              onForward={(msg) => handleForward(msg)}
-              onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
-              onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
-              onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
-              folders={useMailStore(s => s.folders)}
-              onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
-              showFolderPane={showFolderPane}
-              listWidth={listWidth}
-            />
-          </div>
-          {/* Mobile: full width */}
-          <div className="flex md:hidden flex-col h-full w-full">
-            {/* Mobile header with folder toggle */}
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border">
-              <button
-                onClick={() => setMobileView('folders')}
-                className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
-              >
-                <ArrowLeft size={18} />
-              </button>
-              <span className="text-sm font-medium text-outlook-text-primary truncate">
-                {selectedAccount?.assigned_display_name || selectedAccount?.name}
-              </span>
-            </div>
-            <MessageList
-              messages={messages}
-              selectedMessage={selectedMessage}
-              loading={loadingMessages}
-              onSelectMessage={handleSelectMessageMobile}
-              onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
-              onDelete={(uid) => deleteMutation.mutate(uid)}
-              folder={selectedFolder}
-              onReply={(msg) => handleReply(msg)}
-              onReplyAll={(msg) => handleReply(msg, true)}
-              onForward={(msg) => handleForward(msg)}
-              onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
-              onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
-              onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
-              folders={useMailStore(s => s.folders)}
-              onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
-              showFolderPane={showFolderPane}
-            />
-          </div>
+          <MessageList
+            messages={messages}
+            selectedMessage={selectedMessage}
+            loading={loadingMessages}
+            onSelectMessage={handleSelectMessageMobile}
+            onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
+            onDelete={(uid) => deleteMutation.mutate(uid)}
+            folder={selectedFolder}
+            onReply={(msg) => handleReply(msg)}
+            onReplyAll={(msg) => handleReply(msg, true)}
+            onForward={(msg) => handleForward(msg)}
+            onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
+            onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
+            onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
+            folders={useMailStore(s => s.folders)}
+            onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
+            showFolderPane={showFolderPane}
+            listWidth={listWidth}
+          />
         </div>
 
         {/* Resize handle — desktop only */}
@@ -528,7 +523,7 @@ export default function MailPage() {
         {/* Right pane: Reading or Compose — fills remaining space */}
         <div className={`
           ${mobileView === 'message' ? 'flex' : 'hidden'} md:flex
-          flex-col flex-1 min-w-0 border-l border-outlook-border
+          flex-col flex-1 min-w-0 bg-white
         `}>
           {/* Mobile back button */}
           <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
