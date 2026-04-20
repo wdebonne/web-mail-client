@@ -34,6 +34,7 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: false,
   originAgentCluster: false,
+  hsts: false,
 }));
 
 // Manual CSP without upgrade-insecure-requests
