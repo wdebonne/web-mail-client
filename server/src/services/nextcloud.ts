@@ -99,7 +99,7 @@ export class NextCloudService {
 
       logger.info(`NextCloud contacts synced for user ${userId}`);
     } catch (error) {
-      logger.error('NextCloud contact sync error:', error);
+      logger.error(error as Error, 'NextCloud contact sync error');
       throw error;
     }
   }
@@ -210,7 +210,7 @@ export class NextCloudService {
 
       logger.info(`NextCloud calendars synced for user ${userId}`);
     } catch (error) {
-      logger.error('NextCloud calendar sync error:', error);
+      logger.error(error as Error, 'NextCloud calendar sync error');
       throw error;
     }
   }
@@ -239,7 +239,7 @@ export class NextCloudService {
         },
       });
       if (response.ok) {
-        const data = await response.json();
+        const data: any = await response.json();
         return data?.ocs?.data;
       }
     } catch {}

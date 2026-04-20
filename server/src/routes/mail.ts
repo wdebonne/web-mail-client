@@ -39,7 +39,7 @@ mailRouter.get('/accounts/:accountId/messages', async (req: AuthRequest, res) =>
     const messages = await mailService.getMessages(folder, page, limit);
 
     // Cache messages for offline use
-    await cacheMessages(accountId, folder, messages);
+    await cacheMessages(accountId, folder, messages.messages);
 
     res.json(messages);
   } catch (error: any) {

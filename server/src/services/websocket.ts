@@ -38,7 +38,7 @@ export function setupWebSocket(wss: WebSocketServer) {
           ws.send(JSON.stringify({ type: 'pong' }));
         }
       } catch (error) {
-        logger.error('WebSocket message error:', error);
+        logger.error(error as Error, 'WebSocket message error');
       }
     });
 
@@ -54,7 +54,7 @@ export function setupWebSocket(wss: WebSocketServer) {
     });
 
     ws.on('error', (error) => {
-      logger.error('WebSocket error:', error);
+      logger.error(error, 'WebSocket error');
     });
 
     // Send initial connection message

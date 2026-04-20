@@ -235,7 +235,7 @@ adminRouter.post('/nextcloud/test', async (req: AuthRequest, res) => {
     });
 
     if (response.ok) {
-      const data = await response.json();
+      const data: any = await response.json();
       res.json({ success: true, version: data?.ocs?.data?.version });
     } else {
       res.json({ success: false, error: 'Impossible de se connecter à NextCloud' });

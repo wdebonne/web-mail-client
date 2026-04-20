@@ -64,11 +64,11 @@ export class PluginManager {
             logger.info(`Plugin loaded: ${row.display_name || row.name}`);
           }
         } catch (error) {
-          logger.error(`Failed to load plugin ${row.name}:`, error);
+          logger.error(error as Error, `Failed to load plugin ${row.name}`);
         }
       }
     } catch (error) {
-      logger.error('Failed to load plugins:', error);
+      logger.error(error as Error, 'Failed to load plugins');
     }
   }
 

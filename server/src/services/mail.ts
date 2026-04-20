@@ -90,7 +90,7 @@ export class MailService {
       
       try {
         const mailbox = client.mailbox;
-        const total = mailbox?.exists || 0;
+        const total = mailbox ? (mailbox as any).exists || 0 : 0;
         const start = Math.max(1, total - (page * limit) + 1);
         const end = Math.max(1, total - ((page - 1) * limit));
 
@@ -106,7 +106,7 @@ export class MailService {
           bodyStructure: true,
           size: true,
         })) {
-          const envelope = msg.envelope;
+          const envelope = msg.envelope!;
           messages.push({
             uid: msg.uid,
             messageId: envelope.messageId,
@@ -125,10 +125,10 @@ export class MailService {
             })),
             date: envelope.date,
             flags: {
-              seen: msg.flags.has('\\Seen'),
-              flagged: msg.flags.has('\\Flagged'),
-              answered: msg.flags.has('\\Answered'),
-              draft: msg.flags.has('\\Draft'),
+              seen: msg.flags!.has('\\Seen'),
+              flagged: msg.flags!.has('\\Flagged'),
+              answered: msg.flags!.has('\\Answered'),
+              draft: msg.flags!.has('\\Draft'),
             },
             hasAttachments: this.hasAttachments(msg.bodyStructure),
             size: msg.size,
@@ -164,7 +164,7 @@ export class MailService {
           source: true,
           bodyStructure: true,
           size: true,
-        }, { uid: true });
+        }, { uid: true }) as any;
 
         if (!message?.source) {
           throw new Error('Message non trouvé');
@@ -181,11 +181,11 @@ export class MailService {
             address: parsed.from.value[0].address,
             name: parsed.from.value[0].name,
           } : null,
-          to: parsed.to ? (Array.isArray(parsed.to) ? parsed.to : [parsed.to]).flatMap(t => t.value.map((v: any) => ({
+          to: parsed.to ? (Array.isArray(parsed.to) ? parsed.to : [parsed.to]).flatMap((t: any) => t.value.map((v: any) => ({
             address: v.address,
             name: v.name,
           }))) : [],
-          cc: parsed.cc ? (Array.isArray(parsed.cc) ? parsed.cc : [parsed.cc]).flatMap(t => t.value.map((v: any) => ({
+          cc: parsed.cc ? (Array.isArray(parsed.cc) ? parsed.cc : [parsed.cc]).flatMap((t: any) => t.value.map((v: any) => ({
             address: v.address,
             name: v.name,
           }))) : [],
@@ -198,7 +198,7 @@ export class MailService {
             answered: message.flags.has('\\Answered'),
             draft: message.flags.has('\\Draft'),
           },
-          attachments: parsed.attachments?.map(att => ({
+          attachments: parsed.attachments?.map((att: any) => ({
             filename: att.filename,
             contentType: att.contentType,
             size: att.size,
