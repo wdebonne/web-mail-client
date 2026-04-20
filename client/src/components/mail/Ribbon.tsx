@@ -4,7 +4,7 @@ import {
   FolderInput, MailPlus, RefreshCw, ChevronDown, Printer,
   Download, Eye, EyeOff, PanelLeftOpen, PanelLeftClose,
   Columns2, Rows2, LayoutGrid, Settings, Info, FileDown,
-  MoreHorizontal, Check,
+  MoreHorizontal,
 } from 'lucide-react';
 
 type RibbonTab = 'accueil' | 'afficher';
@@ -110,7 +110,6 @@ export default function Ribbon({
   ribbonMode, onChangeRibbonMode,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
-  const [showModeMenu, setShowModeMenu] = useState(false);
   const ribbonRef = useRef<HTMLDivElement>(null);
 
   // Auto-switch between classic and simplified based on width
@@ -182,40 +181,6 @@ export default function Ribbon({
         {/* Imprimer / Télécharger */}
         <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
         <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
-
-        <div className="flex-1" />
-
-        {/* Mode switcher */}
-        <div className="relative">
-          <button
-            onClick={() => setShowModeMenu(!showModeMenu)}
-            className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary"
-            title="Options du ruban"
-          >
-            <ChevronDown size={12} />
-          </button>
-          {showModeMenu && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowModeMenu(false)} />
-              <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
-                <button
-                  onClick={() => { onChangeRibbonMode('classic'); setShowModeMenu(false); }}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                >
-                  {(ribbonMode as string) === 'classic' ? <Check size={14} className="text-outlook-blue" /> : <span className="w-3.5" />}
-                  Ruban classique
-                </button>
-                <button
-                  onClick={() => { onChangeRibbonMode('simplified'); setShowModeMenu(false); }}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                >
-                  {(ribbonMode as string) === 'simplified' ? <Check size={14} className="text-outlook-blue" /> : <span className="w-3.5" />}
-                  Ruban simplifié
-                </button>
-              </div>
-            </>
-          )}
-        </div>
       </div>
     );
   }
@@ -246,37 +211,6 @@ export default function Ribbon({
           </button>
         ))}
         <div className="flex-1" />
-        <div className="relative">
-          <button
-            onClick={() => setShowModeMenu(!showModeMenu)}
-            className="text-outlook-text-disabled hover:text-outlook-text-secondary p-1 rounded hover:bg-outlook-bg-hover"
-            title="Options du ruban"
-          >
-            <ChevronDown size={12} />
-          </button>
-          {showModeMenu && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowModeMenu(false)} />
-              <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
-                <button
-                  onClick={() => { onChangeRibbonMode('classic'); setShowModeMenu(false); }}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                >
-                  {ribbonMode === 'classic' && <Check size={14} className="text-outlook-blue" />}
-                  {ribbonMode !== 'classic' && <span className="w-3.5" />}
-                  Ruban classique
-                </button>
-                <button
-                  onClick={() => { onChangeRibbonMode('simplified'); setShowModeMenu(false); }}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                >
-                  {(ribbonMode as string) === 'simplified' ? <Check size={14} className="text-outlook-blue" /> : <span className="w-3.5" />}
-                  Ruban simplifié
-                </button>
-              </div>
-            </>
-          )}
-        </div>
         <button
           onClick={onToggleCollapse}
           className="text-outlook-text-disabled hover:text-outlook-text-secondary p-1 rounded hover:bg-outlook-bg-hover"

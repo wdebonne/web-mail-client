@@ -451,7 +451,7 @@ export default function MailPage() {
   return (
     <div className="h-full flex flex-col overflow-hidden bg-outlook-bg-tertiary">
       {/* Ribbon toolbar block */}
-      <div className="flex-shrink-0 mx-1 mt-1 mb-0.5 rounded-md shadow-sm overflow-hidden">
+      <div className="flex-shrink-0 mx-1 mt-1 mb-1 rounded-md shadow-sm overflow-hidden">
         <Ribbon
           onNewMessage={() => openCompose()}
           onReply={() => selectedMessage && handleReply(selectedMessage)}
