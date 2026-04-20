@@ -11,6 +11,7 @@ export default {
           'blue-dark': '#005A9E',
           'bg-primary': '#F3F2F1',
           'bg-secondary': '#FFFFFF',
+          'bg-tertiary': '#E8E6E4',
           'bg-hover': '#EDEBE9',
           'bg-selected': '#E1DFDD',
           'text-primary': '#323130',

@@ -78,7 +78,7 @@ export default function FolderPane({
   };
 
   return (
-    <div className="w-full bg-outlook-bg-primary border-r border-outlook-border flex flex-col flex-shrink-0 overflow-hidden">
+    <div className="w-full bg-white flex flex-col flex-shrink-0 overflow-hidden">
       {/* New message button */}
       <div className="p-3">
         <button

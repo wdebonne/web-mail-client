@@ -135,8 +135,8 @@ export default function Layout({ children }: LayoutProps) {
           })}
         </nav>
 
-        {/* Main content area */}
-        <main className="flex-1 overflow-hidden bg-outlook-bg-secondary">
+        {/* Main content area — subtle background gap around children */}
+        <main className="flex-1 overflow-hidden bg-outlook-bg-tertiary p-0.5">
           {children}
         </main>
       </div>
