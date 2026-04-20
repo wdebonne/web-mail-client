@@ -8,6 +8,7 @@ import FolderPane from '../components/mail/FolderPane';
 import MessageList from '../components/mail/MessageList';
 import MessageView from '../components/mail/MessageView';
 import ComposeModal from '../components/mail/ComposeModal';
+import Ribbon from '../components/mail/Ribbon';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 
@@ -280,6 +281,9 @@ export default function MailPage() {
   // Mobile view state: 'folders' | 'list' | 'message'
   const [mobileView, setMobileView] = useState<'folders' | 'list' | 'message'>('list');
   const [showFolderPane, setShowFolderPane] = useState(true);
+  const [ribbonCollapsed, setRibbonCollapsed] = useState(() => {
+    return localStorage.getItem('ribbonCollapsed') === 'true';
+  });
 
   // Resizable message list pane
   const [listWidth, setListWidth] = useState(() => {
@@ -343,8 +347,84 @@ export default function MailPage() {
     moveMutation.mutate({ uid, toFolder });
   };
 
+  const toggleRibbonCollapsed = useCallback(() => {
+    setRibbonCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('ribbonCollapsed', String(next));
+      return next;
+    });
+  }, []);
+
+  const handlePrint = useCallback(() => {
+    if (!selectedMessage) return;
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>${selectedMessage.subject || ''}</title>
+        <style>body{font-family:'Segoe UI',sans-serif;padding:20px;}</style>
+        </head><body>
+        <h2>${selectedMessage.subject || '(Sans objet)'}</h2>
+        <p><b>De :</b> ${selectedMessage.from?.name || selectedMessage.from?.address || ''}</p>
+        <p><b>Date :</b> ${new Date(selectedMessage.date).toLocaleString('fr-FR')}</p>
+        <hr/>
+        ${selectedMessage.bodyHtml || selectedMessage.bodyText || ''}
+        </body></html>`);
+      printWindow.document.close();
+      printWindow.print();
+    }
+  }, [selectedMessage]);
+
+  const handleDownloadEml = useCallback(async () => {
+    if (!selectedMessage || !selectedAccount) return;
+    try {
+      const response = await fetch(`/api/accounts/${selectedAccount.id}/messages/${selectedMessage.uid}/raw`);
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(selectedMessage.subject || 'message').replace(/[^a-zA-Z0-9]/g, '_')}.eml`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        toast.error('Impossible de télécharger le message');
+      }
+    } catch {
+      toast.error('Erreur lors du téléchargement');
+    }
+  }, [selectedMessage, selectedAccount]);
+
+  const handleSync = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['messages'] });
+    queryClient.invalidateQueries({ queryKey: ['folders'] });
+    toast.success('Synchronisation lancée');
+  }, [queryClient]);
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
+      {/* Ribbon toolbar — desktop only */}
+      <Ribbon
+        onNewMessage={() => openCompose()}
+        onReply={() => selectedMessage && handleReply(selectedMessage)}
+        onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
+        onForward={() => selectedMessage && handleForward(selectedMessage)}
+        onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
+        onArchive={() => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: 'Archive' })}
+        onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
+        onMarkRead={() => selectedMessage && markReadMutation.mutate({ uid: selectedMessage.uid, isRead: true })}
+        onMarkUnread={() => selectedMessage && markReadMutation.mutate({ uid: selectedMessage.uid, isRead: false })}
+        onSync={handleSync}
+        hasSelectedMessage={!!selectedMessage}
+        isFlagged={!!selectedMessage?.flags?.flagged}
+        isRead={!!selectedMessage?.flags?.seen}
+        showFolderPane={showFolderPane}
+        onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
+        onPrint={handlePrint}
+        onDownloadEml={handleDownloadEml}
+        isCollapsed={ribbonCollapsed}
+        onToggleCollapse={toggleRibbonCollapsed}
+      />
+
       {/* Main content area */}
       <div ref={containerRef} className="flex-1 flex overflow-hidden min-h-0">
         {/* Folder pane — collapsible, shown by default */}
