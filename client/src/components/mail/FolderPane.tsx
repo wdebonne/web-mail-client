@@ -1,9 +1,10 @@
 import {
   Inbox, Send, FileText, Trash2, Archive, Star, AlertTriangle,
-  ChevronDown, ChevronRight, Plus, FolderIcon
+  ChevronDown, ChevronRight, Plus, FolderIcon, FolderPlus, Pencil, Trash
 } from 'lucide-react';
 import { useState } from 'react';
 import { MailAccount, MailFolder } from '../../types';
+import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
 
 interface FolderPaneProps {
   accounts: MailAccount[];
@@ -14,6 +15,9 @@ interface FolderPaneProps {
   onSelectFolder: (folder: string) => void;
   onCompose: () => void;
   onDropMessage?: (uid: number, toFolder: string) => void;
+  onCreateFolder?: (parentPath?: string) => void;
+  onRenameFolder?: (folderPath: string, currentName: string) => void;
+  onDeleteFolder?: (folderPath: string) => void;
 }
 
 const FOLDER_ICONS: Record<string, any> = {
@@ -42,10 +46,12 @@ const FOLDER_LABELS: Record<string, string> = {
 export default function FolderPane({
   accounts, selectedAccount, folders, selectedFolder,
   onSelectAccount, onSelectFolder, onCompose, onDropMessage,
+  onCreateFolder, onRenameFolder, onDeleteFolder,
 }: FolderPaneProps) {
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set(accounts.map(a => a.id)));
   const [showAccountPicker, setShowAccountPicker] = useState(false);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folder?: MailFolder } | null>(null);
 
   const toggleAccount = (id: string) => {
     const next = new Set(expandedAccounts);
@@ -118,6 +124,10 @@ export default function FolderPane({
                     <button
                       key={folder.path}
                       onClick={() => onSelectFolder(folder.path)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({ x: e.clientX, y: e.clientY, folder });
+                      }}
                       onDragOver={(e) => {
                         e.preventDefault();
                         e.dataTransfer.dropEffect = 'move';
@@ -157,8 +167,61 @@ export default function FolderPane({
           </div>
         )}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={buildFolderContextMenu(contextMenu.folder)}
+        />
+      )}
     </div>
   );
+
+  function isSpecialFolder(folder?: MailFolder): boolean {
+    if (!folder) return false;
+    if (folder.specialUse) return true;
+    const name = folder.name.toLowerCase();
+    return ['inbox', 'sent', 'drafts', 'trash', 'junk', 'spam', 'archive'].some(s => name.includes(s));
+  }
+
+  function buildFolderContextMenu(folder?: MailFolder): ContextMenuItem[] {
+    const items: ContextMenuItem[] = [];
+
+    if (onCreateFolder) {
+      items.push({
+        label: 'Nouveau dossier',
+        icon: <FolderPlus size={14} />,
+        onClick: () => onCreateFolder(folder?.path),
+      });
+    }
+
+    if (folder) {
+      const special = isSpecialFolder(folder);
+
+      if (onRenameFolder && !special) {
+        items.push({
+          label: 'Renommer le dossier',
+          icon: <Pencil size={14} />,
+          onClick: () => onRenameFolder(folder.path, folder.name),
+        });
+      }
+
+      if (onDeleteFolder && !special) {
+        items.push({ label: '', separator: true, onClick: () => {} });
+        items.push({
+          label: 'Supprimer le dossier',
+          icon: <Trash size={14} />,
+          onClick: () => onDeleteFolder(folder.path),
+          danger: true,
+        });
+      }
+    }
+
+    return items;
+  }
 }
 
 function sortFolders(folders: MailFolder[]): MailFolder[] {

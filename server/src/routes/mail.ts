@@ -24,6 +24,69 @@ mailRouter.get('/accounts/:accountId/folders', async (req: AuthRequest, res) => 
   }
 });
 
+// Create a folder
+mailRouter.post('/accounts/:accountId/folders', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const { path } = z.object({ path: z.string().min(1).max(200) }).parse(req.body);
+    const account = await getAccountForUser(accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const mailService = new MailService(account);
+    await mailService.createFolder(path);
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Nom de dossier invalide' });
+    }
+    console.error('Create folder error:', error);
+    res.status(500).json({ error: error.message || 'Erreur de création du dossier' });
+  }
+});
+
+// Rename a folder
+mailRouter.patch('/accounts/:accountId/folders', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const { oldPath, newPath } = z.object({
+      oldPath: z.string().min(1),
+      newPath: z.string().min(1).max(200),
+    }).parse(req.body);
+    const account = await getAccountForUser(accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const mailService = new MailService(account);
+    await mailService.renameFolder(oldPath, newPath);
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides' });
+    }
+    console.error('Rename folder error:', error);
+    res.status(500).json({ error: error.message || 'Erreur de renommage du dossier' });
+  }
+});
+
+// Delete a folder
+mailRouter.delete('/accounts/:accountId/folders', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const { path } = z.object({ path: z.string().min(1) }).parse(req.body);
+    const account = await getAccountForUser(accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const mailService = new MailService(account);
+    await mailService.deleteFolder(path);
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides' });
+    }
+    console.error('Delete folder error:', error);
+    res.status(500).json({ error: error.message || 'Erreur de suppression du dossier' });
+  }
+});
+
 // Get messages from a folder
 mailRouter.get('/accounts/:accountId/messages', async (req: AuthRequest, res) => {
   try {

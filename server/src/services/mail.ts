@@ -353,4 +353,34 @@ export class MailService {
     }
     return false;
   }
+
+  async createFolder(path: string) {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      await client.mailboxCreate(path);
+    } finally {
+      await client.logout();
+    }
+  }
+
+  async renameFolder(oldPath: string, newPath: string) {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      await client.mailboxRename(oldPath, newPath);
+    } finally {
+      await client.logout();
+    }
+  }
+
+  async deleteFolder(path: string) {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      await client.mailboxDelete(path);
+    } finally {
+      await client.logout();
+    }
+  }
 }

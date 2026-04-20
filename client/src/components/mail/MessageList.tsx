@@ -1,7 +1,9 @@
 import { format, isToday, isYesterday, isThisYear } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Star, Paperclip, Trash2 } from 'lucide-react';
-import { Email } from '../../types';
+import { Star, Paperclip, Trash2, Reply, ReplyAll, Forward, Mail, MailOpen, Flag, FolderInput, Archive } from 'lucide-react';
+import { useState } from 'react';
+import { Email, MailFolder } from '../../types';
+import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
 
 interface MessageListProps {
   messages: Email[];
@@ -12,12 +14,21 @@ interface MessageListProps {
   onDelete: (uid: number) => void;
   folder: string;
   draggable?: boolean;
+  onReply?: (message: Email) => void;
+  onReplyAll?: (message: Email) => void;
+  onForward?: (message: Email) => void;
+  onMarkRead?: (uid: number, isRead: boolean) => void;
+  onMove?: (uid: number, toFolder: string) => void;
+  folders?: MailFolder[];
 }
 
 export default function MessageList({
   messages, selectedMessage, loading,
   onSelectMessage, onToggleFlag, onDelete, folder, draggable = true,
+  onReply, onReplyAll, onForward, onMarkRead, onMove, folders,
 }: MessageListProps) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     if (isToday(date)) return format(date, 'HH:mm', { locale: fr });
@@ -93,6 +104,10 @@ export default function MessageList({
               <div
                 key={message.uid}
                 onClick={() => onSelectMessage(message)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY, message });
+                }}
                 draggable={draggable}
                 onDragStart={(e) => {
                   e.dataTransfer.setData('text/x-mail-uid', String(message.uid));
@@ -155,8 +170,103 @@ export default function MessageList({
           })
         )}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={buildMessageContextMenu(contextMenu.message)}
+        />
+      )}
     </div>
   );
+
+  function buildMessageContextMenu(message: Email): ContextMenuItem[] {
+    const items: ContextMenuItem[] = [];
+
+    if (onReply) {
+      items.push({
+        label: 'Répondre',
+        icon: <Reply size={14} />,
+        onClick: () => onReply(message),
+      });
+    }
+    if (onReplyAll) {
+      items.push({
+        label: 'Répondre à tous',
+        icon: <ReplyAll size={14} />,
+        onClick: () => onReplyAll(message),
+      });
+    }
+    if (onForward) {
+      items.push({
+        label: 'Transférer',
+        icon: <Forward size={14} />,
+        onClick: () => onForward(message),
+      });
+    }
+
+    items.push({ label: '', separator: true, onClick: () => {} });
+
+    if (onMarkRead) {
+      items.push({
+        label: message.flags?.seen ? 'Marquer comme non lu' : 'Marquer comme lu',
+        icon: message.flags?.seen ? <Mail size={14} /> : <MailOpen size={14} />,
+        onClick: () => onMarkRead(message.uid, !message.flags?.seen),
+      });
+    }
+
+    items.push({
+      label: message.flags?.flagged ? 'Retirer le drapeau' : 'Marquer d\'un drapeau',
+      icon: <Flag size={14} />,
+      onClick: () => onToggleFlag(message.uid, !message.flags?.flagged),
+    });
+
+    items.push({ label: '', separator: true, onClick: () => {} });
+
+    // Move submenu - show available folders
+    if (onMove && folders && folders.length > 0) {
+      const moveableFolders = folders.filter(f => f.path !== folder);
+      if (moveableFolders.length > 0) {
+        items.push({
+          label: 'Déplacer vers...',
+          icon: <FolderInput size={14} />,
+          onClick: () => {},
+          disabled: true,
+        });
+        moveableFolders.forEach(f => {
+          items.push({
+            label: `    ${getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name}`,
+            onClick: () => onMove(message.uid, f.path),
+          });
+        });
+      }
+    }
+
+    if (onMove) {
+      const archiveFolder = folders?.find(f => f.specialUse === '\\Archive' || f.name.toLowerCase().includes('archive'));
+      if (archiveFolder && archiveFolder.path !== folder) {
+        items.push({
+          label: 'Archiver',
+          icon: <Archive size={14} />,
+          onClick: () => onMove(message.uid, archiveFolder.path),
+        });
+      }
+    }
+
+    items.push({ label: '', separator: true, onClick: () => {} });
+
+    items.push({
+      label: 'Supprimer',
+      icon: <Trash2 size={14} />,
+      onClick: () => onDelete(message.uid),
+      danger: true,
+    });
+
+    return items;
+  }
 }
 
 function getFolderDisplayName(folder: string): string {

@@ -69,6 +69,24 @@ export const api = {
   getFolders: (accountId: string) =>
     request<any[]>(`/mail/accounts/${accountId}/folders`),
 
+  createFolder: (accountId: string, path: string) =>
+    request(`/mail/accounts/${accountId}/folders`, {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+
+  renameFolder: (accountId: string, oldPath: string, newPath: string) =>
+    request(`/mail/accounts/${accountId}/folders`, {
+      method: 'PATCH',
+      body: JSON.stringify({ oldPath, newPath }),
+    }),
+
+  deleteFolder: (accountId: string, path: string) =>
+    request(`/mail/accounts/${accountId}/folders`, {
+      method: 'DELETE',
+      body: JSON.stringify({ path }),
+    }),
+
   getMessages: (accountId: string, folder: string, page: number = 1) =>
     request<{ messages: any[]; total: number; page: number }>(`/mail/accounts/${accountId}/messages?folder=${encodeURIComponent(folder)}&page=${page}`),
 

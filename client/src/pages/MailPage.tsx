@@ -119,6 +119,61 @@ export default function MailPage() {
     },
   });
 
+  // Folder management mutations
+  const createFolderMutation = useMutation({
+    mutationFn: (path: string) =>
+      selectedAccount ? api.createFolder(selectedAccount.id, path) : Promise.resolve(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['folders', selectedAccount?.id] });
+      toast.success('Dossier créé');
+    },
+    onError: (error: any) => toast.error(`Erreur: ${error.message}`),
+  });
+
+  const renameFolderMutation = useMutation({
+    mutationFn: ({ oldPath, newPath }: { oldPath: string; newPath: string }) =>
+      selectedAccount ? api.renameFolder(selectedAccount.id, oldPath, newPath) : Promise.resolve(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['folders', selectedAccount?.id] });
+      toast.success('Dossier renommé');
+    },
+    onError: (error: any) => toast.error(`Erreur: ${error.message}`),
+  });
+
+  const deleteFolderMutation = useMutation({
+    mutationFn: (path: string) =>
+      selectedAccount ? api.deleteFolder(selectedAccount.id, path) : Promise.resolve(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['folders', selectedAccount?.id] });
+      toast.success('Dossier supprimé');
+    },
+    onError: (error: any) => toast.error(`Erreur: ${error.message}`),
+  });
+
+  // Folder context menu handlers
+  const handleCreateFolder = (parentPath?: string) => {
+    const name = prompt('Nom du nouveau dossier :');
+    if (!name?.trim()) return;
+    const sanitized = name.trim().replace(/[\\\/]/g, '');
+    const path = parentPath ? `${parentPath}.${sanitized}` : sanitized;
+    createFolderMutation.mutate(path);
+  };
+
+  const handleRenameFolder = (folderPath: string, currentName: string) => {
+    const newName = prompt('Nouveau nom du dossier :', currentName);
+    if (!newName?.trim() || newName.trim() === currentName) return;
+    const sanitized = newName.trim().replace(/[\\\/]/g, '');
+    const parts = folderPath.split('.');
+    parts[parts.length - 1] = sanitized;
+    const newPath = parts.join('.');
+    renameFolderMutation.mutate({ oldPath: folderPath, newPath });
+  };
+
+  const handleDeleteFolder = (folderPath: string) => {
+    if (!confirm(`Supprimer le dossier "${folderPath}" et tout son contenu ?`)) return;
+    deleteFolderMutation.mutate(folderPath);
+  };
+
   // Send mutation
   const sendMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -249,6 +304,9 @@ export default function MailPage() {
           onSelectFolder={handleSelectFolder}
           onCompose={() => openCompose()}
           onDropMessage={handleDropMessage}
+          onCreateFolder={handleCreateFolder}
+          onRenameFolder={handleRenameFolder}
+          onDeleteFolder={handleDeleteFolder}
         />
       </div>
 
@@ -277,6 +335,12 @@ export default function MailPage() {
           onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
           onDelete={(uid) => deleteMutation.mutate(uid)}
           folder={selectedFolder}
+          onReply={(msg) => handleReply(msg)}
+          onReplyAll={(msg) => handleReply(msg, true)}
+          onForward={(msg) => handleForward(msg)}
+          onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
+          onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
+          folders={useMailStore(s => s.folders)}
         />
       </div>
 
