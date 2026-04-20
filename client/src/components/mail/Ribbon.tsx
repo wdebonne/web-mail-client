@@ -111,11 +111,30 @@ export default function Ribbon({
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showModeMenu, setShowModeMenu] = useState(false);
+  const ribbonRef = useRef<HTMLDivElement>(null);
+
+  // Auto-switch between classic and simplified based on width
+  useEffect(() => {
+    const el = ribbonRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        if (width < 700 && ribbonMode === 'classic') {
+          onChangeRibbonMode('simplified');
+        } else if (width >= 700 && ribbonMode === 'simplified') {
+          onChangeRibbonMode('classic');
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ribbonMode, onChangeRibbonMode]);
 
   // ─── Simplified ribbon ─────────────────────────────────────
   if (ribbonMode === 'simplified') {
     return (
-      <div className="hidden md:flex items-center flex-shrink-0 bg-white border-b border-outlook-border select-none px-2 py-1 gap-0.5 overflow-x-auto">
+      <div ref={ribbonRef} className="hidden md:flex items-center flex-shrink-0 bg-white select-none px-2 py-1 gap-0.5 overflow-x-auto">
         {/* Nouveau message */}
         <SimplifiedButton icon={MailPlus} label="Nouveau" onClick={onNewMessage} />
         <SimplifiedSep />
@@ -204,7 +223,7 @@ export default function Ribbon({
   // ─── Classic ribbon ─────────────────────────────────────────
 
   return (
-    <div className="hidden md:flex flex-col flex-shrink-0 bg-white border-b border-outlook-border select-none">
+    <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
       {/* Tab bar */}
       <div className="flex items-center gap-0 px-2 border-b border-outlook-border">
         {(['accueil', 'afficher'] as RibbonTab[]).map(tab => (
