@@ -371,6 +371,24 @@ mailRouter.post('/accounts/:accountId/messages/:uid/move', async (req: AuthReque
   }
 });
 
+// Copy message
+mailRouter.post('/accounts/:accountId/messages/:uid/copy', async (req: AuthRequest, res) => {
+  try {
+    const { accountId, uid } = req.params;
+    const { fromFolder, toFolder } = req.body;
+
+    const account = await getAccountForUser(accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const mailService = new MailService(account);
+    await mailService.copyMessage(fromFolder, parseInt(uid), toFolder);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Delete message
 mailRouter.delete('/accounts/:accountId/messages/:uid', async (req: AuthRequest, res) => {
   try {

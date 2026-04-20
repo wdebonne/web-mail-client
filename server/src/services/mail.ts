@@ -307,6 +307,21 @@ export class MailService {
     }
   }
 
+  async copyMessage(fromFolder: string, uid: number, toFolder: string) {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(fromFolder);
+      try {
+        await client.messageCopy(`${uid}`, toFolder, { uid: true });
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
   async deleteMessage(folder: string, uid: number) {
     const client = this.createImapClient();
     try {

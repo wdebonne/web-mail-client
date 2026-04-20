@@ -119,6 +119,15 @@ export default function MailPage() {
     },
   });
 
+  // Copy mutation
+  const copyMutation = useMutation({
+    mutationFn: ({ uid, toFolder }: { uid: number; toFolder: string }) =>
+      selectedAccount ? api.copyMessage(selectedAccount.id, uid, selectedFolder, toFolder) : Promise.resolve(),
+    onSuccess: () => {
+      toast.success('Message copié');
+    },
+  });
+
   // Folder management mutations
   const createFolderMutation = useMutation({
     mutationFn: (path: string) =>
@@ -340,6 +349,7 @@ export default function MailPage() {
           onForward={(msg) => handleForward(msg)}
           onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
           onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
+          onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
           folders={useMailStore(s => s.folders)}
         />
       </div>

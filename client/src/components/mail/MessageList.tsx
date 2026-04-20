@@ -5,8 +5,8 @@ import {
 import { fr } from 'date-fns/locale';
 import {
   Star, Paperclip, Trash2, Reply, ReplyAll, Forward, Mail, MailOpen,
-  Flag, FolderInput, Archive, ChevronDown, ChevronRight,
-  ArrowDownAZ, ArrowUpAZ, SlidersHorizontal, Filter,
+  Flag, FolderInput, Copy, Archive, ChevronDown, ChevronRight,
+  ArrowDownAZ, ArrowUpAZ, SlidersHorizontal, Filter, FolderIcon,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Email, MailFolder } from '../../types';
@@ -30,6 +30,7 @@ interface MessageListProps {
   onForward?: (message: Email) => void;
   onMarkRead?: (uid: number, isRead: boolean) => void;
   onMove?: (uid: number, toFolder: string) => void;
+  onCopy?: (uid: number, toFolder: string) => void;
   folders?: MailFolder[];
 }
 
@@ -42,7 +43,7 @@ interface MessageGroup {
 export default function MessageList({
   messages, selectedMessage, loading,
   onSelectMessage, onToggleFlag, onDelete, folder, draggable = true,
-  onReply, onReplyAll, onForward, onMarkRead, onMove, folders,
+  onReply, onReplyAll, onForward, onMarkRead, onMove, onCopy, folders,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -432,23 +433,36 @@ export default function MessageList({
 
     items.push({ label: '', separator: true, onClick: () => {} });
 
-    // Move submenu - show available folders
+    // Déplacer submenu
     if (onMove && folders && folders.length > 0) {
       const moveableFolders = folders.filter(f => f.path !== folder);
-      if (moveableFolders.length > 0) {
-        items.push({
-          label: 'Déplacer vers...',
-          icon: <FolderInput size={14} />,
-          onClick: () => {},
-          disabled: true,
-        });
-        moveableFolders.forEach(f => {
-          items.push({
-            label: `    ${getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name}`,
-            onClick: () => onMove(message.uid, f.path),
-          });
-        });
-      }
+      items.push({
+        label: 'Déplacer',
+        icon: <FolderInput size={14} />,
+        onClick: () => {},
+        submenuSearchable: true,
+        submenu: moveableFolders.map(f => ({
+          label: getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name,
+          icon: <FolderIcon size={14} />,
+          onClick: () => onMove(message.uid, f.path),
+        })),
+      });
+    }
+
+    // Copier submenu
+    if (onCopy && folders && folders.length > 0) {
+      const copyableFolders = folders.filter(f => f.path !== folder);
+      items.push({
+        label: 'Copier',
+        icon: <Copy size={14} />,
+        onClick: () => {},
+        submenuSearchable: true,
+        submenu: copyableFolders.map(f => ({
+          label: getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name,
+          icon: <FolderIcon size={14} />,
+          onClick: () => onCopy(message.uid, f.path),
+        })),
+      });
     }
 
     if (onMove) {

@@ -120,6 +120,12 @@ export const api = {
       body: JSON.stringify({ fromFolder, toFolder }),
     }),
 
+  copyMessage: (accountId: string, uid: number, fromFolder: string, toFolder: string) =>
+    request(`/mail/accounts/${accountId}/messages/${uid}/copy`, {
+      method: 'POST',
+      body: JSON.stringify({ fromFolder, toFolder }),
+    }),
+
   deleteMessage: (accountId: string, uid: number, folder: string) =>
     request(`/mail/accounts/${accountId}/messages/${uid}?folder=${encodeURIComponent(folder)}`, {
       method: 'DELETE',
