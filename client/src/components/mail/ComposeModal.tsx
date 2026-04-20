@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Send, Paperclip, Minus, Maximize2, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { ComposeData } from '../../stores/mailStore';
 import { MailAccount, EmailAddress } from '../../types';
 import { api } from '../../api';
@@ -144,7 +145,11 @@ export default function ComposeModal({
 
   if (isMinimized && !inline) {
     return (
-      <div className="fixed bottom-0 right-4 w-80 bg-white border border-outlook-border rounded-t-lg shadow-lg z-50">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="fixed bottom-0 right-4 w-80 bg-white border border-outlook-border rounded-t-lg shadow-lg z-50">
         <div className="flex items-center justify-between px-3 py-2 bg-outlook-blue text-white rounded-t-lg cursor-pointer"
           onClick={() => setIsMinimized(false)}>
           <span className="text-sm font-medium truncate">{subject || 'Nouveau message'}</span>
@@ -157,7 +162,7 @@ export default function ComposeModal({
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -167,7 +172,12 @@ export default function ComposeModal({
     : `fixed z-50 bg-white border border-outlook-border shadow-2xl flex flex-col ${isFullscreen ? 'inset-0' : 'bottom-0 right-0 md:right-4 w-full md:w-[640px] h-full md:h-[500px] md:rounded-t-lg'}`;
 
   return (
-    <div className={containerClass}>
+    <motion.div
+      initial={inline ? false : { opacity: 0, y: 40, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 40, scale: 0.97 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className={containerClass}>
       {/* Top toolbar — inline: send button + from + actions / modal: title bar */}
       {inline ? (
         <div className="flex items-center gap-2 px-4 py-2 border-b border-outlook-border flex-shrink-0 bg-outlook-bg-primary/30">
@@ -397,7 +407,7 @@ export default function ComposeModal({
         </div>
       </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 

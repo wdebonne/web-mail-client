@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface MessageViewProps {
   message: Email | null;
@@ -26,10 +27,15 @@ export default function MessageView({
   if (!message) {
     return (
       <div className="flex-1 flex items-center justify-center bg-outlook-bg-primary/30">
-        <div className="text-center text-outlook-text-disabled">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="text-center text-outlook-text-disabled"
+        >
           <div className="text-6xl mb-4">📧</div>
           <p className="text-sm">Sélectionnez un message pour le lire</p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -47,7 +53,12 @@ export default function MessageView({
     : '';
 
   return (
-    <div className="flex-1 flex flex-col bg-white overflow-hidden">
+    <motion.div
+      key={message.uid}
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className="flex-1 flex flex-col bg-white overflow-hidden">
       {/* Subject bar */}
       <div className="px-6 py-3 border-b border-outlook-border flex-shrink-0">
         <h1 className="text-base font-semibold text-outlook-text-primary truncate">
@@ -202,7 +213,7 @@ export default function MessageView({
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

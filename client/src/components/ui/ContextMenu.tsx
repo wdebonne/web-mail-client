@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
+import { motion } from 'motion/react';
 
 export interface ContextMenuItem {
   label: string;
@@ -61,15 +62,18 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
   }, [x, y]);
 
   return (
-    <div
+    <motion.div
       ref={menuRef}
-      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[200px] animate-in fade-in zoom-in-95 duration-100"
+      initial={{ opacity: 0, scale: 0.92 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.12, ease: 'easeOut' }}
+      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[200px]"
       style={{ left: x, top: y }}
     >
       {items.map((item, index) => (
         <MenuItem key={index} item={item} onClose={onClose} />
       ))}
-    </div>
+    </motion.div>
   );
 }
 

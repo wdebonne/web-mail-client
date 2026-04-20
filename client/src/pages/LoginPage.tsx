@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function LoginPage() {
   const { login, register, isLoading } = useAuthStore();
@@ -27,7 +28,11 @@ export default function LoginPage() {
 
   return (
     <div className="h-full flex items-center justify-center bg-gradient-to-br from-outlook-blue to-outlook-blue-dark">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-md p-8 animate-fade-in">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        className="bg-white rounded-lg shadow-2xl w-full max-w-md p-8">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-outlook-blue rounded-xl flex items-center justify-center mx-auto mb-4">
@@ -39,12 +44,20 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4 flex items-center gap-2">
-            <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-            <span className="text-red-700 text-sm">{error}</span>
-          </div>
-        )}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.2 }}
+              className="bg-red-50 border border-red-200 rounded-md p-3 flex items-center gap-2 overflow-hidden"
+            >
+              <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+              <span className="text-red-700 text-sm">{error}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegister && (
@@ -120,7 +133,7 @@ export default function LoginPage() {
             {isRegister ? 'Déjà un compte ? Se connecter' : 'Créer un compte'}
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

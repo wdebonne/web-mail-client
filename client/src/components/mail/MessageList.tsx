@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
+import { motion, AnimatePresence } from 'motion/react';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
 
 type SortField = 'date' | 'from' | 'subject' | 'size' | 'importance';
@@ -496,15 +497,18 @@ export default function MessageList({
                 </button>
 
                 {/* Messages in group */}
-                {!isCollapsed && group.messages.map((message) => {
+                {!isCollapsed && group.messages.map((message, msgIndex) => {
                   const isSelected = selectedMessage?.uid === message.uid;
                   const isUnread = !message.flags?.seen;
                   const isChecked = selectedUids.has(message.uid);
                   const isWide = (listWidth ?? 0) >= 400;
 
                   return (
-                    <div
+                    <motion.div
                       key={message.uid}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.15, delay: Math.min(msgIndex * 0.02, 0.3), ease: 'easeOut' }}
                       onClick={() => {
                         if (selectionMode) {
                           toggleSelection(message.uid);
@@ -517,7 +521,7 @@ export default function MessageList({
                         setContextMenu({ x: e.clientX, y: e.clientY, message });
                       }}
                       draggable={draggable && !selectionMode}
-                      onDragStart={(e) => {
+                      onDragStartCapture={(e: any) => {
                         e.dataTransfer.setData('text/x-mail-uid', String(message.uid));
                         e.dataTransfer.effectAllowed = 'move';
                       }}
@@ -684,7 +688,7 @@ export default function MessageList({
                           </div>
                         </div>
                       )}
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>

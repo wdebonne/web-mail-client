@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { motion } from 'motion/react';
 import {
   Mail, Calendar, Users, Settings, Shield, Search,
   ChevronLeft, LogOut, Menu, X
@@ -93,10 +94,17 @@ export default function Layout({ children }: LayoutProps) {
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 className={`w-10 h-10 rounded-lg flex items-center justify-center mb-1 transition-colors relative group
-                  ${isActive ? 'bg-outlook-blue text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                  ${isActive ? 'text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
                 title={item.label}
               >
-                <Icon size={20} />
+                {isActive && (
+                  <motion.div
+                    layoutId="nav-active"
+                    className="absolute inset-0 bg-outlook-blue rounded-lg"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <Icon size={20} className="relative z-10" />
                 {/* Tooltip */}
                 <span className="absolute left-12 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
                   {item.label}
