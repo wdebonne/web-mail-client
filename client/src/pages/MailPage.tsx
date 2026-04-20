@@ -9,7 +9,7 @@ import MessageList from '../components/mail/MessageList';
 import MessageView from '../components/mail/MessageView';
 import ComposeModal from '../components/mail/ComposeModal';
 import toast from 'react-hot-toast';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 
 export default function MailPage() {
   const isOnline = useNetworkStatus();
@@ -279,6 +279,7 @@ export default function MailPage() {
 
   // Mobile view state: 'folders' | 'list' | 'message'
   const [mobileView, setMobileView] = useState<'folders' | 'list' | 'message'>('list');
+  const [showFolderPane, setShowFolderPane] = useState(false);
 
   // When selecting a folder on mobile, switch to list view
   const handleSelectFolder = (folder: string) => {
@@ -298,101 +299,131 @@ export default function MailPage() {
   };
 
   return (
-    <div className="h-full flex overflow-hidden">
-      {/* Folder pane - hidden on mobile unless active */}
-      <div className={`
-        ${mobileView === 'folders' ? 'flex' : 'hidden'} md:flex
-        flex-col flex-shrink-0 w-full md:w-64
-      `}>
-        <FolderPane
-          accounts={accounts}
-          selectedAccount={selectedAccount}
-          folders={useMailStore(s => s.folders)}
-          selectedFolder={selectedFolder}
-          onSelectAccount={selectAccount}
-          onSelectFolder={handleSelectFolder}
-          onCompose={() => openCompose()}
-          onDropMessage={handleDropMessage}
-          onCreateFolder={handleCreateFolder}
-          onRenameFolder={handleRenameFolder}
-          onDeleteFolder={handleDeleteFolder}
-        />
-      </div>
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Main content area */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Folder pane — collapsible, hidden by default */}
+        {showFolderPane && (
+          <div className={`
+            ${mobileView === 'folders' ? 'flex' : 'hidden'} md:flex
+            flex-col flex-shrink-0 w-full md:w-56 border-r border-outlook-border
+          `}>
+            <FolderPane
+              accounts={accounts}
+              selectedAccount={selectedAccount}
+              folders={useMailStore(s => s.folders)}
+              selectedFolder={selectedFolder}
+              onSelectAccount={selectAccount}
+              onSelectFolder={handleSelectFolder}
+              onCompose={() => openCompose()}
+              onDropMessage={handleDropMessage}
+              onCreateFolder={handleCreateFolder}
+              onRenameFolder={handleRenameFolder}
+              onDeleteFolder={handleDeleteFolder}
+            />
+          </div>
+        )}
 
-      {/* Message list pane - hidden on mobile unless active */}
-      <div className={`
-        ${mobileView === 'list' ? 'flex' : 'hidden'} md:flex
-        flex-col flex-shrink-0 w-full md:w-80 lg:w-96 border-r border-outlook-border
-      `}>
-        {/* Mobile header with folder toggle */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
-          <button
-            onClick={() => setMobileView('folders')}
-            className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <span className="text-sm font-medium text-outlook-text-primary truncate">
-            {selectedAccount?.assigned_display_name || selectedAccount?.name}
-          </span>
+        {/* Message list pane */}
+        <div className={`
+          ${mobileView === 'list' ? 'flex' : 'hidden'} md:flex
+          flex-col flex-shrink-0 w-full md:w-56 lg:w-60
+        `}>
+          {/* Mobile header with folder toggle */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
+            <button
+              onClick={() => setMobileView('folders')}
+              className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <span className="text-sm font-medium text-outlook-text-primary truncate">
+              {selectedAccount?.assigned_display_name || selectedAccount?.name}
+            </span>
+          </div>
+          <MessageList
+            messages={messages}
+            selectedMessage={selectedMessage}
+            loading={loadingMessages}
+            onSelectMessage={handleSelectMessageMobile}
+            onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
+            onDelete={(uid) => deleteMutation.mutate(uid)}
+            folder={selectedFolder}
+            onReply={(msg) => handleReply(msg)}
+            onReplyAll={(msg) => handleReply(msg, true)}
+            onForward={(msg) => handleForward(msg)}
+            onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
+            onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
+            onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
+            folders={useMailStore(s => s.folders)}
+            onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
+            showFolderPane={showFolderPane}
+          />
         </div>
-        <MessageList
-          messages={messages}
-          selectedMessage={selectedMessage}
-          loading={loadingMessages}
-          onSelectMessage={handleSelectMessageMobile}
-          onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
-          onDelete={(uid) => deleteMutation.mutate(uid)}
-          folder={selectedFolder}
-          onReply={(msg) => handleReply(msg)}
-          onReplyAll={(msg) => handleReply(msg, true)}
-          onForward={(msg) => handleForward(msg)}
-          onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
-          onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
-          onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
-          folders={useMailStore(s => s.folders)}
-        />
-      </div>
 
-      {/* Message reading pane - hidden on mobile unless active */}
-      <div className={`
-        ${mobileView === 'message' ? 'flex' : 'hidden'} md:flex
-        flex-col flex-1 min-w-0
-      `}>
-        {/* Mobile back button */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
-          <button
-            onClick={() => { setMobileView('list'); selectMessage(null); }}
-            className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <span className="text-sm font-medium text-outlook-text-primary truncate">
-            {selectedMessage?.subject || 'Retour'}
-          </span>
+        {/* Right pane: Reading or Compose — fills remaining space */}
+        <div className={`
+          ${mobileView === 'message' ? 'flex' : 'hidden'} md:flex
+          flex-col flex-1 min-w-0 border-l border-outlook-border
+        `}>
+          {/* Mobile back button */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
+            <button
+              onClick={() => { setMobileView('list'); selectMessage(null); }}
+              className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <span className="text-sm font-medium text-outlook-text-primary truncate">
+              {selectedMessage?.subject || 'Retour'}
+            </span>
+          </div>
+
+          {/* Inline compose — replaces the reading pane when composing */}
+          {isComposing && composeData ? (
+            <ComposeModal
+              initialData={composeData}
+              accounts={accounts}
+              selectedAccountId={selectedAccount?.id}
+              onSend={(data) => sendMutation.mutate(data)}
+              onClose={closeCompose}
+              isSending={sendMutation.isPending}
+              inline
+            />
+          ) : (
+            <MessageView
+              message={selectedMessage}
+              onReply={() => selectedMessage && handleReply(selectedMessage)}
+              onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
+              onForward={() => selectedMessage && handleForward(selectedMessage)}
+              onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
+              onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
+              onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
+            />
+          )}
         </div>
-        <MessageView
-          message={selectedMessage}
-          onReply={() => selectedMessage && handleReply(selectedMessage)}
-          onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
-          onForward={() => selectedMessage && handleForward(selectedMessage)}
-          onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
-          onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
-          onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
-        />
       </div>
 
-      {/* Compose modal */}
-      {isComposing && composeData && (
-        <ComposeModal
-          initialData={composeData}
-          accounts={accounts}
-          selectedAccountId={selectedAccount?.id}
-          onSend={(data) => sendMutation.mutate(data)}
-          onClose={closeCompose}
-          isSending={sendMutation.isPending}
-        />
-      )}
+      {/* Bottom tab bar */}
+      <div className="flex-shrink-0 border-t border-outlook-border bg-outlook-bg-primary flex items-center h-8 px-1 gap-1 overflow-x-auto">
+        {selectedMessage && !isComposing && (
+          <div className="flex items-center gap-1.5 bg-outlook-blue/10 border border-outlook-blue/30 rounded px-2.5 py-0.5 text-xs font-medium text-outlook-blue max-w-48 truncate">
+            <span className="truncate">{selectedMessage.subject || '(Sans objet)'}</span>
+          </div>
+        )}
+        {isComposing && (
+          <div className="flex items-center gap-1.5 bg-outlook-blue/10 border border-outlook-blue/30 rounded px-2.5 py-0.5 text-xs font-medium text-outlook-blue max-w-48">
+            <span className="text-outlook-text-secondary">✏</span>
+            <span className="truncate">{composeData?.subject || '(Aucun objet)'}</span>
+            <button
+              onClick={closeCompose}
+              className="text-outlook-text-disabled hover:text-outlook-danger ml-1 flex-shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

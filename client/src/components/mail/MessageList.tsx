@@ -7,7 +7,7 @@ import {
   Star, Paperclip, Trash2, Reply, ReplyAll, Forward, Mail, MailOpen,
   Flag, FolderInput, Copy, Archive, ChevronDown, ChevronRight,
   ArrowUpDown, ListFilter, Calendar, CheckSquare, FolderIcon,
-  Check, MailCheck,
+  Check, MailCheck, PanelLeftOpen, PanelLeftClose,
 } from 'lucide-react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
@@ -34,6 +34,8 @@ interface MessageListProps {
   onMove?: (uid: number, toFolder: string) => void;
   onCopy?: (uid: number, toFolder: string) => void;
   folders?: MailFolder[];
+  onToggleFolderPane?: () => void;
+  showFolderPane?: boolean;
 }
 
 interface MessageGroup {
@@ -67,6 +69,7 @@ export default function MessageList({
   messages, selectedMessage, loading,
   onSelectMessage, onToggleFlag, onDelete, folder, draggable = true,
   onReply, onReplyAll, onForward, onMarkRead, onMove, onCopy, folders,
+  onToggleFolderPane, showFolderPane,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -245,20 +248,29 @@ export default function MessageList({
   }
 
   return (
-    <div className="bg-white flex-1 min-h-0 flex flex-col overflow-hidden w-full">
+    <div className="bg-white flex-1 min-h-0 flex flex-col overflow-hidden w-full border-r border-outlook-border">
       {/* Header: folder name + toolbar icons */}
       <div className="border-b border-outlook-border flex-shrink-0">
-        <div className="px-3 pt-2.5 pb-1 flex items-center justify-between">
-          {/* Left: folder name + star */}
-          <div className="flex items-center gap-1.5">
-            <h2 className="text-sm font-semibold text-outlook-text-primary">
+        <div className="px-2 pt-2 pb-1 flex items-center justify-between">
+          {/* Left: folder pane toggle + folder name + star */}
+          <div className="flex items-center gap-1 min-w-0">
+            {onToggleFolderPane && (
+              <button
+                onClick={onToggleFolderPane}
+                className={`p-1 rounded transition-colors flex-shrink-0 ${showFolderPane ? 'text-outlook-blue bg-outlook-blue/10' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary'}`}
+                title={showFolderPane ? 'Masquer les dossiers' : 'Afficher les dossiers'}
+              >
+                {showFolderPane ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
+              </button>
+            )}
+            <h2 className="text-sm font-semibold text-outlook-text-primary truncate">
               {getFolderDisplayName(folder)}
             </h2>
-            <Star size={14} className="text-outlook-text-disabled cursor-pointer hover:text-outlook-warning" />
+            <Star size={13} className="text-outlook-text-disabled cursor-pointer hover:text-outlook-warning flex-shrink-0" />
           </div>
 
           {/* Right: toolbar icons */}
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0">
             {/* Selection mode toggle */}
             <button
               onClick={() => {
@@ -268,7 +280,7 @@ export default function MessageList({
               className={`p-1.5 rounded transition-colors ${selectionMode ? 'bg-outlook-blue/10 text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary'}`}
               title="Sélectionner"
             >
-              <CheckSquare size={15} />
+              <CheckSquare size={14} />
             </button>
 
             {/* Date filter */}

@@ -188,6 +188,24 @@ export default function MessageView({
             {message.bodyText || ''}
           </pre>
         )}
+
+        {/* Bottom reply/forward buttons */}
+        <div className="flex items-center gap-2 mt-6 pt-4 border-t border-outlook-border">
+          <button
+            onClick={onReply}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
+          >
+            <Reply size={14} />
+            Répondre
+          </button>
+          <button
+            onClick={onForward}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
+          >
+            <Forward size={14} />
+            Transférer
+          </button>
+        </div>
       </div>
     </div>
   );

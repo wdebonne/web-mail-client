@@ -13,10 +13,11 @@ interface ComposeModalProps {
   onSend: (data: any) => void;
   onClose: () => void;
   isSending: boolean;
+  inline?: boolean;
 }
 
 export default function ComposeModal({
-  initialData, accounts, selectedAccountId, onSend, onClose, isSending,
+  initialData, accounts, selectedAccountId, onSend, onClose, isSending, inline = false,
 }: ComposeModalProps) {
   const isOnline = useNetworkStatus();
   const [accountId, setAccountId] = useState(initialData.accountId || selectedAccountId || accounts[0]?.id);
@@ -30,6 +31,7 @@ export default function ComposeModal({
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [attachments, setAttachments] = useState<any[]>([]);
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
 
   // Contact autocomplete
   const [toInput, setToInput] = useState('');
@@ -132,6 +134,7 @@ export default function ComposeModal({
           accountId, to, cc, bcc, subject,
           bodyHtml: editorRef.current?.innerHTML || bodyHtml,
         });
+        setLastSaved(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
       }
     }, 30000);
     return () => clearInterval(interval);
@@ -139,7 +142,7 @@ export default function ComposeModal({
 
   const selectedAccount = accounts.find(a => a.id === accountId);
 
-  if (isMinimized) {
+  if (isMinimized && !inline) {
     return (
       <div className="fixed bottom-0 right-4 w-80 bg-white border border-outlook-border rounded-t-lg shadow-lg z-50">
         <div className="flex items-center justify-between px-3 py-2 bg-outlook-blue text-white rounded-t-lg cursor-pointer"
@@ -158,29 +161,86 @@ export default function ComposeModal({
     );
   }
 
-  return (
-    <div className={`fixed z-50 bg-white border border-outlook-border shadow-2xl flex flex-col
-      ${isFullscreen
-        ? 'inset-0'
-        : 'bottom-0 right-0 md:right-4 w-full md:w-[640px] h-full md:h-[500px] md:rounded-t-lg'}`}>
-      {/* Title bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-outlook-blue text-white rounded-t-lg flex-shrink-0">
-        <span className="text-sm font-medium">{subject || 'Nouveau message'}</span>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setIsMinimized(true)} className="hover:bg-white/20 p-1 rounded">
-            <Minus size={14} />
-          </button>
-          <button onClick={() => setIsFullscreen(!isFullscreen)} className="hover:bg-white/20 p-1 rounded">
-            <Maximize2 size={14} />
-          </button>
-          <button onClick={onClose} className="hover:bg-white/20 p-1 rounded">
-            <X size={14} />
-          </button>
-        </div>
-      </div>
+  // Inline mode: renders as a flex child filling the parent
+  const containerClass = inline
+    ? 'flex-1 flex flex-col bg-white overflow-hidden'
+    : `fixed z-50 bg-white border border-outlook-border shadow-2xl flex flex-col ${isFullscreen ? 'inset-0' : 'bottom-0 right-0 md:right-4 w-full md:w-[640px] h-full md:h-[500px] md:rounded-t-lg'}`;
 
-      {/* From account selector */}
-      {accounts.length > 1 && (
+  return (
+    <div className={containerClass}>
+      {/* Top toolbar — inline: send button + from + actions / modal: title bar */}
+      {inline ? (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-outlook-border flex-shrink-0 bg-outlook-bg-primary/30">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleSend}
+              disabled={isSending || to.length === 0}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
+            >
+              <Send size={14} />
+              {isSending ? 'Envoi...' : 'Envoyer'}
+            </button>
+            <div className="relative">
+              <button className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-1.5 py-1.5 rounded text-sm">
+                <ChevronDown size={12} />
+              </button>
+            </div>
+          </div>
+
+          <span className="text-sm text-outlook-text-secondary">
+            De: {selectedAccount?.email || accounts.find(a => a.id === accountId)?.email || ''}
+          </span>
+          {accounts.length > 1 && (
+            <select
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              className="text-sm text-outlook-text-secondary bg-transparent border-none outline-none cursor-pointer"
+            >
+              {accounts.filter(a => a.send_permission !== 'none').map(a => (
+                <option key={a.id} value={a.id}>{a.email}</option>
+              ))}
+            </select>
+          )}
+
+          <div className="flex-1" />
+
+          <div className="flex items-center gap-0.5">
+            <input type="file" ref={fileInputRef} onChange={handleAttachment} multiple className="hidden" />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-outlook-text-secondary hover:text-outlook-text-primary p-1.5 rounded hover:bg-outlook-bg-hover"
+              title="Joindre un fichier"
+            >
+              <Paperclip size={15} />
+            </button>
+            <button
+              onClick={onClose}
+              className="text-outlook-text-secondary hover:text-outlook-danger p-1.5 rounded hover:bg-red-50"
+              title="Annuler"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between px-4 py-2 bg-outlook-blue text-white rounded-t-lg flex-shrink-0">
+          <span className="text-sm font-medium">{subject || 'Nouveau message'}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setIsMinimized(true)} className="hover:bg-white/20 p-1 rounded">
+              <Minus size={14} />
+            </button>
+            <button onClick={() => setIsFullscreen(!isFullscreen)} className="hover:bg-white/20 p-1 rounded">
+              <Maximize2 size={14} />
+            </button>
+            <button onClick={onClose} className="hover:bg-white/20 p-1 rounded">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* From account selector — only in modal mode (inline has it in toolbar) */}
+      {!inline && accounts.length > 1 && (
         <div className="flex items-center gap-2 px-4 py-1.5 border-b border-outlook-border text-sm">
           <span className="text-outlook-text-secondary w-12">De :</span>
           <select
@@ -249,14 +309,19 @@ export default function ComposeModal({
 
       {/* Subject */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-outlook-border">
-        <span className="text-outlook-text-secondary text-sm w-12">Objet :</span>
+        {!inline && <span className="text-outlook-text-secondary text-sm w-12">Objet :</span>}
         <input
           type="text"
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
           className="flex-1 text-sm outline-none"
-          placeholder="Objet du message"
+          placeholder={inline ? 'Ajouter un objet' : 'Objet du message'}
         />
+        {inline && lastSaved && (
+          <span className="text-2xs text-outlook-text-disabled flex-shrink-0">
+            Brouillon enregistré à {lastSaved}
+          </span>
+        )}
       </div>
 
       {/* Editor toolbar */}
@@ -300,7 +365,8 @@ export default function ComposeModal({
         </div>
       )}
 
-      {/* Bottom toolbar */}
+      {/* Bottom toolbar — hidden in inline mode (actions are in top toolbar) */}
+      {!inline && (
       <div className="flex items-center justify-between px-4 py-2 border-t border-outlook-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <button
@@ -330,6 +396,7 @@ export default function ComposeModal({
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }
