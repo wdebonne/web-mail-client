@@ -82,6 +82,8 @@ DEFAULT_SMTP_PORT=465
 # NEXTCLOUD_ENABLED=true
 ```
 
+> **Note** : Les comptes O2Switch et leurs tokens API sont gérés directement via l'interface d'administration (Administration > O2Switch). Les tokens sont chiffrés en AES-256-GCM avant stockage en base de données avec la même `ENCRYPTION_KEY`.
+
 ---
 
 ## Configuration des comptes mail
@@ -226,4 +228,43 @@ Depuis **Administration > Groupes** :
 
 - Créer des groupes avec une couleur distinctive
 - Attribuer des utilisateurs aux groupes
-- Utiliser les groupes pour l'attribution de plugins
+- Utiliser les groupes pour l'attribution de plugins et comptes O2Switch
+
+### Dashboard
+
+Depuis **Administration > Dashboard** :
+
+- Vue d'ensemble des statistiques système en temps réel
+- Nombre d'utilisateurs, groupes, comptes mail, contacts
+- Statistiques d'emails, calendriers, plugins actifs
+- Informations d'infrastructure (taille BDD, mémoire, uptime)
+- Rafraîchissement automatique toutes les 30 secondes
+
+### Gestion O2Switch
+
+Depuis **Administration > O2Switch** :
+
+1. **Ajouter un compte cPanel** : hostname, username, token API cPanel
+2. **Tester la connexion** : vérifie l'accès à l'API cPanel UAPI v3
+3. **Lister les emails** : affiche tous les comptes email du serveur avec quotas
+4. **Créer un email** : crée un nouveau compte email directement sur cPanel
+5. **Synchroniser** : importe automatiquement les emails O2Switch comme comptes locaux
+6. **Lier un email** : associe un email O2Switch à un compte local avec attribution d'utilisateurs et groupes
+
+> **Sécurité** : Les tokens API sont chiffrés AES-256-GCM en base de données. Ils ne sont jamais exposés dans l'interface ou les réponses API.
+
+#### Obtenir un token API cPanel
+
+1. Connectez-vous à cPanel (https://votre-site.o2switch.net:2083)
+2. Allez dans **Sécurité > Gérer les tokens API**
+3. Créez un nouveau token avec les permissions nécessaires
+4. Copiez le token et ajoutez-le dans l'interface d'administration
+
+### Logs d'audit
+
+Depuis **Administration > Logs** :
+
+- Consultation de toutes les actions administratives
+- Filtrage par catégorie : auth, admin, mail, o2switch, system
+- Recherche par mot-clé
+- Informations : utilisateur, action, IP, date, détails

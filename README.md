@@ -48,10 +48,20 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 📋 Listes de distribution
 
 ### Administration
+- � Dashboard temps réel (stats utilisateurs, mails, infra)
 - 👤 Gestion des utilisateurs et groupes
 - ⚙️ Paramètres globaux
 - 🔌 Gestion des plugins
 - ☁️ Configuration NextCloud
+- 📋 Logs d'audit avec filtrage par catégorie et recherche
+
+### Intégration O2Switch (cPanel)
+- 🖥️ Gestion des comptes cPanel via UAPI v3
+- 📧 Création / suppression d'emails distants
+- 🔗 Liaison emails O2Switch → comptes locaux
+- 🔄 Synchronisation automatique des comptes
+- 🔒 Tokens API chiffrés AES-256-GCM
+- 📊 Consultation des quotas disque
 
 ## Architecture
 
@@ -167,7 +177,7 @@ webmail/
 │       ├── database/       # Schéma & connexion PostgreSQL
 │       ├── middleware/      # Auth middleware
 │       ├── routes/         # Routes API
-│       ├── services/       # Mail, WebSocket, NextCloud
+│       ├── services/       # Mail, WebSocket, NextCloud, O2Switch
 │       └── utils/          # Logger, encryption
 ├── plugins/                # Plugins
 │   └── ollama-ai/          # Plugin IA Ollama
@@ -208,6 +218,16 @@ webmail/
 | GET | `/api/calendar/events` | Événements |
 | POST | `/api/calendar/events` | Créer un événement |
 
+### Administration étendue
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/admin/dashboard` | Statistiques système |
+| GET | `/api/admin/logs` | Logs d'audit |
+| GET | `/api/admin/o2switch/accounts` | Comptes O2Switch |
+| POST | `/api/admin/o2switch/accounts` | Ajouter un compte O2Switch |
+| POST | `/api/admin/o2switch/accounts/:id/sync` | Synchroniser emails |
+| POST | `/api/admin/o2switch/accounts/:id/link` | Lier un email |
+
 ## Plugin Ollama AI
 
 Le plugin `ollama-ai` intègre un modèle IA local via Ollama pour :
@@ -225,7 +245,7 @@ Le plugin `ollama-ai` intègre un modèle IA local via Ollama pour :
 ## Compatibilité hébergeurs
 
 Testé avec :
-- **o2switch** (IMAP/SMTP via cPanel)
+- **o2switch** (IMAP/SMTP via cPanel + UAPI v3 pour la gestion email)
 - Tout hébergeur supportant IMAP/SMTP standard
 
 ## Sécurité

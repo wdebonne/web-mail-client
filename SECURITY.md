@@ -52,8 +52,10 @@ Si vous découvrez une faille de sécurité, **ne créez pas d'Issue publique**.
 | Mesure | Détail |
 |--------|--------|
 | Mots de passe mail | Chiffrés AES-256-GCM (pas stockés en clair) |
+| Tokens API O2Switch | Chiffrés AES-256-GCM (même algorithme) |
 | Clé de chiffrement | Variable d'environnement `ENCRYPTION_KEY` |
 | Transport | HTTPS recommandé en production |
+| Communication cPanel | HTTPS obligatoire (port 2083) |
 
 ### Protection des entrées
 
@@ -83,6 +85,16 @@ Si vous découvrez une faille de sécurité, **ne créez pas d'Issue publique**.
 | Healthcheck | Monitoring de la disponibilité PostgreSQL |
 | Variables d'environnement | Aucun secret dans le code source |
 | Fichier .env | Exclu du dépôt Git |
+
+### Audit et traçabilité
+
+| Mesure | Détail |
+|--------|--------|
+| Logs d'audit | Toutes les actions admin enregistrées en BDD |
+| Catégorisation | Logs classés par catégorie (auth, admin, mail, o2switch, system) |
+| Informations capturées | IP source, User-Agent, utilisateur, action, cible, détails |
+| Recherche et filtrage | Interface admin avec pagination et filtres |
+| Rétention | Stockage permanent en table `admin_logs` |
 
 ---
 

@@ -21,6 +21,9 @@ L'API utilise deux méthodes d'authentification :
 - [Calendrier](#calendrier)
 - [Paramètres](#paramètres)
 - [Administration](#administration)
+- [Dashboard](#dashboard)
+- [Logs d'audit](#logs-daudit)
+- [O2Switch cPanel](#o2switch-cpanel)
 - [Plugins](#plugins)
 - [Recherche](#recherche)
 - [Codes d'erreur](#codes-derreur)
@@ -627,6 +630,239 @@ Teste la connexion NextCloud.
   "url": "https://cloud.example.com",
   "username": "admin",
   "password": "password"
+}
+```
+
+---
+
+## Dashboard
+
+> 🔒 Authentification requise + rôle `admin`
+
+### GET /api/admin/dashboard
+
+Récupère les statistiques système agrégées.
+
+**Réponse 200 :**
+```json
+{
+  "users": 12,
+  "groups": 4,
+  "mailAccounts": 18,
+  "contacts": 256,
+  "emails": 4500,
+  "calendars": 8,
+  "plugins": 2,
+  "o2switchAccounts": 1,
+  "dbSize": 52428800,
+  "memoryUsage": 134217728,
+  "uptime": 86400,
+  "logsCount": 340
+}
+```
+
+---
+
+## Logs d'audit
+
+> 🔒 Authentification requise + rôle `admin`
+
+### GET /api/admin/logs
+
+Liste les logs d'audit avec pagination et filtrage.
+
+**Query params :**
+| Paramètre | Type | Défaut | Description |
+|-----------|------|--------|-------------|
+| `page` | number | 1 | Numéro de page |
+| `limit` | number | 50 | Logs par page |
+| `category` | string | — | Filtrer par catégorie (auth, admin, mail, o2switch, system) |
+| `search` | string | — | Recherche par mot-clé dans l'action et les détails |
+
+**Réponse 200 :**
+```json
+{
+  "logs": [
+    {
+      "id": "uuid",
+      "user_id": "uuid",
+      "action": "o2switch.sync",
+      "category": "o2switch",
+      "target_type": "o2switch_account",
+      "target_id": "uuid",
+      "details": { "emails_synced": 15 },
+      "ip_address": "192.168.1.10",
+      "user_agent": "Mozilla/5.0...",
+      "created_at": "2026-04-20T10:30:00Z",
+      "user_email": "admin@example.com",
+      "user_display_name": "Admin"
+    }
+  ],
+  "total": 340,
+  "page": 1,
+  "totalPages": 7
+}
+```
+
+### GET /api/admin/logs/categories
+
+Liste les catégories de logs disponibles.
+
+**Réponse 200 :**
+```json
+["auth", "admin", "mail", "o2switch", "system"]
+```
+
+---
+
+## O2Switch cPanel
+
+> 🔒 Authentification requise + rôle `admin`
+
+### GET /api/admin/o2switch/accounts
+
+Liste tous les comptes O2Switch enregistrés.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "hostname": "monsite.o2switch.net",
+    "username": "user123",
+    "label": "Production",
+    "is_active": true,
+    "last_sync": "2026-04-20T09:00:00Z",
+    "created_at": "2026-04-15T08:00:00Z"
+  }
+]
+```
+
+### POST /api/admin/o2switch/accounts
+
+Ajoute un nouveau compte O2Switch.
+
+**Body :**
+```json
+{
+  "hostname": "monsite.o2switch.net",
+  "username": "user123",
+  "apiToken": "ABCDEF123456...",
+  "label": "Production"
+}
+```
+
+**Réponse 201 :** Le compte créé (sans le token)
+
+### PUT /api/admin/o2switch/accounts/:id
+
+Met à jour un compte O2Switch.
+
+### DELETE /api/admin/o2switch/accounts/:id
+
+Supprime un compte O2Switch et ses liaisons email.
+
+### POST /api/admin/o2switch/accounts/:id/test
+
+Teste la connexion au serveur cPanel.
+
+**Réponse 200 :** `{ "success": true, "message": "Connexion réussie" }`
+
+**Réponse 500 :** `{ "error": "Connexion échouée: ..." }`
+
+### GET /api/admin/o2switch/accounts/:id/emails
+
+Liste les comptes email du serveur cPanel.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "email": "contact@example.com",
+    "domain": "example.com",
+    "diskused": 52428800,
+    "diskquota": 1073741824,
+    "suspended": false
+  }
+]
+```
+
+### GET /api/admin/o2switch/accounts/:id/domains
+
+Liste les domaines du compte cPanel.
+
+### POST /api/admin/o2switch/accounts/:id/emails
+
+Crée un nouveau compte email sur le serveur cPanel.
+
+**Body :**
+```json
+{
+  "email": "nouveau@example.com",
+  "password": "mot_de_passe_fort",
+  "quota": 1024
+}
+```
+
+### PUT /api/admin/o2switch/accounts/:id/emails/:email
+
+Met à jour un compte email (quota, mot de passe).
+
+**Body :**
+```json
+{
+  "quota": 2048,
+  "password": "nouveau_mot_de_passe"
+}
+```
+
+### DELETE /api/admin/o2switch/accounts/:id/emails/:email
+
+Supprime un compte email du serveur cPanel.
+
+### POST /api/admin/o2switch/accounts/:id/sync
+
+Synchronise les emails du serveur cPanel et crée automatiquement les comptes mail locaux correspondants.
+
+**Réponse 200 :**
+```json
+{
+  "synced": 5,
+  "created": 3,
+  "existing": 2,
+  "errors": []
+}
+```
+
+### POST /api/admin/o2switch/accounts/:id/link
+
+Lie un email O2Switch à un compte mail local avec attribution d'utilisateurs et de groupes.
+
+**Body :**
+```json
+{
+  "remoteEmail": "contact@example.com",
+  "password": "mot_de_passe_email",
+  "name": "Contact Principal",
+  "assignToUserIds": ["uuid-user-1", "uuid-user-2"],
+  "assignToGroupIds": ["uuid-group-1"]
+}
+```
+
+### GET /api/admin/o2switch/accounts/:id/links
+
+Liste les liaisons email O2Switch existantes.
+
+### GET /api/admin/o2switch/accounts/:id/disk
+
+Récupère l'utilisation disque du compte cPanel.
+
+**Réponse 200 :**
+```json
+{
+  "used": 524288000,
+  "limit": 10737418240,
+  "percentage": 4.88
 }
 ```
 

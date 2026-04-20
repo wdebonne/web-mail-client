@@ -32,10 +32,14 @@ Vue d'ensemble de l'architecture technique de WebMail.
 │  │  ┌──────────────────────────────────────┐    │   │
 │  │  │            Services                  │    │   │
 │  │  │  ┌────────┐ ┌──────────┐ ┌────────┐  │    │   │
-│  │  │  │  Mail  │ │NextCloud │ │ Plugin │  │    │   │
-│  │  │  │Service │ │ CalDAV/  │ │Executor│  │    │   │
-│  │  │  │ImapFlow│ │ CardDAV  │ │        │  │    │   │
+│  │  │  │  Mail  │ │NextCloud │ │O2Switch│  │    │   │
+│  │  │  │Service │ │ CalDAV/  │ │ cPanel │  │    │   │
+│  │  │  │ImapFlow│ │ CardDAV  │ │ UAPI   │  │    │   │
 │  │  │  └────────┘ └──────────┘ └────────┘  │    │   │
+│  │  │              ┌────────┐               │    │   │
+│  │  │              │ Plugin │               │    │   │
+│  │  │              │Executor│               │    │   │
+│  │  │              └────────┘               │    │   │
 │  │  └──────────────────────────────────────┘    │   │
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────┼───────────────────────────┘
@@ -60,6 +64,15 @@ Vue d'ensemble de l'architecture technique de WebMail.
 │ (o2switch)  │                        │  CalDAV/     │
 └─────────────┘                        │  CardDAV     │
                                        └──────────────┘
+           │
+    ┌──────┘
+    ▼
+┌─────────────┐
+│  O2Switch   │
+│  cPanel API │
+│  UAPI v3    │
+│  (port 2083)│
+└─────────────┘
 ```
 
 ---
@@ -254,6 +267,24 @@ sessions                  admin_settings
 ├── sid (PK)              ├── key (PK)
 ├── sess (JSONB)          └── value (JSONB)
 └── expire
+
+admin_logs                o2switch_accounts
+├── id (UUID, PK)         ├── id (UUID, PK)
+├── user_id (FK)          ├── hostname
+├── action                ├── username
+├── category              ├── api_token_encrypted
+├── target_type           ├── label
+├── target_id             ├── is_active
+├── details (JSONB)       ├── last_sync
+├── ip_address            └── created_at / updated_at
+├── user_agent
+└── created_at            o2switch_email_links
+                          ├── id (UUID, PK)
+                          ├── o2switch_account_id (FK)
+                          ├── remote_email
+                          ├── mail_account_id (FK, nullable)
+                          ├── auto_synced
+                          └── created_at
 ```
 
 ---

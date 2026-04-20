@@ -100,6 +100,43 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Barre de navigation latérale adaptative sur petits écrans
 - Largeurs adaptatives via breakpoints Tailwind (md/lg)
 
+## [1.2.0] - 2026-04-20
+
+### Ajouté
+
+#### Plugin O2Switch cPanel
+- Intégration complète avec l'API cPanel UAPI v3
+- Gestion des comptes O2Switch (ajout, suppression, test de connexion)
+- Liste des comptes email distants avec recherche et filtrage
+- Création / suppression d'adresses email sur cPanel
+- Modification des quotas et mots de passe
+- Synchronisation automatique des comptes email O2Switch
+- Liaison des emails O2Switch vers des comptes mail locaux
+- Attribution des comptes liés à des utilisateurs et groupes
+- Chiffrement AES-256-GCM des tokens API O2Switch
+- Indicateur de statut de connexion en temps réel
+
+#### Dashboard Administrateur
+- Tableau de bord avec statistiques système en temps réel
+- Nombre d'utilisateurs, groupes, comptes mail, contacts
+- Nombre d'emails, calendriers, plugins actifs, comptes O2Switch
+- Informations infrastructure : taille BDD, mémoire, uptime, logs
+- Rafraîchissement automatique toutes les 30 secondes
+
+#### Logs d'Audit
+- Journal d'audit complet des actions administratives
+- Catégorisation des logs (auth, admin, mail, o2switch, system)
+- Recherche par mot-clé dans les logs
+- Filtrage par catégorie avec badges colorés
+- Pagination côté serveur
+- Enregistrement de l'IP et du User-Agent
+
+#### Base de données
+- Table `admin_logs` pour l'audit trail
+- Table `o2switch_accounts` pour les comptes cPanel
+- Table `o2switch_email_links` pour les liaisons email
+- Contraintes d'unicité et clés étrangères
+
 ## [Non publié]
 
 ### Prévu
