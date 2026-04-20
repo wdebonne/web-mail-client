@@ -83,6 +83,23 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **Temps réel** : WebSocket (ws)
 - **Validation** : Zod
 
+## [1.1.0] - 2026-04-20
+
+### Ajouté
+
+#### Drag & Drop
+- Glisser-déposer des messages entre dossiers
+- Surbrillance visuelle du dossier cible (contour bleu) pendant le survol
+- Déplacement IMAP automatique au lâcher
+- API HTML5 Drag and Drop avec type MIME personnalisé
+
+#### Interface Responsive
+- Navigation mobile séquentielle (dossiers → liste → message) avec boutons retour
+- FolderPane et MessageList en pleine largeur sur mobile
+- ComposeModal en plein écran sur mobile
+- Barre de navigation latérale adaptative sur petits écrans
+- Largeurs adaptatives via breakpoints Tailwind (md/lg)
+
 ## [Non publié]
 
 ### Prévu
@@ -92,7 +109,6 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Support S/MIME et PGP
 - Notifications push natives
 - Vue conversation (groupement par thread)
-- Drag & drop entre dossiers
 - Recherche avancée avec filtres
 - Support multi-langue complet (i18n)
 - Sauvegarde et restauration de la configuration
