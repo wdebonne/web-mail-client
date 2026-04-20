@@ -1,0 +1,29 @@
+{
+  "name": "ollama-ai",
+  "displayName": "Ollama AI Assistant",
+  "description": "Assistant IA basé sur Ollama pour la rédaction, le résumé et la traduction d'emails",
+  "version": "1.0.0",
+  "author": "WebMail",
+  "icon": "🤖",
+  "config": {
+    "ollamaUrl": {
+      "type": "string",
+      "label": "URL du serveur Ollama",
+      "default": "http://localhost:11434",
+      "required": true
+    },
+    "model": {
+      "type": "string",
+      "label": "Modèle",
+      "default": "llama3",
+      "required": true
+    },
+    "language": {
+      "type": "string",
+      "label": "Langue de réponse",
+      "default": "fr",
+      "required": false
+    }
+  },
+  "actions": ["summarize", "reply_suggest", "translate", "improve"]
+}

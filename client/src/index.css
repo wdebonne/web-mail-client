@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --outlook-blue: #0078D4;
+  --outlook-blue-hover: #106EBE;
+  --outlook-blue-dark: #005A9E;
+  --outlook-bg: #F3F2F1;
+  --outlook-bg-white: #FFFFFF;
+  --outlook-border: #E1DFDD;
+  --outlook-text: #323130;
+  --outlook-text-secondary: #605E5C;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
+  color: var(--outlook-text);
+  overflow: hidden;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C8C6C4;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #A19F9D;
+}
+
+/* Email body styling */
+.email-body {
+  font-family: "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #323130;
+  word-break: break-word;
+}
+
+.email-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.email-body a {
+  color: #0078D4;
+  text-decoration: none;
+}
+
+.email-body a:hover {
+  text-decoration: underline;
+}
+
+/* Quill editor overrides */
+.ql-toolbar.ql-snow {
+  border: 1px solid var(--outlook-border) !important;
+  border-bottom: none !important;
+  background: #FAFAFA;
+}
+
+.ql-container.ql-snow {
+  border: 1px solid var(--outlook-border) !important;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+.ql-editor {
+  min-height: 200px;
+}
+
+/* Dark mode */
+.dark {
+  --outlook-bg: #1F1F1F;
+  --outlook-bg-white: #2D2D2D;
+  --outlook-border: #3D3D3D;
+  --outlook-text: #E0E0E0;
+  --outlook-text-secondary: #A0A0A0;
+}
+
+.dark body,
+.dark #root {
+  background-color: var(--outlook-bg);
+  color: var(--outlook-text);
+}
+
+/* Offline indicator */
+.offline-banner {
+  background: #FFF4CE;
+  color: #6E5700;
+  padding: 4px 12px;
+  font-size: 12px;
+  text-align: center;
+  border-bottom: 1px solid #E1DFDD;
+}
+
+/* Animation */
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.skeleton {
+  animation: shimmer 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, #F3F2F1 0px, #EDEBE9 40px, #F3F2F1 80px);
+  background-size: 200px;
+}

@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webmail-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://webmail:webmail_secure_pwd@db:5432/webmail
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-32-chars-minimum-key!!}
+    volumes:
+      - ./plugins:/app/plugins
+      - ./uploads:/app/uploads
+      - app_data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - webmail-network
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  db:
+    image: postgres:16-alpine
+    container_name: webmail-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=webmail
+      - POSTGRES_USER=webmail
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-webmail_secure_pwd}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webmail"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - webmail-network
+
+volumes:
+  postgres_data:
+  app_data:
+
+networks:
+  webmail-network:
+    driver: bridge

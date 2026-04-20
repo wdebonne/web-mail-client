@@ -1,0 +1,795 @@
+# Documentation API
+
+Référence complète de l'API REST de WebMail.
+
+**Base URL** : `http://localhost:3000/api`
+
+## Authentification
+
+L'API utilise deux méthodes d'authentification :
+- **Session** : Cookie de session (navigateur web)
+- **JWT** : Header `Authorization: Bearer <token>` (PWA, clients API)
+
+---
+
+## Table des matières
+
+- [Auth](#auth)
+- [Comptes Mail](#comptes-mail)
+- [Messagerie](#messagerie)
+- [Contacts](#contacts)
+- [Calendrier](#calendrier)
+- [Paramètres](#paramètres)
+- [Administration](#administration)
+- [Plugins](#plugins)
+- [Recherche](#recherche)
+- [Codes d'erreur](#codes-derreur)
+
+---
+
+## Auth
+
+### POST /api/auth/register
+
+Création d'un compte utilisateur. Le premier utilisateur créé obtient le rôle `admin`.
+
+**Body :**
+```json
+{
+  "email": "user@example.com",
+  "password": "mot_de_passe_fort",
+  "displayName": "Jean Dupont"
+}
+```
+
+**Réponse 201 :**
+```json
+{
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "displayName": "Jean Dupont",
+    "role": "admin"
+  },
+  "token": "eyJhbGciOi..."
+}
+```
+
+### POST /api/auth/login
+
+Connexion avec email et mot de passe.
+
+**Body :**
+```json
+{
+  "email": "user@example.com",
+  "password": "mot_de_passe"
+}
+```
+
+**Réponse 200 :**
+```json
+{
+  "user": { "id": "uuid", "email": "...", "displayName": "...", "role": "user" },
+  "token": "eyJhbGciOi..."
+}
+```
+
+**Erreur 401 :** Identifiants invalides
+
+### POST /api/auth/logout
+
+Déconnexion (supprime la session).
+
+**Réponse 200 :** `{ "message": "Déconnexion réussie" }`
+
+### GET /api/auth/me
+
+Récupère le profil de l'utilisateur connecté.
+
+**Réponse 200 :**
+```json
+{
+  "id": "uuid",
+  "email": "user@example.com",
+  "displayName": "Jean Dupont",
+  "role": "user",
+  "settings": {}
+}
+```
+
+---
+
+## Comptes Mail
+
+> 🔒 Authentification requise
+
+### GET /api/accounts
+
+Liste tous les comptes mail de l'utilisateur.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Travail",
+    "email": "jean@entreprise.com",
+    "imapHost": "imap.entreprise.com",
+    "imapPort": 993,
+    "smtpHost": "smtp.entreprise.com",
+    "smtpPort": 465,
+    "color": "#0078d4",
+    "isDefault": true,
+    "signature": "<p>Cordialement, Jean</p>"
+  }
+]
+```
+
+### POST /api/accounts
+
+Ajoute un nouveau compte mail.
+
+**Body :**
+```json
+{
+  "name": "Travail",
+  "email": "jean@entreprise.com",
+  "username": "jean@entreprise.com",
+  "password": "mot_de_passe_mail",
+  "imapHost": "imap.entreprise.com",
+  "imapPort": 993,
+  "imapSecure": true,
+  "smtpHost": "smtp.entreprise.com",
+  "smtpPort": 465,
+  "smtpSecure": true,
+  "color": "#0078d4",
+  "isDefault": true,
+  "signature": "<p>Cordialement</p>"
+}
+```
+
+**Réponse 201 :** Le compte créé
+
+### PUT /api/accounts/:id
+
+Met à jour un compte mail.
+
+### DELETE /api/accounts/:id
+
+Supprime un compte mail.
+
+### POST /api/accounts/:id/test
+
+Teste la connexion IMAP/SMTP d'un compte.
+
+**Réponse 200 :** `{ "imap": true, "smtp": true }`
+
+**Réponse 400 :** `{ "imap": false, "smtp": true, "error": "..." }`
+
+---
+
+## Messagerie
+
+> 🔒 Authentification requise
+
+### GET /api/mail/:accountId/folders
+
+Liste les dossiers d'un compte mail.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "path": "INBOX",
+    "name": "Boîte de réception",
+    "specialUse": "\\Inbox",
+    "totalMessages": 150,
+    "unseenMessages": 12,
+    "delimiter": "."
+  },
+  {
+    "path": "INBOX.Sent",
+    "name": "Envoyés",
+    "specialUse": "\\Sent",
+    "totalMessages": 89,
+    "unseenMessages": 0
+  }
+]
+```
+
+### GET /api/mail/:accountId/messages/:folder
+
+Liste les messages d'un dossier.
+
+**Query params :**
+| Paramètre | Type | Défaut | Description |
+|-----------|------|--------|-------------|
+| `page` | number | 1 | Numéro de page |
+| `limit` | number | 50 | Messages par page |
+
+**Réponse 200 :**
+```json
+{
+  "messages": [
+    {
+      "uid": 1234,
+      "messageId": "<id@example.com>",
+      "subject": "Réunion de projet",
+      "from": { "name": "Marie", "address": "marie@example.com" },
+      "to": [{ "name": "Jean", "address": "jean@example.com" }],
+      "date": "2026-04-20T10:30:00Z",
+      "flags": ["\\Seen"],
+      "hasAttachments": true,
+      "snippet": "Bonjour, je vous rappelle la réunion..."
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "pages": 3
+}
+```
+
+### GET /api/mail/:accountId/message/:folder/:uid
+
+Récupère le contenu complet d'un message.
+
+**Réponse 200 :**
+```json
+{
+  "uid": 1234,
+  "messageId": "<id@example.com>",
+  "subject": "Réunion de projet",
+  "from": { "name": "Marie", "address": "marie@example.com" },
+  "to": [{ "name": "Jean", "address": "jean@example.com" }],
+  "cc": [],
+  "bcc": [],
+  "date": "2026-04-20T10:30:00Z",
+  "flags": ["\\Seen"],
+  "body": {
+    "html": "<p>Bonjour, je vous rappelle...</p>",
+    "text": "Bonjour, je vous rappelle..."
+  },
+  "attachments": [
+    {
+      "filename": "document.pdf",
+      "contentType": "application/pdf",
+      "size": 125000,
+      "contentId": null
+    }
+  ]
+}
+```
+
+### POST /api/mail/send
+
+Envoie un email.
+
+**Body :**
+```json
+{
+  "accountId": "uuid",
+  "to": [{ "name": "Marie", "address": "marie@example.com" }],
+  "cc": [],
+  "bcc": [],
+  "subject": "Re: Réunion de projet",
+  "html": "<p>Merci pour le rappel !</p>",
+  "text": "Merci pour le rappel !",
+  "attachments": [],
+  "inReplyTo": "<id@example.com>"
+}
+```
+
+**Réponse 200 :** `{ "message": "Email envoyé", "messageId": "<new-id@example.com>" }`
+
+### PUT /api/mail/:accountId/flags/:folder/:uid
+
+Modifie les drapeaux d'un message.
+
+**Body :**
+```json
+{
+  "flags": ["\\Seen", "\\Flagged"],
+  "action": "add"
+}
+```
+
+`action` : `add` | `remove` | `set`
+
+### PUT /api/mail/:accountId/move/:folder/:uid
+
+Déplace un message vers un autre dossier.
+
+**Body :** `{ "destination": "INBOX.Trash" }`
+
+### DELETE /api/mail/:accountId/message/:folder/:uid
+
+Supprime un message (déplace vers la corbeille).
+
+### GET /api/mail/outbox
+
+Récupère les messages en attente (mode hors-ligne).
+
+### POST /api/mail/outbox/process
+
+Envoie tous les messages en attente d'envoi.
+
+---
+
+## Contacts
+
+> 🔒 Authentification requise
+
+### GET /api/contacts
+
+Liste tous les contacts.
+
+**Query params :**
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `search` | string | Recherche par nom, prénom, email |
+| `group` | string | Filtrer par groupe (UUID) |
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "firstName": "Marie",
+    "lastName": "Durand",
+    "email": "marie@example.com",
+    "phone": "+33612345678",
+    "company": "ACME Corp",
+    "jobTitle": "Directrice",
+    "department": "Direction",
+    "photoUrl": null,
+    "notes": "",
+    "groups": ["uuid-groupe-1"]
+  }
+]
+```
+
+### POST /api/contacts
+
+Crée un nouveau contact.
+
+**Body :**
+```json
+{
+  "firstName": "Marie",
+  "lastName": "Durand",
+  "email": "marie@example.com",
+  "phone": "+33612345678",
+  "company": "ACME Corp",
+  "jobTitle": "Directrice",
+  "department": "Direction",
+  "notes": "Contact principal",
+  "groups": ["uuid-groupe"]
+}
+```
+
+### PUT /api/contacts/:id
+
+Met à jour un contact.
+
+### DELETE /api/contacts/:id
+
+Supprime un contact.
+
+### GET /api/contacts/autocomplete
+
+Autocomplétion pour le composeur d'email.
+
+**Query params :** `q` (string, minimum 2 caractères)
+
+**Réponse 200 :**
+```json
+[
+  { "name": "Marie Durand", "address": "marie@example.com", "type": "contact" },
+  { "name": "Équipe Dev", "address": null, "type": "distribution_list", "members": [...] }
+]
+```
+
+### GET /api/contacts/groups
+
+Liste les groupes de contacts.
+
+### POST /api/contacts/groups
+
+Crée un groupe de contacts.
+
+**Body :** `{ "name": "Fournisseurs", "color": "#10b981" }`
+
+### PUT /api/contacts/groups/:id
+
+Met à jour un groupe.
+
+### DELETE /api/contacts/groups/:id
+
+Supprime un groupe.
+
+### GET /api/contacts/distribution-lists
+
+Liste les listes de distribution.
+
+### POST /api/contacts/distribution-lists
+
+Crée une liste de distribution.
+
+**Body :**
+```json
+{
+  "name": "Équipe Dev",
+  "description": "Tous les développeurs",
+  "members": ["uuid-contact-1", "uuid-contact-2"]
+}
+```
+
+---
+
+## Calendrier
+
+> 🔒 Authentification requise
+
+### GET /api/calendar/calendars
+
+Liste les calendriers de l'utilisateur.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Personnel",
+    "color": "#0078d4",
+    "isDefault": true,
+    "isShared": false
+  }
+]
+```
+
+### POST /api/calendar/calendars
+
+Crée un nouveau calendrier.
+
+**Body :** `{ "name": "Projet X", "color": "#e74c3c" }`
+
+### PUT /api/calendar/calendars/:id
+
+Met à jour un calendrier.
+
+### DELETE /api/calendar/calendars/:id
+
+Supprime un calendrier et tous ses événements.
+
+### GET /api/calendar/events
+
+Liste les événements dans une plage de dates.
+
+**Query params :**
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `start` | ISO 8601 | Début de la période |
+| `end` | ISO 8601 | Fin de la période |
+| `calendarId` | UUID | Filtrer par calendrier (optionnel) |
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "calendarId": "uuid",
+    "title": "Réunion d'équipe",
+    "description": "Revue hebdomadaire",
+    "start": "2026-04-20T14:00:00Z",
+    "end": "2026-04-20T15:00:00Z",
+    "allDay": false,
+    "location": "Salle B12",
+    "attendees": [
+      { "email": "marie@example.com", "name": "Marie", "status": "accepted" }
+    ]
+  }
+]
+```
+
+### POST /api/calendar/events
+
+Crée un événement.
+
+### PUT /api/calendar/events/:id
+
+Met à jour un événement.
+
+### DELETE /api/calendar/events/:id
+
+Supprime un événement.
+
+### POST /api/calendar/calendars/:id/share
+
+Partage un calendrier avec un autre utilisateur.
+
+**Body :** `{ "userId": "uuid", "permission": "read" }`
+
+`permission` : `read` | `write`
+
+---
+
+## Paramètres
+
+> 🔒 Authentification requise
+
+### GET /api/settings
+
+Récupère les paramètres de l'utilisateur.
+
+### PUT /api/settings
+
+Met à jour les paramètres utilisateur.
+
+**Body :**
+```json
+{
+  "displayName": "Jean Dupont",
+  "theme": "light",
+  "language": "fr",
+  "timezone": "Europe/Paris",
+  "notifications": {
+    "email": true,
+    "desktop": true,
+    "sound": false
+  }
+}
+```
+
+### PUT /api/settings/password
+
+Change le mot de passe.
+
+**Body :**
+```json
+{
+  "currentPassword": "ancien",
+  "newPassword": "nouveau_fort"
+}
+```
+
+---
+
+## Administration
+
+> 🔒 Authentification requise + rôle `admin`
+
+### GET /api/admin/settings
+
+Récupère les paramètres globaux.
+
+### PUT /api/admin/settings
+
+Met à jour les paramètres globaux.
+
+**Body :**
+```json
+{
+  "appName": "WebMail",
+  "registrationEnabled": true,
+  "maxAttachmentSize": 25000000
+}
+```
+
+### GET /api/admin/users
+
+Liste tous les utilisateurs.
+
+### POST /api/admin/users
+
+Crée un utilisateur.
+
+### PUT /api/admin/users/:id
+
+Met à jour un utilisateur (rôle, statut).
+
+### DELETE /api/admin/users/:id
+
+Supprime un utilisateur.
+
+### GET /api/admin/groups
+
+Liste tous les groupes.
+
+### POST /api/admin/groups
+
+Crée un groupe.
+
+**Body :**
+```json
+{
+  "name": "Développeurs",
+  "color": "#8b5cf6",
+  "members": ["uuid-user-1", "uuid-user-2"]
+}
+```
+
+### PUT /api/admin/groups/:id
+
+Met à jour un groupe.
+
+### DELETE /api/admin/groups/:id
+
+Supprime un groupe.
+
+### POST /api/admin/nextcloud/test
+
+Teste la connexion NextCloud.
+
+**Body :**
+```json
+{
+  "url": "https://cloud.example.com",
+  "username": "admin",
+  "password": "password"
+}
+```
+
+---
+
+## Plugins
+
+> 🔒 Authentification requise
+
+### GET /api/plugins
+
+Liste les plugins disponibles pour l'utilisateur.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "name": "ollama-ai",
+    "displayName": "Ollama AI Assistant",
+    "description": "Assistant IA pour emails",
+    "version": "1.0.0",
+    "icon": "🤖",
+    "actions": ["summarize", "reply_suggest", "translate", "improve"],
+    "config": {}
+  }
+]
+```
+
+### POST /api/plugins/:name/execute
+
+Exécute une action d'un plugin.
+
+**Body :**
+```json
+{
+  "action": "summarize",
+  "data": {
+    "subject": "Réunion de projet",
+    "body": "Bonjour, voici le compte-rendu..."
+  }
+}
+```
+
+**Réponse 200 :**
+```json
+{
+  "result": "Résumé : Compte-rendu de la réunion projet du 20/04..."
+}
+```
+
+### GET /api/plugins/:name/config
+
+Récupère la configuration d'un plugin.
+
+### PUT /api/plugins/:name/config
+
+Met à jour la configuration d'un plugin.
+
+### POST /api/admin/plugins/:name/install *(admin)*
+
+Active un plugin.
+
+### DELETE /api/admin/plugins/:name *(admin)*
+
+Désactive un plugin.
+
+### POST /api/admin/plugins/:name/assign *(admin)*
+
+Attribue un plugin à un utilisateur ou groupe.
+
+**Body :**
+```json
+{
+  "type": "user",
+  "targetId": "uuid-user"
+}
+```
+
+---
+
+## Recherche
+
+> 🔒 Authentification requise
+
+### GET /api/search
+
+Recherche globale dans les emails, contacts et événements.
+
+**Query params :**
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Terme de recherche |
+| `type` | string | `all` \| `emails` \| `contacts` \| `events` |
+| `limit` | number | Nombre max de résultats par type |
+
+**Réponse 200 :**
+```json
+{
+  "emails": [
+    { "uid": 1234, "subject": "...", "from": "...", "snippet": "..." }
+  ],
+  "contacts": [
+    { "id": "uuid", "name": "Marie Durand", "email": "..." }
+  ],
+  "events": [
+    { "id": "uuid", "title": "Réunion", "start": "..." }
+  ]
+}
+```
+
+---
+
+## Codes d'erreur
+
+| Code | Signification |
+|------|---------------|
+| 200 | Succès |
+| 201 | Ressource créée |
+| 400 | Requête invalide (données manquantes ou incorrectes) |
+| 401 | Non authentifié |
+| 403 | Accès refusé (rôle insuffisant) |
+| 404 | Ressource non trouvée |
+| 409 | Conflit (email déjà utilisé, etc.) |
+| 422 | Erreur de validation |
+| 429 | Trop de requêtes (rate limiting) |
+| 500 | Erreur serveur |
+
+### Format d'erreur standard
+
+```json
+{
+  "error": "Description de l'erreur",
+  "details": {}
+}
+```
+
+---
+
+## WebSocket
+
+Connexion WebSocket pour les notifications en temps réel.
+
+**URL :** `ws://localhost:3000/ws?token=<jwt_token>`
+
+### Messages reçus
+
+```json
+{
+  "type": "new_email",
+  "data": {
+    "accountId": "uuid",
+    "folder": "INBOX",
+    "uid": 1235,
+    "from": "marie@example.com",
+    "subject": "Nouveau message"
+  }
+}
+```
+
+Types de notifications :
+| Type | Description |
+|------|-------------|
+| `new_email` | Nouvel email reçu |
+| `email_flags` | Drapeaux modifiés |
+| `calendar_event` | Événement modifié |
+| `plugin_result` | Résultat d'une action plugin |

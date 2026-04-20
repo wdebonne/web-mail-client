@@ -1,0 +1,108 @@
+import { WebSocketServer, WebSocket } from 'ws';
+import { logger } from '../utils/logger';
+import jwt from 'jsonwebtoken';
+
+interface WsClient {
+  ws: WebSocket;
+  userId: string;
+  isAlive: boolean;
+}
+
+const clients = new Map<string, WsClient[]>();
+
+export function setupWebSocket(wss: WebSocketServer) {
+  wss.on('connection', (ws: WebSocket, req) => {
+    let userId: string | null = null;
+
+    ws.on('message', (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+
+        // Authentication message
+        if (message.type === 'auth') {
+          const token = message.token;
+          const decoded = jwt.verify(token, process.env.SESSION_SECRET || 'dev-secret-change-me') as { userId: string };
+          userId = decoded.userId;
+
+          if (!clients.has(userId)) {
+            clients.set(userId, []);
+          }
+          clients.get(userId)!.push({ ws, userId, isAlive: true });
+
+          ws.send(JSON.stringify({ type: 'auth', status: 'ok' }));
+          logger.info(`WebSocket authenticated: ${userId}`);
+        }
+
+        // Ping/pong
+        if (message.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong' }));
+        }
+      } catch (error) {
+        logger.error('WebSocket message error:', error);
+      }
+    });
+
+    ws.on('close', () => {
+      if (userId && clients.has(userId)) {
+        const userClients = clients.get(userId)!.filter(c => c.ws !== ws);
+        if (userClients.length === 0) {
+          clients.delete(userId);
+        } else {
+          clients.set(userId, userClients);
+        }
+      }
+    });
+
+    ws.on('error', (error) => {
+      logger.error('WebSocket error:', error);
+    });
+
+    // Send initial connection message
+    ws.send(JSON.stringify({ type: 'connected', message: 'Connecté au serveur' }));
+  });
+
+  // Heartbeat check every 30 seconds
+  setInterval(() => {
+    for (const [userId, userClients] of clients.entries()) {
+      const alive = userClients.filter(c => {
+        if (c.ws.readyState === WebSocket.OPEN) {
+          c.ws.ping();
+          return true;
+        }
+        return false;
+      });
+      if (alive.length === 0) {
+        clients.delete(userId);
+      } else {
+        clients.set(userId, alive);
+      }
+    }
+  }, 30000);
+}
+
+// Notify a specific user
+export function notifyUser(userId: string, event: string, data: any) {
+  const userClients = clients.get(userId);
+  if (!userClients) return;
+
+  const message = JSON.stringify({ type: event, data, timestamp: new Date().toISOString() });
+  
+  for (const client of userClients) {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(message);
+    }
+  }
+}
+
+// Notify all users
+export function notifyAll(event: string, data: any) {
+  const message = JSON.stringify({ type: event, data, timestamp: new Date().toISOString() });
+  
+  for (const userClients of clients.values()) {
+    for (const client of userClients) {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(message);
+      }
+    }
+  }
+}
