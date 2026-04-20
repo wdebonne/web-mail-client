@@ -121,8 +121,6 @@ export default function Ribbon({
         const width = entry.contentRect.width;
         if (width < 700 && ribbonMode === 'classic') {
           onChangeRibbonMode('simplified');
-        } else if (width >= 700 && ribbonMode === 'simplified') {
-          onChangeRibbonMode('classic');
         }
       }
     });
@@ -181,6 +179,17 @@ export default function Ribbon({
         {/* Imprimer / Télécharger */}
         <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
         <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
+
+        <div className="flex-1" />
+
+        {/* Expand to classic ribbon */}
+        <button
+          onClick={() => onChangeRibbonMode('classic')}
+          className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-disabled hover:text-outlook-text-secondary flex-shrink-0"
+          title="Développer le ruban"
+        >
+          <ChevronDown size={12} />
+        </button>
       </div>
     );
   }
@@ -196,7 +205,6 @@ export default function Ribbon({
             key={tab}
             onClick={() => {
               setActiveTab(tab);
-              if (isCollapsed) onToggleCollapse();
             }}
             className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors relative
               ${activeTab === tab
@@ -212,16 +220,15 @@ export default function Ribbon({
         ))}
         <div className="flex-1" />
         <button
-          onClick={onToggleCollapse}
+          onClick={() => onChangeRibbonMode('simplified')}
           className="text-outlook-text-disabled hover:text-outlook-text-secondary p-1 rounded hover:bg-outlook-bg-hover"
-          title={isCollapsed ? 'Développer le ruban' : 'Réduire le ruban'}
+          title="Réduire le ruban"
         >
-          <ChevronDown size={12} className={`transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
+          <ChevronDown size={12} className="transition-transform rotate-180" />
         </button>
       </div>
 
       {/* Ribbon content */}
-      {!isCollapsed && (
         <div className="flex items-stretch px-2 py-1 gap-1 overflow-x-auto">
           {activeTab === 'accueil' && (
             <>
@@ -298,7 +305,6 @@ export default function Ribbon({
             </>
           )}
         </div>
-      )}
     </div>
   );
 }

@@ -451,7 +451,7 @@ export default function MailPage() {
   return (
     <div className="h-full flex flex-col overflow-hidden bg-outlook-bg-tertiary">
       {/* Ribbon toolbar block */}
-      <div className="flex-shrink-0 mx-1 mt-1 mb-1 rounded-md shadow-sm overflow-hidden">
+      <div className="flex-shrink-0 mx-1.5 mt-1.5 mb-1.5 rounded-md shadow-sm overflow-hidden">
         <Ribbon
           onNewMessage={() => openCompose()}
           onReply={() => selectedMessage && handleReply(selectedMessage)}
@@ -478,7 +478,7 @@ export default function MailPage() {
       </div>
 
       {/* Main content area — 3 blocks with gaps */}
-      <div ref={containerRef} className="flex-1 flex overflow-hidden min-h-0 gap-0.5 px-1 pb-0.5">
+      <div ref={containerRef} className="flex-1 flex overflow-hidden min-h-0 gap-1 px-1.5 pb-1.5">
         {/* Folder pane block — collapsible + resizable */}
         {showFolderPane && (
           <>
@@ -627,7 +627,7 @@ export default function MailPage() {
           </div>
 
           {/* Tab bar block — aligned with the message pane */}
-          <div className="flex-shrink-0 bg-outlook-bg-primary flex items-center h-9 px-1 gap-0.5 overflow-x-auto mt-0.5 rounded-b-md shadow-sm">
+          <div className="flex-shrink-0 bg-outlook-bg-primary flex items-center h-9 px-1 gap-0.5 overflow-x-auto mt-1 rounded-b-md shadow-sm">
             {openTabs.length > 0 ? (
               openTabs.map(tab => (
                 <div
