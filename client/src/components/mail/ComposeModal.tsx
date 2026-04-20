@@ -81,7 +81,7 @@ export default function ComposeModal({
       e.preventDefault();
       const trimmed = value.trim().replace(/,$/, '');
       if (trimmed && trimmed.includes('@')) {
-        addRecipient(field, { email: trimmed });
+        addRecipient(field, { address: trimmed });
       }
     }
   };
@@ -209,7 +209,7 @@ export default function ComposeModal({
         onKeyDown={(e) => handleInputKeyDown(e, 'to', toInput)}
         onRemove={(i) => removeRecipient('to', i)}
         suggestions={activeField === 'to' ? suggestions : []}
-        onSelectSuggestion={(s) => addRecipient('to', { email: s.email, name: s.display_name })}
+        onSelectSuggestion={(s) => addRecipient('to', { address: s.email, name: s.display_name })}
         onFocus={() => setActiveField('to')}
         extra={
           <div className="flex gap-1 text-xs text-outlook-text-secondary">
@@ -228,7 +228,7 @@ export default function ComposeModal({
           onKeyDown={(e) => handleInputKeyDown(e, 'cc', ccInput)}
           onRemove={(i) => removeRecipient('cc', i)}
           suggestions={activeField === 'cc' ? suggestions : []}
-          onSelectSuggestion={(s) => addRecipient('cc', { email: s.email, name: s.display_name })}
+          onSelectSuggestion={(s) => addRecipient('cc', { address: s.email, name: s.display_name })}
           onFocus={() => setActiveField('cc')}
         />
       )}
@@ -242,7 +242,7 @@ export default function ComposeModal({
           onKeyDown={(e) => handleInputKeyDown(e, 'bcc', bccInput)}
           onRemove={(i) => removeRecipient('bcc', i)}
           suggestions={activeField === 'bcc' ? suggestions : []}
-          onSelectSuggestion={(s) => addRecipient('bcc', { email: s.email, name: s.display_name })}
+          onSelectSuggestion={(s) => addRecipient('bcc', { address: s.email, name: s.display_name })}
           onFocus={() => setActiveField('bcc')}
         />
       )}
@@ -358,7 +358,7 @@ function RecipientField({
             key={i}
             className="bg-outlook-bg-primary border border-outlook-border rounded px-2 py-0.5 text-xs flex items-center gap-1"
           >
-            {r.name || r.email}
+            {r.name || r.address}
             <button onClick={() => onRemove(i)} className="text-outlook-text-disabled hover:text-outlook-danger">
               <X size={10} />
             </button>

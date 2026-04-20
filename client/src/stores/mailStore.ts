@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { MailAccount, MailFolder, Email } from '../types';
+import { MailAccount, MailFolder, Email, EmailAddress } from '../types';
 
 interface MailState {
   accounts: MailAccount[];
@@ -26,9 +26,9 @@ interface MailState {
 }
 
 export interface ComposeData {
-  to: { email: string; name?: string }[];
-  cc: { email: string; name?: string }[];
-  bcc: { email: string; name?: string }[];
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  bcc: EmailAddress[];
   subject: string;
   bodyHtml: string;
   inReplyTo?: string;
