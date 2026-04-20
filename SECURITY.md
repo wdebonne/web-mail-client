@@ -4,7 +4,10 @@
 
 | Version | Supportée |
 |---------|-----------|
-| 1.0.x   | ✅ Oui    |
+| 1.3.x   | ✅ Oui    |
+| 1.2.x   | ✅ Oui    |
+| 1.1.x   | ⚠️ Correctifs critiques uniquement |
+| 1.0.x   | ❌ Non    |
 
 ## Signaler une vulnérabilité
 

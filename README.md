@@ -8,12 +8,19 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 📧 Multi-comptes IMAP/SMTP (compatible o2switch / cPanel)
 - 📥 Boîte de réception, envoyés, brouillons, corbeille, spam, archives
 - ⭐ Drapeaux, marquage lu/non-lu, déplacement entre dossiers
-- �️ Drag & drop des messages entre dossiers
+- 🖱️ Drag & drop des messages entre dossiers
 - 📎 Pièces jointes (upload/download)
 - ✏️ Éditeur riche (HTML) avec formatage
 - 🔄 Synchronisation automatique
 - 📝 Signature par compte
 - 📱 Interface responsive (navigation mobile adaptative)
+
+### Interface Outlook Web
+- 🧱 Disposition en blocs avec marges, coins arrondis et ombres
+- 📑 Système d'onglets multi-messages/brouillons (2 modes : brouillons uniquement / tous les mails ouverts)
+- 🔢 Nombre max d'onglets paramétrable (2-20)
+- 📏 Volet dossiers et liste de messages redimensionnables
+- 🎚️ Ruban auto-adaptatif (classique ↔ simplifié selon la largeur)
 
 ### Contacts
 - 👥 Gestion complète des contacts (CRUD)
@@ -162,25 +169,36 @@ Le frontend démarre sur `http://localhost:5173` avec proxy vers le backend sur 
 webmail/
 ├── client/                 # Frontend React
 │   ├── src/
-│   │   ├── api/            # Client API
+│   │   ├── api/            # Client API (Axios)
 │   │   ├── components/     # Composants React
-│   │   │   └── mail/       # Composants mail (FolderPane, MessageList, etc.)
-│   │   ├── hooks/          # Hooks personnalisés
+│   │   │   ├── mail/       # Composants mail
+│   │   │   │   ├── ComposeModal.tsx   # Rédaction inline/modale
+│   │   │   │   ├── FolderPane.tsx     # Panneau dossiers
+│   │   │   │   ├── MessageList.tsx    # Liste des messages
+│   │   │   │   ├── MessageView.tsx    # Lecture d'un message
+│   │   │   │   └── Ribbon.tsx         # Ruban classique/simplifié
+│   │   │   └── ui/         # Composants UI génériques
+│   │   ├── hooks/          # Hooks (WebSocket, réseau)
 │   │   ├── pages/          # Pages (Mail, Calendar, Contacts, Settings, Admin)
 │   │   ├── pwa/            # Service Worker & IndexedDB
-│   │   ├── stores/         # Zustand stores
+│   │   ├── stores/         # Zustand stores (auth, mail + onglets)
 │   │   └── types/          # TypeScript types
 │   ├── index.html
 │   └── vite.config.ts
 ├── server/                 # Backend Express
 │   └── src/
-│       ├── database/       # Schéma & connexion PostgreSQL
-│       ├── middleware/      # Auth middleware
-│       ├── routes/         # Routes API
+│       ├── database/       # Schéma & connexion PostgreSQL (Drizzle)
+│       ├── middleware/      # Auth middleware (JWT + session)
+│       ├── plugins/        # Plugin manager
+│       ├── routes/         # Routes API REST
 │       ├── services/       # Mail, WebSocket, NextCloud, O2Switch
 │       └── utils/          # Logger, encryption
 ├── plugins/                # Plugins
 │   └── ollama-ai/          # Plugin IA Ollama
+├── docs/                   # Documentation complémentaire
+│   ├── CONFIGURATION.md    # Variables d'environnement
+│   ├── NEXTCLOUD.md        # Intégration NextCloud
+│   └── PWA.md              # Mode hors-ligne
 ├── docker-compose.yml
 ├── Dockerfile
 └── .env.example

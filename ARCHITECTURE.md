@@ -87,7 +87,7 @@ Vue d'ensemble de l'architecture technique de WebMail.
 | TypeScript | Typage statique |
 | Vite | Build tool & dev server |
 | Tailwind CSS | Styles utilitaires (thème Outlook) |
-| Zustand | État global (auth, mail) |
+| Zustand | État global (auth, mail, onglets) |
 | React Query | Cache serveur & synchronisation |
 | Lucide React | Icônes |
 | DOMPurify | Sanitisation HTML email |
@@ -341,3 +341,75 @@ Infrastructure  →  Réseau Docker isolé
 | `contacts` | Contacts en cache | Pull au chargement |
 | `events` | Événements en cache | Pull au chargement |
 | `drafts` | Brouillons locaux | Sauvegarde automatique |
+
+---
+
+## Interface utilisateur (Block Layout)
+
+### Disposition en blocs
+
+L'interface suit un **Block Layout** inspiré d'Outlook Web :
+
+```
+┌──────────────────────────────────────────────────────┐
+│                   Ruban (Ribbon)                     │
+│   Classique (2 lignes) ou Simplifié (1 ligne)        │
+│   Auto-switch via ResizeObserver (< 700px → simple)  │
+├──────┬──────────────┬────────────────────────────────┤
+│      │              │                                │
+│ Dos- │   Liste      │     Volet de lecture            │
+│ siers│   messages   │     (MessageView / Compose)    │
+│      │              │                                │
+│ ↔    │      ↔       │                                │
+│ redi-│  redimen-    │                                │
+│ men- │  sionnable   │                                │
+│ sion.│              │                                │
+│      │              ├────────────────────────────────┤
+│      │              │  Barre d'onglets (si ≥ 2 tabs) │
+└──────┴──────────────┴────────────────────────────────┘
+```
+
+- Chaque bloc : coins arrondis, ombre, marges uniformes (`mx-1.5 mt-1.5 mb-1.5`)
+- Fond tertiaire `#E8E6E4` visible dans les espaces entre blocs
+- Poignées de redimensionnement intégrées dans les espaces entre blocs
+
+### Ruban (Ribbon)
+
+| Mode | Affichage | Condition |
+|------|-----------|-----------|
+| **Classique** | Onglets (Accueil/Afficher) + groupes d'icônes sur 2 lignes | Largeur ≥ 700px |
+| **Simplifié** | Icônes en ligne unique | Largeur < 700px ou choix utilisateur |
+
+Basculement automatique via `ResizeObserver`. Basculement manuel via chevron ▲/▼.
+
+L'onglet **Afficher** contient :
+- Volet Dossiers (afficher/masquer)
+- **Paramètres d'onglets** (mode d'ouverture + nombre max)
+- Actions sur le message (imprimer, télécharger)
+
+### Système d'onglets
+
+| Paramètre | Valeurs | Défaut | Stockage |
+|-----------|---------|--------|----------|
+| `tabMode` | `drafts-only` \| `all-opened` | `drafts-only` | `localStorage` |
+| `maxTabs` | 2–20 | 6 | `localStorage` |
+
+- **`drafts-only`** : seuls les brouillons créent des onglets
+- **`all-opened`** : chaque message cliqué ouvre un onglet (le plus ancien inactif est fermé à la limite)
+- Barre d'onglets **masquée** quand < 2 onglets
+
+### État des onglets (Zustand `mailStore`)
+
+```
+mailStore
+├── openTabs: OpenTab[]         # Onglets ouverts
+├── activeTabId: string | null  # Onglet actif
+├── tabMode: TabMode            # Mode d'ouverture
+├── maxTabs: number             # Limite d'onglets
+├── openMessageTab(message)     # Ouvre/active un onglet message
+├── openComposeTab(data?)       # Ouvre un onglet brouillon
+├── switchTab(tabId)            # Change d'onglet actif
+├── closeTab(tabId)             # Ferme un onglet
+├── setTabMode(mode)            # Change le mode
+└── setMaxTabs(max)             # Change la limite
+```
