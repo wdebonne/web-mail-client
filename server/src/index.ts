@@ -29,22 +29,27 @@ const PORT = process.env.PORT || 3000;
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-      connectSrc: ["'self'", 'wss:', 'ws:'],
-      fontSrc: ["'self'", 'data:'],
-      workerSrc: ["'self'", 'blob:'],
-      manifestSrc: ["'self'"],
-      upgradeInsecureRequests: null,
-    },
-  },
+  contentSecurityPolicy: false,
   crossOriginOpenerPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
   originAgentCluster: false,
 }));
+
+// Manual CSP without upgrade-insecure-requests
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: blob: https:; " +
+    "connect-src 'self' wss: ws:; " +
+    "font-src 'self' data:; " +
+    "worker-src 'self' blob:; " +
+    "manifest-src 'self'"
+  );
+  next();
+});
 app.use(compression());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' ? false : ['http://localhost:5173'],
