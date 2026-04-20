@@ -298,6 +298,47 @@ export async function initDatabase() {
         updated_at TIMESTAMP DEFAULT NOW()
       );
 
+      -- Admin audit logs
+      CREATE TABLE IF NOT EXISTS admin_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        action VARCHAR(100) NOT NULL,
+        category VARCHAR(50) NOT NULL DEFAULT 'system',
+        target_type VARCHAR(50),
+        target_id VARCHAR(255),
+        details JSONB DEFAULT '{}',
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_logs_date ON admin_logs(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_admin_logs_category ON admin_logs(category);
+      CREATE INDEX IF NOT EXISTS idx_admin_logs_user ON admin_logs(user_id);
+
+      -- O2Switch cPanel accounts
+      CREATE TABLE IF NOT EXISTS o2switch_accounts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        hostname VARCHAR(255) NOT NULL,
+        username VARCHAR(255) NOT NULL,
+        api_token_encrypted TEXT NOT NULL,
+        label VARCHAR(255),
+        is_active BOOLEAN DEFAULT true,
+        last_sync TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      -- O2Switch email <-> local mail_account link
+      CREATE TABLE IF NOT EXISTS o2switch_email_links (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        o2switch_account_id UUID REFERENCES o2switch_accounts(id) ON DELETE CASCADE,
+        remote_email VARCHAR(255) NOT NULL,
+        mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE SET NULL,
+        auto_synced BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(o2switch_account_id, remote_email)
+      );
+
       -- Insert default admin settings
       INSERT INTO admin_settings (key, value, description) VALUES
         ('nextcloud_enabled', 'false', 'Enable NextCloud integration'),

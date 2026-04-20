@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { AuthRequest, adminMiddleware } from '../middleware/auth';
 import { pool } from '../database/connection';
-import { encrypt } from '../utils/encryption';
+import { encrypt, decrypt } from '../utils/encryption';
+import { O2SwitchService } from '../services/o2switch';
+import { logger } from '../utils/logger';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { execSync } from 'child_process';
 
 export const adminRouter = Router();
 
@@ -478,6 +481,503 @@ adminRouter.delete('/mail-accounts/:id/assignments/:assignmentId', async (req: A
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Attribution non trouvée' });
     res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// ---- Admin Audit Logs ----
+// ========================================
+
+async function addLog(userId: string | undefined, action: string, category: string, req: AuthRequest, details?: any, targetType?: string, targetId?: string) {
+  try {
+    await pool.query(
+      `INSERT INTO admin_logs (user_id, action, category, target_type, target_id, details, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [userId, action, category, targetType || null, targetId || null, JSON.stringify(details || {}),
+       req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null, req.headers['user-agent'] || null]
+    );
+  } catch (error) {
+    logger.error(error as Error, 'Failed to write audit log');
+  }
+}
+
+adminRouter.get('/logs', async (req: AuthRequest, res) => {
+  try {
+    const { category, action, userId, from, to, page = '1', limit = '50', search } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string));
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit as string)));
+    const offset = (pageNum - 1) * limitNum;
+
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    if (category) { conditions.push(`l.category = $${paramIndex++}`); values.push(category); }
+    if (action) { conditions.push(`l.action ILIKE $${paramIndex++}`); values.push(`%${action}%`); }
+    if (userId) { conditions.push(`l.user_id = $${paramIndex++}`); values.push(userId); }
+    if (from) { conditions.push(`l.created_at >= $${paramIndex++}`); values.push(from); }
+    if (to) { conditions.push(`l.created_at <= $${paramIndex++}`); values.push(to); }
+    if (search) { conditions.push(`(l.action ILIKE $${paramIndex} OR l.details::text ILIKE $${paramIndex})`); values.push(`%${search}%`); paramIndex++; }
+
+    const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM admin_logs l ${where}`, values
+    );
+
+    values.push(limitNum);
+    values.push(offset);
+
+    const result = await pool.query(
+      `SELECT l.*, u.email as user_email, u.display_name as user_display_name
+       FROM admin_logs l
+       LEFT JOIN users u ON u.id = l.user_id
+       ${where}
+       ORDER BY l.created_at DESC
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
+      values
+    );
+
+    res.json({
+      logs: result.rows,
+      total: parseInt(countResult.rows[0].count),
+      page: pageNum,
+      totalPages: Math.ceil(parseInt(countResult.rows[0].count) / limitNum),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.get('/logs/categories', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query('SELECT DISTINCT category FROM admin_logs ORDER BY category');
+    res.json(result.rows.map((r: any) => r.category));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// ---- Admin Dashboard / Stats ----
+// ========================================
+
+adminRouter.get('/dashboard', async (req: AuthRequest, res) => {
+  try {
+    const [
+      usersResult, groupsResult, accountsResult, contactsResult,
+      calendarsResult, eventsResult, cachedEmailsResult, pluginsResult,
+      logsResult, dbSizeResult,
+    ] = await Promise.all([
+      pool.query('SELECT COUNT(*) FROM users'),
+      pool.query('SELECT COUNT(*) FROM groups'),
+      pool.query('SELECT COUNT(*) FROM mail_accounts'),
+      pool.query('SELECT COUNT(*) FROM contacts'),
+      pool.query('SELECT COUNT(*) FROM calendars'),
+      pool.query('SELECT COUNT(*) FROM calendar_events'),
+      pool.query('SELECT COUNT(*) as total, SUM(CASE WHEN is_read THEN 1 ELSE 0 END) as read, SUM(CASE WHEN is_flagged THEN 1 ELSE 0 END) as flagged FROM cached_emails'),
+      pool.query('SELECT COUNT(*) as total, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active FROM plugins'),
+      pool.query('SELECT COUNT(*) FROM admin_logs WHERE created_at > NOW() - INTERVAL \'24 hours\''),
+      pool.query("SELECT pg_database_size(current_database()) as size"),
+    ]);
+
+    // Docker stats
+    let dockerStats: any = null;
+    try {
+      const containerName = process.env.HOSTNAME || 'web-mail-client';
+      const stats = execSync(`cat /proc/1/cgroup 2>/dev/null || echo ""`, { encoding: 'utf8', timeout: 3000 });
+      const memUsage = execSync('cat /sys/fs/cgroup/memory.current 2>/dev/null || cat /sys/fs/cgroup/memory/memory.usage_in_bytes 2>/dev/null || echo "0"', { encoding: 'utf8', timeout: 3000 }).trim();
+      const memLimit = execSync('cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "0"', { encoding: 'utf8', timeout: 3000 }).trim();
+
+      dockerStats = {
+        memoryUsed: parseInt(memUsage) || 0,
+        memoryLimit: memLimit === 'max' ? 0 : (parseInt(memLimit) || 0),
+        uptime: process.uptime(),
+        nodeVersion: process.version,
+        pid: process.pid,
+      };
+    } catch {
+      dockerStats = {
+        memoryUsed: process.memoryUsage().heapUsed,
+        memoryLimit: 0,
+        uptime: process.uptime(),
+        nodeVersion: process.version,
+        pid: process.pid,
+      };
+    }
+
+    // O2Switch accounts summary
+    let o2switchSummary = { total: 0, active: 0 };
+    try {
+      const o2Result = await pool.query('SELECT COUNT(*) as total, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active FROM o2switch_accounts');
+      o2switchSummary = { total: parseInt(o2Result.rows[0].total), active: parseInt(o2Result.rows[0].active) || 0 };
+    } catch { /* table might not exist yet */ }
+
+    res.json({
+      users: parseInt(usersResult.rows[0].count),
+      groups: parseInt(groupsResult.rows[0].count),
+      mailAccounts: parseInt(accountsResult.rows[0].count),
+      contacts: parseInt(contactsResult.rows[0].count),
+      calendars: parseInt(calendarsResult.rows[0].count),
+      events: parseInt(eventsResult.rows[0].count),
+      emails: {
+        total: parseInt(cachedEmailsResult.rows[0].total) || 0,
+        read: parseInt(cachedEmailsResult.rows[0].read) || 0,
+        flagged: parseInt(cachedEmailsResult.rows[0].flagged) || 0,
+      },
+      plugins: {
+        total: parseInt(pluginsResult.rows[0].total),
+        active: parseInt(pluginsResult.rows[0].active) || 0,
+      },
+      logsLast24h: parseInt(logsResult.rows[0].count),
+      databaseSize: parseInt(dbSizeResult.rows[0].size),
+      docker: dockerStats,
+      o2switch: o2switchSummary,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// ---- O2Switch cPanel Integration ----
+// ========================================
+
+// List O2Switch accounts
+adminRouter.get('/o2switch/accounts', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, hostname, username, label, is_active, last_sync, created_at FROM o2switch_accounts ORDER BY created_at DESC'
+    );
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add O2Switch account
+adminRouter.post('/o2switch/accounts', async (req: AuthRequest, res) => {
+  try {
+    const { hostname, username, apiToken, label } = req.body;
+    if (!hostname || !username || !apiToken) {
+      return res.status(400).json({ error: 'hostname, username et apiToken sont requis' });
+    }
+
+    const encryptedToken = encrypt(apiToken);
+    const result = await pool.query(
+      `INSERT INTO o2switch_accounts (hostname, username, api_token_encrypted, label)
+       VALUES ($1, $2, $3, $4) RETURNING id, hostname, username, label, is_active, created_at`,
+      [hostname, username, encryptedToken, label || `${username}@${hostname}`]
+    );
+
+    await addLog(req.userId, 'o2switch_account_created', 'o2switch', req, { hostname, username }, 'o2switch_account', result.rows[0].id);
+    res.status(201).json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update O2Switch account
+adminRouter.put('/o2switch/accounts/:id', async (req: AuthRequest, res) => {
+  try {
+    const { hostname, username, apiToken, label, isActive } = req.body;
+    const updates: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+
+    if (hostname !== undefined) { updates.push(`hostname = $${i++}`); values.push(hostname); }
+    if (username !== undefined) { updates.push(`username = $${i++}`); values.push(username); }
+    if (apiToken) { updates.push(`api_token_encrypted = $${i++}`); values.push(encrypt(apiToken)); }
+    if (label !== undefined) { updates.push(`label = $${i++}`); values.push(label); }
+    if (isActive !== undefined) { updates.push(`is_active = $${i++}`); values.push(isActive); }
+    updates.push('updated_at = NOW()');
+    values.push(req.params.id);
+
+    const result = await pool.query(
+      `UPDATE o2switch_accounts SET ${updates.join(', ')} WHERE id = $${i} RETURNING id, hostname, username, label, is_active, last_sync, created_at`,
+      values
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Compte O2Switch non trouvé' });
+    await addLog(req.userId, 'o2switch_account_updated', 'o2switch', req, { hostname, username }, 'o2switch_account', req.params.id);
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete O2Switch account
+adminRouter.delete('/o2switch/accounts/:id', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query('DELETE FROM o2switch_accounts WHERE id = $1 RETURNING id', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Compte non trouvé' });
+    await addLog(req.userId, 'o2switch_account_deleted', 'o2switch', req, {}, 'o2switch_account', req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper: get O2Switch service instance from account ID
+async function getO2SwitchService(accountId: string): Promise<O2SwitchService> {
+  const result = await pool.query('SELECT * FROM o2switch_accounts WHERE id = $1', [accountId]);
+  if (result.rows.length === 0) throw new Error('Compte O2Switch non trouvé');
+  const acc = result.rows[0];
+  return new O2SwitchService({
+    apiToken: decrypt(acc.api_token_encrypted),
+    hostname: acc.hostname,
+    username: acc.username,
+  });
+}
+
+// Test O2Switch connection
+adminRouter.post('/o2switch/accounts/:id/test', async (req: AuthRequest, res) => {
+  try {
+    const service = await getO2SwitchService(req.params.id);
+    const result = await service.testConnection();
+    await addLog(req.userId, 'o2switch_connection_test', 'o2switch', req, result, 'o2switch_account', req.params.id);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// List remote email accounts from O2Switch
+adminRouter.get('/o2switch/accounts/:id/emails', async (req: AuthRequest, res) => {
+  try {
+    const service = await getO2SwitchService(req.params.id);
+    const emails = await service.listEmailAccounts();
+
+    // Get links to know which ones are linked locally
+    const links = await pool.query(
+      'SELECT remote_email, mail_account_id FROM o2switch_email_links WHERE o2switch_account_id = $1',
+      [req.params.id]
+    );
+    const linkMap: Record<string, string> = {};
+    for (const l of links.rows) linkMap[l.remote_email] = l.mail_account_id;
+
+    const enriched = emails.map(e => ({ ...e, linkedMailAccountId: linkMap[e.email] || null }));
+    res.json(enriched);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List O2Switch domains
+adminRouter.get('/o2switch/accounts/:id/domains', async (req: AuthRequest, res) => {
+  try {
+    const service = await getO2SwitchService(req.params.id);
+    const domains = await service.listDomains();
+    res.json(domains);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create email on O2Switch
+adminRouter.post('/o2switch/accounts/:id/emails', async (req: AuthRequest, res) => {
+  try {
+    const { email, password, quota } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'email et password requis' });
+
+    const service = await getO2SwitchService(req.params.id);
+    await service.createEmailAccount(email, password, quota || 1024);
+
+    await addLog(req.userId, 'o2switch_email_created', 'o2switch', req, { email }, 'o2switch_email', email);
+    res.status(201).json({ success: true, email });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update email on O2Switch (password and/or quota)
+adminRouter.put('/o2switch/accounts/:id/emails/:email', async (req: AuthRequest, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email);
+    const { password, quota } = req.body;
+
+    const service = await getO2SwitchService(req.params.id);
+
+    if (password) await service.changePassword(email, password);
+    if (quota !== undefined) await service.changeQuota(email, quota);
+
+    await addLog(req.userId, 'o2switch_email_updated', 'o2switch', req, { email, hasPassword: !!password, quota }, 'o2switch_email', email);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete email on O2Switch
+adminRouter.delete('/o2switch/accounts/:id/emails/:email', async (req: AuthRequest, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email);
+    const service = await getO2SwitchService(req.params.id);
+    await service.deleteEmailAccount(email);
+
+    // Remove any link
+    await pool.query(
+      'DELETE FROM o2switch_email_links WHERE o2switch_account_id = $1 AND remote_email = $2',
+      [req.params.id, email]
+    );
+
+    await addLog(req.userId, 'o2switch_email_deleted', 'o2switch', req, { email }, 'o2switch_email', email);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sync O2Switch emails: import as local mail accounts
+adminRouter.post('/o2switch/accounts/:id/sync', async (req: AuthRequest, res) => {
+  try {
+    const service = await getO2SwitchService(req.params.id);
+    const remoteEmails = await service.listEmailAccounts();
+    const o2account = (await pool.query('SELECT * FROM o2switch_accounts WHERE id = $1', [req.params.id])).rows[0];
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const remote of remoteEmails) {
+      // Check if already linked
+      const existing = await pool.query(
+        'SELECT id FROM o2switch_email_links WHERE o2switch_account_id = $1 AND remote_email = $2',
+        [req.params.id, remote.email]
+      );
+
+      if (existing.rows.length > 0) {
+        skipped++;
+        continue;
+      }
+
+      // Check if a local mail account already exists for this email
+      const localExisting = await pool.query(
+        'SELECT id FROM mail_accounts WHERE email = $1',
+        [remote.email]
+      );
+
+      let mailAccountId = localExisting.rows[0]?.id || null;
+
+      // No auto-creation of local accounts during sync — user needs to provide password
+      // Just record the link with null mail_account_id
+      await pool.query(
+        `INSERT INTO o2switch_email_links (o2switch_account_id, remote_email, mail_account_id, auto_synced)
+         VALUES ($1, $2, $3, true)
+         ON CONFLICT (o2switch_account_id, remote_email) DO UPDATE SET mail_account_id = $3, auto_synced = true`,
+        [req.params.id, remote.email, mailAccountId]
+      );
+
+      created++;
+    }
+
+    // Update last_sync
+    await pool.query('UPDATE o2switch_accounts SET last_sync = NOW() WHERE id = $1', [req.params.id]);
+    await addLog(req.userId, 'o2switch_sync', 'o2switch', req, { created, skipped, total: remoteEmails.length }, 'o2switch_account', req.params.id);
+
+    res.json({ success: true, created, skipped, total: remoteEmails.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Link an O2Switch email to a local mail account
+adminRouter.post('/o2switch/accounts/:id/link', async (req: AuthRequest, res) => {
+  try {
+    const { remoteEmail, password, name, assignToUserIds, assignToGroupIds } = req.body;
+    if (!remoteEmail || !password) return res.status(400).json({ error: 'remoteEmail et password requis' });
+
+    const o2account = (await pool.query('SELECT * FROM o2switch_accounts WHERE id = $1', [req.params.id])).rows[0];
+    if (!o2account) return res.status(404).json({ error: 'Compte O2Switch non trouvé' });
+
+    const encryptedPassword = encrypt(password);
+
+    // Create or update local mail account
+    const existing = await pool.query('SELECT id FROM mail_accounts WHERE email = $1', [remoteEmail]);
+    let mailAccountId: string;
+
+    if (existing.rows.length > 0) {
+      mailAccountId = existing.rows[0].id;
+      await pool.query(
+        `UPDATE mail_accounts SET imap_host = $1, smtp_host = $1, username = $2, password_encrypted = $3, is_shared = true, updated_at = NOW() WHERE id = $4`,
+        [o2account.hostname, remoteEmail, encryptedPassword, mailAccountId]
+      );
+    } else {
+      const result = await pool.query(
+        `INSERT INTO mail_accounts (user_id, name, email, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, username, password_encrypted, is_shared)
+         VALUES (NULL, $1, $2, $3, 993, true, $3, 465, true, $2, $4, true)
+         RETURNING id`,
+        [name || remoteEmail.split('@')[0], remoteEmail, o2account.hostname, encryptedPassword]
+      );
+      mailAccountId = result.rows[0].id;
+    }
+
+    // Update link
+    await pool.query(
+      `INSERT INTO o2switch_email_links (o2switch_account_id, remote_email, mail_account_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (o2switch_account_id, remote_email) DO UPDATE SET mail_account_id = $3`,
+      [req.params.id, remoteEmail, mailAccountId]
+    );
+
+    // Assign to users
+    if (assignToUserIds?.length) {
+      for (const userId of assignToUserIds) {
+        await pool.query(
+          `INSERT INTO mailbox_assignments (mail_account_id, user_id, send_permission)
+           VALUES ($1, $2, 'send_as')
+           ON CONFLICT (mail_account_id, user_id) DO NOTHING`,
+          [mailAccountId, userId]
+        );
+      }
+    }
+
+    // Assign to groups (assign to all members of those groups)
+    if (assignToGroupIds?.length) {
+      for (const groupId of assignToGroupIds) {
+        const members = await pool.query('SELECT user_id FROM user_groups WHERE group_id = $1', [groupId]);
+        for (const m of members.rows) {
+          await pool.query(
+            `INSERT INTO mailbox_assignments (mail_account_id, user_id, send_permission)
+             VALUES ($1, $2, 'send_as')
+             ON CONFLICT (mail_account_id, user_id) DO NOTHING`,
+            [mailAccountId, m.user_id]
+          );
+        }
+      }
+    }
+
+    await addLog(req.userId, 'o2switch_email_linked', 'o2switch', req, { remoteEmail, mailAccountId }, 'o2switch_email', remoteEmail);
+    res.json({ success: true, mailAccountId });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get O2Switch email links
+adminRouter.get('/o2switch/accounts/:id/links', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT l.*, ma.name as account_name, ma.email as account_email
+       FROM o2switch_email_links l
+       LEFT JOIN mail_accounts ma ON ma.id = l.mail_account_id
+       WHERE l.o2switch_account_id = $1
+       ORDER BY l.remote_email`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// O2Switch disk usage
+adminRouter.get('/o2switch/accounts/:id/disk', async (req: AuthRequest, res) => {
+  try {
+    const service = await getO2SwitchService(req.params.id);
+    const disk = await service.getDiskUsage();
+    res.json(disk);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

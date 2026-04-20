@@ -1,29 +1,34 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import {
   Users, Shield, Plug, Cloud, Settings, Plus, Trash2, X,
-  Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube
+  Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
+  LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
+  Contact, Search, Link,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-type Tab = 'users' | 'groups' | 'mailaccounts' | 'nextcloud' | 'plugins' | 'system';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system';
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<Tab>('users');
+  const [tab, setTab] = useState<Tab>('dashboard');
 
   const tabs = [
+    { id: 'dashboard' as const, icon: LayoutDashboard, label: 'Tableau de bord' },
     { id: 'users' as const, icon: Users, label: 'Utilisateurs' },
     { id: 'groups' as const, icon: Shield, label: 'Groupes' },
     { id: 'mailaccounts' as const, icon: Mail, label: 'Comptes mail' },
+    { id: 'o2switch' as const, icon: Server, label: 'O2Switch' },
     { id: 'plugins' as const, icon: Plug, label: 'Plugins' },
     { id: 'nextcloud' as const, icon: Cloud, label: 'NextCloud' },
+    { id: 'logs' as const, icon: ScrollText, label: 'Logs' },
     { id: 'system' as const, icon: Settings, label: 'Système' },
   ];
 
   return (
     <div className="h-full flex">
-      <div className="w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4">
+      <div className="w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
         <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">Administration</h2>
         {tabs.map(t => {
           const Icon = t.icon;
@@ -41,18 +46,467 @@ export default function AdminPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl">
+        <div className="max-w-5xl">
+          {tab === 'dashboard' && <DashboardPanel />}
           {tab === 'users' && <UserManagement />}
           {tab === 'groups' && <GroupManagement />}
           {tab === 'mailaccounts' && <MailAccountManagement />}
+          {tab === 'o2switch' && <O2SwitchManagement />}
           {tab === 'plugins' && <PluginManagement />}
           {tab === 'nextcloud' && <NextCloudSettings />}
+          {tab === 'logs' && <LogsPanel />}
           {tab === 'system' && <SystemSettings />}
         </div>
       </div>
     </div>
   );
 }
+
+// ========================================
+// Dashboard
+// ========================================
+
+function StatCard({ icon: Icon, label, value, sub, color = 'bg-outlook-blue' }: { icon: any; label: string; value: string | number; sub?: string; color?: string }) {
+  return (
+    <div className="bg-white border border-outlook-border rounded-lg p-4 flex items-start gap-3">
+      <div className={`${color} text-white p-2 rounded-lg`}><Icon size={20} /></div>
+      <div>
+        <div className="text-2xl font-bold text-outlook-text-primary">{value}</div>
+        <div className="text-sm text-outlook-text-secondary">{label}</div>
+        {sub && <div className="text-xs text-outlook-text-disabled mt-0.5">{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}j ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function DashboardPanel() {
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['admin-dashboard'],
+    queryFn: api.getAdminDashboard,
+    refetchInterval: 30000,
+  });
+
+  if (isLoading) return <div className="text-sm text-outlook-text-secondary">Chargement...</div>;
+  if (!stats) return null;
+
+  return (
+    <div>
+      <h3 className="text-base font-semibold mb-4">Tableau de bord</h3>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <StatCard icon={Users} label="Utilisateurs" value={stats.users} />
+        <StatCard icon={Shield} label="Groupes" value={stats.groups} color="bg-purple-500" />
+        <StatCard icon={Mail} label="Comptes mail" value={stats.mailAccounts} color="bg-green-600" />
+        <StatCard icon={Contact} label="Contacts" value={stats.contacts} color="bg-orange-500" />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <StatCard icon={Mail} label="Emails (cache)" value={stats.emails.total} sub={`${stats.emails.read} lus · ${stats.emails.flagged} marqués`} color="bg-blue-600" />
+        <StatCard icon={Calendar} label="Calendriers" value={stats.calendars} sub={`${stats.events} événements`} color="bg-teal-600" />
+        <StatCard icon={Plug} label="Plugins" value={`${stats.plugins.active}/${stats.plugins.total}`} sub="actifs" color="bg-indigo-500" />
+        <StatCard icon={Server} label="O2Switch" value={stats.o2switch.active} sub={`${stats.o2switch.total} comptes`} color="bg-red-500" />
+      </div>
+      <h4 className="text-sm font-semibold mb-3 text-outlook-text-secondary">Infrastructure</h4>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <StatCard icon={Database} label="Base de données" value={formatBytes(stats.databaseSize)} color="bg-slate-600" />
+        <StatCard icon={HardDrive} label="Mémoire app" value={formatBytes(stats.docker.memoryUsed)} sub={stats.docker.memoryLimit ? `/ ${formatBytes(stats.docker.memoryLimit)}` : 'illimité'} color="bg-slate-600" />
+        <StatCard icon={RefreshCw} label="Uptime" value={formatUptime(stats.docker.uptime)} sub={`Node ${stats.docker.nodeVersion}`} color="bg-slate-600" />
+        <StatCard icon={ScrollText} label="Logs (24h)" value={stats.logsLast24h} color="bg-amber-600" />
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// Logs
+// ========================================
+
+function LogsPanel() {
+  const [filters, setFilters] = useState({ category: '', search: '', page: 1 });
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ['admin-log-categories'],
+    queryFn: api.getAdminLogCategories,
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-logs', filters],
+    queryFn: () => api.getAdminLogs({
+      category: filters.category || undefined,
+      search: filters.search || undefined,
+      page: filters.page,
+      limit: 50,
+    }),
+  });
+
+  const categoryColors: Record<string, string> = {
+    o2switch: 'bg-red-100 text-red-700',
+    auth: 'bg-blue-100 text-blue-700',
+    mail: 'bg-green-100 text-green-700',
+    admin: 'bg-purple-100 text-purple-700',
+    system: 'bg-gray-100 text-gray-700',
+  };
+
+  return (
+    <div>
+      <h3 className="text-base font-semibold mb-4">Logs d'activité</h3>
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1 max-w-xs">
+          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+          <input type="text" placeholder="Rechercher dans les logs..." value={filters.search}
+            onChange={e => setFilters({ ...filters, search: e.target.value, page: 1 })}
+            className="w-full pl-7 pr-3 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+        </div>
+        <select value={filters.category} onChange={e => setFilters({ ...filters, category: e.target.value, page: 1 })}
+          className="text-sm border border-outlook-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-outlook-blue">
+          <option value="">Toutes catégories</option>
+          {categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+
+      {isLoading ? <div className="text-sm text-outlook-text-secondary">Chargement...</div> : (
+        <>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-outlook-border text-left">
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Date</th>
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Catégorie</th>
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Action</th>
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Utilisateur</th>
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Détails</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data?.logs.map((log: any) => (
+                <tr key={log.id} className="border-b border-outlook-border hover:bg-outlook-bg-hover">
+                  <td className="py-2 px-3 text-xs text-outlook-text-secondary whitespace-nowrap">
+                    {new Date(log.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                  <td className="py-2 px-3">
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${categoryColors[log.category] || 'bg-gray-100 text-gray-700'}`}>{log.category}</span>
+                  </td>
+                  <td className="py-2 px-3 text-xs font-mono">{log.action}</td>
+                  <td className="py-2 px-3 text-xs">{log.user_display_name || log.user_email || '—'}</td>
+                  <td className="py-2 px-3 text-xs text-outlook-text-secondary max-w-[200px] truncate" title={JSON.stringify(log.details)}>
+                    {Object.entries(log.details || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '—'}
+                  </td>
+                </tr>
+              ))}
+              {data?.logs.length === 0 && (
+                <tr><td colSpan={5} className="py-8 text-center text-sm text-outlook-text-disabled">Aucun log trouvé</td></tr>
+              )}
+            </tbody>
+          </table>
+          {data && data.totalPages > 1 && (
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-xs text-outlook-text-secondary">Page {data.page} / {data.totalPages} ({data.total} résultats)</span>
+              <div className="flex gap-1">
+                <button disabled={data.page <= 1} onClick={() => setFilters({ ...filters, page: filters.page - 1 })} className="px-2 py-1 text-xs border border-outlook-border rounded disabled:opacity-40 hover:bg-outlook-bg-hover">Précédent</button>
+                <button disabled={data.page >= data.totalPages} onClick={() => setFilters({ ...filters, page: filters.page + 1 })} className="px-2 py-1 text-xs border border-outlook-border rounded disabled:opacity-40 hover:bg-outlook-bg-hover">Suivant</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ========================================
+// O2Switch Management
+// ========================================
+
+function O2SwitchManagement() {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [showEmails, setShowEmails] = useState<string | null>(null);
+
+  const { data: accounts = [] } = useQuery({ queryKey: ['o2switch-accounts'], queryFn: api.getO2SwitchAccounts });
+
+  const createMutation = useMutation({
+    mutationFn: api.createO2SwitchAccount,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['o2switch-accounts'] }); setShowForm(false); toast.success('Compte O2Switch ajouté'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: api.deleteO2SwitchAccount,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['o2switch-accounts'] }); toast.success('Compte O2Switch supprimé'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: api.testO2SwitchConnection,
+    onSuccess: (data: any) => { data.success ? toast.success('Connexion réussie !') : toast.error(`Échec : ${data.error}`); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: api.syncO2Switch,
+    onSuccess: (data: any) => { queryClient.invalidateQueries({ queryKey: ['o2switch-accounts'] }); toast.success(`Sync : ${data.created} nouveaux, ${data.skipped} existants sur ${data.total}`); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-semibold">O2Switch — Comptes cPanel</h3>
+        <button onClick={() => setShowForm(true)} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5">
+          <Plus size={14} /> Ajouter un compte
+        </button>
+      </div>
+
+      {showForm && <O2SwitchAccountForm onSubmit={(data) => createMutation.mutate(data)} onCancel={() => setShowForm(false)} loading={createMutation.isPending} />}
+
+      <div className="space-y-3">
+        {accounts.map((acc: any) => (
+          <div key={acc.id} className="border border-outlook-border rounded-lg p-4 bg-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-2.5 h-2.5 rounded-full ${acc.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
+                <div>
+                  <div className="font-medium text-sm">{acc.label || acc.hostname}</div>
+                  <div className="text-xs text-outlook-text-secondary">{acc.username}@{acc.hostname}</div>
+                  {acc.last_sync && <div className="text-xs text-outlook-text-disabled">Dernière sync : {new Date(acc.last_sync).toLocaleString('fr-FR')}</div>}
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={() => testMutation.mutate(acc.id)} className="px-2 py-1 text-xs border border-outlook-border rounded hover:bg-outlook-bg-hover flex items-center gap-1" title="Tester">
+                  <TestTube size={12} /> Test
+                </button>
+                <button onClick={() => syncMutation.mutate(acc.id)} className="px-2 py-1 text-xs border border-outlook-border rounded hover:bg-outlook-bg-hover flex items-center gap-1" title="Synchroniser">
+                  <RefreshCw size={12} /> Sync
+                </button>
+                <button onClick={() => setShowEmails(showEmails === acc.id ? null : acc.id)} className="px-2 py-1 text-xs border border-outlook-border rounded hover:bg-outlook-bg-hover flex items-center gap-1">
+                  <Mail size={12} /> Emails
+                </button>
+                <button onClick={() => { if (confirm('Supprimer ce compte O2Switch ?')) deleteMutation.mutate(acc.id); }} className="px-2 py-1 text-xs border border-red-200 text-red-600 rounded hover:bg-red-50 flex items-center gap-1">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            </div>
+            {showEmails === acc.id && <O2SwitchEmailList accountId={acc.id} />}
+          </div>
+        ))}
+        {accounts.length === 0 && !showForm && (
+          <div className="text-sm text-outlook-text-disabled text-center py-8">Aucun compte O2Switch configuré. Ajoutez un compte pour commencer.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function O2SwitchAccountForm({ onSubmit, onCancel, loading }: { onSubmit: (data: any) => void; onCancel: () => void; loading: boolean }) {
+  const [form, setForm] = useState({ hostname: '', username: '', apiToken: '', label: '' });
+  return (
+    <div className="border border-outlook-border rounded-lg p-4 mb-4 bg-white">
+      <h4 className="text-sm font-semibold mb-3">Nouveau compte O2Switch</h4>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="text-xs text-outlook-text-secondary block mb-1">Hostname cPanel *</label>
+          <input value={form.hostname} onChange={e => setForm({ ...form, hostname: e.target.value })} placeholder="colorant.o2switch.net" className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" /></div>
+        <div><label className="text-xs text-outlook-text-secondary block mb-1">Nom d'utilisateur cPanel *</label>
+          <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="moncompte" className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" /></div>
+        <div><label className="text-xs text-outlook-text-secondary block mb-1">Clé API cPanel *</label>
+          <input type="password" value={form.apiToken} onChange={e => setForm({ ...form, apiToken: e.target.value })} placeholder="Clé API depuis cPanel" className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" /></div>
+        <div><label className="text-xs text-outlook-text-secondary block mb-1">Libellé</label>
+          <input value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="Mon compte O2Switch" className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" /></div>
+      </div>
+      <div className="flex gap-2 mt-3">
+        <button onClick={() => onSubmit(form)} disabled={!form.hostname || !form.username || !form.apiToken || loading} className="bg-outlook-blue text-white px-3 py-1.5 text-sm rounded disabled:opacity-50 hover:bg-outlook-blue-hover">{loading ? 'Ajout...' : 'Ajouter'}</button>
+        <button onClick={onCancel} className="px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover">Annuler</button>
+      </div>
+    </div>
+  );
+}
+
+function O2SwitchEmailList({ accountId }: { accountId: string }) {
+  const queryClient = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [linkForm, setLinkForm] = useState<{ email: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const { data: emails = [], isLoading } = useQuery({ queryKey: ['o2switch-emails', accountId], queryFn: () => api.getO2SwitchEmails(accountId) });
+  const { data: users = [] } = useQuery({ queryKey: ['admin-users'], queryFn: api.getAdminUsers });
+  const { data: groups = [] } = useQuery({ queryKey: ['admin-groups'], queryFn: api.getAdminGroups });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => api.createO2SwitchEmail(accountId, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['o2switch-emails', accountId] }); setShowCreate(false); toast.success('Adresse créée sur O2Switch'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (email: string) => api.deleteO2SwitchEmail(accountId, email),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['o2switch-emails', accountId] }); toast.success('Adresse supprimée'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const linkMutation = useMutation({
+    mutationFn: (data: any) => api.linkO2SwitchEmail(accountId, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['o2switch-emails', accountId] }); queryClient.invalidateQueries({ queryKey: ['admin-mail-accounts'] }); setLinkForm(null); toast.success('Adresse liée'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const filtered = useMemo(() => {
+    if (!searchQuery) return emails;
+    const q = searchQuery.toLowerCase();
+    return emails.filter((e: any) => e.email.toLowerCase().includes(q) || e.domain?.toLowerCase().includes(q));
+  }, [emails, searchQuery]);
+
+  return (
+    <div className="mt-4 border-t border-outlook-border pt-3">
+      <div className="flex items-center justify-between mb-2">
+        <h5 className="text-sm font-medium">Adresses mail ({emails.length})</h5>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+            <input type="text" placeholder="Filtrer..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              className="pl-6 pr-2 py-1 text-xs border border-outlook-border rounded w-48 focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+          </div>
+          <button onClick={() => setShowCreate(!showCreate)} className="text-xs text-outlook-blue hover:underline flex items-center gap-1"><Plus size={12} /> Créer</button>
+        </div>
+      </div>
+
+      {showCreate && <O2SwitchCreateEmailForm onSubmit={(data) => createMutation.mutate(data)} onCancel={() => setShowCreate(false)} loading={createMutation.isPending} />}
+
+      {isLoading ? <div className="text-xs text-outlook-text-secondary">Chargement...</div> : (
+        <div className="space-y-1">
+          {filtered.map((email: any) => (
+            <div key={email.email} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-outlook-bg-hover text-sm">
+              <div className="flex items-center gap-2">
+                <Mail size={14} className={email.suspended ? 'text-red-400' : 'text-outlook-blue'} />
+                <span className={email.suspended ? 'line-through text-outlook-text-disabled' : ''}>{email.email}</span>
+                {email.linkedMailAccountId && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Link size={10} /> Lié</span>}
+                {email.suspended && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Suspendu</span>}
+              </div>
+              <div className="flex items-center gap-1">
+                {!email.linkedMailAccountId && (
+                  <button onClick={() => setLinkForm({ email: email.email })} className="text-xs text-outlook-blue hover:underline flex items-center gap-0.5"><Link size={10} /> Lier</button>
+                )}
+                <button onClick={() => { if (confirm(`Supprimer ${email.email} de O2Switch ?`)) deleteMutation.mutate(email.email); }} className="text-xs text-red-500 hover:underline flex items-center gap-0.5"><Trash2 size={10} /></button>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && <div className="text-xs text-outlook-text-disabled text-center py-4">Aucune adresse trouvée</div>}
+        </div>
+      )}
+
+      {linkForm && <O2SwitchLinkForm email={linkForm.email} users={users} groups={groups} onSubmit={(data) => linkMutation.mutate(data)} onCancel={() => setLinkForm(null)} loading={linkMutation.isPending} />}
+    </div>
+  );
+}
+
+function O2SwitchCreateEmailForm({ onSubmit, onCancel, loading }: { onSubmit: (data: any) => void; onCancel: () => void; loading: boolean }) {
+  const [form, setForm] = useState({ email: '', password: '', quota: '1024' });
+  return (
+    <div className="border border-outlook-border rounded p-3 mb-2 bg-gray-50">
+      <div className="grid grid-cols-3 gap-2">
+        <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="adresse@domaine.fr" className="px-2 py-1 text-xs border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+        <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="Mot de passe" className="px-2 py-1 text-xs border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+        <input type="number" value={form.quota} onChange={e => setForm({ ...form, quota: e.target.value })} placeholder="Quota (MB)" className="px-2 py-1 text-xs border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+      </div>
+      <div className="flex gap-2 mt-2">
+        <button onClick={() => onSubmit({ ...form, quota: parseInt(form.quota) })} disabled={!form.email || !form.password || loading} className="bg-outlook-blue text-white px-2 py-1 text-xs rounded disabled:opacity-50">{loading ? 'Création...' : 'Créer'}</button>
+        <button onClick={onCancel} className="px-2 py-1 text-xs border border-outlook-border rounded hover:bg-outlook-bg-hover">Annuler</button>
+      </div>
+    </div>
+  );
+}
+
+function O2SwitchLinkForm({ email, users, groups, onSubmit, onCancel, loading }: {
+  email: string; users: any[]; groups: any[]; onSubmit: (data: any) => void; onCancel: () => void; loading: boolean;
+}) {
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState(email.split('@')[0]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [groupSearch, setGroupSearch] = useState('');
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.toLowerCase();
+    return (q ? users.filter((u: any) => u.email?.toLowerCase().includes(q) || u.display_name?.toLowerCase().includes(q)) : users).slice(0, 10);
+  }, [users, userSearch]);
+
+  const filteredGroups = useMemo(() => {
+    const q = groupSearch.toLowerCase();
+    return (q ? groups.filter((g: any) => g.name?.toLowerCase().includes(q)) : groups).slice(0, 10);
+  }, [groups, groupSearch]);
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-white rounded-lg p-5 w-[480px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <h4 className="text-sm font-semibold mb-3">Lier {email} à un compte local</h4>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-outlook-text-secondary block mb-1">Nom du compte</label>
+            <input value={name} onChange={e => setName(e.target.value)} className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary block mb-1">Mot de passe IMAP/SMTP *</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mot de passe de la boite mail" className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary block mb-1">Attribuer aux utilisateurs</label>
+            <input value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Rechercher un utilisateur..." className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded mb-1 focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+            <div className="max-h-32 overflow-y-auto border border-outlook-border rounded">
+              {filteredUsers.map((u: any) => (
+                <label key={u.id} className="flex items-center gap-2 px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer text-xs">
+                  <input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e => {
+                    if (e.target.checked) setSelectedUsers([...selectedUsers, u.id]);
+                    else setSelectedUsers(selectedUsers.filter(id => id !== u.id));
+                  }} />
+                  {u.display_name || u.email}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary block mb-1">Attribuer aux groupes</label>
+            <input value={groupSearch} onChange={e => setGroupSearch(e.target.value)} placeholder="Rechercher un groupe..." className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded mb-1 focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+            <div className="max-h-32 overflow-y-auto border border-outlook-border rounded">
+              {filteredGroups.map((g: any) => (
+                <label key={g.id} className="flex items-center gap-2 px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer text-xs">
+                  <input type="checkbox" checked={selectedGroups.includes(g.id)} onChange={e => {
+                    if (e.target.checked) setSelectedGroups([...selectedGroups, g.id]);
+                    else setSelectedGroups(selectedGroups.filter(id => id !== g.id));
+                  }} />
+                  {g.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button onClick={() => onSubmit({ remoteEmail: email, password, name, assignToUserIds: selectedUsers, assignToGroupIds: selectedGroups })}
+            disabled={!password || loading} className="bg-outlook-blue text-white px-3 py-1.5 text-sm rounded disabled:opacity-50 hover:bg-outlook-blue-hover">
+            {loading ? 'Liaison...' : 'Lier et attribuer'}
+          </button>
+          <button onClick={onCancel} className="px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover">Annuler</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// User Management
+// ========================================
 
 function UserManagement() {
   const queryClient = useQueryClient();

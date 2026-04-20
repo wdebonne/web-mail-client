@@ -270,4 +270,47 @@ export const api = {
   // Search
   search: (q: string, type?: string) =>
     request<any>(`/search?q=${encodeURIComponent(q)}${type ? `&type=${type}` : ''}`),
+
+  // Admin Dashboard
+  getAdminDashboard: () => request<any>('/admin/dashboard'),
+
+  // Admin Logs
+  getAdminLogs: (params?: { category?: string; action?: string; userId?: string; from?: string; to?: string; page?: number; limit?: number; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.category) query.set('category', params.category);
+    if (params?.action) query.set('action', params.action);
+    if (params?.userId) query.set('userId', params.userId);
+    if (params?.from) query.set('from', params.from);
+    if (params?.to) query.set('to', params.to);
+    if (params?.page) query.set('page', params.page.toString());
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.search) query.set('search', params.search);
+    return request<{ logs: any[]; total: number; page: number; totalPages: number }>(`/admin/logs?${query}`);
+  },
+  getAdminLogCategories: () => request<string[]>('/admin/logs/categories'),
+
+  // O2Switch
+  getO2SwitchAccounts: () => request<any[]>('/admin/o2switch/accounts'),
+  createO2SwitchAccount: (data: any) =>
+    request('/admin/o2switch/accounts', { method: 'POST', body: JSON.stringify(data) }),
+  updateO2SwitchAccount: (id: string, data: any) =>
+    request(`/admin/o2switch/accounts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteO2SwitchAccount: (id: string) =>
+    request(`/admin/o2switch/accounts/${id}`, { method: 'DELETE' }),
+  testO2SwitchConnection: (id: string) =>
+    request<{ success: boolean; error?: string }>(`/admin/o2switch/accounts/${id}/test`, { method: 'POST' }),
+  getO2SwitchEmails: (id: string) => request<any[]>(`/admin/o2switch/accounts/${id}/emails`),
+  getO2SwitchDomains: (id: string) => request<any[]>(`/admin/o2switch/accounts/${id}/domains`),
+  createO2SwitchEmail: (id: string, data: any) =>
+    request(`/admin/o2switch/accounts/${id}/emails`, { method: 'POST', body: JSON.stringify(data) }),
+  updateO2SwitchEmail: (id: string, email: string, data: any) =>
+    request(`/admin/o2switch/accounts/${id}/emails/${encodeURIComponent(email)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteO2SwitchEmail: (id: string, email: string) =>
+    request(`/admin/o2switch/accounts/${id}/emails/${encodeURIComponent(email)}`, { method: 'DELETE' }),
+  syncO2Switch: (id: string) =>
+    request<{ success: boolean; created: number; skipped: number; total: number }>(`/admin/o2switch/accounts/${id}/sync`, { method: 'POST' }),
+  linkO2SwitchEmail: (id: string, data: any) =>
+    request(`/admin/o2switch/accounts/${id}/link`, { method: 'POST', body: JSON.stringify(data) }),
+  getO2SwitchLinks: (id: string) => request<any[]>(`/admin/o2switch/accounts/${id}/links`),
+  getO2SwitchDisk: (id: string) => request<any>(`/admin/o2switch/accounts/${id}/disk`),
 };
