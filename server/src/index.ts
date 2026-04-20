@@ -39,8 +39,11 @@ app.use(helmet({
       fontSrc: ["'self'", 'data:'],
       workerSrc: ["'self'", 'blob:'],
       manifestSrc: ["'self'"],
+      upgradeInsecureRequests: null,
     },
   },
+  crossOriginOpenerPolicy: false,
+  originAgentCluster: false,
 }));
 app.use(compression());
 app.use(cors({
