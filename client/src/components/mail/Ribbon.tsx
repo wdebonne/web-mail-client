@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Mail, Reply, ReplyAll, Forward, Trash2, Archive, Flag,
   FolderInput, MailPlus, RefreshCw, ChevronDown, Printer,
@@ -119,7 +120,17 @@ export default function Ribbon({
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
+  const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
+
+  const openTabMenu = () => {
+    if (tabMenuBtnRef.current) {
+      const rect = tabMenuBtnRef.current.getBoundingClientRect();
+      setTabMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowTabMenu(v => !v);
+  };
 
   // Auto-switch between classic and simplified based on width
   useEffect(() => {
@@ -304,7 +315,8 @@ export default function Ribbon({
               <RibbonGroup label="Onglets">
                 <div className="relative">
                   <button
-                    onClick={() => setShowTabMenu(!showTabMenu)}
+                    ref={tabMenuBtnRef}
+                    onClick={openTabMenu}
                     className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px]
                       hover:bg-outlook-bg-hover cursor-pointer`}
                     title="Paramètres des onglets"
@@ -314,10 +326,13 @@ export default function Ribbon({
                       Onglets <ChevronDown size={8} />
                     </span>
                   </button>
-                  {showTabMenu && (
+                  {showTabMenu && createPortal(
                     <>
-                      <div className="fixed inset-0 z-10" onClick={() => setShowTabMenu(false)} />
-                      <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-56">
+                      <div className="fixed inset-0 z-[9998]" onClick={() => setShowTabMenu(false)} />
+                      <div
+                        className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-56"
+                        style={{ top: tabMenuPos.top, left: tabMenuPos.left }}
+                      >
                         <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
                           Mode d'ouverture
                         </div>
@@ -359,7 +374,8 @@ export default function Ribbon({
                           </>
                         )}
                       </div>
-                    </>
+                    </>,
+                    document.body
                   )}
                 </div>
               </RibbonGroup>

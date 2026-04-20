@@ -137,6 +137,38 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Table `o2switch_email_links` pour les liaisons email
 - Contraintes d'unicité et clés étrangères
 
+## [1.3.0] - 2026-04-20
+
+### Ajouté
+
+#### Interface Block Layout (style Outlook Web)
+- Disposition en blocs avec marges, coins arrondis et ombres entre les panneaux
+- Fond tertiaire `#E8E6E4` visible entre les blocs (dossiers, liste, lecture, ruban)
+- Marges uniformes autour du ruban et de la zone de contenu
+
+#### Système d'onglets
+- Barre d'onglets en bas du volet de lecture pour naviguer entre messages/brouillons ouverts
+- Deux modes d'ouverture configurables :
+  - **Brouillons uniquement** : seuls les brouillons créent des onglets (par défaut)
+  - **Tous les mails ouverts** : chaque message cliqué ouvre un onglet
+- Nombre maximum d'onglets paramétrable (2-20, défaut 6) en mode "tous les mails"
+- Suppression automatique du plus ancien onglet inactif quand la limite est atteinte
+- Barre d'onglets masquée automatiquement quand moins de 2 onglets ouverts
+- Coins arrondis adaptatifs sur le volet de lecture selon la présence de la barre d'onglets
+- Options de configuration dans le ruban (onglet Afficher > groupe Onglets)
+- Persistance du mode et du max en `localStorage`
+
+#### Volet de dossiers redimensionnable
+- Poignée de redimensionnement entre le volet dossiers et la liste de messages
+- Largeur min 160px, max 400px, défaut 224px
+- Persistance de la largeur en `localStorage`
+
+#### Ruban auto-adaptatif
+- Basculement automatique du ruban classique vers simplifié quand la largeur < 700px (ResizeObserver)
+- Bouton "Réduire le ruban" (chevron ▲) en mode classique → passe en mode simplifié
+- Bouton "Développer le ruban" (chevron ▼) en mode simplifié → passe en mode classique
+- Suppression du menu déroulant "Options du ruban" redondant
+
 ## [Non publié]
 
 ### Prévu
