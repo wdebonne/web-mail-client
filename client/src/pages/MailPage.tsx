@@ -10,7 +10,7 @@ import MessageView from '../components/mail/MessageView';
 import ComposeModal from '../components/mail/ComposeModal';
 import Ribbon from '../components/mail/Ribbon';
 import toast from 'react-hot-toast';
-import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail } from 'lucide-react';
+import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
 
 export default function MailPage() {
   const isOnline = useNetworkStatus();
@@ -21,6 +21,7 @@ export default function MailPage() {
     setAccounts, selectAccount, setFolders, selectFolder,
     setMessages, selectMessage, openCompose, closeCompose,
     updateMessageFlags, removeMessage,
+    openTabs, activeTabId, openMessageTab, switchTab, closeTab,
   } = useMailStore();
 
   // Load accounts
@@ -225,7 +226,7 @@ export default function MailPage() {
   }, [isOnline]);
 
   const handleSelectMessage = async (message: any) => {
-    selectMessage(message);
+    openMessageTab(message);
     
     // Auto mark as read
     if (!message.flags?.seen && selectedAccount) {
@@ -236,7 +237,7 @@ export default function MailPage() {
     if (selectedAccount && isOnline) {
       try {
         const full = await api.getMessage(selectedAccount.id, message.uid, selectedFolder);
-        selectMessage(full);
+        openMessageTab(full);
       } catch {}
     }
   };
@@ -293,7 +294,15 @@ export default function MailPage() {
     const saved = localStorage.getItem('mailListWidth');
     return saved ? parseInt(saved, 10) : 320;
   });
+
+  // Resizable folder pane
+  const [folderWidth, setFolderWidth] = useState(() => {
+    const saved = localStorage.getItem('folderPaneWidth');
+    return saved ? parseInt(saved, 10) : 224;
+  });
+
   const isDragging = useRef(false);
+  const isDraggingFolder = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -309,10 +318,10 @@ export default function MailPage() {
       let folderPaneWidth = 0;
       if (showFolderPane) {
         const folderEl = containerRef.current.querySelector('[data-pane="folders"]');
-        if (folderEl) folderPaneWidth = (folderEl as HTMLElement).offsetWidth;
+        if (folderEl) folderPaneWidth = (folderEl as HTMLElement).offsetWidth + 4; // +4 for resize handle
       }
       const newWidth = ev.clientX - containerRect.left - folderPaneWidth;
-      const clamped = Math.max(220, Math.min(newWidth, containerRect.width - 300));
+      const clamped = Math.max(220, Math.min(newWidth, containerRect.width - 400));
       setListWidth(clamped);
     };
 
@@ -332,6 +341,37 @@ export default function MailPage() {
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }, [showFolderPane]);
+
+  // Resizable folder pane handler
+  const handleFolderResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingFolder.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingFolder.current || !containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const newWidth = ev.clientX - containerRect.left;
+      const clamped = Math.max(160, Math.min(newWidth, 400));
+      setFolderWidth(clamped);
+    };
+
+    const onMouseUp = () => {
+      isDraggingFolder.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      setFolderWidth(prev => {
+        localStorage.setItem('folderPaneWidth', String(prev));
+        return prev;
+      });
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, []);
 
   // When selecting a folder on mobile, switch to list view
   const handleSelectFolder = (folder: string) => {
@@ -439,29 +479,39 @@ export default function MailPage() {
 
       {/* Main content area — 3 blocks with gaps */}
       <div ref={containerRef} className="flex-1 flex overflow-hidden min-h-0 gap-0.5 px-1 pb-0.5">
-        {/* Folder pane block — collapsible */}
+        {/* Folder pane block — collapsible + resizable */}
         {showFolderPane && (
-          <div
-            data-pane="folders"
-            className={`
-              ${mobileView === 'folders' ? 'flex' : 'hidden'} md:flex
-              flex-col flex-shrink-0 w-full md:w-56 bg-white rounded-md shadow-sm overflow-hidden
-            `}
-          >
-            <FolderPane
-              accounts={accounts}
-              selectedAccount={selectedAccount}
-              folders={useMailStore(s => s.folders)}
-              selectedFolder={selectedFolder}
-              onSelectAccount={selectAccount}
-              onSelectFolder={handleSelectFolder}
-              onCompose={() => openCompose()}
-              onDropMessage={handleDropMessage}
-              onCreateFolder={handleCreateFolder}
-              onRenameFolder={handleRenameFolder}
-              onDeleteFolder={handleDeleteFolder}
-            />
-          </div>
+          <>
+            <div
+              data-pane="folders"
+              className={`
+                ${mobileView === 'folders' ? 'flex' : 'hidden'} md:flex
+                flex-col flex-shrink-0 w-full bg-white rounded-md shadow-sm overflow-hidden
+              `}
+              style={{ width: window.innerWidth >= 768 ? folderWidth : undefined }}
+            >
+              <FolderPane
+                accounts={accounts}
+                selectedAccount={selectedAccount}
+                folders={useMailStore(s => s.folders)}
+                selectedFolder={selectedFolder}
+                onSelectAccount={selectAccount}
+                onSelectFolder={handleSelectFolder}
+                onCompose={() => openCompose()}
+                onDropMessage={handleDropMessage}
+                onCreateFolder={handleCreateFolder}
+                onRenameFolder={handleRenameFolder}
+                onDeleteFolder={handleDeleteFolder}
+              />
+            </div>
+            {/* Folder resize handle — desktop only */}
+            <div
+              className="hidden md:flex w-1 flex-shrink-0 cursor-col-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors group relative"
+              onMouseDown={handleFolderResizeStart}
+            >
+              <div className="absolute inset-y-0 -left-1 -right-1" />
+            </div>
+          </>
         )}
 
         {/* Message list block — resizable on desktop */}
@@ -524,7 +574,7 @@ export default function MailPage() {
           />
         </div>
 
-        {/* Resize handle — desktop only */}
+        {/* Message list resize handle — desktop only */}
         <div
           className="hidden md:flex w-1 flex-shrink-0 cursor-col-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors group relative"
           onMouseDown={handleResizeStart}
@@ -532,72 +582,82 @@ export default function MailPage() {
           <div className="absolute inset-y-0 -left-1 -right-1" />
         </div>
 
-        {/* Right pane block: Reading or Compose — fills remaining space */}
+        {/* Right pane: message view + tab bar stacked vertically */}
         <div className={`
           ${mobileView === 'message' ? 'flex' : 'hidden'} md:flex
-          flex-col flex-1 min-w-0 bg-white rounded-md shadow-sm overflow-hidden
+          flex-col flex-1 min-w-0 overflow-hidden
         `}>
-          {/* Mobile back button */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
-            <button
-              onClick={() => { setMobileView('list'); selectMessage(null); }}
-              className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <span className="text-sm font-medium text-outlook-text-primary truncate">
-              {selectedMessage?.subject || 'Retour'}
-            </span>
+          {/* Reading / Compose block */}
+          <div className="flex-1 flex flex-col min-h-0 bg-white rounded-t-md shadow-sm overflow-hidden">
+            {/* Mobile back button */}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
+              <button
+                onClick={() => { setMobileView('list'); selectMessage(null); }}
+                className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
+              >
+                <ArrowLeft size={18} />
+              </button>
+              <span className="text-sm font-medium text-outlook-text-primary truncate">
+                {selectedMessage?.subject || 'Retour'}
+              </span>
+            </div>
+
+            {/* Inline compose — replaces the reading pane when composing */}
+            {isComposing && composeData ? (
+              <ComposeModal
+                initialData={composeData}
+                accounts={accounts}
+                selectedAccountId={selectedAccount?.id}
+                onSend={(data) => sendMutation.mutate(data)}
+                onClose={closeCompose}
+                isSending={sendMutation.isPending}
+                inline
+              />
+            ) : (
+              <MessageView
+                message={selectedMessage}
+                onReply={() => selectedMessage && handleReply(selectedMessage)}
+                onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
+                onForward={() => selectedMessage && handleForward(selectedMessage)}
+                onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
+                onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
+                onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
+              />
+            )}
           </div>
 
-          {/* Inline compose — replaces the reading pane when composing */}
-          {isComposing && composeData ? (
-            <ComposeModal
-              initialData={composeData}
-              accounts={accounts}
-              selectedAccountId={selectedAccount?.id}
-              onSend={(data) => sendMutation.mutate(data)}
-              onClose={closeCompose}
-              isSending={sendMutation.isPending}
-              inline
-            />
-          ) : (
-            <MessageView
-              message={selectedMessage}
-              onReply={() => selectedMessage && handleReply(selectedMessage)}
-              onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
-              onForward={() => selectedMessage && handleForward(selectedMessage)}
-              onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
-              onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
-              onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
-            />
-          )}
+          {/* Tab bar block — aligned with the message pane */}
+          <div className="flex-shrink-0 bg-outlook-bg-primary flex items-center h-9 px-1 gap-0.5 overflow-x-auto mt-0.5 rounded-b-md shadow-sm">
+            {openTabs.length > 0 ? (
+              openTabs.map(tab => (
+                <div
+                  key={tab.id}
+                  onClick={() => switchTab(tab.id)}
+                  className={`outlook-tab flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium max-w-48 cursor-pointer select-none group
+                    ${tab.id === activeTabId
+                      ? tab.type === 'compose' ? 'outlook-tab-compose' : 'outlook-tab-active'
+                      : 'hover:bg-outlook-bg-hover text-outlook-text-secondary'
+                    }`}
+                >
+                  {tab.type === 'compose' ? (
+                    <Pencil size={11} className="flex-shrink-0" />
+                  ) : (
+                    <Mail size={11} className="flex-shrink-0" />
+                  )}
+                  <span className="truncate">{tab.label || '(Sans objet)'}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
+                    className="text-outlook-text-disabled hover:text-outlook-danger ml-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))
+            ) : (
+              <span className="text-xs text-outlook-text-disabled italic px-2">Aucun message ouvert</span>
+            )}
+          </div>
         </div>
-      </div>
-
-      {/* Bottom tab bar block — open mails / drafts */}
-      <div className="flex-shrink-0 bg-outlook-bg-primary flex items-center h-9 px-2 gap-1 overflow-x-auto mx-1 mb-1 rounded-b-md shadow-sm">
-        {selectedMessage && !isComposing && (
-          <div className="outlook-tab outlook-tab-active flex items-center gap-1.5 rounded px-3 py-1 text-xs font-medium max-w-52 cursor-pointer">
-            <Mail size={12} className="flex-shrink-0" />
-            <span className="truncate">{selectedMessage.subject || '(Sans objet)'}</span>
-          </div>
-        )}
-        {isComposing && (
-          <div className="outlook-tab outlook-tab-compose flex items-center gap-1.5 rounded px-3 py-1 text-xs font-medium max-w-52 cursor-pointer">
-            <span className="text-outlook-text-secondary flex-shrink-0">✏️</span>
-            <span className="truncate">{composeData?.subject || '(Aucun objet)'}</span>
-            <button
-              onClick={closeCompose}
-              className="text-outlook-text-disabled hover:text-outlook-danger ml-1 flex-shrink-0 text-xs leading-none"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-        {!selectedMessage && !isComposing && (
-          <span className="text-xs text-outlook-text-disabled italic">Aucun message ouvert</span>
-        )}
       </div>
     </div>
   );
