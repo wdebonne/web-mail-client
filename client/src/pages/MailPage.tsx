@@ -22,6 +22,7 @@ export default function MailPage() {
     setMessages, selectMessage, openCompose, closeCompose,
     updateMessageFlags, removeMessage,
     openTabs, activeTabId, openMessageTab, switchTab, closeTab,
+    tabMode, maxTabs, setTabMode, setMaxTabs,
   } = useMailStore();
 
   // Load accounts
@@ -474,6 +475,10 @@ export default function MailPage() {
           onToggleCollapse={toggleRibbonCollapsed}
           ribbonMode={ribbonMode}
           onChangeRibbonMode={handleChangeRibbonMode}
+          tabMode={tabMode}
+          maxTabs={maxTabs}
+          onChangeTabMode={setTabMode}
+          onChangeMaxTabs={setMaxTabs}
         />
       </div>
 
@@ -588,7 +593,7 @@ export default function MailPage() {
           flex-col flex-1 min-w-0 overflow-hidden
         `}>
           {/* Reading / Compose block */}
-          <div className="flex-1 flex flex-col min-h-0 bg-white rounded-t-md shadow-sm overflow-hidden">
+          <div className={`flex-1 flex flex-col min-h-0 bg-white shadow-sm overflow-hidden ${openTabs.length >= 2 ? 'rounded-t-md' : 'rounded-md'}`}>
             {/* Mobile back button */}
             <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
               <button
@@ -626,10 +631,10 @@ export default function MailPage() {
             )}
           </div>
 
-          {/* Tab bar block — aligned with the message pane */}
-          <div className="flex-shrink-0 bg-outlook-bg-primary flex items-center h-9 px-1 gap-0.5 overflow-x-auto mt-1 rounded-b-md shadow-sm">
-            {openTabs.length > 0 ? (
-              openTabs.map(tab => (
+          {/* Tab bar block — visible only when >= 2 tabs */}
+          {openTabs.length >= 2 && (
+            <div className="flex-shrink-0 bg-outlook-bg-primary flex items-center h-9 px-1 gap-0.5 overflow-x-auto mt-1 rounded-b-md shadow-sm">
+              {openTabs.map(tab => (
                 <div
                   key={tab.id}
                   onClick={() => switchTab(tab.id)}
@@ -652,11 +657,9 @@ export default function MailPage() {
                     <X size={12} />
                   </button>
                 </div>
-              ))
-            ) : (
-              <span className="text-xs text-outlook-text-disabled italic px-2">Aucun message ouvert</span>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

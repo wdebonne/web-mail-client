@@ -9,6 +9,8 @@ export interface OpenTab {
   label: string;
 }
 
+export type TabMode = 'drafts-only' | 'all-opened';
+
 interface MailState {
   accounts: MailAccount[];
   selectedAccount: MailAccount | null;
@@ -24,6 +26,8 @@ interface MailState {
   // Tabs
   openTabs: OpenTab[];
   activeTabId: string | null;
+  tabMode: TabMode;
+  maxTabs: number;
 
   setAccounts: (accounts: MailAccount[]) => void;
   selectAccount: (account: MailAccount) => void;
@@ -42,6 +46,8 @@ interface MailState {
   switchTab: (tabId: string) => void;
   closeTab: (tabId: string) => void;
   updateComposeTab: (tabId: string, data: Partial<ComposeData>) => void;
+  setTabMode: (mode: TabMode) => void;
+  setMaxTabs: (max: number) => void;
 }
 
 export interface ComposeData {
@@ -68,6 +74,8 @@ export const useMailStore = create<MailState>((set, get) => ({
   currentPage: 1,
   openTabs: [],
   activeTabId: null,
+  tabMode: (localStorage.getItem('tabMode') as TabMode) || 'drafts-only',
+  maxTabs: parseInt(localStorage.getItem('maxTabs') || '6', 10),
 
   setAccounts: (accounts) => {
     set({ accounts });
@@ -142,9 +150,10 @@ export const useMailStore = create<MailState>((set, get) => ({
 
   // --- Tab management ---
   openMessageTab: (message) => {
-    const { openTabs } = get();
+    const { openTabs, tabMode, maxTabs } = get();
     const tabId = `msg-${message.uid}`;
     const existing = openTabs.find(t => t.id === tabId);
+
     if (existing) {
       // Already open — switch to it and update message data
       set({
@@ -153,19 +162,43 @@ export const useMailStore = create<MailState>((set, get) => ({
         isComposing: false,
         openTabs: openTabs.map(t => t.id === tabId ? { ...t, message } : t),
       });
-    } else {
+      return;
+    }
+
+    // In drafts-only mode, don't create message tabs — just select the message
+    if (tabMode === 'drafts-only') {
       set({
-        openTabs: [...openTabs, {
-          id: tabId,
-          type: 'message',
-          message,
-          label: message.subject || '(Sans objet)',
-        }],
-        activeTabId: tabId,
         selectedMessage: message,
         isComposing: false,
       });
+      return;
     }
+
+    // all-opened mode: enforce maxTabs limit (count only message tabs)
+    let updatedTabs = [...openTabs];
+    const messageTabs = updatedTabs.filter(t => t.type === 'message');
+    if (messageTabs.length >= maxTabs) {
+      // Remove the oldest message tab that isn't active
+      const oldestInactive = messageTabs.find(t => t.id !== get().activeTabId);
+      if (oldestInactive) {
+        updatedTabs = updatedTabs.filter(t => t.id !== oldestInactive.id);
+      } else {
+        // All are active? Remove the oldest anyway
+        updatedTabs = updatedTabs.filter(t => t.id !== messageTabs[0].id);
+      }
+    }
+
+    set({
+      openTabs: [...updatedTabs, {
+        id: tabId,
+        type: 'message',
+        message,
+        label: message.subject || '(Sans objet)',
+      }],
+      activeTabId: tabId,
+      selectedMessage: message,
+      isComposing: false,
+    });
   },
 
   openComposeTab: (data) => {
@@ -269,5 +302,34 @@ export const useMailStore = create<MailState>((set, get) => ({
         ? { ...state.composeData!, ...data }
         : state.composeData,
     }));
+  },
+
+  setTabMode: (mode) => {
+    localStorage.setItem('tabMode', mode);
+    // When switching to drafts-only, remove all message tabs
+    if (mode === 'drafts-only') {
+      const { openTabs, activeTabId } = get();
+      const remaining = openTabs.filter(t => t.type !== 'message');
+      const wasActiveRemoved = !remaining.find(t => t.id === activeTabId);
+      if (wasActiveRemoved) {
+        const lastTab = remaining[remaining.length - 1];
+        set({
+          tabMode: mode,
+          openTabs: remaining,
+          activeTabId: lastTab?.id || null,
+          isComposing: lastTab?.type === 'compose',
+          composeData: lastTab?.composeData || null,
+        });
+      } else {
+        set({ tabMode: mode, openTabs: remaining });
+      }
+    } else {
+      set({ tabMode: mode });
+    }
+  },
+
+  setMaxTabs: (max) => {
+    localStorage.setItem('maxTabs', String(max));
+    set({ maxTabs: max });
   },
 }));

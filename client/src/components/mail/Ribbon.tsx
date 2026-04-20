@@ -4,8 +4,9 @@ import {
   FolderInput, MailPlus, RefreshCw, ChevronDown, Printer,
   Download, Eye, EyeOff, PanelLeftOpen, PanelLeftClose,
   Columns2, Rows2, LayoutGrid, Settings, Info, FileDown,
-  MoreHorizontal,
+  MoreHorizontal, Layers, Minus, Plus,
 } from 'lucide-react';
+import type { TabMode } from '../../stores/mailStore';
 
 type RibbonTab = 'accueil' | 'afficher';
 type RibbonMode = 'classic' | 'simplified';
@@ -39,6 +40,12 @@ interface RibbonProps {
   // Ribbon mode
   ribbonMode: RibbonMode;
   onChangeRibbonMode: (mode: RibbonMode) => void;
+
+  // Tab settings
+  tabMode: TabMode;
+  maxTabs: number;
+  onChangeTabMode: (mode: TabMode) => void;
+  onChangeMaxTabs: (max: number) => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -108,8 +115,10 @@ export default function Ribbon({
   showFolderPane, onToggleFolderPane, onPrint, onDownloadEml,
   isCollapsed, onToggleCollapse,
   ribbonMode, onChangeRibbonMode,
+  tabMode, maxTabs, onChangeTabMode, onChangeMaxTabs,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
+  const [showTabMenu, setShowTabMenu] = useState(false);
   const ribbonRef = useRef<HTMLDivElement>(null);
 
   // Auto-switch between classic and simplified based on width
@@ -288,6 +297,71 @@ export default function Ribbon({
                   onClick={onToggleFolderPane}
                   active={showFolderPane}
                 />
+              </RibbonGroup>
+              <RibbonSeparator />
+
+              {/* Onglets */}
+              <RibbonGroup label="Onglets">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowTabMenu(!showTabMenu)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px]
+                      hover:bg-outlook-bg-hover cursor-pointer`}
+                    title="Paramètres des onglets"
+                  >
+                    <Layers size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Onglets <ChevronDown size={8} />
+                    </span>
+                  </button>
+                  {showTabMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowTabMenu(false)} />
+                      <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-56">
+                        <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+                          Mode d'ouverture
+                        </div>
+                        <button
+                          onClick={() => { onChangeTabMode('drafts-only'); setShowTabMenu(false); }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                        >
+                          <span className={`w-2 h-2 rounded-full ${tabMode === 'drafts-only' ? 'bg-outlook-blue' : 'bg-transparent border border-outlook-border'}`} />
+                          Brouillons uniquement
+                        </button>
+                        <button
+                          onClick={() => { onChangeTabMode('all-opened'); setShowTabMenu(false); }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                        >
+                          <span className={`w-2 h-2 rounded-full ${tabMode === 'all-opened' ? 'bg-outlook-blue' : 'bg-transparent border border-outlook-border'}`} />
+                          Tous les mails ouverts
+                        </button>
+                        {tabMode === 'all-opened' && (
+                          <>
+                            <div className="border-t border-outlook-border my-1" />
+                            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+                              Nombre max d'onglets
+                            </div>
+                            <div className="flex items-center gap-2 px-3 py-1.5">
+                              <button
+                                onClick={() => onChangeMaxTabs(Math.max(2, maxTabs - 1))}
+                                className="p-0.5 rounded hover:bg-outlook-bg-hover"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="text-sm font-medium w-6 text-center">{maxTabs}</span>
+                              <button
+                                onClick={() => onChangeMaxTabs(Math.min(20, maxTabs + 1))}
+                                className="p-0.5 rounded hover:bg-outlook-bg-hover"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </RibbonGroup>
               <RibbonSeparator />
 
