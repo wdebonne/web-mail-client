@@ -36,9 +36,6 @@ COPY --from=builder /app/server/dist ./server/dist
 # Copy built client into server's public folder
 COPY --from=builder /app/client/dist ./server/dist/public
 
-# Copy migrations
-COPY server/src/database/migrations ./server/dist/database/migrations
-
 # Create directories
 RUN mkdir -p /app/plugins /app/uploads /app/data
 
