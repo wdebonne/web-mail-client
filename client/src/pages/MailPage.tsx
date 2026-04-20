@@ -284,6 +284,9 @@ export default function MailPage() {
   const [ribbonCollapsed, setRibbonCollapsed] = useState(() => {
     return localStorage.getItem('ribbonCollapsed') === 'true';
   });
+  const [ribbonMode, setRibbonMode] = useState<'classic' | 'simplified'>(() => {
+    return (localStorage.getItem('ribbonMode') as 'classic' | 'simplified') || 'classic';
+  });
 
   // Resizable message list pane
   const [listWidth, setListWidth] = useState(() => {
@@ -355,6 +358,11 @@ export default function MailPage() {
     });
   }, []);
 
+  const handleChangeRibbonMode = useCallback((mode: 'classic' | 'simplified') => {
+    setRibbonMode(mode);
+    localStorage.setItem('ribbonMode', mode);
+  }, []);
+
   const handlePrint = useCallback(() => {
     if (!selectedMessage) return;
     const printWindow = window.open('', '_blank');
@@ -423,6 +431,8 @@ export default function MailPage() {
         onDownloadEml={handleDownloadEml}
         isCollapsed={ribbonCollapsed}
         onToggleCollapse={toggleRibbonCollapsed}
+        ribbonMode={ribbonMode}
+        onChangeRibbonMode={handleChangeRibbonMode}
       />
 
       {/* Main content area */}

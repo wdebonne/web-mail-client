@@ -4,9 +4,11 @@ import {
   FolderInput, MailPlus, RefreshCw, ChevronDown, Printer,
   Download, Eye, EyeOff, PanelLeftOpen, PanelLeftClose,
   Columns2, Rows2, LayoutGrid, Settings, Info, FileDown,
+  MoreHorizontal, Check,
 } from 'lucide-react';
 
 type RibbonTab = 'accueil' | 'afficher';
+type RibbonMode = 'classic' | 'simplified';
 
 interface RibbonProps {
   // Accueil actions
@@ -33,6 +35,10 @@ interface RibbonProps {
   // Ribbon visibility
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+
+  // Ribbon mode
+  ribbonMode: RibbonMode;
+  onChangeRibbonMode: (mode: RibbonMode) => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -60,6 +66,30 @@ function RibbonSeparator() {
   return <div className="w-px h-10 bg-outlook-border mx-1 self-center" />;
 }
 
+function SimplifiedButton({ icon: Icon, label, onClick, disabled, active, danger }: {
+  icon: any; label: string; onClick: () => void;
+  disabled?: boolean; active?: boolean; danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center gap-1 rounded transition-colors px-2 py-1
+        ${disabled ? 'opacity-40 cursor-default' : 'hover:bg-outlook-bg-hover cursor-pointer'}
+        ${active ? 'bg-outlook-blue/10 text-outlook-blue' : ''}
+        ${danger && !disabled ? 'hover:bg-red-50 hover:text-outlook-danger' : ''}`}
+      title={label}
+    >
+      <Icon size={14} />
+      <span className="text-xs whitespace-nowrap">{label}</span>
+    </button>
+  );
+}
+
+function SimplifiedSep() {
+  return <div className="w-px h-5 bg-outlook-border mx-0.5 self-center" />;
+}
+
 function RibbonGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center">
@@ -77,8 +107,101 @@ export default function Ribbon({
   hasSelectedMessage, isFlagged, isRead,
   showFolderPane, onToggleFolderPane, onPrint, onDownloadEml,
   isCollapsed, onToggleCollapse,
+  ribbonMode, onChangeRibbonMode,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
+  const [showModeMenu, setShowModeMenu] = useState(false);
+
+  // ─── Simplified ribbon ─────────────────────────────────────
+  if (ribbonMode === 'simplified') {
+    return (
+      <div className="hidden md:flex items-center flex-shrink-0 bg-white border-b border-outlook-border select-none px-2 py-1 gap-0.5 overflow-x-auto">
+        {/* Nouveau message */}
+        <SimplifiedButton icon={MailPlus} label="Nouveau" onClick={onNewMessage} />
+        <SimplifiedSep />
+
+        {/* Répondre group */}
+        <SimplifiedButton icon={Reply} label="Répondre" onClick={onReply} disabled={!hasSelectedMessage} />
+        <SimplifiedButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} disabled={!hasSelectedMessage} />
+        <SimplifiedButton icon={Forward} label="Transférer" onClick={onForward} disabled={!hasSelectedMessage} />
+        <SimplifiedSep />
+
+        {/* Actions */}
+        <SimplifiedButton icon={Trash2} label="Supprimer" onClick={onDelete} disabled={!hasSelectedMessage} danger />
+        <SimplifiedButton icon={Archive} label="Archiver" onClick={onArchive} disabled={!hasSelectedMessage} />
+        <SimplifiedButton
+          icon={Flag}
+          label="Indicateur"
+          onClick={onToggleFlag}
+          disabled={!hasSelectedMessage}
+          active={isFlagged}
+        />
+        <SimplifiedSep />
+
+        {/* Marquer lu/non lu */}
+        <SimplifiedButton
+          icon={isRead ? EyeOff : Eye}
+          label={isRead ? 'Non lu' : 'Lu'}
+          onClick={isRead ? onMarkUnread : onMarkRead}
+          disabled={!hasSelectedMessage}
+        />
+        <SimplifiedSep />
+
+        {/* Synchroniser */}
+        <SimplifiedButton icon={RefreshCw} label="Synchroniser" onClick={onSync} />
+        <SimplifiedSep />
+
+        {/* Volet dossiers */}
+        <SimplifiedButton
+          icon={showFolderPane ? PanelLeftClose : PanelLeftOpen}
+          label="Volet Dossiers"
+          onClick={onToggleFolderPane}
+          active={showFolderPane}
+        />
+        <SimplifiedSep />
+
+        {/* Imprimer / Télécharger */}
+        <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
+        <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
+
+        <div className="flex-1" />
+
+        {/* Mode switcher */}
+        <div className="relative">
+          <button
+            onClick={() => setShowModeMenu(!showModeMenu)}
+            className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary"
+            title="Options du ruban"
+          >
+            <ChevronDown size={12} />
+          </button>
+          {showModeMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowModeMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
+                <button
+                  onClick={() => { onChangeRibbonMode('classic'); setShowModeMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  {(ribbonMode as string) === 'classic' ? <Check size={14} className="text-outlook-blue" /> : <span className="w-3.5" />}
+                  Ruban classique
+                </button>
+                <button
+                  onClick={() => { onChangeRibbonMode('simplified'); setShowModeMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  {(ribbonMode as string) === 'simplified' ? <Check size={14} className="text-outlook-blue" /> : <span className="w-3.5" />}
+                  Ruban simplifié
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Classic ribbon ─────────────────────────────────────────
 
   return (
     <div className="hidden md:flex flex-col flex-shrink-0 bg-white border-b border-outlook-border select-none">
@@ -104,6 +227,37 @@ export default function Ribbon({
           </button>
         ))}
         <div className="flex-1" />
+        <div className="relative">
+          <button
+            onClick={() => setShowModeMenu(!showModeMenu)}
+            className="text-outlook-text-disabled hover:text-outlook-text-secondary p-1 rounded hover:bg-outlook-bg-hover"
+            title="Options du ruban"
+          >
+            <ChevronDown size={12} />
+          </button>
+          {showModeMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowModeMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
+                <button
+                  onClick={() => { onChangeRibbonMode('classic'); setShowModeMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  {ribbonMode === 'classic' && <Check size={14} className="text-outlook-blue" />}
+                  {ribbonMode !== 'classic' && <span className="w-3.5" />}
+                  Ruban classique
+                </button>
+                <button
+                  onClick={() => { onChangeRibbonMode('simplified'); setShowModeMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  {(ribbonMode as string) === 'simplified' ? <Check size={14} className="text-outlook-blue" /> : <span className="w-3.5" />}
+                  Ruban simplifié
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         <button
           onClick={onToggleCollapse}
           className="text-outlook-text-disabled hover:text-outlook-text-secondary p-1 rounded hover:bg-outlook-bg-hover"
