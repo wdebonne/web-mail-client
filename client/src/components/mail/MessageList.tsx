@@ -36,6 +36,7 @@ interface MessageListProps {
   folders?: MailFolder[];
   onToggleFolderPane?: () => void;
   showFolderPane?: boolean;
+  listWidth?: number;
 }
 
 interface MessageGroup {
@@ -69,7 +70,7 @@ export default function MessageList({
   messages, selectedMessage, loading,
   onSelectMessage, onToggleFlag, onDelete, folder, draggable = true,
   onReply, onReplyAll, onForward, onMarkRead, onMove, onCopy, folders,
-  onToggleFolderPane, showFolderPane,
+  onToggleFolderPane, showFolderPane, listWidth,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -444,6 +445,16 @@ export default function MessageList({
         )}
       </div>
 
+      {/* Column headers — wide mode only */}
+      {(listWidth ?? 0) >= 400 && (
+        <div className="flex items-center gap-2 px-3 py-1 border-b border-outlook-border bg-outlook-bg-primary/50 text-2xs font-medium text-outlook-text-secondary">
+          <span className="w-7 flex-shrink-0" />
+          <span className="w-28 flex-shrink-0">De</span>
+          <span className="flex-1 min-w-0">Objet</span>
+          <span className="w-20 text-right flex-shrink-0">Reçu ▾</span>
+        </div>
+      )}
+
       {/* Grouped message list — scrollable */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {filteredMessages.length === 0 ? (
@@ -489,6 +500,7 @@ export default function MessageList({
                   const isSelected = selectedMessage?.uid === message.uid;
                   const isUnread = !message.flags?.seen;
                   const isChecked = selectedUids.has(message.uid);
+                  const isWide = (listWidth ?? 0) >= 400;
 
                   return (
                     <div
@@ -509,14 +521,15 @@ export default function MessageList({
                         e.dataTransfer.setData('text/x-mail-uid', String(message.uid));
                         e.dataTransfer.effectAllowed = 'move';
                       }}
-                      className={`flex gap-3 px-3 py-2.5 cursor-pointer border-b border-outlook-border transition-colors group relative
+                      className={`flex items-center gap-2 px-3 cursor-pointer border-b border-outlook-border transition-colors group relative
+                        ${isWide ? 'py-1.5' : 'py-2.5 gap-3'}
                         ${isSelected && !selectionMode ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
                         ${isChecked ? 'bg-blue-50' : ''}
                         ${isUnread ? '' : 'bg-outlook-bg-primary/30'}`}
                     >
                       {/* Checkbox (selection mode) or Avatar */}
                       {selectionMode ? (
-                        <div className="flex items-center justify-center w-10 h-10 flex-shrink-0 mt-0.5">
+                        <div className={`flex items-center justify-center flex-shrink-0 ${isWide ? 'w-7 h-7' : 'w-10 h-10 mt-0.5'}`}>
                           <input
                             type="checkbox"
                             checked={isChecked}
@@ -527,29 +540,46 @@ export default function MessageList({
                         </div>
                       ) : (
                         <div
-                          className="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 mt-0.5"
+                          className={`rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0 ${isWide ? 'w-7 h-7 text-2xs' : 'w-10 h-10 text-xs mt-0.5'}`}
                           style={{ backgroundColor: getAvatarColor(message.from?.name, message.from?.address) }}
                         >
                           {getInitials(message.from?.name, message.from?.address)}
                         </div>
                       )}
 
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`text-sm truncate ${isUnread ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
+                      {isWide ? (
+                        /* ===== Wide mode: single-line row with columns ===== */
+                        <>
+                          {/* From */}
+                          <span className={`w-28 flex-shrink-0 text-xs truncate ${isUnread ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
                             {message.from?.name || message.from?.address || 'Inconnu'}
                           </span>
 
-                          {/* Date — shown normally, hidden on hover (actions take its place) */}
+                          {/* Icons: replied, attachment */}
+                          <div className="flex items-center gap-0.5 flex-shrink-0 w-8">
+                            {message.flags?.answered && <Reply size={11} className="text-outlook-text-disabled" />}
+                            {message.hasAttachments && <Paperclip size={11} className="text-outlook-text-disabled" />}
+                          </div>
+
+                          {/* Subject + snippet */}
+                          <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                            <span className={`text-xs truncate ${isUnread ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
+                              {message.subject || '(Sans objet)'}
+                            </span>
+                            <span className="text-xs text-outlook-text-disabled truncate">
+                              {message.snippet || ''}
+                            </span>
+                          </div>
+
+                          {/* Date — shown normally, hidden on hover */}
                           <span
-                            className="text-2xs text-outlook-text-secondary flex-shrink-0 group-hover:hidden"
+                            className="text-2xs text-outlook-text-secondary flex-shrink-0 w-20 text-right group-hover:hidden"
                             title={formatFullDate(message.date)}
                           >
                             {formatDate(message.date)}
                           </span>
 
-                          {/* Hover actions — hidden by default, shown on hover */}
+                          {/* Hover actions */}
                           <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
                             {onMarkRead && (
                               <button
@@ -557,60 +587,103 @@ export default function MessageList({
                                 className="p-1 rounded hover:bg-gray-200 text-outlook-text-secondary hover:text-outlook-blue transition-colors"
                                 title={message.flags?.seen ? 'Marquer comme non lu' : 'Marquer comme lu'}
                               >
-                                {message.flags?.seen ? <Mail size={14} /> : <MailOpen size={14} />}
+                                {message.flags?.seen ? <Mail size={12} /> : <MailOpen size={12} />}
                               </button>
                             )}
                             <button
                               onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged); }}
-                              className={`p-1 rounded hover:bg-gray-200 transition-colors
-                                ${message.flags?.flagged ? 'text-outlook-warning' : 'text-outlook-text-secondary hover:text-outlook-warning'}`}
+                              className={`p-1 rounded hover:bg-gray-200 transition-colors ${message.flags?.flagged ? 'text-outlook-warning' : 'text-outlook-text-secondary hover:text-outlook-warning'}`}
                               title={message.flags?.flagged ? 'Retirer le drapeau' : 'Marquer d\'un drapeau'}
                             >
-                              <Flag size={14} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
+                              <Flag size={12} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); onDelete(message.uid); }}
                               className="p-1 rounded hover:bg-red-100 text-outlook-text-secondary hover:text-red-600 transition-colors"
                               title="Supprimer"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={12} />
                             </button>
                           </div>
-                        </div>
+                        </>
+                      ) : (
+                        /* ===== Narrow mode: multi-line card ===== */
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`text-sm truncate ${isUnread ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
+                              {message.from?.name || message.from?.address || 'Inconnu'}
+                            </span>
 
-                        <div className={`text-sm truncate ${isUnread ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
-                          {message.subject || '(Sans objet)'}
-                        </div>
-
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <span className="text-xs text-outlook-text-disabled truncate flex-1">
-                            {message.snippet || ''}
-                          </span>
-                          
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            {message.hasAttachments && (
-                              <Paperclip size={12} className="text-outlook-text-disabled" />
-                            )}
-                            {/* Reply indicator (non-hover) */}
-                            {message.flags?.answered && (
-                              <Reply size={12} className="text-outlook-text-disabled" />
-                            )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onToggleFlag(message.uid, !message.flags?.flagged);
-                              }}
-                              className={`p-0.5 rounded transition-colors
-                                ${message.flags?.flagged
-                                  ? 'text-outlook-warning'
-                                  : 'text-transparent group-hover:text-outlook-text-disabled hover:!text-outlook-warning'
-                                }`}
+                            {/* Date — shown normally, hidden on hover */}
+                            <span
+                              className="text-2xs text-outlook-text-secondary flex-shrink-0 group-hover:hidden"
+                              title={formatFullDate(message.date)}
                             >
-                              <Star size={12} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
-                            </button>
+                              {formatDate(message.date)}
+                            </span>
+
+                            {/* Hover actions */}
+                            <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
+                              {onMarkRead && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onMarkRead(message.uid, !message.flags?.seen); }}
+                                  className="p-1 rounded hover:bg-gray-200 text-outlook-text-secondary hover:text-outlook-blue transition-colors"
+                                  title={message.flags?.seen ? 'Marquer comme non lu' : 'Marquer comme lu'}
+                                >
+                                  {message.flags?.seen ? <Mail size={14} /> : <MailOpen size={14} />}
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged); }}
+                                className={`p-1 rounded hover:bg-gray-200 transition-colors
+                                  ${message.flags?.flagged ? 'text-outlook-warning' : 'text-outlook-text-secondary hover:text-outlook-warning'}`}
+                                title={message.flags?.flagged ? 'Retirer le drapeau' : 'Marquer d\'un drapeau'}
+                              >
+                                <Flag size={14} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onDelete(message.uid); }}
+                                className="p-1 rounded hover:bg-red-100 text-outlook-text-secondary hover:text-red-600 transition-colors"
+                                title="Supprimer"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className={`text-sm truncate ${isUnread ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
+                            {message.subject || '(Sans objet)'}
+                          </div>
+
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-xs text-outlook-text-disabled truncate flex-1">
+                              {message.snippet || ''}
+                            </span>
+                            
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {message.hasAttachments && (
+                                <Paperclip size={12} className="text-outlook-text-disabled" />
+                              )}
+                              {message.flags?.answered && (
+                                <Reply size={12} className="text-outlook-text-disabled" />
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onToggleFlag(message.uid, !message.flags?.flagged);
+                                }}
+                                className={`p-0.5 rounded transition-colors
+                                  ${message.flags?.flagged
+                                    ? 'text-outlook-warning'
+                                    : 'text-transparent group-hover:text-outlook-text-disabled hover:!text-outlook-warning'
+                                  }`}
+                              >
+                                <Star size={12} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
