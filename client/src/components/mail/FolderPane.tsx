@@ -109,8 +109,8 @@ export default function FolderPane({
     const persisted = getExpandedAccounts();
     return new Set(persisted.length ? persisted : accounts.map((a) => a.id));
   });
-  const [, forceRender] = useState(0);
-  const triggerRerender = () => forceRender((n) => n + 1);
+  const [prefsVersion, setPrefsVersion] = useState(0);
+  const triggerRerender = () => setPrefsVersion((n) => n + 1);
 
   const [accountContextMenu, setAccountContextMenu] = useState<
     { x: number; y: number; account: MailAccount } | null
@@ -134,7 +134,7 @@ export default function FolderPane({
     });
   }, [accounts]);
 
-  const orderedAccounts = useMemo(() => sortAccounts(accounts), [accounts]);
+  const orderedAccounts = useMemo(() => sortAccounts(accounts), [accounts, prefsVersion]);
 
   const toggleAccount = (id: string) => {
     setExpandedAccounts((prev) => {
@@ -262,6 +262,7 @@ export default function FolderPane({
                   onDropMessage={onDropMessage}
                   onCopyFolder={onCopyFolderBetweenAccounts}
                   onFolderOrderChanged={triggerRerender}
+                  prefsVersion={prefsVersion}
                 />
               )}
             </div>
@@ -319,11 +320,12 @@ interface AccountFoldersProps {
   onDropMessage?: FolderPaneProps['onDropMessage'];
   onCopyFolder?: FolderPaneProps['onCopyFolderBetweenAccounts'];
   onFolderOrderChanged?: () => void;
+  prefsVersion?: number;
 }
 
 function AccountFolders({
   account, selectedAccountId, selectedFolder, externalFolders,
-  onSelectFolder, onContextMenu, onDropMessage, onCopyFolder, onFolderOrderChanged,
+  onSelectFolder, onContextMenu, onDropMessage, onCopyFolder, onFolderOrderChanged, prefsVersion,
 }: AccountFoldersProps) {
   const { data } = useQuery({
     queryKey: ['folders', account.id],
@@ -333,7 +335,7 @@ function AccountFolders({
   });
 
   const folders: MailFolder[] = (externalFolders || (data as MailFolder[]) || []) as MailFolder[];
-  const ordered = useMemo(() => sortFolders(folders, account.id), [folders, account.id]);
+  const ordered = useMemo(() => sortFolders(folders, account.id), [folders, account.id, prefsVersion]);
 
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [folderDropIndicator, setFolderDropIndicator] = useState<
