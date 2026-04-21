@@ -1,10 +1,11 @@
 import { ReactNode, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { useThemeStore } from '../stores/themeStore';
 import { motion } from 'motion/react';
 import {
   Mail, Calendar, Users, Settings, Shield, Search,
-  ChevronLeft, LogOut, Menu, X
+  ChevronLeft, LogOut, Menu, X, Sun, Moon, Monitor
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -13,6 +14,11 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuthStore();
+  const themeMode = useThemeStore((s) => s.mode);
+  const themeResolved = useThemeStore((s) => s.resolved);
+  const setThemeMode = useThemeStore((s) => s.setMode);
+  const toggleTheme = useThemeStore((s) => s.toggle);
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -66,6 +72,48 @@ export default function Layout({ children }: LayoutProps) {
 
         {/* User menu */}
         <div className="ml-auto flex items-center gap-2">
+          {/* Theme toggle — click to swap light/dark, long-press (or right-click) opens mode menu */}
+          <div className="relative">
+            <button
+              onClick={toggleTheme}
+              onContextMenu={(e) => { e.preventDefault(); setThemeMenuOpen(v => !v); }}
+              className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded"
+              title={`Thème : ${themeMode === 'system' ? 'Système' : themeMode === 'dark' ? 'Sombre' : 'Clair'} (clic pour basculer, clic droit pour choisir)`}
+              aria-label="Basculer le thème"
+            >
+              {themeResolved === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button
+              onClick={() => setThemeMenuOpen(v => !v)}
+              className="text-white/60 hover:text-white hover:bg-white/10 px-0.5 py-1.5 rounded"
+              title="Choisir le thème"
+              aria-label="Choisir le mode de thème"
+            >
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M0 2l4 4 4-4z"/></svg>
+            </button>
+            {themeMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setThemeMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-50 w-40 bg-outlook-bg-secondary text-outlook-text-primary border border-outlook-border rounded shadow-lg py-1">
+                  {([
+                    { value: 'system', label: 'Système', icon: Monitor },
+                    { value: 'light', label: 'Clair', icon: Sun },
+                    { value: 'dark', label: 'Sombre', icon: Moon },
+                  ] as const).map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      onClick={() => { setThemeMode(value); setThemeMenuOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-outlook-bg-hover ${themeMode === value ? 'text-outlook-blue font-medium' : ''}`}
+                    >
+                      <Icon size={14} />
+                      <span>{label}</span>
+                      {themeMode === value && <span className="ml-auto text-xs">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <div className="text-white text-sm hidden md:block">
             {user?.displayName || user?.email}
           </div>

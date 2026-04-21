@@ -13,6 +13,15 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Thème sombre
+- **Thème sombre complet** appliqué à toute l'interface (volets, ruban, vue message, rédaction, dialogues, menus contextuels, listes, barres de scroll, éditeur Quill).
+- Par défaut, l'application suit **automatiquement le thème du système** (PC, tablette, smartphone) via `prefers-color-scheme` et réagit en temps réel aux changements système.
+- **Commutateur dans l'en-tête** (en haut à droite, à côté du nom d'utilisateur) :
+  - Clic simple = bascule immédiate Clair ↔ Sombre.
+  - Chevron / clic droit = menu pour choisir explicitement **Système / Clair / Sombre**.
+- Préférence persistée dans `localStorage` (`theme.mode`). L'attribut `color-scheme` est également synchronisé pour que les contrôles natifs (scrollbars, inputs) adoptent la bonne palette.
+- Palette Outlook entièrement basée sur des variables CSS (`--outlook-*` au format RGB) permettant les opacités Tailwind (`/30`, `/50`, etc.) dans les deux modes.
+
 #### Rédaction
 - Nouveau bouton **Agrandir / Réduire** dans l'en-tête de la fenêtre de rédaction en ligne (entre Joindre un fichier et Fermer). En mode agrandi, la liste des dossiers et la liste des messages sont masquées pour donner toute la largeur au compose ; un clic sur le bouton (Minimize) ou la fermeture du brouillon restaure la vue normale.
 - **Glisser-déposer de pièces jointes** dans la fenêtre de rédaction : un overlay bleu en pointillés indique la zone de dépôt lors du survol, et le(s) fichier(s) déposé(s) sont automatiquement ajouté(s) comme pièces jointes.
@@ -369,7 +378,6 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Élimination de l'erreur React #310 à l'ouverture d'un message (ordre des hooks stabilisé dans la vue de lecture).
 
 ### Prévu
-- Thème sombre complet
 - Import/export de contacts (vCard, CSV)
 - Règles de filtrage automatique des emails
 - Support S/MIME et PGP

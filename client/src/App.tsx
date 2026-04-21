@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
+import { useThemeStore } from './stores/themeStore';
 import { useEffect } from 'react';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,8 +14,13 @@ import AdminPage from './pages/AdminPage';
 
 function App() {
   const { user, token, checkAuth, isLoading } = useAuthStore();
+  const initTheme = useThemeStore((s) => s.init);
   const isOnline = useNetworkStatus();
   const location = useLocation();
+
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
 
   useEffect(() => {
     if (token) {

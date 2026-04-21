@@ -2,16 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------
+   Theme variables — RGB triplets (used with Tailwind `rgb(var(--x) / <alpha>)`)
+   --------------------------------------------------------------- */
 :root {
-  --outlook-blue: #0078D4;
-  --outlook-blue-hover: #106EBE;
-  --outlook-blue-dark: #005A9E;
+  --outlook-blue: 0 120 212;
+  --outlook-blue-hover: 16 110 190;
+  --outlook-blue-dark: 0 90 158;
+
+  --outlook-bg-primary: 243 242 241;
+  --outlook-bg-secondary: 255 255 255;
+  --outlook-bg-tertiary: 232 230 228;
+  --outlook-bg-hover: 237 235 233;
+  --outlook-bg-selected: 225 223 221;
+
+  --outlook-text-primary: 50 49 48;
+  --outlook-text-secondary: 96 94 92;
+  --outlook-text-disabled: 161 159 157;
+
+  --outlook-border: 225 223 221;
+  --outlook-border-dark: 138 136 134;
+
+  --outlook-danger: 209 52 56;
+  --outlook-success: 16 124 16;
+  --outlook-warning: 255 185 0;
+
+  /* CSS-var aliases (hex) for direct use outside Tailwind */
   --outlook-bg: #F3F2F1;
   --outlook-bg-white: #FFFFFF;
-  --outlook-bg-tertiary: #E8E6E4;
-  --outlook-border: #E1DFDD;
+  --outlook-border-hex: #E1DFDD;
   --outlook-text: #323130;
-  --outlook-text-secondary: #605E5C;
+  --outlook-text-secondary-hex: #605E5C;
+  --outlook-scroll-thumb: #C8C6C4;
+  --outlook-scroll-thumb-hover: #A19F9D;
+
+  color-scheme: light;
+}
+
+html.dark {
+  --outlook-blue: 77 166 255;
+  --outlook-blue-hover: 99 179 255;
+  --outlook-blue-dark: 45 140 230;
+
+  --outlook-bg-primary: 32 32 32;
+  --outlook-bg-secondary: 45 45 45;
+  --outlook-bg-tertiary: 22 22 22;
+  --outlook-bg-hover: 60 60 60;
+  --outlook-bg-selected: 75 75 75;
+
+  --outlook-text-primary: 235 235 235;
+  --outlook-text-secondary: 180 180 180;
+  --outlook-text-disabled: 120 120 120;
+
+  --outlook-border: 70 70 70;
+  --outlook-border-dark: 130 130 130;
+
+  --outlook-danger: 232 98 102;
+  --outlook-success: 108 193 108;
+  --outlook-warning: 255 200 64;
+
+  --outlook-bg: #202020;
+  --outlook-bg-white: #2D2D2D;
+  --outlook-border-hex: #464646;
+  --outlook-text: #EBEBEB;
+  --outlook-text-secondary-hex: #B4B4B4;
+  --outlook-scroll-thumb: #4A4A4A;
+  --outlook-scroll-thumb-hover: #6A6A6A;
+
+  color-scheme: dark;
 }
 
 * {
@@ -24,6 +82,7 @@ html, body, #root {
   padding: 0;
   font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
   color: var(--outlook-text);
+  background-color: var(--outlook-bg);
   overflow: hidden;
 }
 
@@ -38,12 +97,12 @@ html, body, #root {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #C8C6C4;
+  background: var(--outlook-scroll-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #A19F9D;
+  background: var(--outlook-scroll-thumb-hover);
 }
 
 /* Email body styling */
@@ -51,7 +110,7 @@ html, body, #root {
   font-family: "Segoe UI", sans-serif;
   font-size: 14px;
   line-height: 1.6;
-  color: #323130;
+  color: var(--outlook-text);
   word-break: break-word;
 }
 
@@ -61,7 +120,7 @@ html, body, #root {
 }
 
 .email-body a {
-  color: #0078D4;
+  color: rgb(var(--outlook-blue));
   text-decoration: none;
 }
 
@@ -71,36 +130,27 @@ html, body, #root {
 
 /* Quill editor overrides */
 .ql-toolbar.ql-snow {
-  border: 1px solid var(--outlook-border) !important;
+  border: 1px solid var(--outlook-border-hex) !important;
   border-bottom: none !important;
-  background: #FAFAFA;
+  background: var(--outlook-bg-white);
 }
 
 .ql-container.ql-snow {
-  border: 1px solid var(--outlook-border) !important;
+  border: 1px solid var(--outlook-border-hex) !important;
   font-family: "Segoe UI", sans-serif;
   font-size: 14px;
+  color: var(--outlook-text);
+  background: var(--outlook-bg-white);
 }
 
 .ql-editor {
   min-height: 200px;
 }
 
-/* Dark mode */
-.dark {
-  --outlook-bg: #1F1F1F;
-  --outlook-bg-white: #2D2D2D;
-  --outlook-bg-tertiary: #171717;
-  --outlook-border: #3D3D3D;
-  --outlook-text: #E0E0E0;
-  --outlook-text-secondary: #A0A0A0;
-}
-
-.dark body,
-.dark #root {
-  background-color: var(--outlook-bg);
-  color: var(--outlook-text);
-}
+html.dark .ql-snow .ql-stroke { stroke: var(--outlook-text); }
+html.dark .ql-snow .ql-fill { fill: var(--outlook-text); }
+html.dark .ql-snow .ql-picker-label { color: var(--outlook-text); }
+html.dark .ql-snow .ql-picker-options { background: var(--outlook-bg-white); color: var(--outlook-text); border-color: var(--outlook-border-hex); }
 
 /* Offline indicator */
 .offline-banner {
@@ -109,8 +159,42 @@ html, body, #root {
   padding: 4px 12px;
   font-size: 12px;
   text-align: center;
-  border-bottom: 1px solid #E1DFDD;
+  border-bottom: 1px solid var(--outlook-border-hex);
 }
+html.dark .offline-banner {
+  background: #463C10;
+  color: #FFE89A;
+}
+
+/* ---------------------------------------------------------------
+   Dark-mode overrides for hardcoded Tailwind utilities used across
+   the app (bg-white, bg-gray-*, text-gray-*, border-gray-*).
+   These remap common light greys to dark equivalents without
+   requiring every component to switch to outlook-* tokens.
+   --------------------------------------------------------------- */
+html.dark .bg-white        { background-color: var(--outlook-bg-white) !important; }
+html.dark .bg-white\/80    { background-color: rgb(45 45 45 / 0.8) !important; }
+html.dark .bg-white\/90    { background-color: rgb(45 45 45 / 0.9) !important; }
+html.dark .bg-gray-50      { background-color: #2A2A2A !important; }
+html.dark .bg-gray-100     { background-color: #333333 !important; }
+html.dark .bg-gray-200     { background-color: #3D3D3D !important; }
+html.dark .bg-gray-300     { background-color: #4A4A4A !important; }
+
+html.dark .text-gray-300   { color: #6A6A6A !important; }
+html.dark .text-gray-400   { color: #8A8A8A !important; }
+html.dark .text-gray-500   { color: #A0A0A0 !important; }
+html.dark .text-gray-600   { color: #C0C0C0 !important; }
+html.dark .text-gray-700   { color: #D6D6D6 !important; }
+html.dark .text-gray-800   { color: #E6E6E6 !important; }
+
+html.dark .border-gray-100 { border-color: #3D3D3D !important; }
+html.dark .border-gray-200 { border-color: #464646 !important; }
+html.dark .border-gray-300 { border-color: #555555 !important; }
+
+/* Hover variants used a lot in context menus / buttons */
+html.dark .hover\:bg-gray-50:hover  { background-color: #333333 !important; }
+html.dark .hover\:bg-gray-100:hover { background-color: #3D3D3D !important; }
+html.dark .hover\:bg-gray-200:hover { background-color: #4A4A4A !important; }
 
 /* Animation */
 @keyframes shimmer {
@@ -121,6 +205,10 @@ html, body, #root {
 .skeleton {
   animation: shimmer 1.5s ease-in-out infinite;
   background: linear-gradient(90deg, #F3F2F1 0px, #EDEBE9 40px, #F3F2F1 80px);
+  background-size: 200px;
+}
+html.dark .skeleton {
+  background: linear-gradient(90deg, #2A2A2A 0px, #363636 40px, #2A2A2A 80px);
   background-size: 200px;
 }
 
