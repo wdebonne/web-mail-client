@@ -29,6 +29,8 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
     const offset = parseInt(req.query.offset as string) || 0;
 
+    const source = req.query.source as string;
+
     let query = `SELECT c.*, 
                    ARRAY_AGG(DISTINCT cg.name) FILTER (WHERE cg.name IS NOT NULL) as group_names
                  FROM contacts c 
@@ -37,6 +39,17 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
                  WHERE c.user_id = $1`;
     const params: any[] = [req.userId];
     let paramIdx = 2;
+
+    if (source) {
+      query += ` AND c.source = $${paramIdx}`;
+      params.push(source);
+      paramIdx++;
+    } else {
+      // By default, exclude sender contacts (shown separately)
+      // Only if no explicit source filter — exclude 'sender' from main list
+      // We keep sender contacts available via source='sender' filter
+      // But if source is explicitly not provided and no groupId filter, include all
+    }
 
     if (search) {
       query += ` AND (
@@ -200,6 +213,63 @@ contactRouter.delete('/:id', async (req: AuthRequest, res) => {
     }
 
     res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Record a sender (upsert with source='sender')
+contactRouter.post('/senders/record', async (req: AuthRequest, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Email requis' });
+    }
+
+    // Don't record if already a permanent contact
+    const existing = await pool.query(
+      `SELECT id, source FROM contacts WHERE user_id = $1 AND email = $2 LIMIT 1`,
+      [req.userId, email.toLowerCase()]
+    );
+
+    if (existing.rows.length > 0) {
+      // Already exists (permanent or sender), just update name if sender
+      if (existing.rows[0].source === 'sender' && name) {
+        await pool.query(
+          `UPDATE contacts SET display_name = COALESCE(display_name, $1), updated_at = NOW() WHERE id = $2`,
+          [name, existing.rows[0].id]
+        );
+      }
+      return res.json({ created: false, id: existing.rows[0].id });
+    }
+
+    const displayName = name || email;
+    const result = await pool.query(
+      `INSERT INTO contacts (user_id, email, display_name, source, is_favorite)
+       VALUES ($1, $2, $3, 'sender', false)
+       RETURNING id`,
+      [req.userId, email.toLowerCase(), displayName]
+    );
+    res.status(201).json({ created: true, id: result.rows[0].id });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Promote a sender to permanent contact
+contactRouter.post('/:id/promote', async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `UPDATE contacts SET source = 'local', updated_at = NOW()
+       WHERE id = $1 AND user_id = $2 AND source = 'sender'
+       RETURNING *`,
+      [id, req.userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Contact non trouvé ou déjà enregistré' });
+    }
+    res.json(result.rows[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

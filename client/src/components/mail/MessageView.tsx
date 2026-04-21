@@ -8,6 +8,7 @@ import {
 import { Email } from '../../types';
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { api } from '../../api';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
 
@@ -65,6 +66,13 @@ export default function MessageView({
       }
     };
   }, [previewAttachment]);
+
+  // Auto-record the sender as an unregistered contact
+  useEffect(() => {
+    if (message?.from?.address) {
+      api.recordSender(message.from.address, message.from.name).catch(() => {/* silent */});
+    }
+  }, [message?.uid]);
 
   useEffect(() => {
     if (!previewAttachment) return;

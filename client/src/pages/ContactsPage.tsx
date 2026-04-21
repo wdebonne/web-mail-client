@@ -4,9 +4,11 @@ import { api } from '../api';
 import { Contact, ContactGroup } from '../types';
 import {
   Search, Plus, X, Mail, Phone, Building, Star, Edit2, Trash2,
-  Users, User, ChevronRight
+  Users, User, ChevronRight, UserCheck, UserX
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const SENDER_GROUP_ID = '__senders__';
 
 export default function ContactsPage() {
   const queryClient = useQueryClient();
@@ -16,9 +18,21 @@ export default function ContactsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
 
+  const isSenderView = selectedGroup === SENDER_GROUP_ID;
+
   const { data: contactsData, isLoading } = useQuery({
     queryKey: ['contacts', searchQuery, selectedGroup],
-    queryFn: () => api.getContacts({ search: searchQuery || undefined, groupId: selectedGroup }),
+    queryFn: () => api.getContacts({
+      search: searchQuery || undefined,
+      groupId: isSenderView ? undefined : selectedGroup,
+      source: isSenderView ? 'sender' : undefined,
+    }),
+  });
+
+  const { data: sendersCount } = useQuery({
+    queryKey: ['contacts-senders-count'],
+    queryFn: () => api.getContacts({ source: 'sender', limit: 1 }),
+    staleTime: 60000,
   });
 
   const { data: groups = [] } = useQuery({
@@ -47,6 +61,16 @@ export default function ContactsPage() {
       setShowForm(false);
       setEditingContact(null);
       toast.success(editingContact ? 'Contact mis à jour' : 'Contact créé');
+    },
+  });
+
+  const promoteMutation = useMutation({
+    mutationFn: (id: string) => api.promoteContact(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts-senders-count'] });
+      setSelectedContact(null);
+      toast.success('Contact enregistré comme permanent');
     },
   });
 
@@ -94,6 +118,20 @@ export default function ContactsPage() {
             Tous les contacts
             <span className="ml-auto text-xs text-outlook-text-disabled">{contactsData?.total || 0}</span>
           </button>
+
+          {/* Unregistered senders */}
+          <button
+            onClick={() => { setSelectedGroup(SENDER_GROUP_ID); setSelectedContact(null); }}
+            className={`w-full text-left px-2 py-1 text-sm rounded flex items-center gap-2
+              ${selectedGroup === SENDER_GROUP_ID ? 'bg-orange-50 font-medium text-orange-700' : 'hover:bg-outlook-bg-hover'}`}
+          >
+            <UserX size={14} className={selectedGroup === SENDER_GROUP_ID ? 'text-orange-500' : 'text-outlook-text-disabled'} />
+            Expéditeurs non enregistrés
+            {(sendersCount?.total ?? 0) > 0 && (
+              <span className="ml-auto text-xs bg-orange-100 text-orange-600 px-1.5 rounded-full">{sendersCount?.total}</span>
+            )}
+          </button>
+
           {groups.map((group: ContactGroup) => (
             <button
               key={group.id}
@@ -177,6 +215,21 @@ export default function ContactsPage() {
                 )}
               </div>
               <div className="flex gap-1">
+                {selectedContact.source === 'sender' && (
+                  <button
+                    onClick={() => {
+                      if (confirm(`Enregistrer "${selectedContact.display_name || selectedContact.email}" comme contact permanent ?`)) {
+                        promoteMutation.mutate(selectedContact.id);
+                      }
+                    }}
+                    disabled={promoteMutation.isPending}
+                    className="p-2 hover:bg-green-50 rounded text-outlook-text-secondary hover:text-green-600 flex items-center gap-1 text-xs font-medium"
+                    title="Enregistrer comme contact permanent"
+                  >
+                    <UserCheck size={16} />
+                    <span className="hidden sm:inline">Enregistrer</span>
+                  </button>
+                )}
                 <button
                   onClick={() => { setEditingContact(selectedContact); setShowForm(true); }}
                   className="p-2 hover:bg-outlook-bg-hover rounded text-outlook-text-secondary"
@@ -216,8 +269,12 @@ export default function ContactsPage() {
                 </div>
               )}
               {selectedContact.source && (
-                <div className="text-xs text-outlook-text-disabled mt-4">
-                  Source : {selectedContact.source === 'nextcloud' ? 'NextCloud' : 'Locale'}
+                <div className="text-xs text-outlook-text-disabled mt-4 flex items-center gap-1.5">
+                  Source :&nbsp;
+                  {selectedContact.source === 'nextcloud' ? 'NextCloud'
+                    : selectedContact.source === 'sender'
+                      ? <span className="bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Expéditeur non enregistré</span>
+                      : 'Locale'}
                 </div>
               )}
             </div>

@@ -132,10 +132,11 @@ export const api = {
     }),
 
   // Contacts
-  getContacts: (params?: { search?: string; groupId?: string; limit?: number; offset?: number }) => {
+  getContacts: (params?: { search?: string; groupId?: string; source?: string; limit?: number; offset?: number }) => {
     const query = new URLSearchParams();
     if (params?.search) query.set('search', params.search);
     if (params?.groupId) query.set('groupId', params.groupId);
+    if (params?.source) query.set('source', params.source);
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
     return request<{ contacts: any[]; total: number }>(`/contacts?${query}`);
@@ -151,6 +152,12 @@ export const api = {
 
   deleteContact: (id: string) =>
     request(`/contacts/${id}`, { method: 'DELETE' }),
+
+  recordSender: (email: string, name?: string) =>
+    request('/contacts/senders/record', { method: 'POST', body: JSON.stringify({ email, name }) }),
+
+  promoteContact: (id: string) =>
+    request(`/contacts/${id}/promote`, { method: 'POST' }),
 
   searchContacts: (q: string) =>
     request<{ contacts: any[]; distributionLists: any[] }>(`/contacts/search/autocomplete?q=${encodeURIComponent(q)}`),
