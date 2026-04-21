@@ -44,6 +44,7 @@ app.use((req, res, next) => {
     "script-src 'self' 'unsafe-inline'; " +
     "style-src 'self' 'unsafe-inline'; " +
     "img-src 'self' data: blob: https:; " +
+    "frame-src 'self' blob: data:; " +
     "connect-src 'self' wss: ws:; " +
     "font-src 'self' data:; " +
     "worker-src 'self' blob:; " +

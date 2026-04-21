@@ -460,11 +460,17 @@ export default function MessageView({
                     Ouverture de {previewLoadingName}...
                   </div>
                 ) : previewAttachment.renderMode === 'image' && previewAttachment.url ? (
-                  <img
-                    src={previewAttachment.url}
-                    alt={previewAttachment.name}
-                    className="w-full h-full object-contain"
-                  />
+                  <div
+                    className="w-full h-full flex items-center justify-center"
+                    onClick={closeAttachmentPreview}
+                  >
+                    <img
+                      src={previewAttachment.url}
+                      alt={previewAttachment.name}
+                      className="w-full h-full object-contain"
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  </div>
                 ) : previewAttachment.renderMode === 'html' && previewAttachment.html ? (
                   <div className="w-full h-full overflow-auto rounded border border-white/15 bg-white p-4">
                     <div
