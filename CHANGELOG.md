@@ -176,6 +176,8 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Nouveau mode d'ouverture des pièces jointes par utilisateur : `Aperçu`, `Téléchargement`, ou `Menu (Aperçu / Télécharger)`.
 - Nouvelle option dans le ruban : `Afficher > Pièce jointe` pour changer ce comportement à la volée.
 - Nouvel écran dédié dans les paramètres utilisateur : `Paramètres > Messagerie` pour gérer la même préférence.
+- Clarification documentation : l'aperçu DOCX/XLSX actuel est simplifié (fidélité partielle de mise en page).
+- Intégration d'un moteur bureautique plus fidèle reportée à une future étape via l'environnement NextCloud Office.
 
 ### Corrigé
 - Persistance de connexion après rafraîchissement de page : l'endpoint `/api/auth/me` valide désormais correctement l'authentification via session ou JWT.

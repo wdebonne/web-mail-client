@@ -11,6 +11,14 @@ L'intégration NextCloud est **optionnelle** et permet de :
 - 🖼️ Récupérer les photos de profil des utilisateurs
 - 📋 Importer les listes de distribution
 
+### Note sur l'aperçu DOCX/XLSX
+
+Actuellement, WebMail fournit un aperçu local **simplifié** pour les fichiers DOCX/XLSX.
+Ce mode privilégie la lisibilité du contenu, mais ne garantit pas une fidélité parfaite de la mise en page.
+
+Une intégration bureautique plus fidèle est prévue via l'écosystème Office de NextCloud
+(selon les applications activées sur votre instance, par exemple Collabora/OnlyOffice).
+
 ---
 
 ## Prérequis
