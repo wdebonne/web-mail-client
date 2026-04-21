@@ -11,6 +11,7 @@ import ComposeModal from '../components/mail/ComposeModal';
 import type { ComposeApi } from '../components/mail/ComposeModal';
 import Ribbon from '../components/mail/Ribbon';
 import EmojiPanel from '../components/mail/EmojiPanel';
+import GifPanel from '../components/mail/GifPanel';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
 import { getAccountDisplayName } from '../utils/mailPreferences';
@@ -353,11 +354,16 @@ export default function MailPage() {
   // Emoji side panel (opened from the Insérer tab)
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   const savedEmojiRangeRef = useRef<Range | null>(null);
+  // GIF side panel (opened from the Insérer tab)
+  const [showGifPanel, setShowGifPanel] = useState(false);
 
-  // Auto-close the emoji panel when composition ends.
+  // Auto-close the side panels when composition ends.
   useEffect(() => {
-    if (!isComposing && showEmojiPanel) setShowEmojiPanel(false);
-  }, [isComposing, showEmojiPanel]);
+    if (!isComposing) {
+      if (showEmojiPanel) setShowEmojiPanel(false);
+      if (showGifPanel) setShowGifPanel(false);
+    }
+  }, [isComposing, showEmojiPanel, showGifPanel]);
 
   const saveComposeSelection = useCallback(() => {
     const sel = window.getSelection();
@@ -369,7 +375,7 @@ export default function MailPage() {
     }
   }, []);
 
-  const insertEmojiIntoCompose = useCallback((emoji: string) => {
+  const restoreComposeSelection = useCallback(() => {
     const editor = composeEditorRef.current;
     if (!editor) return;
     editor.focus();
@@ -379,13 +385,29 @@ export default function MailPage() {
       sel.removeAllRanges();
       sel.addRange(range);
     }
+  }, []);
+
+  const insertEmojiIntoCompose = useCallback((emoji: string) => {
+    restoreComposeSelection();
     document.execCommand('insertText', false, emoji);
     // Re-save the collapsed range after insertion so next emoji appends in order.
     const newSel = window.getSelection();
     if (newSel && newSel.rangeCount > 0) {
       savedEmojiRangeRef.current = newSel.getRangeAt(0).cloneRange();
     }
-  }, []);
+  }, [restoreComposeSelection]);
+
+  const insertGifIntoCompose = useCallback((url: string, alt?: string) => {
+    if (!url) return;
+    restoreComposeSelection();
+    const safeAlt = (alt || 'GIF').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const html = `<img src="${url}" alt="${safeAlt}" style="max-width:300px;height:auto;" />`;
+    document.execCommand('insertHTML', false, html);
+    const newSel = window.getSelection();
+    if (newSel && newSel.rangeCount > 0) {
+      savedEmojiRangeRef.current = newSel.getRangeAt(0).cloneRange();
+    }
+  }, [restoreComposeSelection]);
 
   // Resizable message list pane
   const [listWidth, setListWidth] = useState(() => {
@@ -663,6 +685,11 @@ export default function MailPage() {
             setShowEmojiPanel(v => !v);
           }}
           isEmojiPanelOpen={showEmojiPanel}
+          onToggleGifPanel={() => {
+            saveComposeSelection();
+            setShowGifPanel(v => !v);
+          }}
+          isGifPanelOpen={showGifPanel}
         />
       </div>
 
@@ -838,6 +865,14 @@ export default function MailPage() {
               open={showEmojiPanel}
               onClose={() => setShowEmojiPanel(false)}
               onSelect={insertEmojiIntoCompose}
+            />
+          )}
+          {/* GIF side panel — only while composing */}
+          {isComposing && (
+            <GifPanel
+              open={showGifPanel}
+              onClose={() => setShowGifPanel(false)}
+              onSelect={insertGifIntoCompose}
             />
           )}
           </div>

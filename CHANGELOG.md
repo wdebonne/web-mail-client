@@ -5,6 +5,28 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
+## [Unreleased]
+
+### Ajouté
+
+#### Ruban et rédaction
+- Nouvel onglet **Message** dans le ruban (style Outlook) visible uniquement pendant la rédaction, regroupant les outils de mise en forme : polices, tailles, styles (Titre 1/2/3, citation, code), gras/italique/souligné/barré, indice/exposant, couleurs de texte et de surlignage, listes, retraits, alignements.
+- Nouvel onglet **Insérer** avec les groupes Inclure (joindre un fichier, lien, image), Tableaux (grille 8×10), Symboles (emojis, ligne horizontale, date/heure) et boutons Emoji / GIF.
+- Les onglets restent visibles en mode ruban simplifié.
+- Hauteur du ruban constante sur tous les onglets.
+- Les menus déroulants (police, taille, styles, couleurs, lien, tableau) utilisent désormais des portails React pour éviter le clipping.
+
+#### Panneau Emojis
+- Panneau latéral droit dédié (320 px), style Outlook web, ouvert depuis l'onglet Insérer.
+- Champ de recherche, catégories (Smileys, Gestes, Nature, Nourriture, Voyages, Activités, Objets, Symboles) et section **Récents** persistée localement.
+- Insertion à la position du curseur, sélection préservée entre plusieurs insertions.
+
+#### Panneau GIF (GIPHY)
+- Panneau latéral droit dédié, alimenté par l'API GIPHY.
+- Modes **Tendances** et **Stickers**, recherche avec debounce et affichage en deux colonnes façon masonry.
+- Clé API GIPHY configurable via la variable d'environnement `VITE_GIPHY_API_KEY` (build) ou saisissable directement dans le panneau (stockage local `giphyApiKey`).
+- Insertion du GIF sous forme d'`<img>` à la position du curseur.
+
 ## [1.0.0] - 2026-04-20
 
 ### Ajouté

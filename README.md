@@ -27,6 +27,8 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
   - Alignement (gauche, centré, droite, justifié)
   - Listes à puces et numérotées avec indentation
   - Liens hypertextes et insertion d'images par URL
+  - 😀 **Panneau Emojis latéral** (recherche, 8 catégories, récents) ouvert depuis l'onglet Insérer
+  - 🎞️ **Panneau GIF latéral** propulsé par **GIPHY** (tendances, stickers, recherche) — voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#clé-api-giphy)
 - 🔄 Synchronisation automatique
 - 📝 Signature par compte
 - 📱 Interface responsive (navigation mobile adaptative)
@@ -37,7 +39,8 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 🔢 Nombre max d'onglets paramétrable (2-20)
 - 📏 Volet dossiers et liste de messages redimensionnables
 - 🎚️ Ruban auto-adaptatif (classique ↔ simplifié selon la largeur)
-- 📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
+- �️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF)
+- �📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
 
 ### Contacts
 - 👥 Gestion complète des contacts (CRUD)

@@ -33,6 +33,44 @@ Toutes les variables sont définies dans le fichier `.env` à la racine du proje
 | `NEXTCLOUD_PASSWORD` | Mot de passe NextCloud | *(non défini)* |
 | `NEXTCLOUD_ENABLED` | Activer l'intégration NextCloud | `false` |
 
+### Variables client (build-time, préfixe `VITE_`)
+
+Ces variables sont injectées dans le bundle au moment du build du client (`cd client && npm run build`). Elles doivent donc être présentes lors du build Docker.
+
+| Variable | Description | Défaut |
+|----------|-------------|--------|
+| `VITE_GIPHY_API_KEY` | Clé API GIPHY utilisée par le panneau GIF de la rédaction | *(non défini)* |
+
+---
+
+## Clé API GIPHY
+
+Le panneau **GIF** du ruban Insérer utilise l'[API publique GIPHY](https://developers.giphy.com/). Une clé API est requise.
+
+### Obtenir une clé
+
+1. Créer un compte gratuit sur <https://developers.giphy.com/>.
+2. Créer une application de type **API** (et non SDK).
+3. Copier la clé générée (format alphanumérique, ~32 caractères).
+
+### Configurer la clé
+
+Deux méthodes au choix :
+
+- **Au build (recommandé pour le déploiement)** : définir la variable `VITE_GIPHY_API_KEY` dans le fichier `.env` avant le build du client. Elle sera compilée dans le bundle.
+  ```
+  VITE_GIPHY_API_KEY=votre_cle_giphy
+  ```
+- **Au runtime (par utilisateur, pour les tests)** : ouvrir le panneau GIF depuis l'onglet Insérer, saisir la clé dans le formulaire affiché. Elle est stockée dans `localStorage` sous la clé `giphyApiKey` et peut être réinitialisée depuis le pied du panneau.
+
+La clé saisie dans `localStorage` prend le pas sur la variable d'environnement.
+
+### Limites et conformité
+
+- GIPHY applique des quotas sur la clé (voir le tableau de bord développeur).
+- Le contenu est filtré en `rating=pg-13` côté client.
+- L'attribution « powered by GIPHY » est affichée dans l'en-tête du panneau, conformément aux conditions d'utilisation GIPHY.
+
 ---
 
 ## Configuration initiale
