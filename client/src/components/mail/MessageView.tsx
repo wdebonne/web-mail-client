@@ -162,11 +162,15 @@ export default function MessageView({
                   if (att.content) {
                     const blob = new Blob([Uint8Array.from(atob(att.content), c => c.charCodeAt(0))], { type: att.contentType });
                     const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = att.filename;
-                    a.click();
-                    URL.revokeObjectURL(url);
+                    const previewWindow = window.open(url, '_blank', 'noopener,noreferrer');
+
+                    // Fallback if popup is blocked: open in current tab to keep inline preview behavior.
+                    if (!previewWindow) {
+                      window.location.href = url;
+                    }
+
+                    // Revoke later to avoid invalidating the blob before the browser consumes it.
+                    setTimeout(() => URL.revokeObjectURL(url), 60_000);
                   }
                 }}
                 className="flex items-center gap-1.5 bg-white border border-outlook-border rounded px-2 py-1 text-xs hover:bg-outlook-bg-hover transition-colors"
