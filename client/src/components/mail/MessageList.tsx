@@ -878,5 +878,12 @@ function getFolderDisplayName(folder: string): string {
     'Junk': 'Courrier indésirable',
     'Archive': 'Archives',
   };
-  return names[folder] || names[folder.split('.').pop() || folder] || folder;
+  const mapped = names[folder] || names[folder.split('.').pop() || folder];
+  if (mapped) return mapped;
+
+  if (folder.toUpperCase().startsWith('INBOX.')) {
+    return folder.substring(6);
+  }
+
+  return folder;
 }

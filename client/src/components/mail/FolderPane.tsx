@@ -74,7 +74,16 @@ export default function FolderPane({
   };
 
   const getFolderLabel = (folder: MailFolder) => {
-    return FOLDER_LABELS[folder.path] || FOLDER_LABELS[folder.name] || folder.name;
+    const mapped = FOLDER_LABELS[folder.path] || FOLDER_LABELS[folder.name];
+    if (mapped) return mapped;
+
+    // Keep IMAP paths intact internally but hide common INBOX. prefix in UI labels.
+    const display = folder.name || folder.path;
+    if (display.toUpperCase().startsWith('INBOX.')) {
+      return display.substring(6);
+    }
+
+    return display;
   };
 
   return (
