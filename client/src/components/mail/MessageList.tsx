@@ -632,7 +632,7 @@ export default function MessageList({
                       ) : (
                         /* ===== Narrow mode: multi-line card ===== */
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center justify-between gap-2 min-h-[22px]">
                             <span className={`text-sm truncate ${isUnread ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
                               {message.from?.name || message.from?.address || 'Inconnu'}
                             </span>
