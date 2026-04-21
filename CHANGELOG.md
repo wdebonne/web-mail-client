@@ -174,6 +174,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 ### Corrigé
 - Persistance de connexion après rafraîchissement de page : l'endpoint `/api/auth/me` valide désormais correctement l'authentification via session ou JWT.
 - Synchronisation du token d'authentification côté client entre l'état persisté (Zustand) et `localStorage` pour éviter les déconnexions involontaires.
+- Masquage visuel du préfixe `INBOX.` dans l'interface des dossiers (exemple : `INBOX.test` affiché comme `test`) sans modifier le chemin IMAP réel.
 
 ### Prévu
 - Thème sombre complet

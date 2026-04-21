@@ -9,6 +9,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 📥 Boîte de réception, envoyés, brouillons, corbeille, spam, archives
 - ⭐ Drapeaux, marquage lu/non-lu, déplacement entre dossiers
 - 🖱️ Drag & drop des messages entre dossiers
+- 🧹 Masquage visuel du préfixe `INBOX.` pour les dossiers personnalisés (le chemin IMAP reste inchangé)
 - 📎 Pièces jointes (upload/download)
 - ✏️ Éditeur riche (HTML) avec formatage
 - 🔄 Synchronisation automatique
