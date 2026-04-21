@@ -56,6 +56,8 @@ interface FolderPaneProps {
   ) => void;
   onMoveFolder?: (accountId: string, oldPath: string, newPath: string) => void;
   onPreferencesChanged?: () => void;
+  /** External signal that mail preferences (favorites, unified selection…) changed elsewhere. */
+  externalPrefsVersion?: number;
 }
 
 const FOLDER_ICONS: Record<string, any> = {
@@ -123,6 +125,7 @@ export default function FolderPane({
   onSelectAccount, onSelectFolderInAccount, onCompose,
   onDropMessage, onCreateFolder, onRenameFolder, onDeleteFolder,
   onCopyFolderBetweenAccounts, onMoveFolder, onPreferencesChanged,
+  externalPrefsVersion,
 }: FolderPaneProps) {
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => {
     const persisted = getExpandedAccounts();
@@ -278,7 +281,7 @@ export default function FolderPane({
             if (account) onSelectFolderInAccount(account, fav.path);
           }}
           onFavoriteContextMenu={(fav, x, y) => setFavoriteContextMenu({ x, y, fav })}
-          prefsVersion={prefsVersion}
+          prefsVersion={prefsVersion + (externalPrefsVersion || 0)}
         />
 
         {orderedAccounts.map((account) => {

@@ -834,6 +834,7 @@ export default function MailPage() {
                   bumpPrefs();
                   queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
                 }}
+                externalPrefsVersion={prefsVersion}
               />
             </div>
             {/* Folder resize handle — desktop only */}
