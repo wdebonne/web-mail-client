@@ -5,6 +5,16 @@ const KEY_ACCOUNT_NAMES = 'mail.accountDisplayNames';
 const KEY_ACCOUNT_ORDER = 'mail.accountOrder';
 const KEY_FOLDER_ORDER = 'mail.folderOrder'; // { [accountId]: string[] of folder paths }
 const KEY_EXPANDED_ACCOUNTS = 'mail.expandedAccounts';
+const KEY_FAVORITE_FOLDERS = 'mail.favoriteFolders'; // FavoriteFolder[]
+const KEY_UNIFIED_ACCOUNTS = 'mail.unifiedAccounts'; // string[] (accountIds included in unified inbox/sent); empty = all
+const KEY_FAVORITES_EXPANDED = 'mail.favoritesExpanded'; // boolean
+const KEY_UNIFIED_INBOX_ENABLED = 'mail.unifiedInboxEnabled'; // boolean (default true)
+const KEY_UNIFIED_SENT_ENABLED = 'mail.unifiedSentEnabled'; // boolean (default true)
+
+export interface FavoriteFolder {
+  accountId: string;
+  path: string;
+}
 
 function readJSON<T>(key: string, fallback: T): T {
   try {
@@ -119,4 +129,108 @@ export function getExpandedAccounts(): string[] {
 
 export function setExpandedAccounts(ids: string[]) {
   writeJSON(KEY_EXPANDED_ACCOUNTS, ids);
+}
+
+// --- Favorite folders ---
+export function getFavoriteFolders(): FavoriteFolder[] {
+  return readJSON<FavoriteFolder[]>(KEY_FAVORITE_FOLDERS, []);
+}
+
+export function setFavoriteFolders(favs: FavoriteFolder[]) {
+  writeJSON(KEY_FAVORITE_FOLDERS, favs);
+}
+
+export function isFavoriteFolder(accountId: string, path: string): boolean {
+  return getFavoriteFolders().some((f) => f.accountId === accountId && f.path === path);
+}
+
+export function addFavoriteFolder(accountId: string, path: string) {
+  const favs = getFavoriteFolders();
+  if (favs.some((f) => f.accountId === accountId && f.path === path)) return;
+  favs.push({ accountId, path });
+  setFavoriteFolders(favs);
+}
+
+export function removeFavoriteFolder(accountId: string, path: string) {
+  const favs = getFavoriteFolders().filter(
+    (f) => !(f.accountId === accountId && f.path === path),
+  );
+  setFavoriteFolders(favs);
+}
+
+export function toggleFavoriteFolder(accountId: string, path: string): boolean {
+  if (isFavoriteFolder(accountId, path)) {
+    removeFavoriteFolder(accountId, path);
+    return false;
+  }
+  addFavoriteFolder(accountId, path);
+  return true;
+}
+
+// --- Unified mailbox selection ---
+/** Returns the set of account IDs included in unified inbox/sent.
+ *  Empty array means "all accounts". */
+export function getUnifiedAccountIds(): string[] {
+  return readJSON<string[]>(KEY_UNIFIED_ACCOUNTS, []);
+}
+
+export function setUnifiedAccountIds(ids: string[]) {
+  writeJSON(KEY_UNIFIED_ACCOUNTS, ids);
+}
+
+export function isAccountInUnified(accountId: string, allAccountIds: string[]): boolean {
+  const selected = getUnifiedAccountIds();
+  if (!selected.length) return true; // "all"
+  return selected.includes(accountId) || !allAccountIds.includes(accountId) === false && selected.includes(accountId);
+}
+
+export function getUnifiedInboxEnabled(): boolean {
+  const raw = localStorage.getItem(KEY_UNIFIED_INBOX_ENABLED);
+  return raw === null ? true : raw === 'true';
+}
+
+export function setUnifiedInboxEnabled(enabled: boolean) {
+  localStorage.setItem(KEY_UNIFIED_INBOX_ENABLED, String(enabled));
+}
+
+export function getUnifiedSentEnabled(): boolean {
+  const raw = localStorage.getItem(KEY_UNIFIED_SENT_ENABLED);
+  return raw === null ? true : raw === 'true';
+}
+
+export function setUnifiedSentEnabled(enabled: boolean) {
+  localStorage.setItem(KEY_UNIFIED_SENT_ENABLED, String(enabled));
+}
+
+export function getFavoritesExpanded(): boolean {
+  const raw = localStorage.getItem(KEY_FAVORITES_EXPANDED);
+  return raw === null ? true : raw === 'true';
+}
+
+export function setFavoritesExpanded(expanded: boolean) {
+  localStorage.setItem(KEY_FAVORITES_EXPANDED, String(expanded));
+}
+
+/** Return the Sent folder path for an account, preferring specialUse, then common names. */
+export function findSentFolderPath(folders: MailFolder[]): string | null {
+  const bySpecial = folders.find((f) => f.specialUse === '\\Sent');
+  if (bySpecial) return bySpecial.path;
+  const byName = folders.find((f) => {
+    const n = f.name.toLowerCase();
+    return n === 'sent' || n.includes('envoy') || n === 'sent items' || n === 'sent mail';
+  });
+  if (byName) return byName.path;
+  const byPath = folders.find((f) => {
+    const p = f.path.toLowerCase();
+    return p === 'sent' || p === 'inbox.sent' || p.endsWith('.sent') || p.includes('envoy');
+  });
+  return byPath ? byPath.path : null;
+}
+
+/** Return the Inbox folder path for an account. */
+export function findInboxFolderPath(folders: MailFolder[]): string {
+  const bySpecial = folders.find((f) => f.specialUse === '\\Inbox');
+  if (bySpecial) return bySpecial.path;
+  const byName = folders.find((f) => f.name.toUpperCase() === 'INBOX');
+  return byName ? byName.path : 'INBOX';
 }

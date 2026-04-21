@@ -4,7 +4,7 @@ import {
   Trash, Copy, GripVertical, RotateCcw,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import { api } from '../../api';
 import { MailAccount, MailFolder } from '../../types';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
@@ -17,7 +17,20 @@ import {
   sortFolders,
   getExpandedAccounts,
   setExpandedAccounts as persistExpanded,
+  getFavoriteFolders,
+  isFavoriteFolder,
+  toggleFavoriteFolder,
+  removeFavoriteFolder,
+  getUnifiedAccountIds,
+  getUnifiedInboxEnabled,
+  getUnifiedSentEnabled,
+  getFavoritesExpanded,
+  setFavoritesExpanded as persistFavoritesExpanded,
+  findInboxFolderPath,
+  findSentFolderPath,
+  FavoriteFolder,
 } from '../../utils/mailPreferences';
+import { useMailStore, VirtualFolder } from '../../stores/mailStore';
 
 type DropPosition = 'before' | 'after';
 
@@ -115,15 +128,21 @@ export default function FolderPane({
     const persisted = getExpandedAccounts();
     return new Set(persisted.length ? persisted : accounts.map((a) => a.id));
   });
+  const [favoritesExpanded, setFavoritesExpandedState] = useState<boolean>(getFavoritesExpanded());
   const [prefsVersion, setPrefsVersion] = useState(0);
   const triggerRerender = () => setPrefsVersion((n) => n + 1);
   const queryClient = useQueryClient();
+  const virtualFolder = useMailStore((s) => s.virtualFolder);
+  const selectVirtualFolder = useMailStore((s) => s.selectVirtualFolder);
 
   const [accountContextMenu, setAccountContextMenu] = useState<
     { x: number; y: number; account: MailAccount } | null
   >(null);
   const [folderContextMenu, setFolderContextMenu] = useState<
     { x: number; y: number; account: MailAccount; folder: MailFolder } | null
+  >(null);
+  const [favoriteContextMenu, setFavoriteContextMenu] = useState<
+    { x: number; y: number; fav: FavoriteFolder } | null
   >(null);
   const [accountDropIndicator, setAccountDropIndicator] = useState<
     { id: string; position: DropPosition } | null
@@ -132,6 +151,10 @@ export default function FolderPane({
   useEffect(() => {
     persistExpanded(Array.from(expandedAccounts));
   }, [expandedAccounts]);
+
+  useEffect(() => {
+    persistFavoritesExpanded(favoritesExpanded);
+  }, [favoritesExpanded]);
 
   // Ensure newly added accounts appear expanded by default (if none were persisted yet)
   useEffect(() => {
@@ -242,6 +265,22 @@ export default function FolderPane({
       </div>
 
       <div className="flex-1 overflow-y-auto px-1">
+        <FavoritesSection
+          accounts={orderedAccounts}
+          expanded={favoritesExpanded}
+          onToggleExpanded={() => setFavoritesExpandedState((v) => !v)}
+          virtualFolder={virtualFolder}
+          selectedAccountId={selectedAccount?.id || null}
+          selectedFolder={selectedFolder}
+          onSelectVirtual={(v) => selectVirtualFolder(v)}
+          onSelectFavorite={(fav) => {
+            const account = accounts.find((a) => a.id === fav.accountId);
+            if (account) onSelectFolderInAccount(account, fav.path);
+          }}
+          onFavoriteContextMenu={(fav, x, y) => setFavoriteContextMenu({ x, y, fav })}
+          prefsVersion={prefsVersion}
+        />
+
         {orderedAccounts.map((account) => {
           const isExpanded = expandedAccounts.has(account.id);
           const indicator = accountDropIndicator?.id === account.id ? accountDropIndicator.position : null;
@@ -355,6 +394,24 @@ export default function FolderPane({
             onCopyFolderBetweenAccounts,
             triggerRerender,
           )}
+        />
+      )}
+
+      {favoriteContextMenu && (
+        <ContextMenu
+          x={favoriteContextMenu.x}
+          y={favoriteContextMenu.y}
+          onClose={() => setFavoriteContextMenu(null)}
+          items={[
+            {
+              label: 'Retirer des favoris',
+              icon: <Star size={14} />,
+              onClick: () => {
+                removeFavoriteFolder(favoriteContextMenu.fav.accountId, favoriteContextMenu.fav.path);
+                triggerRerender();
+              },
+            },
+          ]}
         />
       )}
     </div>
@@ -684,6 +741,17 @@ function buildFolderContextMenu(
   const items: ContextMenuItem[] = [];
   const special = isSpecialFolder(folder);
 
+  const isFav = isFavoriteFolder(account.id, folder.path);
+  items.push({
+    label: isFav ? 'Retirer des favoris' : 'Ajouter aux favoris',
+    icon: <Star size={14} className={isFav ? 'fill-current' : ''} />,
+    onClick: () => {
+      toggleFavoriteFolder(account.id, folder.path);
+      onChange?.();
+    },
+  });
+  items.push({ label: '', separator: true, onClick: () => {} });
+
   if (onCreateFolder) {
     items.push({
       label: 'Nouveau sous-dossier',
@@ -748,4 +816,157 @@ function buildFolderContextMenu(
   });
 
   return items;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Favorites section (unified inbox/sent + user-bookmarked folders)
+// ─────────────────────────────────────────────────────────────────────────────
+interface FavoritesSectionProps {
+  accounts: MailAccount[];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  virtualFolder: VirtualFolder;
+  selectedAccountId: string | null;
+  selectedFolder: string;
+  onSelectVirtual: (v: VirtualFolder) => void;
+  onSelectFavorite: (fav: FavoriteFolder) => void;
+  onFavoriteContextMenu: (fav: FavoriteFolder, x: number, y: number) => void;
+  prefsVersion: number;
+}
+
+function FavoritesSection({
+  accounts, expanded, onToggleExpanded, virtualFolder,
+  selectedAccountId, selectedFolder,
+  onSelectVirtual, onSelectFavorite, onFavoriteContextMenu, prefsVersion,
+}: FavoritesSectionProps) {
+  const favorites = useMemo(() => getFavoriteFolders(), [prefsVersion]);
+  const unifiedInboxEnabled = useMemo(() => getUnifiedInboxEnabled(), [prefsVersion]);
+  const unifiedSentEnabled = useMemo(() => getUnifiedSentEnabled(), [prefsVersion]);
+  const unifiedAccountIds = useMemo(() => getUnifiedAccountIds(), [prefsVersion]);
+
+  // Fetch folders for every favourite's account so we can display labels.
+  const accountIds = useMemo(() => {
+    const ids = new Set<string>(favorites.map((f) => f.accountId));
+    return Array.from(ids);
+  }, [favorites]);
+
+  const foldersQueries = useQueries({
+    queries: accountIds.map((id) => ({
+      queryKey: ['folders', id],
+      queryFn: () => api.getFolders(id),
+      staleTime: 1000 * 60 * 2,
+    })),
+  });
+
+  const foldersByAccount = useMemo(() => {
+    const map = new Map<string, MailFolder[]>();
+    accountIds.forEach((id, i) => {
+      const data = foldersQueries[i]?.data as MailFolder[] | undefined;
+      if (data) map.set(id, data);
+    });
+    return map;
+  }, [accountIds, foldersQueries.map((q) => q.data).join('|')]);
+
+  const hasAnyItem =
+    (unifiedInboxEnabled || unifiedSentEnabled) || favorites.length > 0;
+
+  if (!hasAnyItem) return null;
+
+  const isIncludedAccount = (id: string) => {
+    if (!unifiedAccountIds.length) return true;
+    return unifiedAccountIds.includes(id);
+  };
+  const hasIncludedAccounts = accounts.some((a) => isIncludedAccount(a.id));
+
+  const showUnifiedInbox = unifiedInboxEnabled && hasIncludedAccounts;
+  const showUnifiedSent = unifiedSentEnabled && hasIncludedAccounts;
+
+  return (
+    <div className="mb-2">
+      <button
+        onClick={onToggleExpanded}
+        className="w-full flex items-center gap-1 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-outlook-text-secondary hover:bg-outlook-bg-hover rounded"
+      >
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <Star size={12} className="text-outlook-blue fill-current" />
+        <span>Favoris</span>
+      </button>
+
+      {expanded && (
+        <div className="ml-1">
+          {showUnifiedInbox && (
+            <VirtualFolderButton
+              icon={Inbox}
+              label="Boîte de réception"
+              active={virtualFolder === 'unified-inbox'}
+              onClick={() => onSelectVirtual('unified-inbox')}
+            />
+          )}
+          {showUnifiedSent && (
+            <VirtualFolderButton
+              icon={Send}
+              label="Éléments envoyés"
+              active={virtualFolder === 'unified-sent'}
+              onClick={() => onSelectVirtual('unified-sent')}
+            />
+          )}
+
+          {favorites.map((fav) => {
+            const account = accounts.find((a) => a.id === fav.accountId);
+            if (!account) return null;
+            const accountFolders = foldersByAccount.get(fav.accountId) || [];
+            const folder = accountFolders.find((f) => f.path === fav.path);
+            const label = folder ? getFolderLabel(folder) : fav.path.split(/[./]/).pop() || fav.path;
+            const Icon = folder ? getFolderIcon(folder) : FolderIcon;
+            const isActive =
+              !virtualFolder &&
+              selectedAccountId === fav.accountId &&
+              selectedFolder === fav.path;
+            return (
+              <button
+                key={`${fav.accountId}:${fav.path}`}
+                onClick={() => onSelectFavorite(fav)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onFavoriteContextMenu(fav, e.clientX, e.clientY);
+                }}
+                className={`w-full flex items-center gap-2 pl-3 pr-3 py-1 text-sm rounded transition-colors
+                  ${isActive
+                    ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
+                    : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                title={`${getAccountDisplayName(account)} · ${label}`}
+              >
+                <Icon size={14} className={isActive ? 'text-outlook-blue' : ''} />
+                <span className="truncate flex-1 text-left">{label}</span>
+                <span
+                  className="w-1.5 h-1.5 rounded-full flex-shrink-0 opacity-70"
+                  style={{ backgroundColor: account.color }}
+                  title={getAccountDisplayName(account)}
+                />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VirtualFolderButton({
+  icon: Icon, label, active, onClick,
+}: {
+  icon: any; label: string; active: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 pl-3 pr-3 py-1 text-sm rounded transition-colors
+        ${active
+          ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
+          : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+    >
+      <Icon size={14} className={active ? 'text-outlook-blue' : ''} />
+      <span className="truncate flex-1 text-left">{label}</span>
+    </button>
+  );
 }

@@ -11,8 +11,16 @@ import {
   Link as LinkIcon, Image as ImageIcon, Palette, Type, Indent, Outdent,
   Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
   Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film,
+  Star,
 } from 'lucide-react';
 import type { TabMode } from '../../stores/mailStore';
+import type { MailAccount } from '../../types';
+import {
+  getUnifiedAccountIds, setUnifiedAccountIds,
+  getUnifiedInboxEnabled, setUnifiedInboxEnabled,
+  getUnifiedSentEnabled, setUnifiedSentEnabled,
+  getAccountDisplayName,
+} from '../../utils/mailPreferences';
 
 type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer';
 type RibbonMode = 'classic' | 'simplified';
@@ -81,6 +89,10 @@ interface RibbonProps {
   isEmojiPanelOpen?: boolean;
   onToggleGifPanel?: () => void;
   isGifPanelOpen?: boolean;
+
+  // Favorites mailbox management (Afficher tab)
+  accounts?: MailAccount[];
+  onFavoritesChanged?: () => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -155,15 +167,25 @@ export default function Ribbon({
   isComposing = false, composeEditorRef, onComposeAttachFiles,
   onToggleEmojiPanel, isEmojiPanelOpen = false,
   onToggleGifPanel, isGifPanelOpen = false,
+  accounts = [], onFavoritesChanged,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showFavoritesMenu, setShowFavoritesMenu] = useState(false);
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const favoritesMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
+  const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
+  // Re-render favorites menu when toggled
+  const [favPrefsVersion, setFavPrefsVersion] = useState(0);
+  const bumpFavPrefs = () => {
+    setFavPrefsVersion((n) => n + 1);
+    onFavoritesChanged?.();
+  };
 
   // Auto-switch to Message tab when composing starts; go back to Accueil when it ends
   const prevComposingRef = useRef(isComposing);
@@ -199,6 +221,15 @@ export default function Ribbon({
       setAttachmentMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowAttachmentMenu(v => !v);
+  };
+
+  const openFavoritesMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || favoritesMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setFavoritesMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowFavoritesMenu(v => !v);
   };
 
   // Auto-switch between classic and simplified based on width
@@ -284,6 +315,16 @@ export default function Ribbon({
                 onClick={onToggleFolderPane}
                 active={showFolderPane}
               />
+              <SimplifiedSep />
+              <button
+                onClick={(e) => openFavoritesMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showFavoritesMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Boîtes favoris"
+              >
+                <Star size={14} />
+                <span className="text-xs whitespace-nowrap">Boîtes favoris</span>
+                <ChevronDown size={10} />
+              </button>
               <SimplifiedSep />
               <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
               <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
@@ -379,6 +420,24 @@ export default function Ribbon({
                   onClick={onToggleFolderPane}
                   active={showFolderPane}
                 />
+              </RibbonGroup>
+              <RibbonSeparator />
+
+              {/* Favoris — gérer les boîtes mails inclues dans les vues unifiées */}
+              <RibbonGroup label="Favoris">
+                <div className="relative">
+                  <button
+                    ref={favoritesMenuBtnRef}
+                    onClick={(e) => openFavoritesMenu(e)}
+                    className="flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer"
+                    title="Gérer les boîtes mails pour les favoris"
+                  >
+                    <Star size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Boîtes favoris <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
               </RibbonGroup>
               <RibbonSeparator />
 
@@ -519,6 +578,135 @@ export default function Ribbon({
             </>
           )}
         </div>
+
+        {/* Favorites mailbox menu — rendered globally so it works from both classic & simplified Afficher tab */}
+        {showFavoritesMenu && createPortal(
+          <>
+            <div className="fixed inset-0 z-[9998]" onClick={() => setShowFavoritesMenu(false)} />
+            <FavoritesMailboxMenu
+              top={favoritesMenuPos.top}
+              left={favoritesMenuPos.left}
+              accounts={accounts}
+              prefsVersion={favPrefsVersion}
+              onChanged={bumpFavPrefs}
+              onClose={() => setShowFavoritesMenu(false)}
+            />
+          </>,
+          document.body
+        )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Favorites mailbox management menu (Afficher tab)
+// ─────────────────────────────────────────────────────────────────────────────
+function FavoritesMailboxMenu({
+  top, left, accounts, prefsVersion, onChanged, onClose,
+}: {
+  top: number; left: number; accounts: MailAccount[];
+  prefsVersion: number; onChanged: () => void; onClose: () => void;
+}) {
+  // Read current state (re-read on each render because prefsVersion bumps)
+  const unifiedInboxEnabled = getUnifiedInboxEnabled();
+  const unifiedSentEnabled = getUnifiedSentEnabled();
+  const selected = getUnifiedAccountIds();
+  // Empty selection means "all accounts"
+  const effectiveSet = new Set<string>(selected.length ? selected : accounts.map((a) => a.id));
+  // Reference prefsVersion so the component re-renders when it changes
+  void prefsVersion;
+
+  const toggleAccount = (id: string) => {
+    const current = getUnifiedAccountIds();
+    const baseSet = new Set<string>(current.length ? current : accounts.map((a) => a.id));
+    if (baseSet.has(id)) baseSet.delete(id);
+    else baseSet.add(id);
+    // If all accounts are selected, persist as empty ("all")
+    const ids = Array.from(baseSet);
+    if (ids.length === accounts.length) {
+      setUnifiedAccountIds([]);
+    } else {
+      setUnifiedAccountIds(ids);
+    }
+    onChanged();
+  };
+
+  const selectAll = () => {
+    setUnifiedAccountIds([]);
+    onChanged();
+  };
+
+  return (
+    <div
+      className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-72 max-w-80"
+      style={{ top, left }}
+    >
+      <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+        Vues unifiées
+      </div>
+      <label className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-outlook-bg-hover cursor-pointer">
+        <input
+          type="checkbox"
+          checked={unifiedInboxEnabled}
+          onChange={(e) => { setUnifiedInboxEnabled(e.target.checked); onChanged(); }}
+        />
+        <span>Afficher « Boîte de réception » dans les favoris</span>
+      </label>
+      <label className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-outlook-bg-hover cursor-pointer">
+        <input
+          type="checkbox"
+          checked={unifiedSentEnabled}
+          onChange={(e) => { setUnifiedSentEnabled(e.target.checked); onChanged(); }}
+        />
+        <span>Afficher « Éléments envoyés » dans les favoris</span>
+      </label>
+
+      <div className="border-t border-outlook-border my-1" />
+      <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+        <span>Boîtes mails incluses</span>
+        <button
+          onClick={selectAll}
+          className="text-[10px] normal-case font-normal text-outlook-blue hover:underline"
+          title="Inclure toutes les boîtes"
+        >
+          Tout inclure
+        </button>
+      </div>
+      <div className="max-h-64 overflow-y-auto">
+        {accounts.length === 0 && (
+          <div className="px-3 py-2 text-xs text-outlook-text-disabled">
+            Aucune boîte mail configurée.
+          </div>
+        )}
+        {accounts.map((account) => {
+          const checked = effectiveSet.has(account.id);
+          return (
+            <label
+              key={account.id}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-outlook-bg-hover cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggleAccount(account.id)}
+              />
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: account.color }}
+              />
+              <span className="truncate flex-1">{getAccountDisplayName(account)}</span>
+            </label>
+          );
+        })}
+      </div>
+
+      <div className="border-t border-outlook-border my-1" />
+      <button
+        onClick={onClose}
+        className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover text-outlook-text-secondary"
+      >
+        Fermer
+      </button>
     </div>
   );
 }

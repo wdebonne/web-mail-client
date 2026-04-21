@@ -69,6 +69,10 @@ export interface Email {
     references?: string;
   };
   fromCache?: boolean;
+  /** Origin account id — set when message is displayed in a virtual/unified view. */
+  _accountId?: string;
+  /** Origin folder path — set when message is displayed in a virtual/unified view. */
+  _folder?: string;
 }
 
 export interface Attachment {

@@ -15,6 +15,10 @@ import GifPanel from '../components/mail/GifPanel';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
 import { getAccountDisplayName } from '../utils/mailPreferences';
+import {
+  getUnifiedAccountIds, getUnifiedInboxEnabled, getUnifiedSentEnabled,
+  findInboxFolderPath, findSentFolderPath,
+} from '../utils/mailPreferences';
 import type { MailFolder } from '../types';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
@@ -30,7 +34,25 @@ export default function MailPage() {
     updateMessageFlags, removeMessage,
     openTabs, activeTabId, openMessageTab, switchTab, closeTab,
     tabMode, maxTabs, setTabMode, setMaxTabs,
+    virtualFolder, selectVirtualFolder,
   } = useMailStore();
+
+  // Bump to re-render when preferences change (favorites etc.)
+  const [prefsVersion, setPrefsVersion] = useState(0);
+  const bumpPrefs = useCallback(() => setPrefsVersion((n) => n + 1), []);
+
+  /** Resolve the origin (accountId, folder) for a message — uses message tags
+   *  when present (virtual/unified view), falls back to the current selection. */
+  const originOf = useCallback((msg: any | null | undefined): { accountId?: string; folder: string } => {
+    if (msg?._accountId) return { accountId: msg._accountId, folder: msg._folder || selectedFolder };
+    return { accountId: selectedAccount?.id, folder: selectedFolder };
+  }, [selectedAccount, selectedFolder]);
+
+  const originByUid = useCallback((uid: number): { accountId?: string; folder: string } => {
+    const m = messages.find((x) => x.uid === uid);
+    return originOf(m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, selectedAccount, selectedFolder]);
 
   // Load accounts
   const { data: accountsData } = useQuery({
@@ -86,14 +108,53 @@ export default function MailPage() {
     }
   }, [foldersData]);
 
-  // Load messages
+  // Load messages (single-folder OR aggregated unified view)
   const { data: messagesData, isLoading: loadingMessages } = useQuery({
-    queryKey: ['messages', selectedAccount?.id, selectedFolder],
+    queryKey: virtualFolder
+      ? ['virtual-messages', virtualFolder, prefsVersion, accounts.map((a) => a.id).join(',')]
+      : ['messages', selectedAccount?.id, selectedFolder],
     queryFn: async () => {
+      if (virtualFolder) {
+        // Aggregate across all accounts included in unified views
+        const unifiedIds = getUnifiedAccountIds();
+        const included = accounts.filter((a) =>
+          !unifiedIds.length ? true : unifiedIds.includes(a.id),
+        );
+        if (!included.length) return { messages: [], total: 0, page: 1 };
+
+        const results = await Promise.all(
+          included.map(async (acct) => {
+            try {
+              const accFolders: MailFolder[] =
+                queryClient.getQueryData<MailFolder[]>(['folders', acct.id]) ||
+                ((await api.getFolders(acct.id).then((f) => {
+                  queryClient.setQueryData(['folders', acct.id], f);
+                  return f;
+                })) as MailFolder[]);
+              const target =
+                virtualFolder === 'unified-inbox'
+                  ? findInboxFolderPath(accFolders)
+                  : findSentFolderPath(accFolders);
+              if (!target) return [];
+              const res = await api.getMessages(acct.id, target);
+              return (res.messages || []).map((m: any) => ({
+                ...m,
+                _accountId: acct.id,
+                _folder: target,
+              }));
+            } catch {
+              return [];
+            }
+          }),
+        );
+        const merged = ([] as any[]).concat(...results);
+        merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return { messages: merged, total: merged.length, page: 1 };
+      }
+
       if (!selectedAccount) return { messages: [], total: 0, page: 1 };
       try {
         const result = await api.getMessages(selectedAccount.id, selectedFolder);
-        // Cache for offline
         if (result.messages) {
           await offlineDB.cacheEmails(result.messages.map((m: any) => ({
             ...m,
@@ -104,12 +165,11 @@ export default function MailPage() {
         }
         return result;
       } catch {
-        // Fallback to offline cache
         const cached = await offlineDB.getEmails(selectedAccount.id, selectedFolder);
         return { messages: cached, total: cached.length, page: 1 };
       }
     },
-    enabled: !!selectedAccount,
+    enabled: virtualFolder ? accounts.length > 0 : !!selectedAccount,
     refetchInterval: isOnline ? 30000 : false,
   });
 
@@ -121,8 +181,11 @@ export default function MailPage() {
 
   // Mark as read mutation
   const markReadMutation = useMutation({
-    mutationFn: ({ uid, isRead }: { uid: number; isRead: boolean }) =>
-      selectedAccount ? api.markAsRead(selectedAccount.id, uid, isRead, selectedFolder) : Promise.resolve(),
+    mutationFn: ({ uid, isRead, accountId, folder }: { uid: number; isRead: boolean; accountId?: string; folder?: string }) => {
+      const accId = accountId || selectedAccount?.id;
+      const fld = folder || selectedFolder;
+      return accId ? api.markAsRead(accId, uid, isRead, fld) : Promise.resolve();
+    },
     onSuccess: (_, { uid, isRead }) => {
       updateMessageFlags(uid, { seen: isRead });
     },
@@ -130,8 +193,11 @@ export default function MailPage() {
 
   // Flag mutation
   const flagMutation = useMutation({
-    mutationFn: ({ uid, isFlagged }: { uid: number; isFlagged: boolean }) =>
-      selectedAccount ? api.toggleFlag(selectedAccount.id, uid, isFlagged, selectedFolder) : Promise.resolve(),
+    mutationFn: ({ uid, isFlagged, accountId, folder }: { uid: number; isFlagged: boolean; accountId?: string; folder?: string }) => {
+      const accId = accountId || selectedAccount?.id;
+      const fld = folder || selectedFolder;
+      return accId ? api.toggleFlag(accId, uid, isFlagged, fld) : Promise.resolve();
+    },
     onSuccess: (_, { uid, isFlagged }) => {
       updateMessageFlags(uid, { flagged: isFlagged });
     },
@@ -139,9 +205,12 @@ export default function MailPage() {
 
   // Delete mutation
   const deleteMutation = useMutation({
-    mutationFn: (uid: number) =>
-      selectedAccount ? api.deleteMessage(selectedAccount.id, uid, selectedFolder) : Promise.resolve(),
-    onSuccess: (_, uid) => {
+    mutationFn: ({ uid, accountId, folder }: { uid: number; accountId?: string; folder?: string }) => {
+      const accId = accountId || selectedAccount?.id;
+      const fld = folder || selectedFolder;
+      return accId ? api.deleteMessage(accId, uid, fld) : Promise.resolve();
+    },
+    onSuccess: (_, { uid }) => {
       removeMessage(uid);
       toast.success('Message supprimé');
     },
@@ -149,8 +218,11 @@ export default function MailPage() {
 
   // Move mutation
   const moveMutation = useMutation({
-    mutationFn: ({ uid, toFolder }: { uid: number; toFolder: string }) =>
-      selectedAccount ? api.moveMessage(selectedAccount.id, uid, selectedFolder, toFolder) : Promise.resolve(),
+    mutationFn: ({ uid, toFolder, accountId, fromFolder }: { uid: number; toFolder: string; accountId?: string; fromFolder?: string }) => {
+      const accId = accountId || selectedAccount?.id;
+      const src = fromFolder || selectedFolder;
+      return accId ? api.moveMessage(accId, uid, src, toFolder) : Promise.resolve();
+    },
     onSuccess: (_, { uid }) => {
       removeMessage(uid);
       toast.success('Message déplacé');
@@ -159,8 +231,11 @@ export default function MailPage() {
 
   // Copy mutation
   const copyMutation = useMutation({
-    mutationFn: ({ uid, toFolder }: { uid: number; toFolder: string }) =>
-      selectedAccount ? api.copyMessage(selectedAccount.id, uid, selectedFolder, toFolder) : Promise.resolve(),
+    mutationFn: ({ uid, toFolder, accountId, fromFolder }: { uid: number; toFolder: string; accountId?: string; fromFolder?: string }) => {
+      const accId = accountId || selectedAccount?.id;
+      const src = fromFolder || selectedFolder;
+      return accId ? api.copyMessage(accId, uid, src, toFolder) : Promise.resolve();
+    },
     onSuccess: () => {
       toast.success('Message copié');
     },
@@ -285,17 +360,23 @@ export default function MailPage() {
 
   const handleSelectMessage = async (message: any) => {
     openMessageTab(message);
-    
+
+    const { accountId, folder } = originOf(message);
+
     // Auto mark as read
-    if (!message.flags?.seen && selectedAccount) {
-      markReadMutation.mutate({ uid: message.uid, isRead: true });
+    if (!message.flags?.seen && accountId) {
+      markReadMutation.mutate({ uid: message.uid, isRead: true, accountId, folder });
     }
 
     // Load full message
-    if (selectedAccount && isOnline) {
+    if (accountId && isOnline) {
       try {
-        const full = await api.getMessage(selectedAccount.id, message.uid, selectedFolder);
-        openMessageTab(full);
+        const full = await api.getMessage(accountId, message.uid, folder);
+        // Preserve origin tags when in unified view
+        const enriched = message._accountId
+          ? { ...full, _accountId: message._accountId, _folder: message._folder }
+          : full;
+        openMessageTab(enriched);
       } catch {}
     }
   };
@@ -303,7 +384,8 @@ export default function MailPage() {
   const handleReply = (message: any, replyAll: boolean = false) => {
     const replyTo = message.from ? [message.from] : [];
     const replyCC = replyAll && message.cc ? message.cc : [];
-    
+    const { accountId } = originOf(message);
+
     openCompose({
       to: replyTo,
       cc: replyCC,
@@ -317,11 +399,12 @@ export default function MailPage() {
       </div>`,
       inReplyTo: message.messageId,
       references: message.headers?.references,
-      accountId: selectedAccount?.id,
+      accountId: accountId || selectedAccount?.id,
     });
   };
 
   const handleForward = (message: any) => {
+    const { accountId } = originOf(message);
     openCompose({
       to: [],
       subject: message.subject?.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`,
@@ -333,7 +416,7 @@ export default function MailPage() {
         <b>À :</b> ${message.to?.map((t: any) => t.name || t.address).join('; ')}</p>
         ${message.bodyHtml || message.bodyText || ''}
       </div>`,
-      accountId: selectedAccount?.id,
+      accountId: accountId || selectedAccount?.id,
     });
   };
 
@@ -654,11 +737,31 @@ export default function MailPage() {
           onReply={() => selectedMessage && handleReply(selectedMessage)}
           onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
           onForward={() => selectedMessage && handleForward(selectedMessage)}
-          onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
-          onArchive={() => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: 'Archive' })}
-          onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
-          onMarkRead={() => selectedMessage && markReadMutation.mutate({ uid: selectedMessage.uid, isRead: true })}
-          onMarkUnread={() => selectedMessage && markReadMutation.mutate({ uid: selectedMessage.uid, isRead: false })}
+          onDelete={() => {
+            if (!selectedMessage) return;
+            const o = originOf(selectedMessage);
+            deleteMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
+          }}
+          onArchive={() => {
+            if (!selectedMessage) return;
+            const o = originOf(selectedMessage);
+            moveMutation.mutate({ uid: selectedMessage.uid, toFolder: 'Archive', accountId: o.accountId, fromFolder: o.folder });
+          }}
+          onToggleFlag={() => {
+            if (!selectedMessage) return;
+            const o = originOf(selectedMessage);
+            flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged, accountId: o.accountId, folder: o.folder });
+          }}
+          onMarkRead={() => {
+            if (!selectedMessage) return;
+            const o = originOf(selectedMessage);
+            markReadMutation.mutate({ uid: selectedMessage.uid, isRead: true, accountId: o.accountId, folder: o.folder });
+          }}
+          onMarkUnread={() => {
+            if (!selectedMessage) return;
+            const o = originOf(selectedMessage);
+            markReadMutation.mutate({ uid: selectedMessage.uid, isRead: false, accountId: o.accountId, folder: o.folder });
+          }}
           onSync={handleSync}
           hasSelectedMessage={!!selectedMessage}
           isFlagged={!!selectedMessage?.flags?.flagged}
@@ -690,6 +793,11 @@ export default function MailPage() {
             setShowGifPanel(v => !v);
           }}
           isGifPanelOpen={showGifPanel}
+          accounts={accounts}
+          onFavoritesChanged={() => {
+            bumpPrefs();
+            queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+          }}
         />
       </div>
 
@@ -723,6 +831,8 @@ export default function MailPage() {
                 onPreferencesChanged={() => {
                   // Accounts list is server-driven; a lightweight refresh to pick up local name overrides happens on next render.
                   queryClient.invalidateQueries({ queryKey: ['accounts'] });
+                  bumpPrefs();
+                  queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
                 }}
               />
             </div>
@@ -755,15 +865,15 @@ export default function MailPage() {
             selectedMessage={selectedMessage}
             loading={loadingMessages}
             onSelectMessage={handleSelectMessageMobile}
-            onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
-            onDelete={(uid) => deleteMutation.mutate(uid)}
-            folder={selectedFolder}
+            onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
+            onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
+            folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
             onReply={(msg) => handleReply(msg)}
             onReplyAll={(msg) => handleReply(msg, true)}
             onForward={(msg) => handleForward(msg)}
-            onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
-            onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
-            onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
+            onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
+            onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+            onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
             folders={useMailStore(s => s.folders)}
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
@@ -782,15 +892,15 @@ export default function MailPage() {
             selectedMessage={selectedMessage}
             loading={loadingMessages}
             onSelectMessage={handleSelectMessageMobile}
-            onToggleFlag={(uid, flagged) => flagMutation.mutate({ uid, isFlagged: flagged })}
-            onDelete={(uid) => deleteMutation.mutate(uid)}
-            folder={selectedFolder}
+            onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
+            onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
+            folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
             onReply={(msg) => handleReply(msg)}
             onReplyAll={(msg) => handleReply(msg, true)}
             onForward={(msg) => handleForward(msg)}
-            onMarkRead={(uid, isRead) => markReadMutation.mutate({ uid, isRead })}
-            onMove={(uid, toFolder) => moveMutation.mutate({ uid, toFolder })}
-            onCopy={(uid, toFolder) => copyMutation.mutate({ uid, toFolder })}
+            onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
+            onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+            onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
             folders={useMailStore(s => s.folders)}
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
@@ -850,9 +960,21 @@ export default function MailPage() {
                 onReply={() => selectedMessage && handleReply(selectedMessage)}
                 onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
                 onForward={() => selectedMessage && handleForward(selectedMessage)}
-                onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
-                onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
-                onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
+                onDelete={() => {
+                  if (!selectedMessage) return;
+                  const o = originOf(selectedMessage);
+                  deleteMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
+                }}
+                onToggleFlag={() => {
+                  if (!selectedMessage) return;
+                  const o = originOf(selectedMessage);
+                  flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged, accountId: o.accountId, folder: o.folder });
+                }}
+                onMove={(folder) => {
+                  if (!selectedMessage) return;
+                  const o = originOf(selectedMessage);
+                  moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
+                }}
                 attachmentMinVisibleKb={attachmentMinVisibleKb}
                 attachmentActionMode={attachmentActionMode}
               />

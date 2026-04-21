@@ -11,11 +11,15 @@ export interface OpenTab {
 
 export type TabMode = 'drafts-only' | 'all-opened';
 
+export type VirtualFolder = 'unified-inbox' | 'unified-sent' | null;
+
 interface MailState {
   accounts: MailAccount[];
   selectedAccount: MailAccount | null;
   folders: MailFolder[];
   selectedFolder: string;
+  /** When set, the message list shows a virtual/unified view instead of a single folder. */
+  virtualFolder: VirtualFolder;
   messages: Email[];
   selectedMessage: Email | null;
   isComposing: boolean;
@@ -33,6 +37,7 @@ interface MailState {
   selectAccount: (account: MailAccount) => void;
   setFolders: (folders: MailFolder[]) => void;
   selectFolder: (folder: string) => void;
+  selectVirtualFolder: (v: VirtualFolder) => void;
   setMessages: (messages: Email[], total: number, page: number) => void;
   selectMessage: (message: Email | null) => void;
   openCompose: (data?: Partial<ComposeData>) => void;
@@ -66,6 +71,7 @@ export const useMailStore = create<MailState>((set, get) => ({
   selectedAccount: null,
   folders: [],
   selectedFolder: 'INBOX',
+  virtualFolder: null,
   messages: [],
   selectedMessage: null,
   isComposing: false,
@@ -86,13 +92,17 @@ export const useMailStore = create<MailState>((set, get) => ({
   },
 
   selectAccount: (account) => {
-    set({ selectedAccount: account, selectedFolder: 'INBOX', messages: [], selectedMessage: null, currentPage: 1 });
+    set({ selectedAccount: account, selectedFolder: 'INBOX', virtualFolder: null, messages: [], selectedMessage: null, currentPage: 1 });
   },
 
   setFolders: (folders) => set({ folders }),
 
   selectFolder: (folder) => {
-    set({ selectedFolder: folder, messages: [], selectedMessage: null, currentPage: 1 });
+    set({ selectedFolder: folder, virtualFolder: null, messages: [], selectedMessage: null, currentPage: 1 });
+  },
+
+  selectVirtualFolder: (v) => {
+    set({ virtualFolder: v, messages: [], selectedMessage: null, currentPage: 1 });
   },
 
   setMessages: (messages, total, page) => set({ messages, totalMessages: total, currentPage: page }),
