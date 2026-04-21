@@ -864,13 +864,15 @@ export default function MailPage() {
             bumpPrefs();
             queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
           }}
+          splitActive={splitActive}
+          onSwapSplit={() => { if (splitTabId) switchTab(splitTabId); }}
         />
       </div>
 
       {/* Main content area — 3 blocks with gaps */}
       <div ref={containerRef} className="flex-1 flex overflow-hidden min-h-0 gap-1 px-1.5 pb-1.5">
         {/* Folder pane block — collapsible + resizable */}
-        {showFolderPane && !composeExpanded && (
+        {showFolderPane && !composeExpanded && !splitActive && (
           <>
             <div
               data-pane="folders"
@@ -950,7 +952,7 @@ export default function MailPage() {
         </div>
 
         {/* Desktop message list block — uses pixel width from resize handle */}
-        {!composeExpanded && (
+        {!composeExpanded && !splitActive && (
           <>
             <div
               className="hidden md:flex flex-col flex-shrink-0 h-full bg-white rounded-md shadow-sm overflow-hidden"

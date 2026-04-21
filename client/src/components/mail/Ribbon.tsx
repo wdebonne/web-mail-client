@@ -11,7 +11,7 @@ import {
   Link as LinkIcon, Image as ImageIcon, Palette, Type, Indent, Outdent,
   Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
   Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film,
-  Star,
+  Star, ArrowLeftRight,
 } from 'lucide-react';
 import type { TabMode } from '../../stores/mailStore';
 import type { MailAccount } from '../../types';
@@ -93,6 +93,10 @@ interface RibbonProps {
   // Favorites mailbox management (Afficher tab)
   accounts?: MailAccount[];
   onFavoritesChanged?: () => void;
+
+  // Split view (side-by-side tabs)
+  splitActive?: boolean;
+  onSwapSplit?: () => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -168,6 +172,7 @@ export default function Ribbon({
   onToggleEmojiPanel, isEmojiPanelOpen = false,
   onToggleGifPanel, isGifPanelOpen = false,
   accounts = [], onFavoritesChanged,
+  splitActive = false, onSwapSplit,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -304,6 +309,12 @@ export default function Ribbon({
               />
               <SimplifiedSep />
               <SimplifiedButton icon={RefreshCw} label="Synchroniser" onClick={onSync} />
+              {onSwapSplit && splitActive && (
+                <>
+                  <SimplifiedSep />
+                  <SimplifiedButton icon={ArrowLeftRight} label="Inverser les côtés" onClick={onSwapSplit} />
+                </>
+              )}
             </>
           )}
 
@@ -399,6 +410,14 @@ export default function Ribbon({
               <RibbonGroup label="Messages">
                 <RibbonButton icon={RefreshCw} label="Synchroniser" onClick={onSync} />
               </RibbonGroup>
+              {onSwapSplit && splitActive && (
+                <>
+                  <RibbonSeparator />
+                  <RibbonGroup label="Vue">
+                    <RibbonButton icon={ArrowLeftRight} label="Inverser les côtés" onClick={onSwapSplit} />
+                  </RibbonGroup>
+                </>
+              )}
             </>
           )}
 
