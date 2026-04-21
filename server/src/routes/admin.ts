@@ -271,7 +271,8 @@ const mailAccountSchema = z.object({
 adminRouter.get('/mail-accounts', async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
-      `SELECT ma.id, ma.name, ma.email, ma.imap_host, ma.imap_port, ma.smtp_host, ma.smtp_port,
+      `SELECT ma.id, ma.name, ma.email, ma.imap_host, ma.imap_port, ma.imap_secure,
+              ma.smtp_host, ma.smtp_port, ma.smtp_secure, ma.username,
               ma.is_shared, ma.signature_html, ma.signature_text, ma.color, ma.created_at,
               COUNT(mba.id) as assignment_count
        FROM mail_accounts ma
