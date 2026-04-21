@@ -457,6 +457,28 @@ L'onglet **Afficher** contient :
 - **`all-opened`** : chaque message cliqué ouvre un onglet (le plus ancien inactif est fermé à la limite)
 - Barre d'onglets **masquée** quand < 2 onglets
 
+### Vue côte à côte (split view)
+
+Pilotée depuis `client/src/pages/MailPage.tsx`.
+
+| État local | Type | Rôle | Persistance |
+|-----------|------|------|-------------|
+| `splitTabId` | `string \| null` | Onglet affiché à côté de l'onglet actif | — |
+| `splitRatio` | `number (0.15–0.85)` | Largeur relative du panneau gauche | `localStorage.splitRatio` |
+| `splitKeepFolderPane` | `boolean` | Conserve le volet Dossiers visible en vue split | `localStorage.splitKeepFolderPane` |
+| `splitKeepMessageList` | `boolean` | Conserve la liste des messages visible en vue split | `localStorage.splitKeepMessageList` |
+| `splitComposeReply` | `boolean` | Répondre/Transférer ouvre la rédaction à côté du mail d'origine | `localStorage.splitComposeReply` |
+| `composeAlongsideMessage` | `Email \| null` | Mail source affiché à gauche pendant la rédaction latérale | — |
+| `composeExpanded` | `boolean` | Rédaction plein-largeur (masque tous les volets) | — |
+
+Déclencheurs et interactions :
+
+- **Activation** : clic droit sur un onglet message de la barre du bas → menu contextuel (option *Afficher côte à côte*).
+- **Poignée centrale redimensionnable** entre les deux vues (handler `handleSplitResizeStart`), ratio sauvegardé à la fin du drag.
+- **Masquage auto** du volet Dossiers et de la liste des messages lorsque `splitActive` ou `splitComposeActive` est vrai, sauf si la bascule correspondante (`splitKeepFolderPane` / `splitKeepMessageList`) est activée.
+- **Inversion** via bouton *Inverser les côtés* (onglet Accueil, visible seulement en vue split) : appelle `switchTab(splitTabId)`, un effet dédié inverse alors la paire pour que la vue côte à côte reste affichée.
+- **Réponse à côté** : si `splitComposeReply === true`, `handleReply` / `handleForward` mémorisent le message source dans `composeAlongsideMessage` ; le rendu `MailPage` affiche le `MessageView` à gauche et la fenêtre `ComposeModal` à droite (mêmes mécaniques de redimensionnement).
+
 ### Volet de dossiers multi-comptes
 
 Module : `client/src/components/mail/FolderPane.tsx` + utilitaires `client/src/utils/mailPreferences.ts`.

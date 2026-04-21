@@ -42,7 +42,12 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
   - Gestion des comptes inclus depuis le bouton **Boîtes favoris** du ruban (onglet Afficher)
 - 📑 Système d'onglets multi-messages/brouillons (2 modes : brouillons uniquement / tous les mails ouverts)
 - 🔢 Nombre max d'onglets paramétrable (2-20)
+- 🪟 **Vue côte à côte** : clic droit sur un onglet → « Afficher côte à côte », deux messages ouverts en parallèle avec poignée centrale redimensionnable (15 %–85 %)
+  - Bouton **Inverser les côtés** dans l'onglet Accueil du ruban
+  - Personnalisation dans l'onglet Afficher du ruban (garder les Dossiers / la Liste des messages visibles, activer la **Réponse à côté** pour garder le mail d'origine visible pendant la rédaction)
 - 📏 Volet dossiers et liste de messages redimensionnables
+- 🗜️ **Rédaction plein-largeur** : bouton Agrandir/Réduire dans l'en-tête du compose pour masquer les volets et donner toute la largeur au brouillon
+- 📎 **Glisser-déposer de pièces jointes** directement sur la fenêtre de rédaction (overlay visuel pendant le survol)
 - 🎚️ Ruban auto-adaptatif (classique ↔ simplifié selon la largeur)
 - �️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF)
 - �📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
