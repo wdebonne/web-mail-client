@@ -21,6 +21,7 @@ import {
   isFavoriteFolder,
   toggleFavoriteFolder,
   removeFavoriteFolder,
+  setFavoriteFolders,
   getUnifiedAccountIds,
   getUnifiedInboxEnabled,
   getUnifiedSentEnabled,
@@ -282,6 +283,10 @@ export default function FolderPane({
           }}
           onFavoriteContextMenu={(fav, x, y) => setFavoriteContextMenu({ x, y, fav })}
           prefsVersion={prefsVersion + (externalPrefsVersion || 0)}
+          onChanged={() => {
+            triggerRerender();
+            onPreferencesChanged?.();
+          }}
         />
 
         {orderedAccounts.map((account) => {
@@ -835,12 +840,13 @@ interface FavoritesSectionProps {
   onSelectFavorite: (fav: FavoriteFolder) => void;
   onFavoriteContextMenu: (fav: FavoriteFolder, x: number, y: number) => void;
   prefsVersion: number;
+  onChanged?: () => void;
 }
 
 function FavoritesSection({
   accounts, expanded, onToggleExpanded, virtualFolder,
   selectedAccountId, selectedFolder,
-  onSelectVirtual, onSelectFavorite, onFavoriteContextMenu, prefsVersion,
+  onSelectVirtual, onSelectFavorite, onFavoriteContextMenu, prefsVersion, onChanged,
 }: FavoritesSectionProps) {
   const favorites = useMemo(() => getFavoriteFolders(), [prefsVersion]);
   const unifiedInboxEnabled = useMemo(() => getUnifiedInboxEnabled(), [prefsVersion]);
@@ -884,6 +890,20 @@ function FavoritesSection({
   const showUnifiedInbox = unifiedInboxEnabled && hasIncludedAccounts;
   const showUnifiedSent = unifiedSentEnabled && hasIncludedAccounts;
 
+  // Drag & drop reorder for favourite folders (unified inbox/sent are fixed on top).
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+
+  const reorderFavorites = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= favorites.length || to > favorites.length) return;
+    const next = favorites.slice();
+    const [moved] = next.splice(from, 1);
+    const insertAt = to > from ? to - 1 : to;
+    next.splice(insertAt, 0, moved);
+    setFavoriteFolders(next);
+    onChanged?.();
+  };
+
   return (
     <div className="mb-2">
       <button
@@ -914,7 +934,7 @@ function FavoritesSection({
             />
           )}
 
-          {favorites.map((fav) => {
+          {favorites.map((fav, index) => {
             const account = accounts.find((a) => a.id === fav.accountId);
             if (!account) return null;
             const accountFolders = foldersByAccount.get(fav.accountId) || [];
@@ -925,28 +945,70 @@ function FavoritesSection({
               !virtualFolder &&
               selectedAccountId === fav.accountId &&
               selectedFolder === fav.path;
+            const isDragging = dragIndex === index;
+            const showDropBefore = dropIndex === index && dragIndex !== null && dragIndex !== index;
+            const showDropAfter =
+              dropIndex === favorites.length && index === favorites.length - 1 && dragIndex !== null;
             return (
-              <button
+              <div
                 key={`${fav.accountId}:${fav.path}`}
-                onClick={() => onSelectFavorite(fav)}
-                onContextMenu={(e) => {
+                className="relative"
+                onDragOver={(e) => {
+                  if (dragIndex === null) return;
                   e.preventDefault();
-                  onFavoriteContextMenu(fav, e.clientX, e.clientY);
+                  e.dataTransfer.dropEffect = 'move';
+                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  const after = e.clientY - rect.top > rect.height / 2;
+                  setDropIndex(after ? index + 1 : index);
                 }}
-                className={`w-full flex items-center gap-2 pl-3 pr-3 py-1 text-sm rounded transition-colors
-                  ${isActive
-                    ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
-                    : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-                title={`${getAccountDisplayName(account)} · ${label}`}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragIndex !== null && dropIndex !== null) {
+                    reorderFavorites(dragIndex, dropIndex);
+                  }
+                  setDragIndex(null);
+                  setDropIndex(null);
+                }}
               >
-                <Icon size={14} className={isActive ? 'text-outlook-blue' : ''} />
-                <span className="truncate flex-1 text-left">{label}</span>
-                <span
-                  className="w-1.5 h-1.5 rounded-full flex-shrink-0 opacity-70"
-                  style={{ backgroundColor: account.color }}
-                  title={getAccountDisplayName(account)}
-                />
-              </button>
+                {showDropBefore && (
+                  <div className="absolute left-2 right-2 top-0 h-0.5 bg-outlook-blue rounded pointer-events-none" />
+                )}
+                <button
+                  draggable
+                  onDragStart={(e) => {
+                    setDragIndex(index);
+                    e.dataTransfer.effectAllowed = 'move';
+                    // Avoid native image artefact where possible.
+                    try { e.dataTransfer.setData('text/plain', `${fav.accountId}:${fav.path}`); } catch { /* noop */ }
+                  }}
+                  onDragEnd={() => {
+                    setDragIndex(null);
+                    setDropIndex(null);
+                  }}
+                  onClick={() => onSelectFavorite(fav)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onFavoriteContextMenu(fav, e.clientX, e.clientY);
+                  }}
+                  className={`w-full flex items-center gap-2 pl-3 pr-3 py-1 text-sm rounded transition-colors
+                    ${isActive
+                      ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
+                      : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
+                    ${isDragging ? 'opacity-50' : ''}`}
+                  title={`${getAccountDisplayName(account)} · ${label}`}
+                >
+                  <Icon size={14} className={isActive ? 'text-outlook-blue' : ''} />
+                  <span className="truncate flex-1 text-left">{label}</span>
+                  <span
+                    className="w-1.5 h-1.5 rounded-full flex-shrink-0 opacity-70"
+                    style={{ backgroundColor: account.color }}
+                    title={getAccountDisplayName(account)}
+                  />
+                </button>
+                {showDropAfter && (
+                  <div className="absolute left-2 right-2 bottom-0 h-0.5 bg-outlook-blue rounded pointer-events-none" />
+                )}
+              </div>
             );
           })}
         </div>
