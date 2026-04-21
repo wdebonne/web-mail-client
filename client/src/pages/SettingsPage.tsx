@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useAuthStore } from '../stores/authStore';
 import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
-  Eye, EyeOff, Save
+  Eye, EyeOff, Save, Paperclip
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-type Tab = 'profile' | 'accounts' | 'appearance' | 'notifications';
+type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications';
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
@@ -16,6 +16,7 @@ export default function SettingsPage() {
   const tabs = [
     { id: 'profile' as const, icon: User, label: 'Profil' },
     { id: 'accounts' as const, icon: Mail, label: 'Mes boîtes mail' },
+    { id: 'mail' as const, icon: Paperclip, label: 'Messagerie' },
     { id: 'appearance' as const, icon: Palette, label: 'Apparence' },
     { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
   ];
@@ -45,8 +46,65 @@ export default function SettingsPage() {
         <div className="max-w-2xl">
           {tab === 'profile' && <ProfileSettings />}
           {tab === 'accounts' && <AccountSettings />}
+          {tab === 'mail' && <MailBehaviorSettings />}
           {tab === 'appearance' && <AppearanceSettings />}
           {tab === 'notifications' && <NotificationSettings />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MailBehaviorSettings() {
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+
+  const [attachmentActionMode, setAttachmentActionMode] = useState<'preview' | 'download' | 'menu'>('preview');
+
+  const updateMutation = useMutation({
+    mutationFn: api.updateSettings,
+    onSuccess: () => toast.success('Préférences de messagerie sauvegardées'),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  useEffect(() => {
+    const mode = settings?.attachment_action_mode;
+    if (mode === 'preview' || mode === 'download' || mode === 'menu') {
+      setAttachmentActionMode(mode);
+    }
+  }, [settings?.attachment_action_mode]);
+
+  return (
+    <div>
+      <h3 className="text-base font-semibold mb-3">Messagerie</h3>
+      <div className="space-y-4">
+        <div>
+          <label className="text-sm text-outlook-text-secondary">Ouverture des pièces jointes</label>
+          <select
+            value={attachmentActionMode}
+            onChange={(e) => setAttachmentActionMode(e.target.value as 'preview' | 'download' | 'menu')}
+            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+          >
+            <option value="preview">Aperçu</option>
+            <option value="download">Téléchargement</option>
+            <option value="menu">Menu (Aperçu / Télécharger)</option>
+          </select>
+          <p className="text-xs text-outlook-text-disabled mt-1">
+            Cette préférence est identique à l'option du ruban Afficher &gt; Pièce jointe.
+          </p>
+        </div>
+
+        <div>
+          <button
+            onClick={() => updateMutation.mutate({ attachmentActionMode })}
+            disabled={updateMutation.isPending}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 rounded-md text-sm flex items-center gap-2 disabled:opacity-50"
+          >
+            <Save size={14} />
+            {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+          </button>
         </div>
       </div>
     </div>

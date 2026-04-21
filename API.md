@@ -531,6 +531,19 @@ Partage un calendrier avec un autre utilisateur.
 
 Récupère les paramètres de l'utilisateur.
 
+**Réponse 200 :**
+```json
+{
+  "display_name": "Jean Dupont",
+  "avatar_url": null,
+  "language": "fr",
+  "timezone": "Europe/Paris",
+  "theme": "light",
+  "attachment_action_mode": "preview",
+  "attachment_visibility_min_kb": 10
+}
+```
+
 ### PUT /api/settings
 
 Met à jour les paramètres utilisateur.
@@ -542,6 +555,7 @@ Met à jour les paramètres utilisateur.
   "theme": "light",
   "language": "fr",
   "timezone": "Europe/Paris",
+  "attachmentActionMode": "preview",
   "notifications": {
     "email": true,
     "desktop": true,
@@ -549,6 +563,8 @@ Met à jour les paramètres utilisateur.
   }
 }
 ```
+
+`attachmentActionMode` : `preview` | `download` | `menu`
 
 ### PUT /api/settings/password
 

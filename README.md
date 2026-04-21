@@ -10,7 +10,8 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - ⭐ Drapeaux, marquage lu/non-lu, déplacement entre dossiers
 - 🖱️ Drag & drop des messages entre dossiers
 - 🧹 Masquage visuel du préfixe `INBOX.` pour les dossiers personnalisés (le chemin IMAP reste inchangé)
-- 📎 Pièces jointes (upload/download)
+- 📎 Pièces jointes avec aperçu avancé (images, PDF, DOCX, XLSX, HEIC/HEIF)
+- 🎛️ Comportement d'ouverture des pièces jointes configurable par utilisateur (Aperçu / Téléchargement / Menu)
 - ✏️ Éditeur riche (HTML) avec formatage
 - 🔄 Synchronisation automatique
 - 📝 Signature par compte
