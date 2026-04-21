@@ -9,6 +9,20 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Favoris (nouveau)
+- Section **Favoris** en haut du volet Dossiers avec icône étoile, pliable/dépliable (état persisté).
+- Deux vues unifiées fixes en tête de la section, agrégeant tous les comptes sélectionnés :
+  - **Boîte de réception** (cumul des INBOX)
+  - **Éléments envoyés** (cumul des dossiers Sent détectés par heuristique)
+  - Les actions (lu/non-lu, drapeau, suppression, déplacement, copie) sur un message d'une vue unifiée sont routées automatiquement vers le compte et le dossier d'origine.
+- Épinglage de n'importe quel dossier IMAP en favori via le menu contextuel (« Ajouter aux favoris » / « Retirer des favoris »).
+- **Réorganisation des favoris par glisser-déposer** : les dossiers épinglés peuvent être réordonnés dans la liste. Les deux vues unifiées restent toujours en tête et ne sont pas déplaçables. Un indicateur bleu affiche la position d'insertion.
+- Nouveau bouton **Boîtes favoris** dans l'onglet **Afficher** du ruban (menu déroulant) :
+  - Cases à cocher pour afficher/masquer « Boîte de réception » et « Éléments envoyés » unifiées.
+  - Sélection des comptes inclus dans les vues unifiées (bouton « Tout inclure »).
+- Préférences persistées localement (`mail.favoriteFolders`, `mail.unifiedAccounts`, `mail.favoritesExpanded`, `mail.unifiedInboxEnabled`, `mail.unifiedSentEnabled`).
+- Réactivité croisée : tout changement (ruban ↔ menu contextuel ↔ glisser-déposer) est reflété instantanément dans les deux composants sans rafraîchissement de la page.
+
 #### Ruban et rédaction
 - Nouvel onglet **Message** dans le ruban (style Outlook) visible uniquement pendant la rédaction, regroupant les outils de mise en forme : polices, tailles, styles (Titre 1/2/3, citation, code), gras/italique/souligné/barré, indice/exposant, couleurs de texte et de surlignage, listes, retraits, alignements.
 - Nouvel onglet **Insérer** avec les groupes Inclure (joindre un fichier, lien, image), Tableaux (grille 8×10), Symboles (emojis, ligne horizontale, date/heure) et boutons Emoji / GIF.

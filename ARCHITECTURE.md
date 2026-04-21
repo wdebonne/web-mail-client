@@ -467,6 +467,11 @@ Module : `client/src/components/mail/FolderPane.tsx` + utilitaires `client/src/u
 | `mail.accountOrder` | `string[]` | Ordre des comptes dans le volet |
 | `mail.folderOrder` | `Record<accountId, string[]>` | Ordre personnalisé des dossiers d'un compte |
 | `mail.expandedAccounts` | `string[]` | Comptes actuellement développés |
+| `mail.favoriteFolders` | `FavoriteFolder[]` | Dossiers épinglés (ordre préservé par glisser-déposer) |
+| `mail.unifiedAccounts` | `string[]` | Comptes inclus dans les vues unifiées (vide = tous) |
+| `mail.unifiedInboxEnabled` | `boolean` | Affichage de la vue unifiée « Boîte de réception » |
+| `mail.unifiedSentEnabled` | `boolean` | Affichage de la vue unifiée « Éléments envoyés » |
+| `mail.favoritesExpanded` | `boolean` | État plié/déplié de la section Favoris |
 
 **Types MIME custom utilisés pour le drag-and-drop :**
 - `application/x-mail-message` — déplacement/copie d'un message (`{uid, srcAccountId, srcFolder}`)
@@ -484,6 +489,20 @@ Module : `client/src/components/mail/FolderPane.tsx` + utilitaires `client/src/u
 - Indentation proportionnelle à la profondeur
 - Détection dynamique du namespace personnel (ex. `INBOX` sur Courier/o2switch) pour préserver le préfixe lors du un-nest
 
+### Favoris et vues unifiées
+
+Section rendue en tête du volet par `FavoritesSection` (dans `FolderPane.tsx`). Deux catégories :
+
+- **Vues unifiées fixes** (non déplaçables) :
+  - `unified-inbox` : agrège toutes les INBOX des comptes inclus.
+  - `unified-sent` : agrège les dossiers Sent détectés (`findSentFolderPath`) des comptes inclus.
+  - L'état `virtualFolder` dans `mailStore` (`'unified-inbox' | 'unified-sent' | null`) active l'agrégation côté `MailPage.tsx`.
+  - Les messages agrégés portent des champs `_accountId` / `_folder` (types `Email`). `originOf(msg)` et `originByUid(uid)` routent les mutations (read/flag/delete/move/copy) vers le compte et le dossier d'origine.
+- **Dossiers épinglés** (réordonnables par glisser-déposer) :
+  - Ajout/retrait via le menu contextuel d'un dossier (« Ajouter/Retirer des favoris »).
+  - Ordre persisté dans `mail.favoriteFolders` (tableau `FavoriteFolder[] = { accountId, path }[]`).
+  - Réactivité croisée entre `FolderPane` (section Favoris, menu contextuel) et `Ribbon` (menu « Boîtes favoris » de l'onglet Afficher) via une prop `externalPrefsVersion` propagée depuis `MailPage` (`bumpPrefs`).
+
 ### État des onglets (Zustand `mailStore`)
 
 ```
@@ -492,10 +511,12 @@ mailStore
 ├── activeTabId: string | null  # Onglet actif
 ├── tabMode: TabMode            # Mode d'ouverture
 ├── maxTabs: number             # Limite d'onglets
+├── virtualFolder: VirtualFolder # null | 'unified-inbox' | 'unified-sent'
 ├── openMessageTab(message)     # Ouvre/active un onglet message
 ├── openComposeTab(data?)       # Ouvre un onglet brouillon
 ├── switchTab(tabId)            # Change d'onglet actif
 ├── closeTab(tabId)             # Ferme un onglet
 ├── setTabMode(mode)            # Change le mode
-└── setMaxTabs(max)             # Change la limite
+├── setMaxTabs(max)             # Change la limite
+└── selectVirtualFolder(v)      # Active une vue unifiée
 ```

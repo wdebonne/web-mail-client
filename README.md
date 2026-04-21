@@ -35,6 +35,11 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 
 ### Interface Outlook Web
 - 🧱 Disposition en blocs avec marges, coins arrondis et ombres
+- ⭐ **Favoris** : section dédiée en tête du volet dossiers avec
+  - Vues unifiées **Boîte de réception** et **Éléments envoyés** agrégeant tous les comptes sélectionnés
+  - Épinglage de n'importe quel dossier via menu contextuel
+  - **Réorganisation par glisser-déposer** des dossiers épinglés (les vues unifiées restent fixes en haut)
+  - Gestion des comptes inclus depuis le bouton **Boîtes favoris** du ruban (onglet Afficher)
 - 📑 Système d'onglets multi-messages/brouillons (2 modes : brouillons uniquement / tous les mails ouverts)
 - 🔢 Nombre max d'onglets paramétrable (2-20)
 - 📏 Volet dossiers et liste de messages redimensionnables
