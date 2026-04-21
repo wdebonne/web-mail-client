@@ -485,6 +485,9 @@ export class MailService {
     try {
       await client.connect();
       await client.mailboxCreate(path);
+      try {
+        await (client as any).mailboxSubscribe?.(path);
+      } catch {}
     } finally {
       await client.logout();
     }
@@ -495,6 +498,14 @@ export class MailService {
     try {
       await client.connect();
       await client.mailboxRename(oldPath, newPath);
+      // Ensure the renamed folder is subscribed so other clients (Roundcube, Thunderbird, …) still list it.
+      try {
+        await (client as any).mailboxSubscribe?.(newPath);
+      } catch {}
+      // Best-effort: remove any lingering subscription on the old path.
+      try {
+        await (client as any).mailboxUnsubscribe?.(oldPath);
+      } catch {}
     } finally {
       await client.logout();
     }

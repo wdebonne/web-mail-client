@@ -397,15 +397,19 @@ function AccountFolders({
     if (types.includes(DT_FOLDER_REORDER)) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
-      if (e.shiftKey) {
-        // Nesting mode: highlight as container, no position indicator
-        setDragOver(folder.path);
-        setFolderDropIndicator(null);
-      } else {
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        const position: DropPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const edgeZone = Math.min(6, rect.height * 0.25);
+      const fromTop = e.clientY - rect.top;
+      const fromBottom = rect.bottom - e.clientY;
+      // Shift forces reorder; otherwise drop on body (center) = nest, edges = reorder
+      const wantReorder = e.shiftKey || fromTop < edgeZone || fromBottom < edgeZone;
+      if (wantReorder) {
+        const position: DropPosition = fromTop < rect.height / 2 ? 'before' : 'after';
         setFolderDropIndicator({ path: folder.path, position });
         setDragOver(null);
+      } else {
+        setDragOver(folder.path);
+        setFolderDropIndicator(null);
       }
       return;
     }
@@ -432,7 +436,12 @@ function AccountFolders({
       try {
         const payload = JSON.parse(reorderRaw) as { accountId: string; path: string };
         if (payload.accountId === account.id && payload.path !== folder.path) {
-          if (e.shiftKey && onMoveFolder) {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const edgeZone = Math.min(6, rect.height * 0.25);
+          const fromTop = e.clientY - rect.top;
+          const fromBottom = rect.bottom - e.clientY;
+          const wantReorder = e.shiftKey || fromTop < edgeZone || fromBottom < edgeZone;
+          if (!wantReorder && onMoveFolder) {
             // Nest: make dragged folder a child of this folder
             const srcFolder = folders.find((f) => f.path === payload.path);
             const d = srcFolder?.delimiter || folder.delimiter || '.';
@@ -446,8 +455,7 @@ function AccountFolders({
               }
             }
           } else {
-            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            const position: DropPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+            const position: DropPosition = fromTop < rect.height / 2 ? 'before' : 'after';
             const currentOrder = ordered.map((f) => f.path);
             const withoutDragged = currentOrder.filter((p) => p !== payload.path);
             const targetIdx = withoutDragged.indexOf(folder.path);
