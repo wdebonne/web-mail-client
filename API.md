@@ -626,6 +626,77 @@ Met à jour un groupe.
 
 Supprime un groupe.
 
+### GET /api/admin/mail-accounts
+
+Liste tous les comptes mail gérés par l'administration.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Support",
+    "email": "support@example.com",
+    "username": "support@example.com",
+    "imap_host": "imap.example.com",
+    "imap_port": 993,
+    "imap_secure": true,
+    "smtp_host": "smtp.example.com",
+    "smtp_port": 465,
+    "smtp_secure": true,
+    "is_shared": true,
+    "signature_html": "<p>Cordialement</p>",
+    "signature_text": "Cordialement",
+    "color": "#0078D4",
+    "assignment_count": 3,
+    "created_at": "2026-04-21T10:00:00Z"
+  }
+]
+```
+
+### POST /api/admin/mail-accounts
+
+Crée un compte mail administré.
+
+**Body :**
+```json
+{
+  "name": "Support",
+  "email": "support@example.com",
+  "username": "support@example.com",
+  "password": "mot_de_passe_mail",
+  "imapHost": "imap.example.com",
+  "imapPort": 993,
+  "imapSecure": true,
+  "smtpHost": "smtp.example.com",
+  "smtpPort": 465,
+  "smtpSecure": true,
+  "isShared": true,
+  "signatureHtml": "<p>Cordialement</p>",
+  "signatureText": "Cordialement",
+  "color": "#0078D4"
+}
+```
+
+### PUT /api/admin/mail-accounts/:id
+
+Met à jour un compte mail administré.
+
+Le champ `password` est optionnel : si omis, le mot de passe existant est conservé.
+
+### DELETE /api/admin/mail-accounts/:id
+
+Supprime un compte mail administré.
+
+### POST /api/admin/mail-accounts/:id/test
+
+Teste la connexion IMAP d'un compte mail administré.
+
+**Réponse 200 :**
+```json
+{ "success": true, "folders": 8 }
+```
+
 ### POST /api/admin/nextcloud/test
 
 Teste la connexion NextCloud.
