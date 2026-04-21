@@ -131,6 +131,7 @@ export class MailService {
               draft: msg.flags!.has('\\Draft'),
             },
             hasAttachments: this.hasAttachments(msg.bodyStructure),
+            largestAttachmentSize: this.getLargestAttachmentSize(msg.bodyStructure),
             size: msg.size,
             snippet: '',
           });
@@ -367,6 +368,23 @@ export class MailService {
       return bodyStructure.childNodes.some((child: any) => this.hasAttachments(child));
     }
     return false;
+  }
+
+  private getLargestAttachmentSize(bodyStructure: any): number {
+    if (!bodyStructure) return 0;
+
+    let largest = 0;
+    if (bodyStructure.disposition === 'attachment') {
+      largest = Math.max(largest, Number(bodyStructure.size) || 0);
+    }
+
+    if (bodyStructure.childNodes?.length) {
+      for (const child of bodyStructure.childNodes) {
+        largest = Math.max(largest, this.getLargestAttachmentSize(child));
+      }
+    }
+
+    return largest;
   }
 
   async createFolder(path: string) {

@@ -38,6 +38,7 @@ interface MessageListProps {
   onToggleFolderPane?: () => void;
   showFolderPane?: boolean;
   listWidth?: number;
+  attachmentMinVisibleKb?: number;
 }
 
 interface MessageGroup {
@@ -72,6 +73,7 @@ export default function MessageList({
   onSelectMessage, onToggleFlag, onDelete, folder, draggable = true,
   onReply, onReplyAll, onForward, onMarkRead, onMove, onCopy, folders,
   onToggleFolderPane, showFolderPane, listWidth,
+  attachmentMinVisibleKb = 0,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -82,6 +84,15 @@ export default function MessageList({
   const [customDate, setCustomDate] = useState('');
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedUids, setSelectedUids] = useState<Set<number>>(new Set());
+  const attachmentMinVisibleBytes = Math.max(0, attachmentMinVisibleKb) * 1024;
+
+  const hasVisibleAttachment = (message: Email) => {
+    if (!message.hasAttachments) return false;
+    if (typeof message.largestAttachmentSize === 'number') {
+      return message.largestAttachmentSize >= attachmentMinVisibleBytes;
+    }
+    return message.hasAttachments;
+  };
 
   // Dropdown visibility
   const [openDropdown, setOpenDropdown] = useState<'sort' | 'filter' | 'date' | null>(null);
@@ -114,7 +125,7 @@ export default function MessageList({
     switch (filterType) {
       case 'unread': result = result.filter(m => !m.flags?.seen); break;
       case 'flagged': result = result.filter(m => m.flags?.flagged); break;
-      case 'attachments': result = result.filter(m => m.hasAttachments); break;
+      case 'attachments': result = result.filter(m => hasVisibleAttachment(m)); break;
       case 'tome': result = result; break; // placeholder — would require knowing user email
     }
 
@@ -137,7 +148,7 @@ export default function MessageList({
     }
 
     return result;
-  }, [messages, filterType, dateFilter, customDate]);
+  }, [messages, filterType, dateFilter, customDate, attachmentMinVisibleBytes]);
 
   // Sort messages
   const sortedMessages = useMemo(() => {
@@ -562,7 +573,7 @@ export default function MessageList({
                           {/* Icons: replied, attachment */}
                           <div className="flex items-center gap-0.5 flex-shrink-0 w-8">
                             {message.flags?.answered && <Reply size={11} className="text-outlook-text-disabled" />}
-                            {message.hasAttachments && <Paperclip size={11} className="text-outlook-text-disabled" />}
+                            {hasVisibleAttachment(message) && <Paperclip size={11} className="text-outlook-text-disabled" />}
                           </div>
 
                           {/* Subject + snippet */}
@@ -665,7 +676,7 @@ export default function MessageList({
                             </span>
                             
                             <div className="flex items-center gap-1 flex-shrink-0">
-                              {message.hasAttachments && (
+                              {hasVisibleAttachment(message) && (
                                 <Paperclip size={12} className="text-outlook-text-disabled" />
                               )}
                               {message.flags?.answered && (

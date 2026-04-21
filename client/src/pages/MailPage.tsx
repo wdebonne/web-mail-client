@@ -560,6 +560,7 @@ export default function MailPage() {
             folders={useMailStore(s => s.folders)}
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
+            attachmentMinVisibleKb={attachmentMinVisibleKb}
           />
         </div>
 
@@ -586,6 +587,7 @@ export default function MailPage() {
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
             listWidth={listWidth}
+            attachmentMinVisibleKb={attachmentMinVisibleKb}
           />
         </div>
 

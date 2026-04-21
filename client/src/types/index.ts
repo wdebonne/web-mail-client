@@ -61,6 +61,7 @@ export interface Email {
     draft: boolean;
   };
   hasAttachments: boolean;
+  largestAttachmentSize?: number;
   attachments?: Attachment[];
   size: number;
   headers?: {
