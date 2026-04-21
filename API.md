@@ -338,6 +338,7 @@ Liste tous les contacts.
 |-----------|------|-------------|
 | `search` | string | Recherche par nom, prénom, email |
 | `group` | string | Filtrer par groupe (UUID) |
+| `source` | string | Filtrer par source (`'local'`, `'sender'`, `'nextcloud'`) |
 
 **Réponse 200 :**
 ```json
@@ -353,6 +354,7 @@ Liste tous les contacts.
     "department": "Direction",
     "photoUrl": null,
     "notes": "",
+    "source": "local",
     "groups": ["uuid-groupe-1"]
   }
 ]
@@ -385,11 +387,59 @@ Met à jour un contact.
 
 Supprime un contact.
 
+### POST /api/contacts/senders/record
+
+Enregistre automatiquement un expéditeur comme contact non permanent.
+
+**Comportement :**
+- Si l'adresse email existe déjà avec `source = 'local'`, ne fait rien
+- Si l'adresse email n'existe pas, crée un nouveau contact avec `source = 'sender'`
+- Si l'adresse email existe avec `source = 'sender'`, met à jour le nom si fourni
+
+**Body :**
+```json
+{
+  "email": "jean@example.com",
+  "name": "Jean Dupont"
+}
+```
+
+**Réponse 200 :**
+```json
+{
+  "id": "uuid",
+  "email": "jean@example.com",
+  "display_name": "Jean Dupont",
+  "source": "sender"
+}
+```
+
+**Erreur 400 :** Si l'email existe déjà comme contact permanent
+
+### POST /api/contacts/:id/promote
+
+Promeut un contact de `source = 'sender'` à `source = 'local'`.
+
+**Body :** vide ou confirmation (optionnel)
+
+**Réponse 200 :** Le contact mis à jour
+
+```json
+{
+  "id": "uuid",
+  "email": "jean@example.com",
+  "display_name": "Jean Dupont",
+  "source": "local"
+}
+```
+
+**Erreur 400 :** Si le contact n'a pas `source = 'sender'`
+
 ### GET /api/contacts/autocomplete
 
 Autocomplétion pour le composeur d'email.
 
-**Query params :** `q` (string, minimum 2 caractères)
+**Query params :** `q` (string, minimum 1 caractère)
 
 **Réponse 200 :**
 ```json

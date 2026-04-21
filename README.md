@@ -13,7 +13,13 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 📎 Pièces jointes avec aperçu avancé (images, PDF, DOCX, XLSX, HEIC/HEIF)
 - ℹ️ Aperçu DOCX/XLSX actuellement **simplifié** (contenu prioritaire, fidélité visuelle partielle)
 - 🎛️ Comportement d'ouverture des pièces jointes configurable par utilisateur (Aperçu / Téléchargement / Menu)
-- ✏️ Éditeur riche (HTML) avec formatage
+- ✏️ **Éditeur riche (HTML) type Outlook** avec formatage avancé :
+  - Police (Arial, Times, Courier, Georgia, Verdana, etc.) et taille (8px-72px)
+  - **Gras**, *Italique*, <u>Souligné</u>, ~~Barré~~
+  - Couleur du texte et surlignage (30 couleurs)
+  - Alignement (gauche, centré, droite, justifié)
+  - Listes à puces et numérotées avec indentation
+  - Liens hypertextes et insertion d'images par URL
 - 🔄 Synchronisation automatique
 - 📝 Signature par compte
 - 📱 Interface responsive (navigation mobile adaptative)
@@ -24,13 +30,17 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 🔢 Nombre max d'onglets paramétrable (2-20)
 - 📏 Volet dossiers et liste de messages redimensionnables
 - 🎚️ Ruban auto-adaptatif (classique ↔ simplifié selon la largeur)
+- 📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
 
 ### Contacts
 - 👥 Gestion complète des contacts (CRUD)
 - 🔍 Recherche par email, nom, prénom, entreprise
 - 📋 Groupes de contacts et listes de distribution
 - 🔗 Enrichissement depuis NextCloud (photo, fonction, rôle)
-- 💡 Autocomplétion dans le composeur
+- � **Expéditeurs automatiques** : tout expéditeur de mail reçu est enregistré comme "contact non permanent"
+- ✅ **Promotion de contact** : conversion d'un expéditeur en contact permanent
+- 🔤 **Autocomplétion intelligente** dans le composeur avec affichage des noms (seuil 1 caractère)
+- 🎯 **Modal de sélection de contacts** : clic sur "À", "Cc", "Cci" pour ouvrir le carnet d'adresses complet
 
 ### Calendrier
 - 📅 Vue mois/semaine/jour
@@ -78,6 +88,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 
 - [API complète](API.md)
 - [Configuration](docs/CONFIGURATION.md)
+- [Contacts et Expéditeurs](docs/CONTACTS.md)
 - [NextCloud](docs/NEXTCLOUD.md)
 - [Pièces jointes](docs/ATTACHMENTS.md)
 - [PWA et hors-ligne](docs/PWA.md)

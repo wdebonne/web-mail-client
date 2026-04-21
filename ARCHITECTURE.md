@@ -171,6 +171,64 @@ Serveur IMAP ──► MailService (ImapFlow)
               UI mise à jour
 ```
 
+### Auto-enregistrement des expéditeurs
+
+```
+Utilisateur ouvre un email
+          │
+          ▼
+   MessageView.tsx
+          │
+   useEffect (on message open)
+          │
+          ▼
+   api.recordSender(from.address, from.name)
+          │
+          ▼
+   POST /api/contacts/senders/record
+          │
+          ├─ Contact n'existe pas : CREATE avec source='sender'
+          ├─ Contact existe (source='sender') : UPDATE name
+          └─ Contact existe (source='local') : SKIP silencieusement
+          │
+          ▼
+   PostgreSQL contacts table
+          │
+          ▼
+   React Query cache invalidated
+          │
+          ▼
+   Autocomplete met à jour sa liste
+   (contact disponible dans le composeur)
+```
+
+### Promotion d'expéditeur en contact permanent
+
+```
+Utilisateur → ContactsPage
+          │
+          ▼
+   Clic "Enregistrer" (promote button)
+          │
+          ▼
+   promoteMutation.mutate(contactId)
+          │
+          ▼
+   POST /api/contacts/:id/promote
+          │
+          ├─ Vérifier source='sender'
+          │
+          ▼
+   UPDATE contacts SET source='local'
+          │
+          ▼
+   React Query refetch
+          │
+          ▼
+   Contact disparaît de "Expéditeurs"
+   Contact apparaît dans contacts normaux
+```
+
 ### Synchronisation NextCloud
 
 ```
@@ -221,6 +279,7 @@ contacts
 ├── phone, company, job_title
 ├── department, notes
 ├── photo_url, nextcloud_id
+├── source (local|sender|nextcloud)
 └── created_at / updated_at
 
 calendars

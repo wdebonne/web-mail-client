@@ -148,6 +148,42 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 #### Système d'onglets
 - Barre d'onglets en bas du volet de lecture pour naviguer entre messages/brouillons ouverts
+
+## [1.4.0] - 2026-04-21
+
+### Ajouté
+
+#### Composeur d'emails amélioré
+- **Sélecteur de compte expéditeur** : affiche le nom du compte avec email en sous-texte (plus de double email)
+- **Modal de sélection de contacts** : clic sur les labels "À", "Cc", "Cci" ouvre un carnet d'adresses complètes
+- **Autocomplète amélioré** : sensibilité à 1 caractère, liste déroulante avec noms des contacts et badges "Expéditeur"
+- **Chips destinataires stylisés** : les destinataires sélectionnés affichent le nom avec arrondis bleus
+- **Éditeur de texte riche style Outlook** :
+  - Sélection de police (Arial, Times, Courier, Georgia, Verdana, etc.) avec aperçu en direct
+  - Taille de police (8px à 72px) avec menu déroulant
+  - **Gras**, *Italique*, <u>Souligné</u>, ~~Barré~~
+  - Couleur du texte et surlignage avec grille de 30 couleurs
+  - Alignement : gauche, centré, droite, justifié
+  - Listes à puces et numérotées avec indentation
+  - Insertion de liens hypertextes
+  - Insertion d'images par URL
+  - Effacer la mise en forme (reset)
+
+#### Gestion des expéditeurs (contacts non enregistrés)
+- **Auto-enregistrement** : tout expéditeur de mail reçu est automatiquement enregistré comme "Expéditeur" (non permanent)
+- **Source de contact** : colonne `source` dans les contacts (`'local'`, `'sender'`, `'nextcloud'`)
+- **Page Contacts** : nouvelle section "Expéditeurs non enregistrés" avec compteur orange
+- **Promotion de contact** : bouton "Enregistrer comme contact permanent" pour passer un expéditeur en contact local
+- **Intégration autocompléte** : les expéditeurs non enregistrés sont disponibles dans l'autocompléte avec badge distinctif
+
+#### Endpoints API nouveaux
+- `POST /api/contacts/senders/record` : enregistre automatiquement un expéditeur
+- `POST /api/contacts/:id/promote` : promeut un expéditeur en contact permanent
+- `GET /api/contacts` : paramètre `source` optionnel pour filtrer par type
+
+#### Base de données
+- Colonne `source` sur la table `contacts` (valeurs : `'local'`, `'sender'`, `'nextcloud'`)
+- Enregistrement automatique des expéditeurs lors de la lecture d'un message
 - Deux modes d'ouverture configurables :
   - **Brouillons uniquement** : seuls les brouillons créent des onglets (par défaut)
   - **Tous les mails ouverts** : chaque message cliqué ouvre un onglet
