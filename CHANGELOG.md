@@ -250,7 +250,56 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 #### Service mail
 - Support de `replyTo` dans les options `sendMail()` (`MailService`)
 - Méthodes privées : `formatAddress`, `plainTextFromHtml`, `resolveSentMailboxPath`, `appendToSentFolder`
+## [1.7.0] - 2026-04-21
 
+### Ajouté
+
+#### Gestion multi-comptes dans le volet de dossiers
+- **Extension simultanée de plusieurs boîtes mail** : chaque compte a son propre chevron d'expansion, les dossiers de plusieurs comptes sont visibles en même temps
+- **Persistance des comptes développés** en `localStorage` (`mail.expandedAccounts`)
+- **Renommage local des boîtes mail** : clic droit sur un compte → « Renommer la boîte mail » (override côté client uniquement, stocké en `localStorage`, n'affecte pas le serveur)
+- **Réinitialisation du nom** : option dans le menu contextuel pour revenir au nom serveur
+
+#### Réorganisation par glisser-déposer
+- **Réordonnancement des comptes** : glisser un compte sur un autre (barre bleue avant/après)
+- **Réordonnancement des dossiers** au sein d'un compte (bords haut/bas de la cible ou `Shift`)
+- **Persistance des ordres** en `localStorage` (`mail.accountOrder`, `mail.folderOrder`)
+- **Réinitialisation** des ordres via les menus contextuels des comptes/dossiers
+
+#### Copie et déplacement cross-comptes
+- **Déplacement d'un message entre comptes** : glisser une ligne de la liste vers un dossier d'un autre compte (maintenir `Ctrl/Cmd` pour copier au lieu de déplacer)
+- **Copie d'un dossier complet entre comptes** : glisser un dossier vers un autre compte, ou clic droit → « Copier le dossier vers… » (sous-menu listant tous les comptes) avec prompt de nom
+- Endpoints serveur :
+  - `POST /api/mail/messages/transfer` — transfert d'un message `{srcAccountId, srcFolder, uid, destAccountId, destFolder, mode: 'copy'|'move'}` (move/copy IMAP natif si même compte, sinon FETCH + APPEND, suivi d'un DELETE pour le mode move)
+  - `POST /api/mail/folders/copy` — copie d'un dossier complet entre deux comptes avec itération UID par UID
+- Invalidation du cache TanStack Query ciblée par `accountId`
+
+#### Arborescence de dossiers hiérarchique
+- **Rendu en arbre** du volet de dossiers : les sous-dossiers sont indentés sous leur parent (construction de l'arbre à partir de `delimiter` et `path`)
+- **Imbrication (nest) par drag-and-drop** : déposer un dossier au centre d'un autre le déplace en sous-dossier (IMAP `RENAME` avec changement de parent)
+- **Désimbrication (un-nest)** : déposer un sous-dossier sur l'en-tête de son compte le remonte au niveau racine
+- **Préservation du namespace personnel** : sur les serveurs type Courier (o2switch) où tout doit rester sous `INBOX.`, le un-nest conserve automatiquement le préfixe (`INBOX.a.b` → `INBOX.b`)
+- **Shift + drag** force le mode réorganisation entre frères même au centre d'un dossier
+- **Protection** : interdiction de déplacer un dossier dans lui-même ou dans un de ses descendants
+
+#### Création et déplacement avec delimiter IMAP réel
+- Création de sous-dossier (clic droit → « Nouveau sous-dossier ») utilise le `delimiter` du parent (`.` ou `/` selon le serveur) au lieu d'un séparateur codé en dur
+- Même logique pour le renommage et la copie cross-comptes
+
+#### Affichage des libellés de dossiers
+- **Nom court** affiché dans le volet et l'en-tête de la liste : `INBOX.test.sous` → « sous »
+- Le `path` IMAP complet reste utilisé pour toutes les opérations API (rename, delete, move, copy, messages), assurant la compatibilité avec les autres clients mail
+
+#### Souscription IMAP automatique
+- `createFolder` et `renameFolder` appellent désormais `mailboxSubscribe` sur le nouveau chemin et `mailboxUnsubscribe` sur l'ancien (après un rename), afin que les autres clients (Roundcube, Thunderbird) qui filtrent par dossiers souscrits voient immédiatement les changements
+
+### Corrigé
+- Réordonnancement instantané : les `useMemo` de tri (`sortAccounts`, `sortFolders`) incluent désormais un `prefsVersion` pour prendre en compte les changements de `localStorage` sans refresh de la page
+- Erreur 500 sur `PATCH /api/mail/accounts/:id/folders` quand le dossier appartenait à un compte non-actif : les handlers de création/renommage/suppression et les mutations reçoivent désormais l'`accountId` du compte cible
+- Erreur 500 sur le un-nest vers la racine sur serveurs à namespace (o2switch/Courier) : le chemin cible préserve le préfixe personnel détecté dynamiquement
+
+### Nouveau fichier
+- `client/src/utils/mailPreferences.ts` — utilitaires de persistance des préférences côté client : noms affichés, ordre des comptes, ordre des dossiers par compte, comptes développés, helpers de tri (`sortAccounts`, `sortFolders`)
 ## [Non publié]
 
 ### Ajouté

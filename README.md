@@ -10,8 +10,13 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 📤 **Sauvegarde automatique dans "Envoyés"** : copie IMAP après envoi SMTP avec détection automatique du dossier
 - 🤝 **Envoi "de la part de"** : stratégie d'en-têtes optimisée pour la délivrabilité (Sender/Reply-To selon domaine)
 - ⭐ Drapeaux, marquage lu/non-lu, déplacement entre dossiers
-- 🖱️ Drag & drop des messages entre dossiers
-- 🧹 Masquage visuel du préfixe `INBOX.` pour les dossiers personnalisés (le chemin IMAP reste inchangé)
+- 🖱️ Drag & drop des messages entre dossiers, **y compris entre comptes différents** (Ctrl/Cmd pour copier au lieu de déplacer)
+- 🗂️ **Arborescence de dossiers hiérarchique** : sous-dossiers indentés, imbrication/désimbrication par glisser-déposer (déposer au centre d'un dossier = nest, sur l'en-tête du compte = un-nest)
+- 📋 **Copie de dossier complet entre comptes** via glisser-déposer ou menu contextuel
+- ↕️ **Réordonnancement des comptes et dossiers** par glisser-déposer, persistance locale
+- ✏️ **Renommage local des boîtes mail** (clic droit sur un compte) sans impact serveur
+- 👥 **Extension simultanée de plusieurs comptes** dans le volet de dossiers
+- 🧹 Affichage du nom court des sous-dossiers (ex. `INBOX.test.sous` → « sous ») sans altérer le chemin IMAP réel
 - 📎 Pièces jointes avec aperçu avancé (images, PDF, DOCX, XLSX, HEIC/HEIF)
 - ℹ️ Aperçu DOCX/XLSX actuellement **simplifié** (contenu prioritaire, fidélité visuelle partielle)
 - 🎛️ Comportement d'ouverture des pièces jointes configurable par utilisateur (Aperçu / Téléchargement / Menu)

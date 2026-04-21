@@ -207,6 +207,80 @@ Liste les dossiers d'un compte mail.
 ]
 ```
 
+### POST /api/mail/accounts/:accountId/folders
+
+Crée un nouveau dossier IMAP. Le dossier est automatiquement souscrit (`SUBSCRIBE`) pour être visible dans les autres clients mail.
+
+**Body :**
+```json
+{ "path": "INBOX.Archives2024" }
+```
+
+**Réponse 200 :** `{ "success": true }`
+
+### PATCH /api/mail/accounts/:accountId/folders
+
+Renomme ou déplace un dossier IMAP (`RENAME`). Peut être utilisé pour imbriquer / désimbriquer un dossier en changeant le parent dans le chemin. Les souscriptions sont mises à jour automatiquement (`UNSUBSCRIBE` oldPath, `SUBSCRIBE` newPath).
+
+**Body :**
+```json
+{ "oldPath": "INBOX.test", "newPath": "INBOX.Archives.test" }
+```
+
+**Réponse 200 :** `{ "success": true }`
+
+### DELETE /api/mail/accounts/:accountId/folders
+
+Supprime un dossier IMAP (`DELETE`).
+
+**Body :**
+```json
+{ "path": "INBOX.obsolete" }
+```
+
+**Réponse 200 :** `{ "success": true }`
+
+### POST /api/mail/messages/transfer
+
+Transfère un message d'un compte/dossier vers un autre compte/dossier. Si source et destination sont sur le même compte, utilise IMAP `MOVE`/`COPY` natif ; sinon `FETCH` + `APPEND`, suivi d'un `DELETE` si mode `move`.
+
+**Body :**
+```json
+{
+  "srcAccountId": "uuid",
+  "srcFolder": "INBOX",
+  "uid": 1234,
+  "destAccountId": "uuid",
+  "destFolder": "INBOX.Archives",
+  "mode": "move"
+}
+```
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| `mode` | `"copy"` \| `"move"` | Opération à effectuer |
+
+**Réponse 200 :** `{ "success": true, "newUid": 42 }`
+
+### POST /api/mail/folders/copy
+
+Copie un dossier complet (tous ses messages) d'un compte vers un autre. Crée le dossier destination si besoin, puis itère UID par UID.
+
+**Body :**
+```json
+{
+  "srcAccountId": "uuid",
+  "srcPath": "INBOX.Projets",
+  "destAccountId": "uuid",
+  "destPath": "INBOX.Projets-copie"
+}
+```
+
+**Réponse 200 :**
+```json
+{ "success": true, "copied": 42, "failed": 0, "total": 42 }
+```
+
 ### GET /api/mail/:accountId/messages/:folder
 
 Liste les messages d'un dossier.

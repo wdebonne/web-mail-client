@@ -457,6 +457,33 @@ L'onglet **Afficher** contient :
 - **`all-opened`** : chaque message cliqué ouvre un onglet (le plus ancien inactif est fermé à la limite)
 - Barre d'onglets **masquée** quand < 2 onglets
 
+### Volet de dossiers multi-comptes
+
+Module : `client/src/components/mail/FolderPane.tsx` + utilitaires `client/src/utils/mailPreferences.ts`.
+
+| Clé `localStorage` | Type | Rôle |
+|---|---|---|
+| `mail.accountDisplayNames` | `Record<accountId, string>` | Nom affiché d'un compte (override local) |
+| `mail.accountOrder` | `string[]` | Ordre des comptes dans le volet |
+| `mail.folderOrder` | `Record<accountId, string[]>` | Ordre personnalisé des dossiers d'un compte |
+| `mail.expandedAccounts` | `string[]` | Comptes actuellement développés |
+
+**Types MIME custom utilisés pour le drag-and-drop :**
+- `application/x-mail-message` — déplacement/copie d'un message (`{uid, srcAccountId, srcFolder}`)
+- `application/x-mail-folder` — copie cross-compte d'un dossier (`{accountId, path, name}`)
+- `application/x-mail-folder-reorder` — réordonnancement ou nest/un-nest dans le même compte
+- `application/x-mail-account-reorder` — réordonnancement d'un compte
+
+**Opérations serveur associées (voir [API.md](API.md)) :**
+- `POST /api/mail/accounts/:id/folders`, `PATCH`, `DELETE` — CRUD dossiers IMAP avec gestion automatique des souscriptions (`SUBSCRIBE` / `UNSUBSCRIBE`)
+- `POST /api/mail/messages/transfer` — move/copy natif ou `FETCH+APPEND` cross-comptes
+- `POST /api/mail/folders/copy` — duplication de dossier entre comptes
+
+**Arborescence hiérarchique :**
+- Construction d'un arbre parent/enfant à partir du `delimiter` IMAP et du `path` complet
+- Indentation proportionnelle à la profondeur
+- Détection dynamique du namespace personnel (ex. `INBOX` sur Courier/o2switch) pour préserver le préfixe lors du un-nest
+
 ### État des onglets (Zustand `mailStore`)
 
 ```
