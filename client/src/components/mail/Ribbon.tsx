@@ -101,6 +101,8 @@ interface RibbonProps {
   onToggleSplitKeepFolderPane?: () => void;
   splitKeepMessageList?: boolean;
   onToggleSplitKeepMessageList?: () => void;
+  splitComposeReply?: boolean;
+  onToggleSplitComposeReply?: () => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -179,6 +181,7 @@ export default function Ribbon({
   splitActive = false, onSwapSplit,
   splitKeepFolderPane = false, onToggleSplitKeepFolderPane,
   splitKeepMessageList = false, onToggleSplitKeepMessageList,
+  splitComposeReply = false, onToggleSplitComposeReply,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -345,6 +348,12 @@ export default function Ribbon({
                 onClick={() => onToggleSplitKeepMessageList && onToggleSplitKeepMessageList()}
                 active={splitKeepMessageList}
               />
+              <SimplifiedButton
+                icon={Reply}
+                label="Réponse à côté"
+                onClick={() => onToggleSplitComposeReply && onToggleSplitComposeReply()}
+                active={splitComposeReply}
+              />
               <SimplifiedSep />
               <button
                 onClick={(e) => openFavoritesMenu(e)}
@@ -475,6 +484,13 @@ export default function Ribbon({
                   label={splitKeepMessageList ? 'Liste visible' : 'Liste masquée'}
                   onClick={() => onToggleSplitKeepMessageList && onToggleSplitKeepMessageList()}
                   active={splitKeepMessageList}
+                  small
+                />
+                <RibbonButton
+                  icon={Reply}
+                  label={splitComposeReply ? 'Réponse à côté' : 'Réponse normale'}
+                  onClick={() => onToggleSplitComposeReply && onToggleSplitComposeReply()}
+                  active={splitComposeReply}
                   small
                 />
               </RibbonGroup>

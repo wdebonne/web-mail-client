@@ -387,6 +387,7 @@ export default function MailPage() {
     const replyCC = replyAll && message.cc ? message.cc : [];
     const { accountId } = originOf(message);
 
+    if (splitComposeReply) setComposeAlongsideMessage(message);
     openCompose({
       to: replyTo,
       cc: replyCC,
@@ -406,6 +407,7 @@ export default function MailPage() {
 
   const handleForward = (message: any) => {
     const { accountId } = originOf(message);
+    if (splitComposeReply) setComposeAlongsideMessage(message);
     openCompose({
       to: [],
       subject: message.subject?.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`,
@@ -437,6 +439,12 @@ export default function MailPage() {
   const [splitKeepMessageList, setSplitKeepMessageList] = useState<boolean>(() => localStorage.getItem('splitKeepMessageList') === 'true');
   useEffect(() => { localStorage.setItem('splitKeepFolderPane', String(splitKeepFolderPane)); }, [splitKeepFolderPane]);
   useEffect(() => { localStorage.setItem('splitKeepMessageList', String(splitKeepMessageList)); }, [splitKeepMessageList]);
+  // When true, Reply / Reply-All / Forward opens the compose alongside the source message (side-by-side).
+  const [splitComposeReply, setSplitComposeReply] = useState<boolean>(() => localStorage.getItem('splitComposeReply') === 'true');
+  useEffect(() => { localStorage.setItem('splitComposeReply', String(splitComposeReply)); }, [splitComposeReply]);
+  // The source message shown next to the compose pane (when side-by-side compose is active).
+  const [composeAlongsideMessage, setComposeAlongsideMessage] = useState<any | null>(null);
+  useEffect(() => { if (!isComposing && composeAlongsideMessage) setComposeAlongsideMessage(null); }, [isComposing, composeAlongsideMessage]);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isDraggingSplit = useRef(false);
@@ -652,6 +660,8 @@ export default function MailPage() {
   const splitMessage = splitTab?.type === 'message' ? splitTab.message : undefined;
   // Only render side-by-side when both sides are message tabs and compose isn't expanded
   const splitActive = !!splitMessage && !!selectedMessage && splitMessage.uid !== selectedMessage.uid && !composeExpanded && !isComposing;
+  // True when showing a source message alongside the compose pane (reply/forward with keep-original-visible)
+  const splitComposeActive = isComposing && !!composeAlongsideMessage && !composeExpanded;
 
   // Select a folder that may belong to a non-active account: activate the account first.
   const handleSelectFolderInAccount = useCallback((account: any, folder: string) => {
@@ -875,13 +885,15 @@ export default function MailPage() {
           onToggleSplitKeepFolderPane={() => setSplitKeepFolderPane(v => !v)}
           splitKeepMessageList={splitKeepMessageList}
           onToggleSplitKeepMessageList={() => setSplitKeepMessageList(v => !v)}
+          splitComposeReply={splitComposeReply}
+          onToggleSplitComposeReply={() => setSplitComposeReply(v => !v)}
         />
       </div>
 
       {/* Main content area — 3 blocks with gaps */}
       <div ref={containerRef} className="flex-1 flex overflow-hidden min-h-0 gap-1 px-1.5 pb-1.5">
         {/* Folder pane block — collapsible + resizable */}
-        {showFolderPane && !composeExpanded && (!splitActive || splitKeepFolderPane) && (
+        {showFolderPane && !composeExpanded && (!splitActive || splitKeepFolderPane) && (!splitComposeActive || splitKeepFolderPane) && (
           <>
             <div
               data-pane="folders"
@@ -961,7 +973,7 @@ export default function MailPage() {
         </div>
 
         {/* Desktop message list block — uses pixel width from resize handle */}
-        {!composeExpanded && (!splitActive || splitKeepMessageList) && (
+        {!composeExpanded && (!splitActive || splitKeepMessageList) && (!splitComposeActive || splitKeepMessageList) && (
           <>
             <div
               className="hidden md:flex flex-col flex-shrink-0 h-full bg-white rounded-md shadow-sm overflow-hidden"
@@ -1023,13 +1035,63 @@ export default function MailPage() {
             </div>
 
             {/* Inline compose — replaces the reading pane when composing */}
-            {isComposing && composeData ? (
+            {isComposing && composeData && composeAlongsideMessage ? (
+              /* Side-by-side: original message on the left, compose on the right */
+              <div ref={splitContainerRef} className="flex-1 flex min-h-0 min-w-0">
+                <div className="h-full min-w-0 overflow-hidden" style={{ width: `${splitRatio * 100}%` }}>
+                  <MessageView
+                    message={composeAlongsideMessage}
+                    onReply={() => handleReply(composeAlongsideMessage)}
+                    onReplyAll={() => handleReply(composeAlongsideMessage, true)}
+                    onForward={() => handleForward(composeAlongsideMessage)}
+                    onDelete={() => {
+                      const o = originOf(composeAlongsideMessage);
+                      deleteMutation.mutate({ uid: composeAlongsideMessage.uid, accountId: o.accountId, folder: o.folder });
+                    }}
+                    onToggleFlag={() => {
+                      const o = originOf(composeAlongsideMessage);
+                      flagMutation.mutate({ uid: composeAlongsideMessage.uid, isFlagged: !composeAlongsideMessage.flags.flagged, accountId: o.accountId, folder: o.folder });
+                    }}
+                    onMove={(folder) => {
+                      const o = originOf(composeAlongsideMessage);
+                      moveMutation.mutate({ uid: composeAlongsideMessage.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
+                    }}
+                    attachmentMinVisibleKb={attachmentMinVisibleKb}
+                    attachmentActionMode={attachmentActionMode}
+                  />
+                </div>
+                {/* Split resize handle */}
+                <div
+                  className="w-1 flex-shrink-0 cursor-col-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors relative"
+                  onMouseDown={handleSplitResizeStart}
+                  title="Glisser pour redimensionner"
+                >
+                  <div className="absolute inset-y-0 -left-1 -right-1" />
+                </div>
+                <div className="h-full flex-1 min-w-0 overflow-hidden border-l border-outlook-border">
+                  <ComposeModal
+                    initialData={composeData}
+                    accounts={accounts}
+                    selectedAccountId={selectedAccount?.id}
+                    onSend={(data) => sendMutation.mutate(data)}
+                    onClose={() => { setComposeExpanded(false); setComposeAlongsideMessage(null); closeCompose(); }}
+                    isSending={sendMutation.isPending}
+                    inline
+                    externalEditorRef={composeEditorRef}
+                    hideInlineToolbar
+                    apiRef={composeApiRef}
+                    isExpanded={composeExpanded}
+                    onToggleExpand={() => setComposeExpanded(v => !v)}
+                  />
+                </div>
+              </div>
+            ) : isComposing && composeData ? (
               <ComposeModal
                 initialData={composeData}
                 accounts={accounts}
                 selectedAccountId={selectedAccount?.id}
                 onSend={(data) => sendMutation.mutate(data)}
-                onClose={() => { setComposeExpanded(false); closeCompose(); }}
+                onClose={() => { setComposeExpanded(false); setComposeAlongsideMessage(null); closeCompose(); }}
                 isSending={sendMutation.isPending}
                 inline
                 externalEditorRef={composeEditorRef}
