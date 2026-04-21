@@ -19,7 +19,7 @@ export default function MailPage() {
   const isOnline = useNetworkStatus();
   const queryClient = useQueryClient();
   const {
-    accounts, selectedAccount, selectedFolder, messages, selectedMessage,
+    accounts, selectedAccount, selectedFolder, folders, messages, selectedMessage,
     isComposing, composeData,
     setAccounts, selectAccount, setFolders, selectFolder,
     setMessages, selectMessage, openCompose, closeCompose,
@@ -198,7 +198,12 @@ export default function MailPage() {
     const name = prompt('Nom du nouveau dossier :');
     if (!name?.trim()) return;
     const sanitized = name.trim().replace(/[\\\/]/g, '');
-    const path = parentPath ? `${parentPath}.${sanitized}` : sanitized;
+    let path = sanitized;
+    if (parentPath) {
+      const parent = folders.find((f) => f.path === parentPath);
+      const delimiter = parent?.delimiter || '.';
+      path = `${parentPath}${delimiter}${sanitized}`;
+    }
     createFolderMutation.mutate(path);
   };
 
@@ -206,9 +211,10 @@ export default function MailPage() {
     const newName = prompt('Nouveau nom du dossier :', currentName);
     if (!newName?.trim() || newName.trim() === currentName) return;
     const sanitized = newName.trim().replace(/[\\\/]/g, '');
-    const parts = folderPath.split('.');
-    parts[parts.length - 1] = sanitized;
-    const newPath = parts.join('.');
+    const current = folders.find((f) => f.path === folderPath);
+    const delimiter = current?.delimiter || '.';
+    const idx = folderPath.lastIndexOf(delimiter);
+    const newPath = idx >= 0 ? `${folderPath.slice(0, idx)}${delimiter}${sanitized}` : sanitized;
     renameFolderMutation.mutate({ oldPath: folderPath, newPath });
   };
 

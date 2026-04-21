@@ -401,9 +401,10 @@ function AccountFolders({
           const folderPayload = e.dataTransfer.getData(DT_FOLDER);
           if (folderPayload) {
             const src = JSON.parse(folderPayload);
+            const d = folder.delimiter || '.';
             onCopyFolder(
               { accountId: src.accountId, path: src.path, name: src.name },
-              { accountId: account.id, path: `${folder.path}.${src.name}` },
+              { accountId: account.id, path: `${folder.path}${d}${src.name}` },
             );
           }
         }
@@ -418,9 +419,10 @@ function AccountFolders({
       try {
         const src = JSON.parse(folderRaw);
         if (src.accountId !== account.id && onCopyFolder) {
+          const d = folder.delimiter || '.';
           onCopyFolder(
             { accountId: src.accountId, path: src.path, name: src.name },
-            { accountId: account.id, path: `${folder.path}.${src.name}` },
+            { accountId: account.id, path: `${folder.path}${d}${src.name}` },
           );
         }
       } catch {}
@@ -453,50 +455,83 @@ function AccountFolders({
     }
   };
 
+  // Build a parent/child tree preserving sorted order at every level.
+  const tree = useMemo(() => {
+    type Node = { folder: MailFolder; children: Node[] };
+    const byPath = new Map<string, Node>();
+    for (const f of ordered) byPath.set(f.path, { folder: f, children: [] });
+    const roots: Node[] = [];
+    for (const node of byPath.values()) {
+      const f = node.folder;
+      const d = f.delimiter;
+      if (d && f.path.includes(d)) {
+        const parentPath = f.path.slice(0, f.path.lastIndexOf(d));
+        const parent = byPath.get(parentPath);
+        if (parent) {
+          parent.children.push(node);
+          continue;
+        }
+      }
+      roots.push(node);
+    }
+    return roots;
+  }, [ordered]);
+
+  const renderFolder = (folder: MailFolder, depth: number): React.ReactNode => {
+    const isSelected = selectedAccountId === account.id && folder.path === selectedFolder;
+    const isDragOver = dragOver === folder.path;
+    const indicator = folderDropIndicator?.path === folder.path ? folderDropIndicator.position : null;
+    const Icon = getFolderIcon(folder);
+    return (
+      <div key={folder.path} className="relative">
+        {indicator === 'before' && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-outlook-blue z-10 pointer-events-none" />
+        )}
+        {indicator === 'after' && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-outlook-blue z-10 pointer-events-none" />
+        )}
+        <button
+          draggable
+          onDragStart={(e) => handleFolderDragStart(e, folder)}
+          onClick={() => onSelectFolder(folder)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onContextMenu(folder, e.clientX, e.clientY);
+          }}
+          onDragOver={(e) => handleFolderDragOver(e, folder)}
+          onDragLeave={() => {
+            setDragOver((prev) => (prev === folder.path ? null : prev));
+            setFolderDropIndicator((prev) => (prev?.path === folder.path ? null : prev));
+          }}
+          onDrop={(e) => handleFolderDrop(e, folder)}
+          style={{ paddingLeft: 12 + depth * 16 }}
+          className={`w-full flex items-center gap-2 pr-3 py-1 text-sm rounded transition-colors
+            ${isDragOver
+              ? 'bg-outlook-blue/10 ring-2 ring-outlook-blue ring-inset'
+              : isSelected
+                ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
+                : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'
+            }`}
+        >
+          <Icon size={14} className={isSelected || isDragOver ? 'text-outlook-blue' : ''} />
+          <span className="truncate">{getFolderLabel(folder)}</span>
+        </button>
+      </div>
+    );
+  };
+
+  const renderNode = (node: { folder: MailFolder; children: { folder: MailFolder; children: any[] }[] }, depth: number): React.ReactNode => {
+    return (
+      <div key={node.folder.path}>
+        {renderFolder(node.folder, depth)}
+        {node.children.map((child) => renderNode(child, depth + 1))}
+      </div>
+    );
+  };
+
   return (
     <div className="ml-4">
-      {ordered.map((folder) => {
-        const isSelected = selectedAccountId === account.id && folder.path === selectedFolder;
-        const isDragOver = dragOver === folder.path;
-        const indicator = folderDropIndicator?.path === folder.path ? folderDropIndicator.position : null;
-        const Icon = getFolderIcon(folder);
-
-        return (
-          <div key={folder.path} className="relative">
-            {indicator === 'before' && (
-              <div className="absolute top-0 left-0 right-0 h-0.5 bg-outlook-blue z-10 pointer-events-none" />
-            )}
-            {indicator === 'after' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-outlook-blue z-10 pointer-events-none" />
-            )}
-            <button
-              draggable
-              onDragStart={(e) => handleFolderDragStart(e, folder)}
-              onClick={() => onSelectFolder(folder)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                onContextMenu(folder, e.clientX, e.clientY);
-              }}
-              onDragOver={(e) => handleFolderDragOver(e, folder)}
-              onDragLeave={() => {
-                setDragOver((prev) => (prev === folder.path ? null : prev));
-                setFolderDropIndicator((prev) => (prev?.path === folder.path ? null : prev));
-              }}
-              onDrop={(e) => handleFolderDrop(e, folder)}
-              className={`w-full flex items-center gap-2 px-3 py-1 text-sm rounded transition-colors
-                ${isDragOver
-                  ? 'bg-outlook-blue/10 ring-2 ring-outlook-blue ring-inset'
-                  : isSelected
-                    ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
-                    : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'
-                }`}
-            >
-              <Icon size={14} className={isSelected || isDragOver ? 'text-outlook-blue' : ''} />
-              <span className="truncate">{getFolderLabel(folder)}</span>
-            </button>
-          </div>
-        );
-      })}
+      {tree.map((node) => renderNode(node, 0))}
     </div>
   );
 }
