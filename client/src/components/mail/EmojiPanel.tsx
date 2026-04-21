@@ -11,7 +11,7 @@ export interface EmojiPanelProps {
 type EmojiCategory = {
   id: string;
   label: string;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: React.ComponentType<any>;
   emojis: { char: string; name: string }[];
 };
 
