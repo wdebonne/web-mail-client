@@ -22,10 +22,15 @@ interface ComposeModalProps {
   onClose: () => void;
   isSending: boolean;
   inline?: boolean;
+  /** External ref for the rich text editor (so the ribbon can drive formatting). */
+  externalEditorRef?: React.RefObject<HTMLDivElement>;
+  /** Hide the inline rich-text toolbar (used when the ribbon provides the Message tab instead). */
+  hideInlineToolbar?: boolean;
 }
 
 export default function ComposeModal({
   initialData, accounts, selectedAccountId, onSend, onClose, isSending, inline = false,
+  externalEditorRef, hideInlineToolbar = false,
 }: ComposeModalProps) {
   const isOnline = useNetworkStatus();
   const [accountId, setAccountId] = useState(initialData.accountId || selectedAccountId || accounts[0]?.id);
@@ -53,7 +58,8 @@ export default function ComposeModal({
   // Contacts picker modal
   const [showContactPicker, setShowContactPicker] = useState<'to' | 'cc' | 'bcc' | null>(null);
 
-  const editorRef = useRef<HTMLDivElement>(null);
+  const internalEditorRef = useRef<HTMLDivElement>(null);
+  const editorRef = externalEditorRef ?? internalEditorRef;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Autocomplete search
@@ -368,8 +374,7 @@ export default function ComposeModal({
       </div>
 
       {/* Editor toolbar */}
-      <RichTextToolbar editorRef={editorRef} />
-
+      {!hideInlineToolbar && <RichTextToolbar editorRef={editorRef} />}
       {/* Editor */}
       <div
         ref={editorRef}

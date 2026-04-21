@@ -6,12 +6,27 @@ import {
   Download, Eye, EyeOff, PanelLeftOpen, PanelLeftClose,
   Columns2, Rows2, LayoutGrid, Settings, Info, FileDown,
   MoreHorizontal, Layers, Minus, Plus, Paperclip,
+  Bold, Italic, Underline, Strikethrough, List, ListOrdered,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  Link as LinkIcon, Image as ImageIcon, Palette, Type, Indent, Outdent,
+  Eraser,
 } from 'lucide-react';
 import type { TabMode } from '../../stores/mailStore';
 
-type RibbonTab = 'accueil' | 'afficher';
+type RibbonTab = 'accueil' | 'afficher' | 'message';
 type RibbonMode = 'classic' | 'simplified';
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
+
+const FONT_FAMILIES = ['Arial', 'Calibri', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana', 'Trebuchet MS'];
+const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36', '48', '72'];
+const TEXT_COLORS = [
+  '#000000', '#434343', '#666666', '#999999', '#b7b7b7', '#ffffff',
+  '#ff0000', '#ff4500', '#ff9900', '#ffff00', '#00ff00', '#00ffff',
+  '#0000ff', '#9900ff', '#ff00ff', '#e06666', '#f6b26b', '#ffd966',
+  '#93c47d', '#76a5af', '#6fa8dc', '#8e7cc3', '#c27ba0',
+  '#cc0000', '#e69138', '#f1c232', '#6aa84f', '#45818e', '#3d85c8',
+  '#674ea7', '#a64d79',
+];
 
 interface RibbonProps {
   // Accueil actions
@@ -50,6 +65,10 @@ interface RibbonProps {
   maxTabs: number;
   onChangeTabMode: (mode: TabMode) => void;
   onChangeMaxTabs: (max: number) => void;
+
+  // Compose (Message tab)
+  isComposing?: boolean;
+  composeEditorRef?: React.RefObject<HTMLDivElement>;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -121,6 +140,7 @@ export default function Ribbon({
   isCollapsed, onToggleCollapse,
   ribbonMode, onChangeRibbonMode,
   tabMode, maxTabs, onChangeTabMode, onChangeMaxTabs,
+  isComposing = false, composeEditorRef,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -130,6 +150,17 @@ export default function Ribbon({
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
+
+  // Auto-switch to Message tab when composing starts; go back to Accueil when it ends
+  const prevComposingRef = useRef(isComposing);
+  useEffect(() => {
+    if (isComposing && !prevComposingRef.current) {
+      setActiveTab('message');
+    } else if (!isComposing && prevComposingRef.current && activeTab === 'message') {
+      setActiveTab('accueil');
+    }
+    prevComposingRef.current = isComposing;
+  }, [isComposing, activeTab]);
 
   const openTabMenu = () => {
     if (tabMenuBtnRef.current) {
@@ -235,7 +266,11 @@ export default function Ribbon({
     <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
       {/* Tab bar */}
       <div className="flex items-center gap-0 px-2 border-b border-outlook-border">
-        {(['accueil', 'afficher'] as RibbonTab[]).map(tab => (
+        {([
+          'accueil',
+          ...(isComposing ? (['message'] as RibbonTab[]) : []),
+          'afficher',
+        ] as RibbonTab[]).map(tab => (
           <button
             key={tab}
             onClick={() => {
@@ -247,7 +282,7 @@ export default function Ribbon({
                 : 'text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover'
               }`}
           >
-            {tab === 'accueil' ? 'Accueil' : 'Afficher'}
+            {tab === 'accueil' ? 'Accueil' : tab === 'message' ? 'Message' : 'Afficher'}
             {activeTab === tab && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-outlook-blue rounded-t" />
             )}
@@ -311,6 +346,10 @@ export default function Ribbon({
                 <RibbonButton icon={RefreshCw} label="Synchroniser" onClick={onSync} />
               </RibbonGroup>
             </>
+          )}
+
+          {activeTab === 'message' && (
+            <MessageTabContent editorRef={composeEditorRef} />
           )}
 
           {activeTab === 'afficher' && (
@@ -463,6 +502,294 @@ export default function Ribbon({
             </>
           )}
         </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Message tab — rich text formatting tools (Outlook-style, grouped)
+// ─────────────────────────────────────────────────────────────────────────────
+function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivElement> }) {
+  const [showFontFamily, setShowFontFamily] = useState(false);
+  const [showFontSize, setShowFontSize] = useState(false);
+  const [showTextColor, setShowTextColor] = useState(false);
+  const [showBgColor, setShowBgColor] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [currentFont, setCurrentFont] = useState('Calibri');
+  const [currentSize, setCurrentSize] = useState('12');
+  const savedRangeRef = useRef<Range | null>(null);
+
+  const focusEditor = () => {
+    editorRef?.current?.focus();
+  };
+
+  const exec = (command: string, value?: string) => {
+    focusEditor();
+    document.execCommand(command, false, value);
+  };
+
+  const saveSelection = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      // Only save the selection if it is inside our editor
+      if (editorRef?.current?.contains(range.commonAncestorContainer)) {
+        savedRangeRef.current = range.cloneRange();
+      }
+    }
+  };
+
+  const restoreSelection = () => {
+    const range = savedRangeRef.current;
+    if (!range) { focusEditor(); return; }
+    focusEditor();
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  };
+
+  const applyFont = (font: string) => {
+    restoreSelection();
+    exec('fontName', font);
+    setCurrentFont(font);
+    setShowFontFamily(false);
+  };
+
+  const applySize = (size: string) => {
+    restoreSelection();
+    const sizeMap: Record<string, string> = {
+      '8': '1', '9': '1', '10': '2', '11': '2', '12': '3', '14': '3',
+      '16': '4', '18': '4', '20': '5', '24': '5', '28': '6', '36': '6', '48': '7', '72': '7',
+    };
+    exec('fontSize', sizeMap[size] || '3');
+    setCurrentSize(size);
+    setShowFontSize(false);
+  };
+
+  const insertLink = () => {
+    if (!linkUrl) return;
+    restoreSelection();
+    const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
+    exec('createLink', url);
+    setShowLinkInput(false);
+    setLinkUrl('');
+  };
+
+  const insertImage = () => {
+    const url = prompt("URL de l'image :");
+    if (url) exec('insertImage', url);
+  };
+
+  const closeAllDropdowns = () => {
+    setShowFontFamily(false);
+    setShowFontSize(false);
+    setShowTextColor(false);
+    setShowBgColor(false);
+  };
+
+  const iconBtn = 'w-7 h-7 flex items-center justify-center rounded hover:bg-outlook-bg-hover transition-colors text-outlook-text-secondary hover:text-outlook-text-primary';
+  const vDivider = <div className="w-px h-5 bg-outlook-border mx-0.5 self-center" />;
+
+  return (
+    <>
+      {/* Presse-papiers */}
+      <RibbonGroup label="Presse-papiers">
+        <div className="flex items-center gap-0.5">
+          <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('paste')} className={iconBtn} title="Coller">
+            <span className="text-[11px] font-medium">Coller</span>
+          </button>
+          <div className="flex flex-col">
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('cut')} className="text-[10px] px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary" title="Couper">
+              Couper
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('copy')} className="text-[10px] px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary" title="Copier">
+              Copier
+            </button>
+          </div>
+        </div>
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Texte de base */}
+      <RibbonGroup label="Texte de base">
+        <div className="flex flex-col gap-1 min-w-[260px]">
+          {/* Row 1: font family, font size */}
+          <div className="flex items-center gap-1">
+            <div className="relative">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowFontFamily(s => !s); }}
+                className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-0.5 hover:bg-outlook-bg-hover min-w-[110px] justify-between bg-white"
+              >
+                <span style={{ fontFamily: currentFont }} className="truncate">{currentFont}</span>
+                <ChevronDown size={10} className="flex-shrink-0" />
+              </button>
+              {showFontFamily && (
+                <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 min-w-44 max-h-48 overflow-y-auto">
+                  {FONT_FAMILIES.map(f => (
+                    <button key={f} onMouseDown={(e) => { e.preventDefault(); applyFont(f); }}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover" style={{ fontFamily: f }}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowFontSize(s => !s); }}
+                className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-0.5 hover:bg-outlook-bg-hover w-16 justify-between bg-white"
+              >
+                <span>{currentSize}</span>
+                <ChevronDown size={10} />
+              </button>
+              {showFontSize && (
+                <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 w-16 max-h-48 overflow-y-auto">
+                  {FONT_SIZES.map(s => (
+                    <button key={s} onMouseDown={(e) => { e.preventDefault(); applySize(s); }}
+                      className="w-full text-left px-3 py-1 text-xs hover:bg-outlook-bg-hover">
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('removeFormat')} className={iconBtn} title="Effacer la mise en forme">
+              <Eraser size={13} />
+            </button>
+          </div>
+          {/* Row 2: bold/italic/underline/strike + colors */}
+          <div className="flex items-center gap-0.5">
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} className={iconBtn} title="Gras (Ctrl+B)">
+              <Bold size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('italic')} className={iconBtn} title="Italique (Ctrl+I)">
+              <Italic size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('underline')} className={iconBtn} title="Souligné (Ctrl+U)">
+              <Underline size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('strikeThrough')} className={iconBtn} title="Barré">
+              <Strikethrough size={13} />
+            </button>
+            {vDivider}
+            {/* Text color */}
+            <div className="relative">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowTextColor(s => !s); }}
+                className={`${iconBtn} flex-col gap-0`}
+                title="Couleur du texte"
+              >
+                <Type size={11} />
+                <div className="w-4 h-1 rounded-sm bg-red-500 mt-0.5" />
+              </button>
+              {showTextColor && (
+                <RibbonColorPicker
+                  onSelect={(color) => { restoreSelection(); exec('foreColor', color); setShowTextColor(false); }}
+                />
+              )}
+            </div>
+            {/* Highlight color */}
+            <div className="relative">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowBgColor(s => !s); }}
+                className={`${iconBtn} flex-col gap-0`}
+                title="Couleur de surlignage"
+              >
+                <Palette size={11} />
+                <div className="w-4 h-1 rounded-sm bg-yellow-300 mt-0.5" />
+              </button>
+              {showBgColor && (
+                <RibbonColorPicker
+                  onSelect={(color) => { restoreSelection(); exec('hiliteColor', color); setShowBgColor(false); }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Paragraphe */}
+      <RibbonGroup label="Paragraphe">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-0.5">
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertUnorderedList')} className={iconBtn} title="Liste à puces">
+              <List size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertOrderedList')} className={iconBtn} title="Liste numérotée">
+              <ListOrdered size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('outdent')} className={iconBtn} title="Diminuer le retrait">
+              <Outdent size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('indent')} className={iconBtn} title="Augmenter le retrait">
+              <Indent size={13} />
+            </button>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('justifyLeft')} className={iconBtn} title="Aligner à gauche">
+              <AlignLeft size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('justifyCenter')} className={iconBtn} title="Centrer">
+              <AlignCenter size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('justifyRight')} className={iconBtn} title="Aligner à droite">
+              <AlignRight size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('justifyFull')} className={iconBtn} title="Justifier">
+              <AlignJustify size={13} />
+            </button>
+          </div>
+        </div>
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Insérer */}
+      <RibbonGroup label="Insérer">
+        <div className="flex items-center gap-0.5">
+          <div className="relative">
+            <RibbonButton
+              icon={LinkIcon}
+              label="Lien"
+              onClick={() => { saveSelection(); setShowLinkInput(s => !s); }}
+            />
+            {showLinkInput && (
+              <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 p-2 flex gap-1 min-w-64">
+                <input
+                  autoFocus
+                  type="text"
+                  value={linkUrl}
+                  onChange={e => setLinkUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') insertLink(); if (e.key === 'Escape') setShowLinkInput(false); }}
+                  placeholder="https://..."
+                  className="flex-1 text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
+                />
+                <button onMouseDown={(e) => { e.preventDefault(); insertLink(); }} className="bg-outlook-blue text-white text-xs px-2 py-1 rounded">OK</button>
+              </div>
+            )}
+          </div>
+          <RibbonButton icon={ImageIcon} label="Image" onClick={insertImage} />
+        </div>
+      </RibbonGroup>
+    </>
+  );
+}
+
+function RibbonColorPicker({ onSelect }: { onSelect: (color: string) => void }) {
+  return (
+    <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 p-2">
+      <div className="grid grid-cols-6 gap-0.5">
+        {TEXT_COLORS.map(color => (
+          <button
+            key={color}
+            onMouseDown={(e) => { e.preventDefault(); onSelect(color); }}
+            className="w-5 h-5 rounded-sm border border-transparent hover:border-outlook-text-secondary transition-colors"
+            style={{ background: color }}
+            title={color}
+          />
+        ))}
+      </div>
     </div>
   );
 }

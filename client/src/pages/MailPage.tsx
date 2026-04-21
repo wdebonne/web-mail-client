@@ -344,6 +344,9 @@ export default function MailPage() {
     return (localStorage.getItem('ribbonMode') as 'classic' | 'simplified') || 'classic';
   });
 
+  // Shared ref for the compose editor — allows the ribbon's Message tab to drive formatting
+  const composeEditorRef = useRef<HTMLDivElement>(null);
+
   // Resizable message list pane
   const [listWidth, setListWidth] = useState(() => {
     const saved = localStorage.getItem('mailListWidth');
@@ -612,6 +615,8 @@ export default function MailPage() {
           maxTabs={maxTabs}
           onChangeTabMode={setTabMode}
           onChangeMaxTabs={setMaxTabs}
+          isComposing={isComposing}
+          composeEditorRef={composeEditorRef}
         />
       </div>
 
@@ -760,6 +765,8 @@ export default function MailPage() {
                 onClose={closeCompose}
                 isSending={sendMutation.isPending}
                 inline
+                externalEditorRef={composeEditorRef}
+                hideInlineToolbar
               />
             ) : (
               <MessageView
