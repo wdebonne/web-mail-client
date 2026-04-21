@@ -9,11 +9,12 @@ import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link as LinkIcon, Image as ImageIcon, Palette, Type, Indent, Outdent,
-  Eraser,
+  Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
+  Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar,
 } from 'lucide-react';
 import type { TabMode } from '../../stores/mailStore';
 
-type RibbonTab = 'accueil' | 'afficher' | 'message';
+type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer';
 type RibbonMode = 'classic' | 'simplified';
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
 
@@ -26,6 +27,12 @@ const TEXT_COLORS = [
   '#93c47d', '#76a5af', '#6fa8dc', '#8e7cc3', '#c27ba0',
   '#cc0000', '#e69138', '#f1c232', '#6aa84f', '#45818e', '#3d85c8',
   '#674ea7', '#a64d79',
+];
+const EMOJI_LIST = [
+  '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰',
+  '😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🤩','🥳','😏',
+  '👍','👎','👌','✌️','🤞','🤟','🤘','👏','🙏','💪','🙌','👋','🤝','❤️','🧡','💛',
+  '💚','💙','💜','🖤','🤍','💔','✨','⭐','🌟','💫','🔥','💯','✅','❌','⚠️','❓',
 ];
 
 interface RibbonProps {
@@ -66,9 +73,10 @@ interface RibbonProps {
   onChangeTabMode: (mode: TabMode) => void;
   onChangeMaxTabs: (max: number) => void;
 
-  // Compose (Message tab)
+  // Compose (Message / Insérer tabs)
   isComposing?: boolean;
   composeEditorRef?: React.RefObject<HTMLDivElement>;
+  onComposeAttachFiles?: (files: FileList | File[]) => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -140,7 +148,7 @@ export default function Ribbon({
   isCollapsed, onToggleCollapse,
   ribbonMode, onChangeRibbonMode,
   tabMode, maxTabs, onChangeTabMode, onChangeMaxTabs,
-  isComposing = false, composeEditorRef,
+  isComposing = false, composeEditorRef, onComposeAttachFiles,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -156,11 +164,20 @@ export default function Ribbon({
   useEffect(() => {
     if (isComposing && !prevComposingRef.current) {
       setActiveTab('message');
-    } else if (!isComposing && prevComposingRef.current && activeTab === 'message') {
+    } else if (!isComposing && prevComposingRef.current && (activeTab === 'message' || activeTab === 'inserer')) {
       setActiveTab('accueil');
     }
     prevComposingRef.current = isComposing;
   }, [isComposing, activeTab]);
+
+  // Available tabs in display order
+  const tabs: RibbonTab[] = [
+    'accueil',
+    'afficher',
+    ...((isComposing ? ['message', 'inserer'] : []) as RibbonTab[]),
+  ];
+  const tabLabel = (t: RibbonTab) =>
+    t === 'accueil' ? 'Accueil' : t === 'afficher' ? 'Afficher' : t === 'message' ? 'Message' : 'Insérer';
 
   const openTabMenu = () => {
     if (tabMenuBtnRef.current) {
@@ -194,68 +211,90 @@ export default function Ribbon({
     return () => observer.disconnect();
   }, [ribbonMode, onChangeRibbonMode]);
 
+  // ─── Shared tab bar (used by both classic and simplified modes) ──
+  const renderTabBar = (onToggle: () => void, toggleTitle: string, toggleRotated: boolean) => (
+    <div className="flex items-center gap-0 px-2 border-b border-outlook-border">
+      {tabs.map(tab => (
+        <button
+          key={tab}
+          onClick={() => setActiveTab(tab)}
+          className={`px-3 py-1.5 text-xs font-medium transition-colors relative
+            ${activeTab === tab
+              ? 'text-outlook-blue'
+              : 'text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover'
+            }`}
+        >
+          {tabLabel(tab)}
+          {activeTab === tab && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-outlook-blue rounded-t" />
+          )}
+        </button>
+      ))}
+      <div className="flex-1" />
+      <button
+        onClick={onToggle}
+        className="text-outlook-text-disabled hover:text-outlook-text-secondary p-1 rounded hover:bg-outlook-bg-hover"
+        title={toggleTitle}
+      >
+        <ChevronDown size={12} className={toggleRotated ? 'transition-transform rotate-180' : 'transition-transform'} />
+      </button>
+    </div>
+  );
+
   // ─── Simplified ribbon ─────────────────────────────────────
   if (ribbonMode === 'simplified') {
     return (
-      <div ref={ribbonRef} className="hidden md:flex items-center flex-shrink-0 bg-white select-none px-2 py-1 gap-0.5 overflow-x-auto">
-        {/* Nouveau message */}
-        <SimplifiedButton icon={MailPlus} label="Nouveau" onClick={onNewMessage} />
-        <SimplifiedSep />
+      <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
+        {renderTabBar(() => onChangeRibbonMode('classic'), 'Développer le ruban', false)}
+        <div className="flex items-center px-2 py-0.5 gap-0.5 overflow-x-auto h-9">
+          {activeTab === 'accueil' && (
+            <>
+              <SimplifiedButton icon={MailPlus} label="Nouveau" onClick={onNewMessage} />
+              <SimplifiedSep />
+              <SimplifiedButton icon={Reply} label="Répondre" onClick={onReply} disabled={!hasSelectedMessage} />
+              <SimplifiedButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} disabled={!hasSelectedMessage} />
+              <SimplifiedButton icon={Forward} label="Transférer" onClick={onForward} disabled={!hasSelectedMessage} />
+              <SimplifiedSep />
+              <SimplifiedButton icon={Trash2} label="Supprimer" onClick={onDelete} disabled={!hasSelectedMessage} danger />
+              <SimplifiedButton icon={Archive} label="Archiver" onClick={onArchive} disabled={!hasSelectedMessage} />
+              <SimplifiedButton icon={Flag} label="Indicateur" onClick={onToggleFlag} disabled={!hasSelectedMessage} active={isFlagged} />
+              <SimplifiedSep />
+              <SimplifiedButton
+                icon={isRead ? EyeOff : Eye}
+                label={isRead ? 'Non lu' : 'Lu'}
+                onClick={isRead ? onMarkUnread : onMarkRead}
+                disabled={!hasSelectedMessage}
+              />
+              <SimplifiedSep />
+              <SimplifiedButton icon={RefreshCw} label="Synchroniser" onClick={onSync} />
+            </>
+          )}
 
-        {/* Répondre group */}
-        <SimplifiedButton icon={Reply} label="Répondre" onClick={onReply} disabled={!hasSelectedMessage} />
-        <SimplifiedButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} disabled={!hasSelectedMessage} />
-        <SimplifiedButton icon={Forward} label="Transférer" onClick={onForward} disabled={!hasSelectedMessage} />
-        <SimplifiedSep />
+          {activeTab === 'afficher' && (
+            <>
+              <SimplifiedButton
+                icon={showFolderPane ? PanelLeftClose : PanelLeftOpen}
+                label="Volet Dossiers"
+                onClick={onToggleFolderPane}
+                active={showFolderPane}
+              />
+              <SimplifiedSep />
+              <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
+              <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
+              <SimplifiedButton icon={Paperclip} label="Pièce jointe" onClick={() => {/* no-op in simplified */}} />
+              <SimplifiedSep />
+              <SimplifiedButton icon={RefreshCw} label="Synchroniser" onClick={onSync} />
+            </>
+          )}
 
-        {/* Actions */}
-        <SimplifiedButton icon={Trash2} label="Supprimer" onClick={onDelete} disabled={!hasSelectedMessage} danger />
-        <SimplifiedButton icon={Archive} label="Archiver" onClick={onArchive} disabled={!hasSelectedMessage} />
-        <SimplifiedButton
-          icon={Flag}
-          label="Indicateur"
-          onClick={onToggleFlag}
-          disabled={!hasSelectedMessage}
-          active={isFlagged}
-        />
-        <SimplifiedSep />
+          {activeTab === 'message' && (
+            <MessageTabContent editorRef={composeEditorRef} compact />
+          )}
 
-        {/* Marquer lu/non lu */}
-        <SimplifiedButton
-          icon={isRead ? EyeOff : Eye}
-          label={isRead ? 'Non lu' : 'Lu'}
-          onClick={isRead ? onMarkUnread : onMarkRead}
-          disabled={!hasSelectedMessage}
-        />
-        <SimplifiedSep />
-
-        {/* Synchroniser */}
-        <SimplifiedButton icon={RefreshCw} label="Synchroniser" onClick={onSync} />
-        <SimplifiedSep />
-
-        {/* Volet dossiers */}
-        <SimplifiedButton
-          icon={showFolderPane ? PanelLeftClose : PanelLeftOpen}
-          label="Volet Dossiers"
-          onClick={onToggleFolderPane}
-          active={showFolderPane}
-        />
-        <SimplifiedSep />
-
-        {/* Imprimer / Télécharger */}
-        <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
-        <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
-
-        <div className="flex-1" />
-
-        {/* Expand to classic ribbon */}
-        <button
-          onClick={() => onChangeRibbonMode('classic')}
-          className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-disabled hover:text-outlook-text-secondary flex-shrink-0"
-          title="Développer le ruban"
-        >
-          <ChevronDown size={12} />
-        </button>
+          {activeTab === 'inserer' && (
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} compact />
+          )}
+        </div>
       </div>
     );
   }
@@ -264,39 +303,7 @@ export default function Ribbon({
 
   return (
     <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
-      {/* Tab bar */}
-      <div className="flex items-center gap-0 px-2 border-b border-outlook-border">
-        {([
-          'accueil',
-          ...(isComposing ? (['message'] as RibbonTab[]) : []),
-          'afficher',
-        ] as RibbonTab[]).map(tab => (
-          <button
-            key={tab}
-            onClick={() => {
-              setActiveTab(tab);
-            }}
-            className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors relative
-              ${activeTab === tab
-                ? 'text-outlook-blue'
-                : 'text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover'
-              }`}
-          >
-            {tab === 'accueil' ? 'Accueil' : tab === 'message' ? 'Message' : 'Afficher'}
-            {activeTab === tab && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-outlook-blue rounded-t" />
-            )}
-          </button>
-        ))}
-        <div className="flex-1" />
-        <button
-          onClick={() => onChangeRibbonMode('simplified')}
-          className="text-outlook-text-disabled hover:text-outlook-text-secondary p-1 rounded hover:bg-outlook-bg-hover"
-          title="Réduire le ruban"
-        >
-          <ChevronDown size={12} className="transition-transform rotate-180" />
-        </button>
-      </div>
+      {renderTabBar(() => onChangeRibbonMode('simplified'), 'Réduire le ruban', true)}
 
       {/* Ribbon content */}
         <div className="flex items-stretch px-2 py-1 gap-1 overflow-x-auto">
@@ -350,6 +357,10 @@ export default function Ribbon({
 
           {activeTab === 'message' && (
             <MessageTabContent editorRef={composeEditorRef} />
+          )}
+
+          {activeTab === 'inserer' && (
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} />
           )}
 
           {activeTab === 'afficher' && (
@@ -507,47 +518,51 @@ export default function Ribbon({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Message tab — rich text formatting tools (Outlook-style, grouped)
+// Shared editor helpers (hook used by Message & Insérer tabs)
 // ─────────────────────────────────────────────────────────────────────────────
-function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivElement> }) {
-  const [showFontFamily, setShowFontFamily] = useState(false);
-  const [showFontSize, setShowFontSize] = useState(false);
-  const [showTextColor, setShowTextColor] = useState(false);
-  const [showBgColor, setShowBgColor] = useState(false);
-  const [showLinkInput, setShowLinkInput] = useState(false);
-  const [linkUrl, setLinkUrl] = useState('');
-  const [currentFont, setCurrentFont] = useState('Calibri');
-  const [currentSize, setCurrentSize] = useState('12');
+function useEditorControl(editorRef?: React.RefObject<HTMLDivElement>) {
   const savedRangeRef = useRef<Range | null>(null);
-
-  const focusEditor = () => {
-    editorRef?.current?.focus();
-  };
-
+  const focusEditor = () => { editorRef?.current?.focus(); };
   const exec = (command: string, value?: string) => {
     focusEditor();
     document.execCommand(command, false, value);
   };
-
   const saveSelection = () => {
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {
       const range = sel.getRangeAt(0);
-      // Only save the selection if it is inside our editor
       if (editorRef?.current?.contains(range.commonAncestorContainer)) {
         savedRangeRef.current = range.cloneRange();
       }
     }
   };
-
   const restoreSelection = () => {
     const range = savedRangeRef.current;
-    if (!range) { focusEditor(); return; }
     focusEditor();
+    if (!range) return;
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
   };
+  const insertHTML = (html: string) => {
+    restoreSelection();
+    document.execCommand('insertHTML', false, html);
+  };
+  return { exec, saveSelection, restoreSelection, insertHTML, focusEditor };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Message tab — rich text formatting tools (Outlook-style, grouped)
+// ─────────────────────────────────────────────────────────────────────────────
+function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.RefObject<HTMLDivElement>; compact?: boolean }) {
+  const { exec, saveSelection, restoreSelection, insertHTML } = useEditorControl(editorRef);
+  const [showFontFamily, setShowFontFamily] = useState(false);
+  const [showFontSize, setShowFontSize] = useState(false);
+  const [showTextColor, setShowTextColor] = useState(false);
+  const [showBgColor, setShowBgColor] = useState(false);
+  const [showStyles, setShowStyles] = useState(false);
+  const [currentFont, setCurrentFont] = useState('Calibri');
+  const [currentSize, setCurrentSize] = useState('12');
 
   const applyFont = (font: string) => {
     restoreSelection();
@@ -567,18 +582,10 @@ function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivE
     setShowFontSize(false);
   };
 
-  const insertLink = () => {
-    if (!linkUrl) return;
+  const applyStyle = (tag: string) => {
     restoreSelection();
-    const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
-    exec('createLink', url);
-    setShowLinkInput(false);
-    setLinkUrl('');
-  };
-
-  const insertImage = () => {
-    const url = prompt("URL de l'image :");
-    if (url) exec('insertImage', url);
+    exec('formatBlock', tag);
+    setShowStyles(false);
   };
 
   const closeAllDropdowns = () => {
@@ -586,24 +593,57 @@ function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivE
     setShowFontSize(false);
     setShowTextColor(false);
     setShowBgColor(false);
+    setShowStyles(false);
   };
 
   const iconBtn = 'w-7 h-7 flex items-center justify-center rounded hover:bg-outlook-bg-hover transition-colors text-outlook-text-secondary hover:text-outlook-text-primary';
   const vDivider = <div className="w-px h-5 bg-outlook-border mx-0.5 self-center" />;
 
+  // ─── Compact (simplified) rendering ─────────────────────────────
+  if (compact) {
+    return (
+      <>
+        <SimplifiedButton icon={Bold} label="Gras" onClick={() => exec('bold')} />
+        <SimplifiedButton icon={Italic} label="Italique" onClick={() => exec('italic')} />
+        <SimplifiedButton icon={Underline} label="Souligné" onClick={() => exec('underline')} />
+        <SimplifiedButton icon={Strikethrough} label="Barré" onClick={() => exec('strikeThrough')} />
+        <SimplifiedSep />
+        <SimplifiedButton icon={List} label="Puces" onClick={() => exec('insertUnorderedList')} />
+        <SimplifiedButton icon={ListOrdered} label="Numérotée" onClick={() => exec('insertOrderedList')} />
+        <SimplifiedSep />
+        <SimplifiedButton icon={AlignLeft} label="Gauche" onClick={() => exec('justifyLeft')} />
+        <SimplifiedButton icon={AlignCenter} label="Centrer" onClick={() => exec('justifyCenter')} />
+        <SimplifiedButton icon={AlignRight} label="Droite" onClick={() => exec('justifyRight')} />
+        <SimplifiedSep />
+        <SimplifiedButton icon={Quote} label="Citation" onClick={() => exec('formatBlock', 'blockquote')} />
+        <SimplifiedButton icon={Code} label="Code" onClick={() => insertHTML('<code></code>')} />
+        <SimplifiedButton icon={Eraser} label="Effacer" onClick={() => exec('removeFormat')} />
+      </>
+    );
+  }
+
+  // ─── Classic rendering ──────────────────────────────────────────
   return (
     <>
       {/* Presse-papiers */}
       <RibbonGroup label="Presse-papiers">
         <div className="flex items-center gap-0.5">
-          <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('paste')} className={iconBtn} title="Coller">
-            <span className="text-[11px] font-medium">Coller</span>
+          <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('paste')}
+            className="flex flex-col items-center gap-0.5 rounded hover:bg-outlook-bg-hover px-2 py-1 min-w-[40px]"
+            title="Coller">
+            <Paperclip size={18} className="opacity-0 hidden" />
+            <span className="text-[11px] font-medium text-outlook-text-primary">Coller</span>
+            <span className="text-[9px] leading-tight text-outlook-text-disabled">Ctrl+V</span>
           </button>
-          <div className="flex flex-col">
-            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('cut')} className="text-[10px] px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary" title="Couper">
+          <div className="flex flex-col gap-0.5">
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('cut')}
+              className="text-[10px] px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary text-left"
+              title="Couper (Ctrl+X)">
               Couper
             </button>
-            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('copy')} className="text-[10px] px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary" title="Copier">
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('copy')}
+              className="text-[10px] px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary text-left"
+              title="Copier (Ctrl+C)">
               Copier
             </button>
           </div>
@@ -613,13 +653,13 @@ function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivE
 
       {/* Texte de base */}
       <RibbonGroup label="Texte de base">
-        <div className="flex flex-col gap-1 min-w-[260px]">
-          {/* Row 1: font family, font size */}
+        <div className="flex flex-col gap-1 min-w-[280px]">
+          {/* Row 1: font family, font size, clear */}
           <div className="flex items-center gap-1">
             <div className="relative">
               <button
                 onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowFontFamily(s => !s); }}
-                className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-0.5 hover:bg-outlook-bg-hover min-w-[110px] justify-between bg-white"
+                className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-0.5 hover:bg-outlook-bg-hover min-w-[120px] justify-between bg-white"
               >
                 <span style={{ fontFamily: currentFont }} className="truncate">{currentFont}</span>
                 <ChevronDown size={10} className="flex-shrink-0" />
@@ -657,8 +697,49 @@ function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivE
             <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('removeFormat')} className={iconBtn} title="Effacer la mise en forme">
               <Eraser size={13} />
             </button>
+            {vDivider}
+            {/* Styles (headings) */}
+            <div className="relative">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowStyles(s => !s); }}
+                className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-0.5 hover:bg-outlook-bg-hover bg-white"
+                title="Styles"
+              >
+                <PenLine size={12} />
+                <span>Styles</span>
+                <ChevronDown size={10} />
+              </button>
+              {showStyles && (
+                <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 min-w-40">
+                  <button onMouseDown={(e) => { e.preventDefault(); applyStyle('p'); }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover">
+                    Paragraphe
+                  </button>
+                  <button onMouseDown={(e) => { e.preventDefault(); applyStyle('h1'); }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-outlook-bg-hover">
+                    <span className="text-lg font-bold">Titre 1</span>
+                  </button>
+                  <button onMouseDown={(e) => { e.preventDefault(); applyStyle('h2'); }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-outlook-bg-hover">
+                    <span className="text-base font-semibold">Titre 2</span>
+                  </button>
+                  <button onMouseDown={(e) => { e.preventDefault(); applyStyle('h3'); }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-outlook-bg-hover">
+                    <span className="text-sm font-semibold">Titre 3</span>
+                  </button>
+                  <button onMouseDown={(e) => { e.preventDefault(); applyStyle('blockquote'); }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover italic text-outlook-text-secondary">
+                    Citation
+                  </button>
+                  <button onMouseDown={(e) => { e.preventDefault(); applyStyle('pre'); }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover font-mono">
+                    Code
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-          {/* Row 2: bold/italic/underline/strike + colors */}
+          {/* Row 2: bold/italic/underline/strike + sub/sup + colors */}
           <div className="flex items-center gap-0.5">
             <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} className={iconBtn} title="Gras (Ctrl+B)">
               <Bold size={13} />
@@ -671,6 +752,12 @@ function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivE
             </button>
             <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('strikeThrough')} className={iconBtn} title="Barré">
               <Strikethrough size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('subscript')} className={iconBtn} title="Indice">
+              <Subscript size={13} />
+            </button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('superscript')} className={iconBtn} title="Exposant">
+              <Superscript size={13} />
             </button>
             {vDivider}
             {/* Text color */}
@@ -726,6 +813,10 @@ function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivE
             <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('indent')} className={iconBtn} title="Augmenter le retrait">
               <Indent size={13} />
             </button>
+            {vDivider}
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('formatBlock', 'blockquote')} className={iconBtn} title="Citation">
+              <Quote size={13} />
+            </button>
           </div>
           <div className="flex items-center gap-0.5">
             <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('justifyLeft')} className={iconBtn} title="Aligner à gauche">
@@ -743,39 +834,185 @@ function MessageTabContent({ editorRef }: { editorRef?: React.RefObject<HTMLDivE
           </div>
         </div>
       </RibbonGroup>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Insérer tab — Outlook-web-style insertion tools
+// ─────────────────────────────────────────────────────────────────────────────
+function InsererTabContent({ editorRef, onAttachFiles, compact = false }: {
+  editorRef?: React.RefObject<HTMLDivElement>;
+  onAttachFiles?: (files: FileList | File[]) => void;
+  compact?: boolean;
+}) {
+  const { exec, saveSelection, restoreSelection, insertHTML } = useEditorControl(editorRef);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkText, setLinkText] = useState('');
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [showTableGrid, setShowTableGrid] = useState(false);
+
+  const triggerAttach = () => fileInputRef.current?.click();
+
+  const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length && onAttachFiles) {
+      onAttachFiles(files);
+    }
+    e.target.value = '';
+  };
+
+  const insertLink = () => {
+    if (!linkUrl) return;
+    restoreSelection();
+    const url = linkUrl.startsWith('http') || linkUrl.startsWith('mailto:') ? linkUrl : `https://${linkUrl}`;
+    if (linkText) {
+      insertHTML(`<a href="${url}">${linkText.replace(/</g, '&lt;')}</a>`);
+    } else {
+      exec('createLink', url);
+    }
+    setShowLinkInput(false);
+    setLinkUrl('');
+    setLinkText('');
+  };
+
+  const insertImage = () => {
+    const url = prompt("URL de l'image :");
+    if (url) exec('insertImage', url);
+  };
+
+  const insertEmoji = (emoji: string) => {
+    restoreSelection();
+    insertHTML(emoji);
+    setShowEmoji(false);
+  };
+
+  const insertTable = (rows: number, cols: number) => {
+    let html = '<table style="border-collapse:collapse;width:100%;margin:4px 0;">';
+    for (let r = 0; r < rows; r++) {
+      html += '<tr>';
+      for (let c = 0; c < cols; c++) {
+        html += '<td style="border:1px solid #c0c0c0;padding:6px;min-width:40px;">&nbsp;</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</table><p><br></p>';
+    restoreSelection();
+    insertHTML(html);
+    setShowTableGrid(false);
+  };
+
+  const insertHorizontalRule = () => exec('insertHorizontalRule');
+
+  const insertDate = () => {
+    const now = new Date();
+    const formatted = now.toLocaleString('fr-FR', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+    restoreSelection();
+    insertHTML(formatted);
+  };
+
+  // ─── Compact (simplified) rendering ─────────────────────────────
+  if (compact) {
+    return (
+      <>
+        <input type="file" ref={fileInputRef} onChange={handleFiles} multiple className="hidden" />
+        <SimplifiedButton icon={Paperclip} label="Joindre" onClick={triggerAttach} />
+        <SimplifiedButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(true); }} />
+        <SimplifiedButton icon={ImageIcon} label="Image" onClick={insertImage} />
+        <SimplifiedButton icon={Smile} label="Emoji" onClick={() => { saveSelection(); setShowEmoji(v => !v); }} />
+        <SimplifiedButton icon={TableIcon} label="Tableau" onClick={() => { saveSelection(); setShowTableGrid(v => !v); }} />
+        <SimplifiedButton icon={MinusIcon} label="Ligne" onClick={insertHorizontalRule} />
+        <SimplifiedButton icon={Calendar} label="Date" onClick={insertDate} />
+        {showEmoji && <EmojiPickerPortal onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />}
+        {showTableGrid && <TableGridPortal onSelect={insertTable} onClose={() => setShowTableGrid(false)} />}
+        {showLinkInput && (
+          <LinkInputPortal
+            url={linkUrl}
+            text={linkText}
+            onUrlChange={setLinkUrl}
+            onTextChange={setLinkText}
+            onInsert={insertLink}
+            onClose={() => { setShowLinkInput(false); setLinkUrl(''); setLinkText(''); }}
+          />
+        )}
+      </>
+    );
+  }
+
+  // ─── Classic rendering ──────────────────────────────────────────
+  return (
+    <>
+      <input type="file" ref={fileInputRef} onChange={handleFiles} multiple className="hidden" />
+
+      {/* Inclure */}
+      <RibbonGroup label="Inclure">
+        <RibbonButton icon={Paperclip} label="Joindre un fichier" onClick={triggerAttach} />
+        <div className="relative">
+          <RibbonButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(s => !s); }} />
+          {showLinkInput && (
+            <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 p-2 flex flex-col gap-1 min-w-72">
+              <input
+                autoFocus
+                type="text"
+                value={linkUrl}
+                onChange={e => setLinkUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') insertLink(); if (e.key === 'Escape') setShowLinkInput(false); }}
+                placeholder="Adresse (https://...)"
+                className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
+              />
+              <input
+                type="text"
+                value={linkText}
+                onChange={e => setLinkText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') insertLink(); }}
+                placeholder="Texte à afficher (optionnel)"
+                className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
+              />
+              <div className="flex justify-end gap-1">
+                <button onClick={() => { setShowLinkInput(false); setLinkUrl(''); setLinkText(''); }} className="text-xs px-2 py-1 rounded hover:bg-outlook-bg-hover">Annuler</button>
+                <button onMouseDown={(e) => { e.preventDefault(); insertLink(); }} className="bg-outlook-blue text-white text-xs px-3 py-1 rounded">Insérer</button>
+              </div>
+            </div>
+          )}
+        </div>
+        <RibbonButton icon={ImageIcon} label="Image" onClick={insertImage} />
+      </RibbonGroup>
       <RibbonSeparator />
 
-      {/* Insérer */}
-      <RibbonGroup label="Insérer">
-        <div className="flex items-center gap-0.5">
-          <div className="relative">
-            <RibbonButton
-              icon={LinkIcon}
-              label="Lien"
-              onClick={() => { saveSelection(); setShowLinkInput(s => !s); }}
-            />
-            {showLinkInput && (
-              <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 p-2 flex gap-1 min-w-64">
-                <input
-                  autoFocus
-                  type="text"
-                  value={linkUrl}
-                  onChange={e => setLinkUrl(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') insertLink(); if (e.key === 'Escape') setShowLinkInput(false); }}
-                  placeholder="https://..."
-                  className="flex-1 text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
-                />
-                <button onMouseDown={(e) => { e.preventDefault(); insertLink(); }} className="bg-outlook-blue text-white text-xs px-2 py-1 rounded">OK</button>
-              </div>
-            )}
-          </div>
-          <RibbonButton icon={ImageIcon} label="Image" onClick={insertImage} />
+      {/* Tableaux */}
+      <RibbonGroup label="Tableaux">
+        <div className="relative">
+          <RibbonButton icon={TableIcon} label="Tableau" onClick={() => { saveSelection(); setShowTableGrid(s => !s); }} />
+          {showTableGrid && (
+            <TableGridPortal onSelect={insertTable} onClose={() => setShowTableGrid(false)} />
+          )}
         </div>
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Symboles */}
+      <RibbonGroup label="Symboles">
+        <div className="relative">
+          <RibbonButton icon={Smile} label="Emoji" onClick={() => { saveSelection(); setShowEmoji(s => !s); }} />
+          {showEmoji && (
+            <EmojiPickerPortal onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />
+          )}
+        </div>
+        <RibbonButton icon={MinusIcon} label="Ligne horizontale" onClick={insertHorizontalRule} />
+        <RibbonButton icon={Calendar} label="Date et heure" onClick={insertDate} />
       </RibbonGroup>
     </>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Small pickers (portaled / local absolute)
+// ─────────────────────────────────────────────────────────────────────────────
 function RibbonColorPicker({ onSelect }: { onSelect: (color: string) => void }) {
   return (
     <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 p-2">
@@ -791,5 +1028,93 @@ function RibbonColorPicker({ onSelect }: { onSelect: (color: string) => void }) 
         ))}
       </div>
     </div>
+  );
+}
+
+function EmojiPickerPortal({ onSelect, onClose }: { onSelect: (emoji: string) => void; onClose: () => void }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
+      <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-[9999] p-2 w-64">
+        <div className="grid grid-cols-8 gap-0.5 max-h-48 overflow-y-auto">
+          {EMOJI_LIST.map(emoji => (
+            <button
+              key={emoji}
+              onMouseDown={(e) => { e.preventDefault(); onSelect(emoji); }}
+              className="w-7 h-7 flex items-center justify-center text-lg rounded hover:bg-outlook-bg-hover"
+              title={emoji}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function TableGridPortal({ onSelect, onClose }: { onSelect: (rows: number, cols: number) => void; onClose: () => void }) {
+  const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
+  const ROWS = 8;
+  const COLS = 10;
+  return (
+    <>
+      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
+      <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-[9999] p-2">
+        <div className="text-xs text-outlook-text-secondary mb-1 text-center">
+          {hover ? `${hover.r + 1} × ${hover.c + 1}` : 'Insérer un tableau'}
+        </div>
+        <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${COLS}, 16px)` }}>
+          {Array.from({ length: ROWS * COLS }).map((_, i) => {
+            const r = Math.floor(i / COLS);
+            const c = i % COLS;
+            const selected = hover && r <= hover.r && c <= hover.c;
+            return (
+              <button
+                key={i}
+                onMouseEnter={() => setHover({ r, c })}
+                onMouseDown={(e) => { e.preventDefault(); onSelect(r + 1, c + 1); }}
+                className={`w-4 h-4 border rounded-sm transition-colors ${selected ? 'bg-outlook-blue/30 border-outlook-blue' : 'bg-white border-outlook-border hover:border-outlook-blue/50'}`}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function LinkInputPortal({ url, text, onUrlChange, onTextChange, onInsert, onClose }: {
+  url: string; text: string;
+  onUrlChange: (v: string) => void; onTextChange: (v: string) => void;
+  onInsert: () => void; onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
+      <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-[9999] p-2 flex flex-col gap-1 min-w-72">
+        <input
+          autoFocus
+          type="text"
+          value={url}
+          onChange={e => onUrlChange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onInsert(); if (e.key === 'Escape') onClose(); }}
+          placeholder="Adresse (https://...)"
+          className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
+        />
+        <input
+          type="text"
+          value={text}
+          onChange={e => onTextChange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onInsert(); }}
+          placeholder="Texte à afficher (optionnel)"
+          className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
+        />
+        <div className="flex justify-end gap-1">
+          <button onClick={onClose} className="text-xs px-2 py-1 rounded hover:bg-outlook-bg-hover">Annuler</button>
+          <button onMouseDown={(e) => { e.preventDefault(); onInsert(); }} className="bg-outlook-blue text-white text-xs px-3 py-1 rounded">Insérer</button>
+        </div>
+      </div>
+    </>
   );
 }

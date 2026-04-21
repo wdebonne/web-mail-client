@@ -26,11 +26,17 @@ interface ComposeModalProps {
   externalEditorRef?: React.RefObject<HTMLDivElement>;
   /** Hide the inline rich-text toolbar (used when the ribbon provides the Message tab instead). */
   hideInlineToolbar?: boolean;
+  /** Shared API ref so the ribbon Insérer tab can call back into compose (attach files, etc.). */
+  apiRef?: React.MutableRefObject<ComposeApi | null>;
+}
+
+export interface ComposeApi {
+  addFiles: (files: FileList | File[]) => void;
 }
 
 export default function ComposeModal({
   initialData, accounts, selectedAccountId, onSend, onClose, isSending, inline = false,
-  externalEditorRef, hideInlineToolbar = false,
+  externalEditorRef, hideInlineToolbar = false, apiRef,
 }: ComposeModalProps) {
   const isOnline = useNetworkStatus();
   const [accountId, setAccountId] = useState(initialData.accountId || selectedAccountId || accounts[0]?.id);
@@ -117,7 +123,10 @@ export default function ComposeModal({
   const handleAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
+    addFiles(files);
+  };
 
+  const addFiles = useCallback((files: FileList | File[]) => {
     for (const file of Array.from(files)) {
       const reader = new FileReader();
       reader.onload = () => {
@@ -131,7 +140,14 @@ export default function ComposeModal({
       };
       reader.readAsDataURL(file);
     }
-  };
+  }, []);
+
+  // Expose API to the ribbon (Insérer > Joindre un fichier)
+  useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = { addFiles };
+    return () => { if (apiRef) apiRef.current = null; };
+  }, [apiRef, addFiles]);
 
   const handleSend = () => {
     // Auto-add pending recipients from input fields

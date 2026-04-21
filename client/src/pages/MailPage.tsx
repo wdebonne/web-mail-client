@@ -8,6 +8,7 @@ import FolderPane from '../components/mail/FolderPane';
 import MessageList from '../components/mail/MessageList';
 import MessageView from '../components/mail/MessageView';
 import ComposeModal from '../components/mail/ComposeModal';
+import type { ComposeApi } from '../components/mail/ComposeModal';
 import Ribbon from '../components/mail/Ribbon';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
@@ -346,6 +347,8 @@ export default function MailPage() {
 
   // Shared ref for the compose editor — allows the ribbon's Message tab to drive formatting
   const composeEditorRef = useRef<HTMLDivElement>(null);
+  // Shared API ref — allows the ribbon Insérer tab to drive compose actions (attach files, etc.)
+  const composeApiRef = useRef<ComposeApi | null>(null);
 
   // Resizable message list pane
   const [listWidth, setListWidth] = useState(() => {
@@ -617,6 +620,7 @@ export default function MailPage() {
           onChangeMaxTabs={setMaxTabs}
           isComposing={isComposing}
           composeEditorRef={composeEditorRef}
+          onComposeAttachFiles={(files) => composeApiRef.current?.addFiles(files)}
         />
       </div>
 
@@ -767,6 +771,7 @@ export default function MailPage() {
                 inline
                 externalEditorRef={composeEditorRef}
                 hideInlineToolbar
+                apiRef={composeApiRef}
               />
             ) : (
               <MessageView
