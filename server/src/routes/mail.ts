@@ -186,16 +186,28 @@ mailRouter.post('/send', async (req: AuthRequest, res) => {
     // Get sender info for "send on behalf of"
     let fromOptions: { email: string; name: string };
     let senderOptions: { email: string; name: string } | undefined;
+    let replyToOptions: { email: string; name?: string } | undefined;
 
     if (account.send_permission === 'send_on_behalf') {
       // Get user display name
       const userResult = await pool.query('SELECT display_name, email FROM users WHERE id = $1', [req.userId]);
       const user = userResult.rows[0];
       const userName = user?.display_name || user?.email || '';
+      const userEmail = user?.email || '';
+
+      const fromDomain = (account.email.split('@')[1] || '').toLowerCase();
+      const userDomain = (userEmail.split('@')[1] || '').toLowerCase();
+      const sameDomain = !!fromDomain && fromDomain === userDomain;
 
       // Keep a clean From identity for better deliverability; Sender carries "on behalf of" actor.
       fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
-      senderOptions = { email: user?.email || account.email, name: userName };
+      if (sameDomain && userEmail) {
+        // Safe for most receivers when domains align.
+        senderOptions = { email: userEmail, name: userName };
+      } else if (userEmail && userEmail !== account.email) {
+        // Cross-domain Sender is often spam-scored; prefer Reply-To.
+        replyToOptions = { email: userEmail, name: userName };
+      }
     } else {
       // send_as: send directly as the account
       fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
@@ -205,6 +217,7 @@ mailRouter.post('/send', async (req: AuthRequest, res) => {
     const result = await mailService.sendMail({
       from: fromOptions,
       sender: senderOptions,
+      replyTo: replyToOptions,
       to: data.to,
       cc: data.cc,
       bcc: data.bcc,
@@ -261,13 +274,23 @@ mailRouter.post('/outbox/process', async (req: AuthRequest, res) => {
 
         let fromOptions: { email: string; name: string };
         let senderOptions: { email: string; name: string } | undefined;
+        let replyToOptions: { email: string; name?: string } | undefined;
 
         if (account.send_permission === 'send_on_behalf') {
           const userResult = await pool.query('SELECT display_name, email FROM users WHERE id = $1', [req.userId]);
           const user = userResult.rows[0];
           const userName = user?.display_name || user?.email || '';
+          const userEmail = user?.email || '';
+          const fromDomain = (account.email.split('@')[1] || '').toLowerCase();
+          const userDomain = (userEmail.split('@')[1] || '').toLowerCase();
+          const sameDomain = !!fromDomain && fromDomain === userDomain;
+
           fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
-          senderOptions = { email: user?.email || account.email, name: userName };
+          if (sameDomain && userEmail) {
+            senderOptions = { email: userEmail, name: userName };
+          } else if (userEmail && userEmail !== account.email) {
+            replyToOptions = { email: userEmail, name: userName };
+          }
         } else {
           fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
         }
@@ -276,6 +299,7 @@ mailRouter.post('/outbox/process', async (req: AuthRequest, res) => {
         await mailService.sendMail({
           from: fromOptions,
           sender: senderOptions,
+          replyTo: replyToOptions,
           to: msg.to_addresses,
           cc: msg.cc_addresses,
           bcc: msg.bcc_addresses,

@@ -19,6 +19,7 @@ interface MailAccount {
 interface SendMailOptions {
   from: { email: string; name: string };
   sender?: { email: string; name: string };
+  replyTo?: { email: string; name?: string };
   to: { email: string; name?: string }[];
   cc?: { email: string; name?: string }[];
   bcc?: { email: string; name?: string }[];
@@ -234,6 +235,12 @@ export class MailService {
     // Add sender header for "send on behalf of"
     if (options.sender) {
       mailOptions.sender = `"${options.sender.name}" <${options.sender.email}>`;
+    }
+
+    if (options.replyTo?.email) {
+      mailOptions.replyTo = options.replyTo.name
+        ? `"${options.replyTo.name}" <${options.replyTo.email}>`
+        : options.replyTo.email;
     }
 
     if (options.cc?.length) {
