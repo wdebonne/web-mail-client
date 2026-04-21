@@ -199,8 +199,8 @@ mailRouter.post('/send', async (req: AuthRequest, res) => {
       const userDomain = (userEmail.split('@')[1] || '').toLowerCase();
       const sameDomain = !!fromDomain && fromDomain === userDomain;
 
-      // Keep a clean From identity for better deliverability; Sender carries "on behalf of" actor.
-      fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
+      // Display the delegating user in From name while keeping mailbox email identity.
+      fromOptions = { email: account.email, name: userName || account.assigned_display_name || account.name };
       if (sameDomain && userEmail) {
         // Safe for most receivers when domains align.
         senderOptions = { email: userEmail, name: userName };
@@ -285,7 +285,7 @@ mailRouter.post('/outbox/process', async (req: AuthRequest, res) => {
           const userDomain = (userEmail.split('@')[1] || '').toLowerCase();
           const sameDomain = !!fromDomain && fromDomain === userDomain;
 
-          fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
+          fromOptions = { email: account.email, name: userName || account.assigned_display_name || account.name };
           if (sameDomain && userEmail) {
             senderOptions = { email: userEmail, name: userName };
           } else if (userEmail && userEmail !== account.email) {
