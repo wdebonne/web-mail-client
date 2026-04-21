@@ -205,6 +205,28 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Bouton "Développer le ruban" (chevron ▼) en mode simplifié → passe en mode classique
 - Suppression du menu déroulant "Options du ruban" redondant
 
+## [1.5.0] - 2026-04-21
+
+### Ajouté
+
+#### Amélioration du composeur d'emails
+- **Indicateur d'état réseau** : le bouton "Envoyer" affiche "Envoyer (hors-ligne)" quand la connexion est perdue
+- **Destinataires en attente auto-ajoutés** : les emails tapés dans le champ "À" sont automatiquement validés et ajoutés à l'envoi, sans besoin d'appuyer sur Entrée
+- **Activation intelligente du bouton** : le bouton "Envoyer" reste actif tant qu'il y a du texte en attente dans le champ "À" (permettant l'envoi sans confirmation préalable)
+
+### Supprimé
+
+#### Composeur d'emails
+- Bouton dropdown inutile à côté du bouton "Envoyer" (anciennement grisé)
+
+### Amélioré
+
+#### Rendu du bouton "Envoyer"
+- Design plus prominent avec padding augmenté et icône plus grande
+- Ajout d'une shadow subtile qui s'intensifie au survol
+- Coins arrondis complets et cohérents dans les deux modes (inline et modal)
+- Meilleure hiérarchie visuelle pour mettre en avant l'action principale
+
 ## [Non publié]
 
 ### Ajouté
