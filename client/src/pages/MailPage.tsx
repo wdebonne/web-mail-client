@@ -432,6 +432,11 @@ export default function MailPage() {
     const saved = parseFloat(localStorage.getItem('splitRatio') || '0.5');
     return Number.isFinite(saved) && saved > 0.15 && saved < 0.85 ? saved : 0.5;
   });
+  // Split-mode personalization: keep folder pane / message list visible while in split view.
+  const [splitKeepFolderPane, setSplitKeepFolderPane] = useState<boolean>(() => localStorage.getItem('splitKeepFolderPane') === 'true');
+  const [splitKeepMessageList, setSplitKeepMessageList] = useState<boolean>(() => localStorage.getItem('splitKeepMessageList') === 'true');
+  useEffect(() => { localStorage.setItem('splitKeepFolderPane', String(splitKeepFolderPane)); }, [splitKeepFolderPane]);
+  useEffect(() => { localStorage.setItem('splitKeepMessageList', String(splitKeepMessageList)); }, [splitKeepMessageList]);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isDraggingSplit = useRef(false);
@@ -866,13 +871,17 @@ export default function MailPage() {
           }}
           splitActive={splitActive}
           onSwapSplit={() => { if (splitTabId) switchTab(splitTabId); }}
+          splitKeepFolderPane={splitKeepFolderPane}
+          onToggleSplitKeepFolderPane={() => setSplitKeepFolderPane(v => !v)}
+          splitKeepMessageList={splitKeepMessageList}
+          onToggleSplitKeepMessageList={() => setSplitKeepMessageList(v => !v)}
         />
       </div>
 
       {/* Main content area — 3 blocks with gaps */}
       <div ref={containerRef} className="flex-1 flex overflow-hidden min-h-0 gap-1 px-1.5 pb-1.5">
         {/* Folder pane block — collapsible + resizable */}
-        {showFolderPane && !composeExpanded && !splitActive && (
+        {showFolderPane && !composeExpanded && (!splitActive || splitKeepFolderPane) && (
           <>
             <div
               data-pane="folders"
@@ -952,7 +961,7 @@ export default function MailPage() {
         </div>
 
         {/* Desktop message list block — uses pixel width from resize handle */}
-        {!composeExpanded && !splitActive && (
+        {!composeExpanded && (!splitActive || splitKeepMessageList) && (
           <>
             <div
               className="hidden md:flex flex-col flex-shrink-0 h-full bg-white rounded-md shadow-sm overflow-hidden"

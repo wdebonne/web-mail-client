@@ -97,6 +97,10 @@ interface RibbonProps {
   // Split view (side-by-side tabs)
   splitActive?: boolean;
   onSwapSplit?: () => void;
+  splitKeepFolderPane?: boolean;
+  onToggleSplitKeepFolderPane?: () => void;
+  splitKeepMessageList?: boolean;
+  onToggleSplitKeepMessageList?: () => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -173,6 +177,8 @@ export default function Ribbon({
   onToggleGifPanel, isGifPanelOpen = false,
   accounts = [], onFavoritesChanged,
   splitActive = false, onSwapSplit,
+  splitKeepFolderPane = false, onToggleSplitKeepFolderPane,
+  splitKeepMessageList = false, onToggleSplitKeepMessageList,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -327,6 +333,19 @@ export default function Ribbon({
                 active={showFolderPane}
               />
               <SimplifiedSep />
+              <SimplifiedButton
+                icon={PanelLeftOpen}
+                label="Côte à côte : Dossiers"
+                onClick={() => onToggleSplitKeepFolderPane && onToggleSplitKeepFolderPane()}
+                active={splitKeepFolderPane}
+              />
+              <SimplifiedButton
+                icon={Mail}
+                label="Côte à côte : Liste"
+                onClick={() => onToggleSplitKeepMessageList && onToggleSplitKeepMessageList()}
+                active={splitKeepMessageList}
+              />
+              <SimplifiedSep />
               <button
                 onClick={(e) => openFavoritesMenu(e)}
                 className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showFavoritesMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
@@ -438,6 +457,25 @@ export default function Ribbon({
                   label="Volet Dossiers"
                   onClick={onToggleFolderPane}
                   active={showFolderPane}
+                />
+              </RibbonGroup>
+              <RibbonSeparator />
+
+              {/* Côte à côte — personnalisation des volets en vue split */}
+              <RibbonGroup label="Côte à côte">
+                <RibbonButton
+                  icon={PanelLeftOpen}
+                  label={splitKeepFolderPane ? 'Dossiers visibles' : 'Dossiers masqués'}
+                  onClick={() => onToggleSplitKeepFolderPane && onToggleSplitKeepFolderPane()}
+                  active={splitKeepFolderPane}
+                  small
+                />
+                <RibbonButton
+                  icon={Mail}
+                  label={splitKeepMessageList ? 'Liste visible' : 'Liste masquée'}
+                  onClick={() => onToggleSplitKeepMessageList && onToggleSplitKeepMessageList()}
+                  active={splitKeepMessageList}
+                  small
                 />
               </RibbonGroup>
               <RibbonSeparator />
