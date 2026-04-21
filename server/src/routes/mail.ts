@@ -193,11 +193,12 @@ mailRouter.post('/send', async (req: AuthRequest, res) => {
       const user = userResult.rows[0];
       const userName = user?.display_name || user?.email || '';
 
-      fromOptions = { email: account.email, name: `${userName} de la part de ${account.name}` };
+      // Keep a clean From identity for better deliverability; Sender carries "on behalf of" actor.
+      fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
       senderOptions = { email: user?.email || account.email, name: userName };
     } else {
       // send_as: send directly as the account
-      fromOptions = { email: account.email, name: account.name };
+      fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
     }
 
     const mailService = new MailService(account);
@@ -265,10 +266,10 @@ mailRouter.post('/outbox/process', async (req: AuthRequest, res) => {
           const userResult = await pool.query('SELECT display_name, email FROM users WHERE id = $1', [req.userId]);
           const user = userResult.rows[0];
           const userName = user?.display_name || user?.email || '';
-          fromOptions = { email: account.email, name: `${userName} de la part de ${account.name}` };
+          fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
           senderOptions = { email: user?.email || account.email, name: userName };
         } else {
-          fromOptions = { email: account.email, name: account.name };
+          fromOptions = { email: account.email, name: account.assigned_display_name || account.name };
         }
 
         const mailService = new MailService(account);

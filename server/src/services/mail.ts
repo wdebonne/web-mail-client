@@ -261,8 +261,94 @@ export class MailService {
     }
 
     const result = await transport.sendMail(mailOptions);
+
+    // Ensure a copy is present in IMAP "Sent" folder regardless of provider behavior.
+    await this.appendToSentFolder(options, result.messageId).catch((error) => {
+      logger.warn(`Unable to append message to Sent folder: ${error?.message || error}`);
+    });
+
     logger.info(`Email sent: ${result.messageId}`);
     return result;
+  }
+
+  private formatAddress(address: { email: string; name?: string }) {
+    return address.name ? `"${address.name}" <${address.email}>` : address.email;
+  }
+
+  private plainTextFromHtml(html?: string) {
+    if (!html) return '';
+    return html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\n\s+\n/g, '\n\n')
+      .replace(/[ \t]+/g, ' ')
+      .trim();
+  }
+
+  private async resolveSentMailboxPath(client: ImapFlow): Promise<string | null> {
+    const folders = await client.list();
+
+    const specialUse = folders.find((f: any) => (f?.specialUse || '').toLowerCase() === '\\sent');
+    if (specialUse?.path) return specialUse.path;
+
+    const candidates = new Set([
+      'sent',
+      'sent items',
+      'inbox.sent',
+      'envoyes',
+      'envoyés',
+      'elements envoyes',
+      'éléments envoyés',
+      'inbox.envoyes',
+      'inbox.envoyés',
+    ]);
+
+    const normalized = (value?: string) => (value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    const found = folders.find((f: any) => {
+      const path = normalized(f?.path);
+      const name = normalized(f?.name);
+      return candidates.has(path) || candidates.has(name);
+    });
+
+    return found?.path || null;
+  }
+
+  private async appendToSentFolder(options: SendMailOptions, messageId?: string) {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const sentPath = await this.resolveSentMailboxPath(client);
+      if (!sentPath) return;
+
+      const toHeader = options.to.map((a) => this.formatAddress(a)).join(', ');
+      const ccHeader = options.cc?.length ? options.cc.map((a) => this.formatAddress(a)).join(', ') : '';
+      const body = options.text || this.plainTextFromHtml(options.html) || '';
+
+      const lines = [
+        `From: ${this.formatAddress(options.from)}`,
+        options.sender ? `Sender: ${this.formatAddress(options.sender)}` : '',
+        `To: ${toHeader}`,
+        ccHeader ? `Cc: ${ccHeader}` : '',
+        `Subject: ${options.subject}`,
+        `Date: ${new Date().toUTCString()}`,
+        `Message-ID: ${messageId || `<${Date.now()}@${this.account.smtp_host}>`}`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/plain; charset=utf-8',
+        'Content-Transfer-Encoding: 8bit',
+        '',
+        body,
+      ].filter(Boolean);
+
+      const rawMessage = Buffer.from(lines.join('\r\n'), 'utf8');
+      await client.append(sentPath, rawMessage, ['\\Seen']);
+    } finally {
+      await client.logout();
+    }
   }
 
   async setFlags(folder: string, uid: number, flags: { seen?: boolean; flagged?: boolean }) {
