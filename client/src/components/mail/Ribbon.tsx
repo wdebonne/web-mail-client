@@ -848,6 +848,9 @@ function InsererTabContent({ editorRef, onAttachFiles, compact = false }: {
 }) {
   const { exec, saveSelection, restoreSelection, insertHTML } = useEditorControl(editorRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const linkBtnRef = useRef<HTMLElement | null>(null);
+  const emojiBtnRef = useRef<HTMLElement | null>(null);
+  const tableBtnRef = useRef<HTMLElement | null>(null);
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
@@ -916,30 +919,83 @@ function InsererTabContent({ editorRef, onAttachFiles, compact = false }: {
     insertHTML(formatted);
   };
 
+  const portals = (
+    <>
+      {showEmoji && (
+        <AnchoredPortal anchorEl={emojiBtnRef.current} onClose={() => setShowEmoji(false)}>
+          <div className="bg-white border border-outlook-border rounded shadow-lg p-2 w-64">
+            <div className="grid grid-cols-8 gap-0.5 max-h-48 overflow-y-auto">
+              {EMOJI_LIST.map(emoji => (
+                <button
+                  key={emoji}
+                  onMouseDown={(e) => { e.preventDefault(); insertEmoji(emoji); }}
+                  className="w-7 h-7 flex items-center justify-center text-lg rounded hover:bg-outlook-bg-hover"
+                  title={emoji}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        </AnchoredPortal>
+      )}
+      {showTableGrid && (
+        <AnchoredPortal anchorEl={tableBtnRef.current} onClose={() => setShowTableGrid(false)}>
+          <TableGridPicker onSelect={insertTable} />
+        </AnchoredPortal>
+      )}
+      {showLinkInput && (
+        <AnchoredPortal
+          anchorEl={linkBtnRef.current}
+          onClose={() => { setShowLinkInput(false); setLinkUrl(''); setLinkText(''); }}
+        >
+          <div className="bg-white border border-outlook-border rounded shadow-lg p-2 flex flex-col gap-1 min-w-72">
+            <input
+              autoFocus
+              type="text"
+              value={linkUrl}
+              onChange={e => setLinkUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') insertLink(); if (e.key === 'Escape') setShowLinkInput(false); }}
+              placeholder="Adresse (https://...)"
+              className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
+            />
+            <input
+              type="text"
+              value={linkText}
+              onChange={e => setLinkText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') insertLink(); }}
+              placeholder="Texte à afficher (optionnel)"
+              className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
+            />
+            <div className="flex justify-end gap-1">
+              <button onClick={() => { setShowLinkInput(false); setLinkUrl(''); setLinkText(''); }} className="text-xs px-2 py-1 rounded hover:bg-outlook-bg-hover">Annuler</button>
+              <button onMouseDown={(e) => { e.preventDefault(); insertLink(); }} className="bg-outlook-blue text-white text-xs px-3 py-1 rounded">Insérer</button>
+            </div>
+          </div>
+        </AnchoredPortal>
+      )}
+    </>
+  );
+
   // ─── Compact (simplified) rendering ─────────────────────────────
   if (compact) {
     return (
       <>
         <input type="file" ref={fileInputRef} onChange={handleFiles} multiple className="hidden" />
         <SimplifiedButton icon={Paperclip} label="Joindre" onClick={triggerAttach} />
-        <SimplifiedButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(true); }} />
+        <span ref={el => { linkBtnRef.current = el; }} className="inline-flex">
+          <SimplifiedButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(v => !v); }} />
+        </span>
         <SimplifiedButton icon={ImageIcon} label="Image" onClick={insertImage} />
-        <SimplifiedButton icon={Smile} label="Emoji" onClick={() => { saveSelection(); setShowEmoji(v => !v); }} />
-        <SimplifiedButton icon={TableIcon} label="Tableau" onClick={() => { saveSelection(); setShowTableGrid(v => !v); }} />
+        <span ref={el => { emojiBtnRef.current = el; }} className="inline-flex">
+          <SimplifiedButton icon={Smile} label="Emoji" onClick={() => { saveSelection(); setShowEmoji(v => !v); }} />
+        </span>
+        <span ref={el => { tableBtnRef.current = el; }} className="inline-flex">
+          <SimplifiedButton icon={TableIcon} label="Tableau" onClick={() => { saveSelection(); setShowTableGrid(v => !v); }} />
+        </span>
         <SimplifiedButton icon={MinusIcon} label="Ligne" onClick={insertHorizontalRule} />
         <SimplifiedButton icon={Calendar} label="Date" onClick={insertDate} />
-        {showEmoji && <EmojiPickerPortal onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />}
-        {showTableGrid && <TableGridPortal onSelect={insertTable} onClose={() => setShowTableGrid(false)} />}
-        {showLinkInput && (
-          <LinkInputPortal
-            url={linkUrl}
-            text={linkText}
-            onUrlChange={setLinkUrl}
-            onTextChange={setLinkText}
-            onInsert={insertLink}
-            onClose={() => { setShowLinkInput(false); setLinkUrl(''); setLinkText(''); }}
-          />
-        )}
+        {portals}
       </>
     );
   }
@@ -952,67 +1008,77 @@ function InsererTabContent({ editorRef, onAttachFiles, compact = false }: {
       {/* Inclure */}
       <RibbonGroup label="Inclure">
         <RibbonButton icon={Paperclip} label="Joindre un fichier" onClick={triggerAttach} />
-        <div className="relative">
+        <span ref={el => { linkBtnRef.current = el; }} className="inline-flex">
           <RibbonButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(s => !s); }} />
-          {showLinkInput && (
-            <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 p-2 flex flex-col gap-1 min-w-72">
-              <input
-                autoFocus
-                type="text"
-                value={linkUrl}
-                onChange={e => setLinkUrl(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') insertLink(); if (e.key === 'Escape') setShowLinkInput(false); }}
-                placeholder="Adresse (https://...)"
-                className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
-              />
-              <input
-                type="text"
-                value={linkText}
-                onChange={e => setLinkText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') insertLink(); }}
-                placeholder="Texte à afficher (optionnel)"
-                className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
-              />
-              <div className="flex justify-end gap-1">
-                <button onClick={() => { setShowLinkInput(false); setLinkUrl(''); setLinkText(''); }} className="text-xs px-2 py-1 rounded hover:bg-outlook-bg-hover">Annuler</button>
-                <button onMouseDown={(e) => { e.preventDefault(); insertLink(); }} className="bg-outlook-blue text-white text-xs px-3 py-1 rounded">Insérer</button>
-              </div>
-            </div>
-          )}
-        </div>
+        </span>
         <RibbonButton icon={ImageIcon} label="Image" onClick={insertImage} />
       </RibbonGroup>
       <RibbonSeparator />
 
       {/* Tableaux */}
       <RibbonGroup label="Tableaux">
-        <div className="relative">
+        <span ref={el => { tableBtnRef.current = el; }} className="inline-flex">
           <RibbonButton icon={TableIcon} label="Tableau" onClick={() => { saveSelection(); setShowTableGrid(s => !s); }} />
-          {showTableGrid && (
-            <TableGridPortal onSelect={insertTable} onClose={() => setShowTableGrid(false)} />
-          )}
-        </div>
+        </span>
       </RibbonGroup>
       <RibbonSeparator />
 
       {/* Symboles */}
       <RibbonGroup label="Symboles">
-        <div className="relative">
+        <span ref={el => { emojiBtnRef.current = el; }} className="inline-flex">
           <RibbonButton icon={Smile} label="Emoji" onClick={() => { saveSelection(); setShowEmoji(s => !s); }} />
-          {showEmoji && (
-            <EmojiPickerPortal onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />
-          )}
-        </div>
+        </span>
         <RibbonButton icon={MinusIcon} label="Ligne horizontale" onClick={insertHorizontalRule} />
         <RibbonButton icon={Calendar} label="Date et heure" onClick={insertDate} />
       </RibbonGroup>
+      {portals}
     </>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Small pickers (portaled / local absolute)
+// Small pickers (portaled)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Renders `children` in a portal, positioned just below `anchorEl`, with a
+ * transparent backdrop that closes the popover on outside clicks.
+ */
+function AnchoredPortal({ anchorEl, onClose, children }: {
+  anchorEl: HTMLElement | null;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!anchorEl) return;
+    const update = () => {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [anchorEl]);
+
+  if (!pos) return null;
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
+      <div className="fixed z-[9999]" style={{ top: pos.top, left: pos.left }}>
+        {children}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
 function RibbonColorPicker({ onSelect }: { onSelect: (color: string) => void }) {
   return (
     <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 p-2">
@@ -1031,90 +1097,30 @@ function RibbonColorPicker({ onSelect }: { onSelect: (color: string) => void }) 
   );
 }
 
-function EmojiPickerPortal({ onSelect, onClose }: { onSelect: (emoji: string) => void; onClose: () => void }) {
-  return (
-    <>
-      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
-      <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-[9999] p-2 w-64">
-        <div className="grid grid-cols-8 gap-0.5 max-h-48 overflow-y-auto">
-          {EMOJI_LIST.map(emoji => (
-            <button
-              key={emoji}
-              onMouseDown={(e) => { e.preventDefault(); onSelect(emoji); }}
-              className="w-7 h-7 flex items-center justify-center text-lg rounded hover:bg-outlook-bg-hover"
-              title={emoji}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function TableGridPortal({ onSelect, onClose }: { onSelect: (rows: number, cols: number) => void; onClose: () => void }) {
+function TableGridPicker({ onSelect }: { onSelect: (rows: number, cols: number) => void }) {
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
   const ROWS = 8;
   const COLS = 10;
   return (
-    <>
-      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
-      <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-[9999] p-2">
-        <div className="text-xs text-outlook-text-secondary mb-1 text-center">
-          {hover ? `${hover.r + 1} × ${hover.c + 1}` : 'Insérer un tableau'}
-        </div>
-        <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${COLS}, 16px)` }}>
-          {Array.from({ length: ROWS * COLS }).map((_, i) => {
-            const r = Math.floor(i / COLS);
-            const c = i % COLS;
-            const selected = hover && r <= hover.r && c <= hover.c;
-            return (
-              <button
-                key={i}
-                onMouseEnter={() => setHover({ r, c })}
-                onMouseDown={(e) => { e.preventDefault(); onSelect(r + 1, c + 1); }}
-                className={`w-4 h-4 border rounded-sm transition-colors ${selected ? 'bg-outlook-blue/30 border-outlook-blue' : 'bg-white border-outlook-border hover:border-outlook-blue/50'}`}
-              />
-            );
-          })}
-        </div>
+    <div className="bg-white border border-outlook-border rounded shadow-lg p-2">
+      <div className="text-xs text-outlook-text-secondary mb-1 text-center">
+        {hover ? `${hover.r + 1} × ${hover.c + 1}` : 'Insérer un tableau'}
       </div>
-    </>
-  );
-}
-
-function LinkInputPortal({ url, text, onUrlChange, onTextChange, onInsert, onClose }: {
-  url: string; text: string;
-  onUrlChange: (v: string) => void; onTextChange: (v: string) => void;
-  onInsert: () => void; onClose: () => void;
-}) {
-  return (
-    <>
-      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
-      <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-[9999] p-2 flex flex-col gap-1 min-w-72">
-        <input
-          autoFocus
-          type="text"
-          value={url}
-          onChange={e => onUrlChange(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') onInsert(); if (e.key === 'Escape') onClose(); }}
-          placeholder="Adresse (https://...)"
-          className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
-        />
-        <input
-          type="text"
-          value={text}
-          onChange={e => onTextChange(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') onInsert(); }}
-          placeholder="Texte à afficher (optionnel)"
-          className="text-xs border border-outlook-border rounded px-2 py-1 outline-none focus:border-outlook-blue"
-        />
-        <div className="flex justify-end gap-1">
-          <button onClick={onClose} className="text-xs px-2 py-1 rounded hover:bg-outlook-bg-hover">Annuler</button>
-          <button onMouseDown={(e) => { e.preventDefault(); onInsert(); }} className="bg-outlook-blue text-white text-xs px-3 py-1 rounded">Insérer</button>
-        </div>
+      <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${COLS}, 16px)` }}>
+        {Array.from({ length: ROWS * COLS }).map((_, i) => {
+          const r = Math.floor(i / COLS);
+          const c = i % COLS;
+          const selected = hover && r <= hover.r && c <= hover.c;
+          return (
+            <button
+              key={i}
+              onMouseEnter={() => setHover({ r, c })}
+              onMouseDown={(e) => { e.preventDefault(); onSelect(r + 1, c + 1); }}
+              className={`w-4 h-4 border rounded-sm transition-colors ${selected ? 'bg-outlook-blue/30 border-outlook-blue' : 'bg-white border-outlook-border hover:border-outlook-blue/50'}`}
+            />
+          );
+        })}
       </div>
-    </>
+    </div>
   );
 }
