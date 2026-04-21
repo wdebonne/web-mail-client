@@ -26,23 +26,7 @@ export default function MessageView({
   const [showMore, setShowMore] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{ name: string; url: string; contentType: string } | null>(null);
 
-  if (!message) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-outlook-bg-primary/20">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-          className="text-center text-outlook-text-disabled"
-        >
-          <div className="text-6xl mb-4">📧</div>
-          <p className="text-sm">Sélectionnez un message pour le lire</p>
-        </motion.div>
-      </div>
-    );
-  }
-
-  const sanitizedHtml = message.bodyHtml
+  const sanitizedHtml = message?.bodyHtml
     ? DOMPurify.sanitize(message.bodyHtml, {
         ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'img', 'div', 'span',
           'table', 'tr', 'td', 'th', 'thead', 'tbody', 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
@@ -56,8 +40,8 @@ export default function MessageView({
 
   const attachmentMinVisibleBytes = Math.max(0, attachmentMinVisibleKb) * 1024;
   const visibleAttachments = useMemo(
-    () => (message.attachments || []).filter(att => (att.size || 0) >= attachmentMinVisibleBytes),
-    [message.attachments, attachmentMinVisibleBytes]
+    () => (message?.attachments || []).filter(att => (att.size || 0) >= attachmentMinVisibleBytes),
+    [message?.attachments, attachmentMinVisibleBytes]
   );
 
   useEffect(() => {
@@ -87,6 +71,22 @@ export default function MessageView({
     }
     setPreviewAttachment(null);
   };
+
+  if (!message) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-outlook-bg-primary/20">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="text-center text-outlook-text-disabled"
+        >
+          <div className="text-6xl mb-4">📧</div>
+          <p className="text-sm">Sélectionnez un message pour le lire</p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <motion.div
