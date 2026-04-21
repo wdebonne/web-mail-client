@@ -154,6 +154,49 @@ export default function ComposeModal({
     return () => { if (apiRef) apiRef.current = null; };
   }, [apiRef, addFiles]);
 
+  // Drag & drop file attachment
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const dragCounterRef = useRef(0);
+
+  const hasFilesInDrag = (e: React.DragEvent) => {
+    const types = e.dataTransfer?.types;
+    if (!types) return false;
+    for (let i = 0; i < types.length; i++) {
+      if (types[i] === 'Files') return true;
+    }
+    return false;
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!hasFilesInDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    setIsDraggingFiles(true);
+  };
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!hasFilesInDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!hasFilesInDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setIsDraggingFiles(false);
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    if (!hasFilesInDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDraggingFiles(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) addFiles(files);
+  };
+
   const handleSend = () => {
     // Auto-add pending recipients from input fields
     let finalTo = [...to];
@@ -252,7 +295,20 @@ export default function ComposeModal({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 40, scale: 0.97 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className={containerClass}>
+      className={`${containerClass} relative`}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}>
+      {/* Drag & drop overlay */}
+      {isDraggingFiles && (
+        <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center bg-outlook-blue/10 border-2 border-dashed border-outlook-blue rounded">
+          <div className="bg-white shadow-lg rounded-lg px-6 py-5 flex flex-col items-center gap-2 text-outlook-blue">
+            <Paperclip size={32} />
+            <span className="text-sm font-medium">Déposez les fichiers pour les joindre</span>
+          </div>
+        </div>
+      )}
       {/* Top toolbar — inline: send button + from + actions / modal: title bar */}
       {inline ? (
         <div className="flex items-center gap-2 px-4 py-2 border-b border-outlook-border flex-shrink-0 bg-outlook-bg-primary/30">

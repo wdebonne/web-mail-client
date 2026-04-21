@@ -15,6 +15,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 #### Rédaction
 - Nouveau bouton **Agrandir / Réduire** dans l'en-tête de la fenêtre de rédaction en ligne (entre Joindre un fichier et Fermer). En mode agrandi, la liste des dossiers et la liste des messages sont masquées pour donner toute la largeur au compose ; un clic sur le bouton (Minimize) ou la fermeture du brouillon restaure la vue normale.
+- **Glisser-déposer de pièces jointes** dans la fenêtre de rédaction : un overlay bleu en pointillés indique la zone de dépôt lors du survol, et le(s) fichier(s) déposé(s) sont automatiquement ajouté(s) comme pièces jointes.
 
 #### Favoris (nouveau)
 - Section **Favoris** en haut du volet Dossiers avec icône étoile, pliable/dépliable (état persisté).
