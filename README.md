@@ -74,6 +74,14 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 🔒 Tokens API chiffrés AES-256-GCM
 - 📊 Consultation des quotas disque
 
+## Documentation
+
+- [API complète](API.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [NextCloud](docs/NEXTCLOUD.md)
+- [Pièces jointes](docs/ATTACHMENTS.md)
+- [PWA et hors-ligne](docs/PWA.md)
+
 ## Architecture
 
 ```
@@ -202,6 +210,7 @@ webmail/
 ├── docs/                   # Documentation complémentaire
 │   ├── CONFIGURATION.md    # Variables d'environnement
 │   ├── NEXTCLOUD.md        # Intégration NextCloud
+│   ├── ATTACHMENTS.md      # Pièces jointes (aperçu, modes, limites)
 │   └── PWA.md              # Mode hors-ligne
 ├── docker-compose.yml
 ├── Dockerfile
