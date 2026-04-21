@@ -93,8 +93,24 @@ export const api = {
   getMessage: (accountId: string, uid: number, folder: string) =>
     request<any>(`/mail/accounts/${accountId}/messages/${uid}?folder=${encodeURIComponent(folder)}`),
 
-  sendMail: (data: any) =>
-    request('/mail/send', { method: 'POST', body: JSON.stringify(data) }),
+  sendMail: (data: any) => {
+    const normalizeRecipients = (list?: any[]) =>
+      (list || [])
+        .map((item) => ({
+          email: item?.email || item?.address || '',
+          name: item?.name,
+        }))
+        .filter((item) => item.email);
+
+    const payload = {
+      ...data,
+      to: normalizeRecipients(data?.to),
+      cc: normalizeRecipients(data?.cc),
+      bcc: normalizeRecipients(data?.bcc),
+    };
+
+    return request('/mail/send', { method: 'POST', body: JSON.stringify(payload) });
+  },
 
   saveToOutbox: (data: any) =>
     request('/mail/outbox', { method: 'POST', body: JSON.stringify(data) }),
