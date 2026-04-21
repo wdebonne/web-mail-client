@@ -817,7 +817,7 @@ export default function MailPage() {
               <FolderPane
                 accounts={accounts}
                 selectedAccount={selectedAccount}
-                folders={useMailStore(s => s.folders)}
+                folders={folders}
                 selectedFolder={selectedFolder}
                 onSelectAccount={selectAccount}
                 onSelectFolderInAccount={handleSelectFolderInAccount}
@@ -875,7 +875,7 @@ export default function MailPage() {
             onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
             onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
             onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-            folders={useMailStore(s => s.folders)}
+            folders={folders}
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
             attachmentMinVisibleKb={attachmentMinVisibleKb}
@@ -902,7 +902,7 @@ export default function MailPage() {
             onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
             onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
             onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-            folders={useMailStore(s => s.folders)}
+            folders={folders}
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
             listWidth={listWidth}
