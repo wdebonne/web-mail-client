@@ -392,7 +392,9 @@ export default function MailPage() {
       to: replyTo,
       cc: replyCC,
       subject: message.subject?.startsWith('Re:') ? message.subject : `Re: ${message.subject}`,
-      bodyHtml: `<br/><br/><div style="border-left:2px solid #0078D4;padding-left:12px;margin-left:0;color:#605E5C">
+      bodyHtml: splitComposeReply
+        ? ''
+        : `<br/><br/><div style="border-left:2px solid #0078D4;padding-left:12px;margin-left:0;color:#605E5C">
         <p><b>De :</b> ${message.from?.name || message.from?.address}<br/>
         <b>Envoyé :</b> ${new Date(message.date).toLocaleString('fr-FR')}<br/>
         <b>À :</b> ${message.to?.map((t: any) => t.name || t.address).join('; ')}<br/>
@@ -411,7 +413,9 @@ export default function MailPage() {
     openCompose({
       to: [],
       subject: message.subject?.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`,
-      bodyHtml: `<br/><br/><div style="border-top:1px solid #E1DFDD;padding-top:12px;color:#605E5C">
+      bodyHtml: splitComposeReply
+        ? ''
+        : `<br/><br/><div style="border-top:1px solid #E1DFDD;padding-top:12px;color:#605E5C">
         <p><b>---------- Message transféré ----------</b><br/>
         <b>De :</b> ${message.from?.name || message.from?.address}<br/>
         <b>Date :</b> ${new Date(message.date).toLocaleString('fr-FR')}<br/>
