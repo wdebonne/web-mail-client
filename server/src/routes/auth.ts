@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { pool } from '../database/connection';
-import { generateToken, AuthRequest } from '../middleware/auth';
+import { generateToken, AuthRequest, authMiddleware } from '../middleware/auth';
 import { z } from 'zod';
 
 export const authRouter = Router();
@@ -149,16 +149,8 @@ authRouter.post('/logout', (req, res) => {
 });
 
 // Get current user
-authRouter.get('/me', async (req: AuthRequest, res) => {
-  if (!req.session?.userId) {
-    // Check JWT
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Non authentifié' });
-    }
-  }
-
-  const userId = req.session?.userId || (req as any).userId;
+authRouter.get('/me', authMiddleware, async (req: AuthRequest, res) => {
+  const userId = req.userId || req.session?.userId;
   if (!userId) {
     return res.status(401).json({ error: 'Non authentifié' });
   }
