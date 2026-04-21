@@ -206,19 +206,14 @@ export default function ComposeModal({
       {/* Top toolbar — inline: send button + from + actions / modal: title bar */}
       {inline ? (
         <div className="flex items-center gap-2 px-4 py-2 border-b border-outlook-border flex-shrink-0 bg-outlook-bg-primary/30">
-          <div className="flex items-center gap-0">
-            <button
-              onClick={handleSend}
-              disabled={isSending || to.length === 0}
-              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded-l text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
-            >
-              <Send size={14} />
-              {isSending ? 'Envoi...' : 'Envoyer'}
-            </button>
-            <button className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-1.5 py-1.5 rounded-r border-l border-white/20 text-sm">
-              <ChevronDown size={12} />
-            </button>
-          </div>
+          <button
+            onClick={handleSend}
+            disabled={isSending || to.length === 0}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
+          >
+            <Send size={14} />
+            {isSending ? 'Envoi...' : 'Envoyer'}
+          </button>
 
           <AccountSelector
             accounts={sendableAccounts}
@@ -387,16 +382,14 @@ export default function ComposeModal({
       {/* Bottom toolbar — hidden in inline mode (actions are in top toolbar) */}
       {!inline && (
       <div className="flex items-center justify-between px-4 py-2 border-t border-outlook-border flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSend}
-            disabled={isSending || to.length === 0}
-            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
-          >
-            <Send size={14} />
-            {isSending ? 'Envoi...' : isOnline ? 'Envoyer' : 'Envoyer (hors-ligne)'}
-          </button>
-        </div>
+        <button
+          onClick={handleSend}
+          disabled={isSending || to.length === 0}
+          className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 rounded font-medium flex items-center gap-2 disabled:opacity-50 transition-colors shadow-sm hover:shadow-md"
+        >
+          <Send size={16} />
+          {isSending ? 'Envoi...' : isOnline ? 'Envoyer' : 'Envoyer (hors-ligne)'}
+        </button>
 
         <div className="flex items-center gap-1">
           <input
