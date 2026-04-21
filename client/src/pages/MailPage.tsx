@@ -12,8 +12,9 @@ import type { ComposeApi } from '../components/mail/ComposeModal';
 import Ribbon from '../components/mail/Ribbon';
 import EmojiPanel from '../components/mail/EmojiPanel';
 import GifPanel from '../components/mail/GifPanel';
+import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import toast from 'react-hot-toast';
-import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
+import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil, Columns2 } from 'lucide-react';
 import { getAccountDisplayName } from '../utils/mailPreferences';
 import {
   getUnifiedAccountIds, getUnifiedInboxEnabled, getUnifiedSentEnabled,
@@ -425,6 +426,15 @@ export default function MailPage() {
   const [showFolderPane, setShowFolderPane] = useState(true);
   // When true, the inline compose pane takes the full width (folder pane + message list hidden).
   const [composeExpanded, setComposeExpanded] = useState(false);
+  // Split view: show the active tab + another tab side-by-side.
+  const [splitTabId, setSplitTabId] = useState<string | null>(null);
+  const [splitRatio, setSplitRatio] = useState<number>(() => {
+    const saved = parseFloat(localStorage.getItem('splitRatio') || '0.5');
+    return Number.isFinite(saved) && saved > 0.15 && saved < 0.85 ? saved : 0.5;
+  });
+  const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const isDraggingSplit = useRef(false);
   const [ribbonCollapsed, setRibbonCollapsed] = useState(() => {
     return localStorage.getItem('ribbonCollapsed') === 'true';
   });
@@ -578,11 +588,65 @@ export default function MailPage() {
     document.addEventListener('mouseup', onMouseUp);
   }, []);
 
+  // Resizable split handler (between two side-by-side tabs)
+  const handleSplitResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSplit.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingSplit.current || !splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const ratio = (ev.clientX - rect.left) / rect.width;
+      const clamped = Math.max(0.15, Math.min(0.85, ratio));
+      setSplitRatio(clamped);
+    };
+    const onMouseUp = () => {
+      isDraggingSplit.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      setSplitRatio(prev => {
+        localStorage.setItem('splitRatio', String(prev));
+        return prev;
+      });
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, []);
+
   // When selecting a folder on mobile, switch to list view
   const handleSelectFolder = (folder: string) => {
     selectFolder(folder);
     setMobileView('list');
   };
+
+  // Clear split pairing if that tab is closed.
+  useEffect(() => {
+    if (splitTabId && !openTabs.some(t => t.id === splitTabId)) {
+      setSplitTabId(null);
+    }
+  }, [openTabs, splitTabId]);
+
+  // If the user activates the split tab, swap the pairing with the previously active tab
+  // so the side-by-side view remains consistent.
+  const prevActiveTabIdRef = useRef<string | null>(activeTabId);
+  useEffect(() => {
+    const prev = prevActiveTabIdRef.current;
+    if (splitTabId && activeTabId && activeTabId === splitTabId && prev && prev !== splitTabId) {
+      setSplitTabId(prev);
+    }
+    prevActiveTabIdRef.current = activeTabId;
+  }, [activeTabId, splitTabId]);
+
+  // Resolve tab/message for split rendering
+  const splitTab = splitTabId ? openTabs.find(t => t.id === splitTabId) : undefined;
+  const splitMessage = splitTab?.type === 'message' ? splitTab.message : undefined;
+  // Only render side-by-side when both sides are message tabs and compose isn't expanded
+  const splitActive = !!splitMessage && !!selectedMessage && splitMessage.uid !== selectedMessage.uid && !composeExpanded && !isComposing;
 
   // Select a folder that may belong to a non-active account: activate the account first.
   const handleSelectFolderInAccount = useCallback((account: any, folder: string) => {
@@ -963,6 +1027,64 @@ export default function MailPage() {
                 isExpanded={composeExpanded}
                 onToggleExpand={() => setComposeExpanded(v => !v)}
               />
+            ) : splitActive ? (
+              <div ref={splitContainerRef} className="flex-1 flex min-h-0 min-w-0">
+                <div className="h-full min-w-0 overflow-hidden" style={{ width: `${splitRatio * 100}%` }}>
+                  <MessageView
+                    message={selectedMessage}
+                    onReply={() => selectedMessage && handleReply(selectedMessage)}
+                    onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
+                    onForward={() => selectedMessage && handleForward(selectedMessage)}
+                    onDelete={() => {
+                      if (!selectedMessage) return;
+                      const o = originOf(selectedMessage);
+                      deleteMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
+                    }}
+                    onToggleFlag={() => {
+                      if (!selectedMessage) return;
+                      const o = originOf(selectedMessage);
+                      flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged, accountId: o.accountId, folder: o.folder });
+                    }}
+                    onMove={(folder) => {
+                      if (!selectedMessage) return;
+                      const o = originOf(selectedMessage);
+                      moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
+                    }}
+                    attachmentMinVisibleKb={attachmentMinVisibleKb}
+                    attachmentActionMode={attachmentActionMode}
+                  />
+                </div>
+                {/* Split resize handle */}
+                <div
+                  className="w-1 flex-shrink-0 cursor-col-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors relative"
+                  onMouseDown={handleSplitResizeStart}
+                  title="Glisser pour redimensionner"
+                >
+                  <div className="absolute inset-y-0 -left-1 -right-1" />
+                </div>
+                <div className="h-full flex-1 min-w-0 overflow-hidden border-l border-outlook-border">
+                  <MessageView
+                    message={splitMessage!}
+                    onReply={() => handleReply(splitMessage!)}
+                    onReplyAll={() => handleReply(splitMessage!, true)}
+                    onForward={() => handleForward(splitMessage!)}
+                    onDelete={() => {
+                      const o = originOf(splitMessage!);
+                      deleteMutation.mutate({ uid: splitMessage!.uid, accountId: o.accountId, folder: o.folder });
+                    }}
+                    onToggleFlag={() => {
+                      const o = originOf(splitMessage!);
+                      flagMutation.mutate({ uid: splitMessage!.uid, isFlagged: !splitMessage!.flags.flagged, accountId: o.accountId, folder: o.folder });
+                    }}
+                    onMove={(folder) => {
+                      const o = originOf(splitMessage!);
+                      moveMutation.mutate({ uid: splitMessage!.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
+                    }}
+                    attachmentMinVisibleKb={attachmentMinVisibleKb}
+                    attachmentActionMode={attachmentActionMode}
+                  />
+                </div>
+              </div>
             ) : (
               <MessageView
                 message={selectedMessage}
@@ -1015,10 +1137,16 @@ export default function MailPage() {
                 <div
                   key={tab.id}
                   onClick={() => switchTab(tab.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setTabContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+                  }}
                   className={`outlook-tab flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium max-w-48 cursor-pointer select-none group
                     ${tab.id === activeTabId
                       ? tab.type === 'compose' ? 'outlook-tab-compose' : 'outlook-tab-active'
-                      : 'hover:bg-outlook-bg-hover text-outlook-text-secondary'
+                      : tab.id === splitTabId
+                        ? 'bg-outlook-blue/10 text-outlook-blue ring-1 ring-outlook-blue/30'
+                        : 'hover:bg-outlook-bg-hover text-outlook-text-secondary'
                     }`}
                 >
                   {tab.type === 'compose' ? (
@@ -1039,6 +1167,44 @@ export default function MailPage() {
           )}
         </div>
       </div>
+
+      {/* Tab context menu (right-click on a bottom tab) */}
+      {tabContextMenu && (() => {
+        const tab = openTabs.find(t => t.id === tabContextMenu.tabId);
+        if (!tab) return null;
+        const isActive = tab.id === activeTabId;
+        const isSplit = tab.id === splitTabId;
+        const canSplit = tab.type === 'message' && !isActive && !isComposing;
+        const items: ContextMenuItem[] = [];
+        if (canSplit) {
+          items.push({
+            label: isSplit ? 'Retirer de la vue côte à côte' : 'Afficher côte à côte',
+            icon: <Columns2 size={14} />,
+            onClick: () => setSplitTabId(isSplit ? null : tab.id),
+          });
+        }
+        if (splitTabId && !canSplit) {
+          items.push({
+            label: 'Fermer la vue côte à côte',
+            icon: <Columns2 size={14} />,
+            onClick: () => setSplitTabId(null),
+          });
+        }
+        items.push({
+          label: 'Fermer l\'onglet',
+          icon: <X size={14} />,
+          onClick: () => closeTab(tab.id),
+          danger: true,
+        });
+        return (
+          <ContextMenu
+            x={tabContextMenu.x}
+            y={tabContextMenu.y}
+            items={items}
+            onClose={() => setTabContextMenu(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
