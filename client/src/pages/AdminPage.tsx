@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import {
@@ -1157,24 +1157,97 @@ function SystemSettings() {
     onSuccess: () => toast.success('Paramètres système sauvegardés'),
   });
 
+  const [appName, setAppName] = useState('WebMail');
+  const [allowRegistration, setAllowRegistration] = useState(false);
+  const [maxAttachmentSize, setMaxAttachmentSize] = useState(25);
+  const [attachmentVisibilityMinKb, setAttachmentVisibilityMinKb] = useState(10);
+
+  useEffect(() => {
+    if (!settings) return;
+
+    const parseNumber = (value: any, fallback: number) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    const parseBoolean = (value: any, fallback: boolean) => {
+      if (typeof value === 'boolean') return value;
+      if (value === 'true') return true;
+      if (value === 'false') return false;
+      return fallback;
+    };
+
+    setAppName(settings.app_name || 'WebMail');
+    setAllowRegistration(parseBoolean(settings.allow_registration, false));
+    setMaxAttachmentSize(parseNumber(settings.max_attachment_size, 25));
+    setAttachmentVisibilityMinKb(Math.max(0, parseNumber(settings.attachment_visibility_min_kb, 10)));
+  }, [settings]);
+
+  const handleSave = () => {
+    updateMutation.mutate({
+      app_name: appName,
+      allow_registration: allowRegistration,
+      max_attachment_size: Math.max(1, Math.round(maxAttachmentSize)),
+      attachment_visibility_min_kb: Math.max(0, Math.round(attachmentVisibilityMinKb)),
+    });
+  };
+
   return (
     <div>
       <h3 className="text-base font-semibold mb-4">Paramètres système</h3>
       <div className="space-y-4">
         <div>
           <label className="text-sm text-outlook-text-secondary">Nom de l'application</label>
-          <input type="text" defaultValue={settings?.app_name || 'WebMail'} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
+          <input
+            type="text"
+            value={appName}
+            onChange={(e) => setAppName(e.target.value)}
+            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+          />
         </div>
         <div>
           <label className="text-sm text-outlook-text-secondary">Inscription ouverte</label>
-          <select defaultValue={settings?.allow_registration ? 'true' : 'false'} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1">
+          <select
+            value={allowRegistration ? 'true' : 'false'}
+            onChange={(e) => setAllowRegistration(e.target.value === 'true')}
+            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+          >
             <option value="true">Oui</option>
             <option value="false">Non (admin seulement)</option>
           </select>
         </div>
         <div>
           <label className="text-sm text-outlook-text-secondary">Taille max des pièces jointes (Mo)</label>
-          <input type="number" defaultValue={settings?.max_attachment_size || 25} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
+          <input
+            type="number"
+            min={1}
+            value={maxAttachmentSize}
+            onChange={(e) => setMaxAttachmentSize(Number(e.target.value || 1))}
+            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+          />
+        </div>
+        <div>
+          <label className="text-sm text-outlook-text-secondary">Masquer les pièces jointes inférieures à (Ko)</label>
+          <input
+            type="number"
+            min={0}
+            value={attachmentVisibilityMinKb}
+            onChange={(e) => setAttachmentVisibilityMinKb(Number(e.target.value || 0))}
+            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+          />
+          <p className="text-xs text-outlook-text-disabled mt-1">
+            Par défaut: 10 Ko. Les pièces jointes plus petites (souvent des icônes inline) seront masquées dans la vue du mail.
+          </p>
+        </div>
+
+        <div className="pt-2">
+          <button
+            onClick={handleSave}
+            disabled={updateMutation.isPending}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 rounded-md text-sm disabled:opacity-50"
+          >
+            {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+          </button>
         </div>
       </div>
     </div>

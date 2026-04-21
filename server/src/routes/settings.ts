@@ -7,11 +7,24 @@ export const settingsRouter = Router();
 // Get user settings
 settingsRouter.get('/', async (req: AuthRequest, res) => {
   try {
-    const result = await pool.query(
-      'SELECT display_name, avatar_url, language, timezone, theme FROM users WHERE id = $1',
-      [req.userId]
-    );
-    res.json(result.rows[0] || {});
+    const [userResult, attachmentSetting] = await Promise.all([
+      pool.query(
+        'SELECT display_name, avatar_url, language, timezone, theme FROM users WHERE id = $1',
+        [req.userId]
+      ),
+      pool.query(
+        "SELECT value FROM admin_settings WHERE key = 'attachment_visibility_min_kb' LIMIT 1"
+      ),
+    ]);
+
+    const rawThreshold = attachmentSetting.rows[0]?.value;
+    const parsedThreshold = Number(rawThreshold);
+    const attachmentVisibilityMinKb = Number.isFinite(parsedThreshold) ? Math.max(0, parsedThreshold) : 10;
+
+    res.json({
+      ...(userResult.rows[0] || {}),
+      attachment_visibility_min_kb: attachmentVisibilityMinKb,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

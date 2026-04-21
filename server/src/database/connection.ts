@@ -345,6 +345,7 @@ export async function initDatabase() {
         ('nextcloud_url', '""', 'NextCloud server URL'),
         ('nextcloud_sync_interval', '15', 'Sync interval in minutes'),
         ('max_attachment_size', '25', 'Max attachment size in MB'),
+        ('attachment_visibility_min_kb', '10', 'Hide attachments smaller than this size in KB'),
         ('default_language', '"fr"', 'Default language'),
         ('allow_registration', 'false', 'Allow self-registration'),
         ('plugins_enabled', 'true', 'Enable plugin system')

@@ -3,10 +3,10 @@ import { fr } from 'date-fns/locale';
 import DOMPurify from 'dompurify';
 import {
   Reply, ReplyAll, Forward, Trash2, Star, MoreHorizontal,
-  Paperclip, Download, Archive, Flag, FolderInput
+  Paperclip, Download, Archive, Flag, FolderInput, Eye, X
 } from 'lucide-react';
 import { Email } from '../../types';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MessageViewProps {
@@ -17,12 +17,14 @@ interface MessageViewProps {
   onDelete: () => void;
   onToggleFlag: () => void;
   onMove: (folder: string) => void;
+  attachmentMinVisibleKb?: number;
 }
 
 export default function MessageView({
-  message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove,
+  message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove, attachmentMinVisibleKb = 0,
 }: MessageViewProps) {
   const [showMore, setShowMore] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<{ name: string; url: string; contentType: string } | null>(null);
 
   if (!message) {
     return (
@@ -51,6 +53,40 @@ export default function MessageView({
         ALLOW_DATA_ATTR: false,
       })
     : '';
+
+  const attachmentMinVisibleBytes = Math.max(0, attachmentMinVisibleKb) * 1024;
+  const visibleAttachments = useMemo(
+    () => (message.attachments || []).filter(att => (att.size || 0) >= attachmentMinVisibleBytes),
+    [message.attachments, attachmentMinVisibleBytes]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (previewAttachment?.url) {
+        URL.revokeObjectURL(previewAttachment.url);
+      }
+    };
+  }, [previewAttachment]);
+
+  useEffect(() => {
+    if (!previewAttachment) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeAttachmentPreview();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [previewAttachment]);
+
+  const closeAttachmentPreview = () => {
+    if (previewAttachment?.url) {
+      URL.revokeObjectURL(previewAttachment.url);
+    }
+    setPreviewAttachment(null);
+  };
 
   return (
     <motion.div
@@ -151,31 +187,30 @@ export default function MessageView({
       </div>
 
       {/* Attachments */}
-      {message.attachments && message.attachments.length > 0 && (
+      {visibleAttachments.length > 0 && (
         <div className="px-6 py-2 border-b border-outlook-border bg-outlook-bg-primary/30 flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
             <Paperclip size={14} className="text-outlook-text-secondary" />
-            {message.attachments.map((att, i) => (
+            {visibleAttachments.map((att, i) => (
               <button
                 key={i}
                 onClick={() => {
                   if (att.content) {
                     const blob = new Blob([Uint8Array.from(atob(att.content), c => c.charCodeAt(0))], { type: att.contentType });
                     const url = URL.createObjectURL(blob);
-                    const previewWindow = window.open(url, '_blank', 'noopener,noreferrer');
-
-                    // Fallback if popup is blocked: open in current tab to keep inline preview behavior.
-                    if (!previewWindow) {
-                      window.location.href = url;
+                    if (previewAttachment?.url) {
+                      URL.revokeObjectURL(previewAttachment.url);
                     }
-
-                    // Revoke later to avoid invalidating the blob before the browser consumes it.
-                    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    setPreviewAttachment({
+                      name: att.filename,
+                      url,
+                      contentType: att.contentType || 'application/octet-stream',
+                    });
                   }
                 }}
                 className="flex items-center gap-1.5 bg-white border border-outlook-border rounded px-2 py-1 text-xs hover:bg-outlook-bg-hover transition-colors"
               >
-                <Download size={12} />
+                <Eye size={12} />
                 <span className="truncate max-w-32">{att.filename}</span>
                 <span className="text-outlook-text-disabled">
                   ({formatFileSize(att.size)})
@@ -217,6 +252,64 @@ export default function MessageView({
           </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {previewAttachment && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/85"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                closeAttachmentPreview();
+              }
+            }}
+          >
+            <div className="h-full w-full flex flex-col">
+              <div className="h-14 px-4 border-b border-white/20 text-white flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{previewAttachment.name}</p>
+                  <p className="text-xs text-white/70 truncate">{previewAttachment.contentType}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={previewAttachment.url}
+                    download={previewAttachment.name}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-white/15 hover:bg-white/25 text-xs"
+                  >
+                    <Download size={13} />
+                    Télécharger
+                  </a>
+                  <button
+                    onClick={closeAttachmentPreview}
+                    className="p-2 rounded hover:bg-white/15"
+                    aria-label="Fermer l'aperçu"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 min-h-0 p-3">
+                {previewAttachment.contentType.startsWith('image/') ? (
+                  <img
+                    src={previewAttachment.url}
+                    alt={previewAttachment.name}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <iframe
+                    src={previewAttachment.url}
+                    title={previewAttachment.name}
+                    className="w-full h-full rounded border border-white/15 bg-white"
+                  />
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

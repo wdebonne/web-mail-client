@@ -32,6 +32,16 @@ export default function MailPage() {
     staleTime: 1000 * 60 * 10,
   });
 
+  const { data: userSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const attachmentMinVisibleKb = Number.isFinite(Number(userSettings?.attachment_visibility_min_kb))
+    ? Math.max(0, Number(userSettings?.attachment_visibility_min_kb))
+    : 10;
+
   useEffect(() => {
     if (accountsData) {
       setAccounts(accountsData);
@@ -627,6 +637,7 @@ export default function MailPage() {
                 onDelete={() => selectedMessage && deleteMutation.mutate(selectedMessage.uid)}
                 onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
                 onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
+                attachmentMinVisibleKb={attachmentMinVisibleKb}
               />
             )}
           </div>
