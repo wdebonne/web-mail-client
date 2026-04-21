@@ -305,8 +305,8 @@ export default function Ribbon({
     <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
       {renderTabBar(() => onChangeRibbonMode('simplified'), 'Réduire le ruban', true)}
 
-      {/* Ribbon content */}
-        <div className="flex items-stretch px-2 py-1 gap-1 overflow-x-auto">
+      {/* Ribbon content — fixed height so all tabs share the same size */}
+        <div className="flex items-center px-2 py-1 gap-1 overflow-x-auto overflow-y-hidden h-[80px]">
           {activeTab === 'accueil' && (
             <>
               {/* Nouveau */}
@@ -563,6 +563,11 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
   const [showStyles, setShowStyles] = useState(false);
   const [currentFont, setCurrentFont] = useState('Calibri');
   const [currentSize, setCurrentSize] = useState('12');
+  const fontFamilyBtnRef = useRef<HTMLButtonElement | null>(null);
+  const fontSizeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const stylesBtnRef = useRef<HTMLButtonElement | null>(null);
+  const textColorBtnRef = useRef<HTMLButtonElement | null>(null);
+  const bgColorBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const applyFont = (font: string) => {
     restoreSelection();
@@ -656,8 +661,9 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
         <div className="flex flex-col gap-1 min-w-[280px]">
           {/* Row 1: font family, font size, clear */}
           <div className="flex items-center gap-1">
-            <div className="relative">
+            <div>
               <button
+                ref={fontFamilyBtnRef}
                 onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowFontFamily(s => !s); }}
                 className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-0.5 hover:bg-outlook-bg-hover min-w-[120px] justify-between bg-white"
               >
@@ -665,18 +671,21 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
                 <ChevronDown size={10} className="flex-shrink-0" />
               </button>
               {showFontFamily && (
-                <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 min-w-44 max-h-48 overflow-y-auto">
-                  {FONT_FAMILIES.map(f => (
-                    <button key={f} onMouseDown={(e) => { e.preventDefault(); applyFont(f); }}
-                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover" style={{ fontFamily: f }}>
-                      {f}
-                    </button>
-                  ))}
-                </div>
+                <AnchoredPortal anchorEl={fontFamilyBtnRef.current} onClose={() => setShowFontFamily(false)}>
+                  <div className="bg-white border border-outlook-border rounded shadow-lg min-w-44 max-h-64 overflow-y-auto">
+                    {FONT_FAMILIES.map(f => (
+                      <button key={f} onMouseDown={(e) => { e.preventDefault(); applyFont(f); }}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover" style={{ fontFamily: f }}>
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </AnchoredPortal>
               )}
             </div>
-            <div className="relative">
+            <div>
               <button
+                ref={fontSizeBtnRef}
                 onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowFontSize(s => !s); }}
                 className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-0.5 hover:bg-outlook-bg-hover w-16 justify-between bg-white"
               >
@@ -684,14 +693,16 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
                 <ChevronDown size={10} />
               </button>
               {showFontSize && (
-                <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 w-16 max-h-48 overflow-y-auto">
-                  {FONT_SIZES.map(s => (
-                    <button key={s} onMouseDown={(e) => { e.preventDefault(); applySize(s); }}
-                      className="w-full text-left px-3 py-1 text-xs hover:bg-outlook-bg-hover">
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                <AnchoredPortal anchorEl={fontSizeBtnRef.current} onClose={() => setShowFontSize(false)}>
+                  <div className="bg-white border border-outlook-border rounded shadow-lg w-16 max-h-64 overflow-y-auto">
+                    {FONT_SIZES.map(s => (
+                      <button key={s} onMouseDown={(e) => { e.preventDefault(); applySize(s); }}
+                        className="w-full text-left px-3 py-1 text-xs hover:bg-outlook-bg-hover">
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </AnchoredPortal>
               )}
             </div>
             <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('removeFormat')} className={iconBtn} title="Effacer la mise en forme">
@@ -699,8 +710,9 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
             </button>
             {vDivider}
             {/* Styles (headings) */}
-            <div className="relative">
+            <div>
               <button
+                ref={stylesBtnRef}
                 onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowStyles(s => !s); }}
                 className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-0.5 hover:bg-outlook-bg-hover bg-white"
                 title="Styles"
@@ -710,7 +722,8 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
                 <ChevronDown size={10} />
               </button>
               {showStyles && (
-                <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 min-w-40">
+                <AnchoredPortal anchorEl={stylesBtnRef.current} onClose={() => setShowStyles(false)}>
+                  <div className="bg-white border border-outlook-border rounded shadow-lg min-w-40">
                   <button onMouseDown={(e) => { e.preventDefault(); applyStyle('p'); }}
                     className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover">
                     Paragraphe
@@ -731,11 +744,12 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
                     className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover italic text-outlook-text-secondary">
                     Citation
                   </button>
-                  <button onMouseDown={(e) => { e.preventDefault(); applyStyle('pre'); }}
-                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover font-mono">
-                    Code
-                  </button>
-                </div>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyStyle('pre'); }}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover font-mono">
+                      Code
+                    </button>
+                  </div>
+                </AnchoredPortal>
               )}
             </div>
           </div>
@@ -761,8 +775,9 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
             </button>
             {vDivider}
             {/* Text color */}
-            <div className="relative">
+            <div>
               <button
+                ref={textColorBtnRef}
                 onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowTextColor(s => !s); }}
                 className={`${iconBtn} flex-col gap-0`}
                 title="Couleur du texte"
@@ -771,14 +786,17 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
                 <div className="w-4 h-1 rounded-sm bg-red-500 mt-0.5" />
               </button>
               {showTextColor && (
-                <RibbonColorPicker
-                  onSelect={(color) => { restoreSelection(); exec('foreColor', color); setShowTextColor(false); }}
-                />
+                <AnchoredPortal anchorEl={textColorBtnRef.current} onClose={() => setShowTextColor(false)}>
+                  <RibbonColorPickerPanel
+                    onSelect={(color) => { restoreSelection(); exec('foreColor', color); setShowTextColor(false); }}
+                  />
+                </AnchoredPortal>
               )}
             </div>
             {/* Highlight color */}
-            <div className="relative">
+            <div>
               <button
+                ref={bgColorBtnRef}
                 onMouseDown={(e) => { e.preventDefault(); saveSelection(); closeAllDropdowns(); setShowBgColor(s => !s); }}
                 className={`${iconBtn} flex-col gap-0`}
                 title="Couleur de surlignage"
@@ -787,9 +805,11 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
                 <div className="w-4 h-1 rounded-sm bg-yellow-300 mt-0.5" />
               </button>
               {showBgColor && (
-                <RibbonColorPicker
-                  onSelect={(color) => { restoreSelection(); exec('hiliteColor', color); setShowBgColor(false); }}
-                />
+                <AnchoredPortal anchorEl={bgColorBtnRef.current} onClose={() => setShowBgColor(false)}>
+                  <RibbonColorPickerPanel
+                    onSelect={(color) => { restoreSelection(); exec('hiliteColor', color); setShowBgColor(false); }}
+                  />
+                </AnchoredPortal>
               )}
             </div>
           </div>
@@ -1079,9 +1099,9 @@ function AnchoredPortal({ anchorEl, onClose, children }: {
   );
 }
 
-function RibbonColorPicker({ onSelect }: { onSelect: (color: string) => void }) {
+function RibbonColorPickerPanel({ onSelect }: { onSelect: (color: string) => void }) {
   return (
-    <div className="absolute top-full left-0 mt-0.5 bg-white border border-outlook-border rounded shadow-lg z-50 p-2">
+    <div className="bg-white border border-outlook-border rounded shadow-lg p-2">
       <div className="grid grid-cols-6 gap-0.5">
         {TEXT_COLORS.map(color => (
           <button
