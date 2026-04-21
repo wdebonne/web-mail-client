@@ -4,7 +4,7 @@ import {
   Trash, Copy, GripVertical, RotateCcw,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api';
 import { MailAccount, MailFolder } from '../../types';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
@@ -112,6 +112,7 @@ export default function FolderPane({
   });
   const [prefsVersion, setPrefsVersion] = useState(0);
   const triggerRerender = () => setPrefsVersion((n) => n + 1);
+  const queryClient = useQueryClient();
 
   const [accountContextMenu, setAccountContextMenu] = useState<
     { x: number; y: number; account: MailAccount } | null
@@ -176,18 +177,26 @@ export default function FolderPane({
         if (payload.accountId === targetAccount.id && onMoveFolder) {
           e.preventDefault();
           e.stopPropagation();
-          const acctFolders = accounts.find((a) => a.id === targetAccount.id) ? folders : [];
-          // Use delimiter from the folder being moved
-          const srcFolder = (acctFolders as MailFolder[]).find((f) => f.path === payload.path);
+          // Read folders from React Query cache so it works for any account (not only the active one).
+          const acctFolders =
+            (queryClient.getQueryData<MailFolder[]>(['folders', targetAccount.id]) as MailFolder[] | undefined) ||
+            (targetAccount.id === selectedAccount?.id ? (folders as MailFolder[]) : []);
+          const srcFolder = acctFolders.find((f) => f.path === payload.path);
           const delimiter = srcFolder?.delimiter || '.';
-          const idx = payload.path.lastIndexOf(delimiter);
-          if (idx < 0) {
+          const parts = payload.path.split(delimiter);
+          if (parts.length < 2) {
             setAccountDropIndicator(null);
             return; // already at root
           }
-          const baseName = payload.path.slice(idx + delimiter.length);
-          if (baseName && baseName !== payload.path) {
-            onMoveFolder(targetAccount.id, payload.path, baseName);
+          const baseName = parts[parts.length - 1];
+          // Preserve personal namespace root (e.g. "INBOX" on Courier/o2switch),
+          // otherwise IMAP refuses to create a mailbox outside the personal namespace.
+          const hasNamespaceRoot = acctFolders.some(
+            (f) => f.path === parts[0] && f.delimiter === delimiter,
+          );
+          const newPath = hasNamespaceRoot ? `${parts[0]}${delimiter}${baseName}` : baseName;
+          if (newPath && newPath !== payload.path) {
+            onMoveFolder(targetAccount.id, payload.path, newPath);
           }
           setAccountDropIndicator(null);
           return;
