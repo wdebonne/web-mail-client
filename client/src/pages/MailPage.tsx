@@ -12,6 +12,7 @@ import Ribbon from '../components/mail/Ribbon';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
 import { getAccountDisplayName } from '../utils/mailPreferences';
+import type { MailFolder } from '../types';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
 
@@ -164,10 +165,10 @@ export default function MailPage() {
 
   // Folder management mutations
   const createFolderMutation = useMutation({
-    mutationFn: (path: string) =>
-      selectedAccount ? api.createFolder(selectedAccount.id, path) : Promise.resolve(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['folders', selectedAccount?.id] });
+    mutationFn: ({ accountId, path }: { accountId: string; path: string }) =>
+      api.createFolder(accountId, path),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['folders', variables.accountId] });
       toast.success('Dossier créé');
     },
     onError: (error: any) => toast.error(`Erreur: ${error.message}`),
@@ -187,49 +188,56 @@ export default function MailPage() {
   });
 
   const deleteFolderMutation = useMutation({
-    mutationFn: (path: string) =>
-      selectedAccount ? api.deleteFolder(selectedAccount.id, path) : Promise.resolve(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['folders', selectedAccount?.id] });
+    mutationFn: ({ accountId, path }: { accountId: string; path: string }) =>
+      api.deleteFolder(accountId, path),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['folders', variables.accountId] });
       toast.success('Dossier supprimé');
     },
     onError: (error: any) => toast.error(`Erreur: ${error.message}`),
   });
 
+  // Helper: fetch folders for a specific account from query cache, falling back to active selection.
+  const getFoldersForAccount = (accountId: string): MailFolder[] => {
+    const cached = queryClient.getQueryData<MailFolder[]>(['folders', accountId]);
+    if (cached && cached.length) return cached;
+    if (selectedAccount?.id === accountId) return folders;
+    return [];
+  };
+
   // Folder context menu handlers
-  const handleCreateFolder = (parentPath?: string) => {
+  const handleCreateFolder = (accountId: string, parentPath?: string) => {
     const name = prompt('Nom du nouveau dossier :');
     if (!name?.trim()) return;
     const sanitized = name.trim().replace(/[\\\/]/g, '');
     let path = sanitized;
     if (parentPath) {
-      const parent = folders.find((f) => f.path === parentPath);
+      const parent = getFoldersForAccount(accountId).find((f) => f.path === parentPath);
       const delimiter = parent?.delimiter || '.';
       path = `${parentPath}${delimiter}${sanitized}`;
     }
-    createFolderMutation.mutate(path);
+    createFolderMutation.mutate({ accountId, path });
   };
 
-  const handleRenameFolder = (folderPath: string, currentName: string) => {
+  const handleRenameFolder = (accountId: string, folderPath: string, currentName: string) => {
     const newName = prompt('Nouveau nom du dossier :', currentName);
     if (!newName?.trim() || newName.trim() === currentName) return;
     const sanitized = newName.trim().replace(/[\\\/]/g, '');
-    const current = folders.find((f) => f.path === folderPath);
+    const current = getFoldersForAccount(accountId).find((f) => f.path === folderPath);
     const delimiter = current?.delimiter || '.';
     const idx = folderPath.lastIndexOf(delimiter);
     const newPath = idx >= 0 ? `${folderPath.slice(0, idx)}${delimiter}${sanitized}` : sanitized;
-    renameFolderMutation.mutate({ oldPath: folderPath, newPath });
+    renameFolderMutation.mutate({ accountId, oldPath: folderPath, newPath });
   };
 
-  const handleDeleteFolder = (folderPath: string) => {
+  const handleDeleteFolder = (accountId: string, folderPath: string) => {
     if (!confirm(`Supprimer le dossier "${folderPath}" et tout son contenu ?`)) return;
-    deleteFolderMutation.mutate(folderPath);
+    deleteFolderMutation.mutate({ accountId, path: folderPath });
   };
 
   const handleMoveFolder = (accountId: string, oldPath: string, newPath: string) => {
-
     if (oldPath === newPath) return;
-    renameFolderMutation.mutate({ oldPath, newPath });
+    renameFolderMutation.mutate({ accountId, oldPath, newPath });
   };
 
   // Send mutation

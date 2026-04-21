@@ -34,9 +34,9 @@ interface FolderPaneProps {
     dest: { account: MailAccount; folder: string },
     mode: 'move' | 'copy',
   ) => void;
-  onCreateFolder?: (parentPath?: string) => void;
-  onRenameFolder?: (folderPath: string, currentName: string) => void;
-  onDeleteFolder?: (folderPath: string) => void;
+  onCreateFolder?: (accountId: string, parentPath?: string) => void;
+  onRenameFolder?: (accountId: string, folderPath: string, currentName: string) => void;
+  onDeleteFolder?: (accountId: string, folderPath: string) => void;
   onCopyFolderBetweenAccounts?: (
     src: { accountId: string; path: string; name: string },
     dest: { accountId: string; path: string },
@@ -597,7 +597,7 @@ function AccountFolders({
 
 function buildAccountContextMenu(
   account: MailAccount,
-  onCreateFolder?: (parentPath?: string) => void,
+  onCreateFolder?: (accountId: string, parentPath?: string) => void,
   onChange?: () => void,
 ): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
@@ -629,7 +629,7 @@ function buildAccountContextMenu(
     items.push({
       label: 'Nouveau dossier',
       icon: <FolderPlus size={14} />,
-      onClick: () => onCreateFolder(undefined),
+      onClick: () => onCreateFolder(account.id, undefined),
     });
   }
 
@@ -650,9 +650,9 @@ function buildFolderContextMenu(
   account: MailAccount,
   folder: MailFolder,
   allAccounts: MailAccount[],
-  onCreateFolder?: (parentPath?: string) => void,
-  onRenameFolder?: (folderPath: string, currentName: string) => void,
-  onDeleteFolder?: (folderPath: string) => void,
+  onCreateFolder?: (accountId: string, parentPath?: string) => void,
+  onRenameFolder?: (accountId: string, folderPath: string, currentName: string) => void,
+  onDeleteFolder?: (accountId: string, folderPath: string) => void,
   onCopyFolder?: (
     src: { accountId: string; path: string; name: string },
     dest: { accountId: string; path: string },
@@ -666,7 +666,7 @@ function buildFolderContextMenu(
     items.push({
       label: 'Nouveau sous-dossier',
       icon: <FolderPlus size={14} />,
-      onClick: () => onCreateFolder(folder.path),
+      onClick: () => onCreateFolder(account.id, folder.path),
     });
   }
 
@@ -674,7 +674,7 @@ function buildFolderContextMenu(
     items.push({
       label: 'Renommer le dossier',
       icon: <Pencil size={14} />,
-      onClick: () => onRenameFolder(folder.path, folder.name),
+      onClick: () => onRenameFolder(account.id, folder.path, folder.name),
     });
   }
 
@@ -710,7 +710,7 @@ function buildFolderContextMenu(
     items.push({
       label: 'Supprimer le dossier',
       icon: <Trash size={14} />,
-      onClick: () => onDeleteFolder(folder.path),
+      onClick: () => onDeleteFolder(account.id, folder.path),
       danger: true,
     });
   }
