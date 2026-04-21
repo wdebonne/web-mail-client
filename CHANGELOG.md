@@ -171,6 +171,10 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Corrigé
+- Persistance de connexion après rafraîchissement de page : l'endpoint `/api/auth/me` valide désormais correctement l'authentification via session ou JWT.
+- Synchronisation du token d'authentification côté client entre l'état persisté (Zustand) et `localStorage` pour éviter les déconnexions involontaires.
+
 ### Prévu
 - Thème sombre complet
 - Import/export de contacts (vCard, CSV)

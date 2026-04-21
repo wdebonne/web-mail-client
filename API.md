@@ -90,6 +90,12 @@ Déconnexion (supprime la session).
 
 Récupère le profil de l'utilisateur connecté.
 
+**Authentification :**
+- Cookie de session valide, ou
+- Header `Authorization: Bearer <token>` valide
+
+Permet de restaurer la session côté client après un rafraîchissement de page si l'un des deux mécanismes est encore valide.
+
 **Réponse 200 :**
 ```json
 {
