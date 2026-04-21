@@ -391,7 +391,9 @@ export default function MailPage() {
     openCompose({
       to: replyTo,
       cc: replyCC,
-      subject: message.subject?.startsWith('Re:') ? message.subject : `Re: ${message.subject}`,
+      subject: splitComposeReply
+        ? ''
+        : (message.subject?.startsWith('Re:') ? message.subject : `Re: ${message.subject}`),
       bodyHtml: splitComposeReply
         ? ''
         : `<br/><br/><div style="border-left:2px solid #0078D4;padding-left:12px;margin-left:0;color:#605E5C">
@@ -412,7 +414,9 @@ export default function MailPage() {
     if (splitComposeReply) setComposeAlongsideMessage(message);
     openCompose({
       to: [],
-      subject: message.subject?.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`,
+      subject: splitComposeReply
+        ? ''
+        : (message.subject?.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`),
       bodyHtml: splitComposeReply
         ? ''
         : `<br/><br/><div style="border-top:1px solid #E1DFDD;padding-top:12px;color:#605E5C">
@@ -1042,7 +1046,16 @@ export default function MailPage() {
             {isComposing && composeData && composeAlongsideMessage ? (
               /* Side-by-side: original message on the left, compose on the right */
               <div ref={splitContainerRef} className="flex-1 flex min-h-0 min-w-0">
-                <div className="h-full min-w-0 overflow-hidden" style={{ width: `${splitRatio * 100}%` }}>
+                <div className="h-full min-w-0 overflow-hidden relative" style={{ width: `${splitRatio * 100}%` }}>
+                  {/* Close button — hide the original to give full width to compose */}
+                  <button
+                    type="button"
+                    onClick={() => { setComposeAlongsideMessage(null); setComposeExpanded(true); }}
+                    className="absolute top-2 right-2 z-10 w-7 h-7 flex items-center justify-center rounded hover:bg-outlook-bg-hover text-outlook-text-secondary hover:text-outlook-text bg-white/80 backdrop-blur-sm border border-outlook-border shadow-sm"
+                    title="Masquer le mail d'origine (écriture pleine largeur)"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                   <MessageView
                     message={composeAlongsideMessage}
                     onReply={() => handleReply(composeAlongsideMessage)}
