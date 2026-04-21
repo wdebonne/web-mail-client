@@ -509,4 +509,74 @@ export class MailService {
       await client.logout();
     }
   }
+
+  /**
+   * Fetches the raw RFC822 source of a single message.
+   * Returned as Node Buffer to be appended elsewhere.
+   */
+  async fetchRawMessage(folder: string, uid: number): Promise<{ source: Buffer; flags: string[]; internalDate?: Date }> {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const message = await client.fetchOne(`${uid}`, {
+          uid: true,
+          flags: true,
+          source: true,
+          internalDate: true,
+        }, { uid: true }) as any;
+
+        if (!message?.source) throw new Error('Message source indisponible');
+
+        const flagsSet: Set<string> = message.flags || new Set();
+        const flags = Array.from(flagsSet).filter((f: string) => f !== '\\Recent');
+
+        return {
+          source: Buffer.isBuffer(message.source) ? message.source : Buffer.from(message.source),
+          flags,
+          internalDate: message.internalDate,
+        };
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * Appends a raw RFC822 message to the given folder.
+   * Creates the folder if it does not exist.
+   */
+  async appendRawMessage(folder: string, source: Buffer, flags: string[] = [], internalDate?: Date) {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      // Ensure target folder exists (create is idempotent: we silently ignore "already exists")
+      await client.mailboxCreate(folder).catch(() => {});
+      await client.append(folder, source, flags, internalDate);
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * Returns the UIDs of all messages present in a folder.
+   */
+  async listFolderUids(folder: string): Promise<number[]> {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const uids = await client.search({ all: true }, { uid: true });
+        return Array.isArray(uids) ? uids.map((u) => Number(u)) : [];
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
 }

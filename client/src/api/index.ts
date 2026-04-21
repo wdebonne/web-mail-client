@@ -142,6 +142,30 @@ export const api = {
       body: JSON.stringify({ fromFolder, toFolder }),
     }),
 
+  transferMessage: (params: {
+    srcAccountId: string;
+    srcFolder: string;
+    uid: number;
+    destAccountId: string;
+    destFolder: string;
+    mode: 'copy' | 'move';
+  }) =>
+    request('/mail/messages/transfer', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  copyFolderToAccount: (params: {
+    srcAccountId: string;
+    srcPath: string;
+    destAccountId: string;
+    destPath: string;
+  }) =>
+    request<{ success: boolean; copied?: number; failed?: number; total?: number }>(
+      '/mail/folders/copy',
+      { method: 'POST', body: JSON.stringify(params) }
+    ),
+
   deleteMessage: (accountId: string, uid: number, folder: string) =>
     request(`/mail/accounts/${accountId}/messages/${uid}?folder=${encodeURIComponent(folder)}`, {
       method: 'DELETE',

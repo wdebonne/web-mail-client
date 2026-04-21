@@ -39,6 +39,7 @@ interface MessageListProps {
   showFolderPane?: boolean;
   listWidth?: number;
   attachmentMinVisibleKb?: number;
+  accountId?: string;
 }
 
 interface MessageGroup {
@@ -74,6 +75,7 @@ export default function MessageList({
   onReply, onReplyAll, onForward, onMarkRead, onMove, onCopy, folders,
   onToggleFolderPane, showFolderPane, listWidth,
   attachmentMinVisibleKb = 0,
+  accountId,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -534,7 +536,13 @@ export default function MessageList({
                       draggable={draggable && !selectionMode}
                       onDragStartCapture={(e: any) => {
                         e.dataTransfer.setData('text/x-mail-uid', String(message.uid));
-                        e.dataTransfer.effectAllowed = 'move';
+                        if (accountId) {
+                          e.dataTransfer.setData(
+                            'application/x-mail-message',
+                            JSON.stringify({ uid: message.uid, srcAccountId: accountId, srcFolder: folder }),
+                          );
+                        }
+                        e.dataTransfer.effectAllowed = 'copyMove';
                       }}
                       className={`flex items-center gap-2 px-3 cursor-pointer border-b border-outlook-border transition-colors group relative
                         ${isWide ? 'py-1.5' : 'py-2.5 gap-3'}

@@ -11,6 +11,7 @@ import ComposeModal from '../components/mail/ComposeModal';
 import Ribbon from '../components/mail/Ribbon';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
+import { getAccountDisplayName } from '../utils/mailPreferences';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
 
@@ -410,15 +411,92 @@ export default function MailPage() {
     setMobileView('list');
   };
 
+  // Select a folder that may belong to a non-active account: activate the account first.
+  const handleSelectFolderInAccount = useCallback((account: any, folder: string) => {
+    if (selectedAccount?.id !== account.id) {
+      selectAccount(account);
+    }
+    selectFolder(folder);
+    setMobileView('list');
+  }, [selectedAccount, selectAccount, selectFolder]);
+
   // When selecting a message on mobile, switch to message view
   const handleSelectMessageMobile = async (message: any) => {
     await handleSelectMessage(message);
     setMobileView('message');
   };
 
-  // Handle drag & drop move
+  // Handle drag & drop move (legacy signature: within active account)
   const handleDropMessage = (uid: number, toFolder: string) => {
     moveMutation.mutate({ uid, toFolder });
+  };
+
+  // Cross-account message drop (copy or move)
+  const transferMessageMutation = useMutation({
+    mutationFn: (params: {
+      srcAccountId: string;
+      srcFolder: string;
+      uid: number;
+      destAccountId: string;
+      destFolder: string;
+      mode: 'copy' | 'move';
+    }) => api.transferMessage(params),
+    onSuccess: (_result, params) => {
+      if (params.mode === 'move') {
+        if (selectedAccount?.id === params.srcAccountId && selectedFolder === params.srcFolder) {
+          removeMessage(params.uid);
+        }
+        queryClient.invalidateQueries({ queryKey: ['messages', params.srcAccountId, params.srcFolder] });
+        toast.success('Message déplacé');
+      } else {
+        toast.success('Message copié');
+      }
+      queryClient.invalidateQueries({ queryKey: ['messages', params.destAccountId, params.destFolder] });
+    },
+    onError: (error: any) => toast.error(error.message || 'Erreur de transfert'),
+  });
+
+  const handleCrossAccountDrop = (
+    payload: { uid: number; srcAccountId: string; srcFolder: string },
+    dest: { account: any; folder: string },
+    mode: 'copy' | 'move',
+  ) => {
+    transferMessageMutation.mutate({
+      srcAccountId: payload.srcAccountId,
+      srcFolder: payload.srcFolder,
+      uid: payload.uid,
+      destAccountId: dest.account.id,
+      destFolder: dest.folder,
+      mode,
+    });
+  };
+
+  // Copy a folder (with its messages) to another (or the same) account
+  const copyFolderMutation = useMutation({
+    mutationFn: (params: {
+      srcAccountId: string; srcPath: string; destAccountId: string; destPath: string;
+    }) => api.copyFolderToAccount(params),
+    onSuccess: (result, params) => {
+      queryClient.invalidateQueries({ queryKey: ['folders', params.destAccountId] });
+      queryClient.invalidateQueries({ queryKey: ['messages', params.destAccountId, params.destPath] });
+      const copied = result?.copied ?? 0;
+      const total = result?.total ?? 0;
+      toast.success(`Dossier copié (${copied}/${total} messages)`);
+    },
+    onError: (error: any) => toast.error(error.message || 'Erreur de copie du dossier'),
+  });
+
+  const handleCopyFolder = (
+    src: { accountId: string; path: string; name: string },
+    dest: { accountId: string; path: string },
+  ) => {
+    toast.loading('Copie du dossier en cours…', { id: `folder-copy-${src.path}` });
+    copyFolderMutation.mutate(
+      { srcAccountId: src.accountId, srcPath: src.path, destAccountId: dest.accountId, destPath: dest.path },
+      {
+        onSettled: () => toast.dismiss(`folder-copy-${src.path}`),
+      },
+    );
   };
 
   const toggleRibbonCollapsed = useCallback(() => {
@@ -533,12 +611,17 @@ export default function MailPage() {
                 folders={useMailStore(s => s.folders)}
                 selectedFolder={selectedFolder}
                 onSelectAccount={selectAccount}
-                onSelectFolder={handleSelectFolder}
+                onSelectFolderInAccount={handleSelectFolderInAccount}
                 onCompose={() => openCompose()}
-                onDropMessage={handleDropMessage}
+                onDropMessage={handleCrossAccountDrop}
                 onCreateFolder={handleCreateFolder}
                 onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
+                onCopyFolderBetweenAccounts={handleCopyFolder}
+                onPreferencesChanged={() => {
+                  // Accounts list is server-driven; a lightweight refresh to pick up local name overrides happens on next render.
+                  queryClient.invalidateQueries({ queryKey: ['accounts'] });
+                }}
               />
             </div>
             {/* Folder resize handle — desktop only */}
@@ -562,7 +645,7 @@ export default function MailPage() {
               <ArrowLeft size={18} />
             </button>
             <span className="text-sm font-medium text-outlook-text-primary truncate">
-              {selectedAccount?.assigned_display_name || selectedAccount?.name}
+              {selectedAccount ? getAccountDisplayName(selectedAccount) : ''}
             </span>
           </div>
           <MessageList
@@ -583,6 +666,7 @@ export default function MailPage() {
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
             attachmentMinVisibleKb={attachmentMinVisibleKb}
+            accountId={selectedAccount?.id}
           />
         </div>
 
@@ -610,6 +694,7 @@ export default function MailPage() {
             showFolderPane={showFolderPane}
             listWidth={listWidth}
             attachmentMinVisibleKb={attachmentMinVisibleKb}
+            accountId={selectedAccount?.id}
           />
         </div>
 

@@ -437,6 +437,118 @@ mailRouter.delete('/accounts/:accountId/messages/:uid', async (req: AuthRequest,
   }
 });
 
+// --- Cross-account operations ---
+
+// Copy/move a single message from one account to another (or within the same account).
+// POST /mail/messages/transfer
+mailRouter.post('/messages/transfer', async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      srcAccountId: z.string().uuid(),
+      srcFolder: z.string().min(1),
+      uid: z.number().int().positive(),
+      destAccountId: z.string().uuid(),
+      destFolder: z.string().min(1),
+      mode: z.enum(['copy', 'move']).default('copy'),
+    });
+    const data = schema.parse(req.body);
+
+    const srcAccount = await getAccountForUser(data.srcAccountId, req.userId!);
+    const destAccount = await getAccountForUser(data.destAccountId, req.userId!);
+    if (!srcAccount || !destAccount) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    if (data.srcAccountId === data.destAccountId) {
+      const svc = new MailService(srcAccount);
+      if (data.mode === 'move') {
+        await svc.moveMessage(data.srcFolder, data.uid, data.destFolder);
+      } else {
+        await svc.copyMessage(data.srcFolder, data.uid, data.destFolder);
+      }
+      return res.json({ success: true });
+    }
+
+    const srcSvc = new MailService(srcAccount);
+    const destSvc = new MailService(destAccount);
+    const raw = await srcSvc.fetchRawMessage(data.srcFolder, data.uid);
+    await destSvc.appendRawMessage(data.destFolder, raw.source, raw.flags, raw.internalDate);
+
+    if (data.mode === 'move') {
+      await srcSvc.deleteMessage(data.srcFolder, data.uid);
+      await pool.query(
+        'DELETE FROM cached_emails WHERE account_id = $1 AND uid = $2 AND folder = $3',
+        [data.srcAccountId, data.uid, data.srcFolder]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides' });
+    }
+    console.error('Message transfer error:', error);
+    res.status(500).json({ error: error.message || 'Erreur de transfert' });
+  }
+});
+
+// Copy a whole folder (all messages) to another account/folder or within the same account.
+// POST /mail/folders/copy
+mailRouter.post('/folders/copy', async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      srcAccountId: z.string().uuid(),
+      srcPath: z.string().min(1),
+      destAccountId: z.string().uuid(),
+      destPath: z.string().min(1).max(200),
+    });
+    const data = schema.parse(req.body);
+
+    const srcAccount = await getAccountForUser(data.srcAccountId, req.userId!);
+    const destAccount = await getAccountForUser(data.destAccountId, req.userId!);
+    if (!srcAccount || !destAccount) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const srcSvc = new MailService(srcAccount);
+
+    if (data.srcAccountId === data.destAccountId) {
+      await srcSvc.createFolder(data.destPath).catch(() => {});
+      const uids = await srcSvc.listFolderUids(data.srcPath);
+      let copied = 0;
+      for (const uid of uids) {
+        try {
+          await srcSvc.copyMessage(data.srcPath, uid, data.destPath);
+          copied++;
+        } catch (err: any) {
+          console.warn(`Copy message ${uid} failed:`, err?.message);
+        }
+      }
+      return res.json({ success: true, copied, total: uids.length });
+    }
+
+    const destSvc = new MailService(destAccount);
+    await destSvc.createFolder(data.destPath).catch(() => {});
+    const uids = await srcSvc.listFolderUids(data.srcPath);
+    let copied = 0;
+    let failed = 0;
+    for (const uid of uids) {
+      try {
+        const raw = await srcSvc.fetchRawMessage(data.srcPath, uid);
+        await destSvc.appendRawMessage(data.destPath, raw.source, raw.flags, raw.internalDate);
+        copied++;
+      } catch (err: any) {
+        failed++;
+        console.warn(`Copy message uid ${uid} failed:`, err?.message);
+      }
+    }
+
+    res.json({ success: true, copied, failed, total: uids.length });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides' });
+    }
+    console.error('Folder copy error:', error);
+    res.status(500).json({ error: error.message || 'Erreur de copie du dossier' });
+  }
+});
+
 // Helper functions
 async function getAccountForUser(accountId: string, userId: string) {
   // Check via mailbox_assignments first
