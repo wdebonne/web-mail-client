@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  X, Send, Paperclip, Minus, Maximize2, ChevronDown,
+  X, Send, Paperclip, Minus, Maximize2, Minimize2, ChevronDown,
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link as LinkIcon, Image, Palette, Type, Indent, Outdent,
@@ -28,6 +28,10 @@ interface ComposeModalProps {
   hideInlineToolbar?: boolean;
   /** Shared API ref so the ribbon Insérer tab can call back into compose (attach files, etc.). */
   apiRef?: React.MutableRefObject<ComposeApi | null>;
+  /** When true, the inline compose pane takes the full width (host hides folder pane + message list). */
+  isExpanded?: boolean;
+  /** Toggle the expanded (full-width) mode. Only meaningful when `inline` is true. */
+  onToggleExpand?: () => void;
 }
 
 export interface ComposeApi {
@@ -37,6 +41,7 @@ export interface ComposeApi {
 export default function ComposeModal({
   initialData, accounts, selectedAccountId, onSend, onClose, isSending, inline = false,
   externalEditorRef, hideInlineToolbar = false, apiRef,
+  isExpanded = false, onToggleExpand,
 }: ComposeModalProps) {
   const isOnline = useNetworkStatus();
   const [accountId, setAccountId] = useState(initialData.accountId || selectedAccountId || accounts[0]?.id);
@@ -279,6 +284,15 @@ export default function ComposeModal({
             >
               <Paperclip size={15} />
             </button>
+            {onToggleExpand && (
+              <button
+                onClick={onToggleExpand}
+                className="text-outlook-text-secondary hover:text-outlook-text-primary p-1.5 rounded hover:bg-outlook-bg-hover"
+                title={isExpanded ? 'Réduire' : 'Agrandir (masquer les volets)'}
+              >
+                {isExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              </button>
+            )}
             <button
               onClick={onClose}
               className="text-outlook-text-secondary hover:text-outlook-danger p-1.5 rounded hover:bg-red-50"

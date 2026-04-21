@@ -13,6 +13,9 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Rédaction
+- Nouveau bouton **Agrandir / Réduire** dans l'en-tête de la fenêtre de rédaction en ligne (entre Joindre un fichier et Fermer). En mode agrandi, la liste des dossiers et la liste des messages sont masquées pour donner toute la largeur au compose ; un clic sur le bouton (Minimize) ou la fermeture du brouillon restaure la vue normale.
+
 #### Favoris (nouveau)
 - Section **Favoris** en haut du volet Dossiers avec icône étoile, pliable/dépliable (état persisté).
 - Deux vues unifiées fixes en tête de la section, agrégeant tous les comptes sélectionnés :

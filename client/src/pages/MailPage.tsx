@@ -423,6 +423,8 @@ export default function MailPage() {
   // Mobile view state: 'folders' | 'list' | 'message'
   const [mobileView, setMobileView] = useState<'folders' | 'list' | 'message'>('list');
   const [showFolderPane, setShowFolderPane] = useState(true);
+  // When true, the inline compose pane takes the full width (folder pane + message list hidden).
+  const [composeExpanded, setComposeExpanded] = useState(false);
   const [ribbonCollapsed, setRibbonCollapsed] = useState(() => {
     return localStorage.getItem('ribbonCollapsed') === 'true';
   });
@@ -804,7 +806,7 @@ export default function MailPage() {
       {/* Main content area — 3 blocks with gaps */}
       <div ref={containerRef} className="flex-1 flex overflow-hidden min-h-0 gap-1 px-1.5 pb-1.5">
         {/* Folder pane block — collapsible + resizable */}
-        {showFolderPane && (
+        {showFolderPane && !composeExpanded && (
           <>
             <div
               data-pane="folders"
@@ -884,40 +886,44 @@ export default function MailPage() {
         </div>
 
         {/* Desktop message list block — uses pixel width from resize handle */}
-        <div
-          className="hidden md:flex flex-col flex-shrink-0 h-full bg-white rounded-md shadow-sm overflow-hidden"
-          style={{ width: listWidth }}
-        >
-          <MessageList
-            messages={messages}
-            selectedMessage={selectedMessage}
-            loading={loadingMessages}
-            onSelectMessage={handleSelectMessageMobile}
-            onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
-            onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
-            folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
-            onReply={(msg) => handleReply(msg)}
-            onReplyAll={(msg) => handleReply(msg, true)}
-            onForward={(msg) => handleForward(msg)}
-            onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
-            onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-            onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-            folders={folders}
-            onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
-            showFolderPane={showFolderPane}
-            listWidth={listWidth}
-            attachmentMinVisibleKb={attachmentMinVisibleKb}
-            accountId={selectedAccount?.id}
-          />
-        </div>
+        {!composeExpanded && (
+          <>
+            <div
+              className="hidden md:flex flex-col flex-shrink-0 h-full bg-white rounded-md shadow-sm overflow-hidden"
+              style={{ width: listWidth }}
+            >
+              <MessageList
+                messages={messages}
+                selectedMessage={selectedMessage}
+                loading={loadingMessages}
+                onSelectMessage={handleSelectMessageMobile}
+                onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
+                onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
+                folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
+                onReply={(msg) => handleReply(msg)}
+                onReplyAll={(msg) => handleReply(msg, true)}
+                onForward={(msg) => handleForward(msg)}
+                onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
+                onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+                onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+                folders={folders}
+                onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
+                showFolderPane={showFolderPane}
+                listWidth={listWidth}
+                attachmentMinVisibleKb={attachmentMinVisibleKb}
+                accountId={selectedAccount?.id}
+              />
+            </div>
 
-        {/* Message list resize handle — desktop only */}
-        <div
-          className="hidden md:flex w-1 flex-shrink-0 cursor-col-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors group relative"
-          onMouseDown={handleResizeStart}
-        >
-          <div className="absolute inset-y-0 -left-1 -right-1" />
-        </div>
+            {/* Message list resize handle — desktop only */}
+            <div
+              className="hidden md:flex w-1 flex-shrink-0 cursor-col-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors group relative"
+              onMouseDown={handleResizeStart}
+            >
+              <div className="absolute inset-y-0 -left-1 -right-1" />
+            </div>
+          </>
+        )}
 
         {/* Right pane: message view + tab bar stacked vertically */}
         <div className={`
@@ -948,12 +954,14 @@ export default function MailPage() {
                 accounts={accounts}
                 selectedAccountId={selectedAccount?.id}
                 onSend={(data) => sendMutation.mutate(data)}
-                onClose={closeCompose}
+                onClose={() => { setComposeExpanded(false); closeCompose(); }}
                 isSending={sendMutation.isPending}
                 inline
                 externalEditorRef={composeEditorRef}
                 hideInlineToolbar
                 apiRef={composeApiRef}
+                isExpanded={composeExpanded}
+                onToggleExpand={() => setComposeExpanded(v => !v)}
               />
             ) : (
               <MessageView
