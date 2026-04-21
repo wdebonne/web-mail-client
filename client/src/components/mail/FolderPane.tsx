@@ -90,9 +90,14 @@ function getFolderIcon(folder: MailFolder) {
 function getFolderLabel(folder: MailFolder) {
   const mapped = FOLDER_LABELS[folder.path] || FOLDER_LABELS[folder.name];
   if (mapped) return mapped;
-  const display = folder.name || folder.path;
-  if (display.toUpperCase().startsWith('INBOX.')) return display.substring(6);
-  return display;
+  // Always display only the leaf segment, so nested folders show their short name
+  // (e.g. "test sous" instead of "test.test sous" or "INBOX.test.test sous").
+  const delim = folder.delimiter || '.';
+  const pathSegments = folder.path ? folder.path.split(delim) : [];
+  const pathLeaf = pathSegments[pathSegments.length - 1];
+  const candidate = pathLeaf || folder.name || folder.path;
+  const nameSegments = candidate.split(delim);
+  return nameSegments[nameSegments.length - 1] || candidate;
 }
 
 const DT_MSG = 'application/x-mail-message';

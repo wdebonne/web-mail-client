@@ -897,8 +897,14 @@ function getFolderDisplayName(folder: string): string {
     'Junk': 'Courrier indésirable',
     'Archive': 'Archives',
   };
-  const mapped = names[folder] || names[folder.split('.').pop() || folder];
+  // Try leaf segment against common folder names (handles `.` and `/` delimiters).
+  const segments = folder.split(/[./]/);
+  const leaf = segments[segments.length - 1] || folder;
+  const mapped = names[folder] || names[leaf];
   if (mapped) return mapped;
+
+  // For any nested folder, display only the leaf name (e.g. "test sous" instead of "test.test sous").
+  if (segments.length > 1) return leaf;
 
   if (folder.toUpperCase().startsWith('INBOX.')) {
     return folder.substring(6);
