@@ -174,10 +174,13 @@ export default function MailPage() {
   });
 
   const renameFolderMutation = useMutation({
-    mutationFn: ({ oldPath, newPath }: { oldPath: string; newPath: string }) =>
-      selectedAccount ? api.renameFolder(selectedAccount.id, oldPath, newPath) : Promise.resolve(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['folders', selectedAccount?.id] });
+    mutationFn: ({ accountId, oldPath, newPath }: { accountId?: string; oldPath: string; newPath: string }) => {
+      const id = accountId || selectedAccount?.id;
+      return id ? api.renameFolder(id, oldPath, newPath) : Promise.resolve();
+    },
+    onSuccess: (_data, variables) => {
+      const id = variables.accountId || selectedAccount?.id;
+      queryClient.invalidateQueries({ queryKey: ['folders', id] });
       toast.success('Dossier renommé');
     },
     onError: (error: any) => toast.error(`Erreur: ${error.message}`),
@@ -221,6 +224,12 @@ export default function MailPage() {
   const handleDeleteFolder = (folderPath: string) => {
     if (!confirm(`Supprimer le dossier "${folderPath}" et tout son contenu ?`)) return;
     deleteFolderMutation.mutate(folderPath);
+  };
+
+  const handleMoveFolder = (accountId: string, oldPath: string, newPath: string) => {
+
+    if (oldPath === newPath) return;
+    renameFolderMutation.mutate({ oldPath, newPath });
   };
 
   // Send mutation
@@ -624,6 +633,7 @@ export default function MailPage() {
                 onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
                 onCopyFolderBetweenAccounts={handleCopyFolder}
+                onMoveFolder={handleMoveFolder}
                 onPreferencesChanged={() => {
                   // Accounts list is server-driven; a lightweight refresh to pick up local name overrides happens on next render.
                   queryClient.invalidateQueries({ queryKey: ['accounts'] });

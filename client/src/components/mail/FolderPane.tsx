@@ -41,6 +41,7 @@ interface FolderPaneProps {
     src: { accountId: string; path: string; name: string },
     dest: { accountId: string; path: string },
   ) => void;
+  onMoveFolder?: (accountId: string, oldPath: string, newPath: string) => void;
   onPreferencesChanged?: () => void;
 }
 
@@ -103,7 +104,7 @@ export default function FolderPane({
   accounts, selectedAccount, folders, selectedFolder,
   onSelectAccount, onSelectFolderInAccount, onCompose,
   onDropMessage, onCreateFolder, onRenameFolder, onDeleteFolder,
-  onCopyFolderBetweenAccounts, onPreferencesChanged,
+  onCopyFolderBetweenAccounts, onMoveFolder, onPreferencesChanged,
 }: FolderPaneProps) {
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => {
     const persisted = getExpandedAccounts();
@@ -150,15 +151,50 @@ export default function FolderPane({
   };
 
   const handleAccountDragOver = (e: React.DragEvent, account: MailAccount) => {
-    if (!e.dataTransfer.types.includes(DT_ACCOUNT_REORDER)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const position: DropPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-    setAccountDropIndicator({ id: account.id, position });
+    const types = e.dataTransfer.types;
+    if (types.includes(DT_ACCOUNT_REORDER)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const position: DropPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      setAccountDropIndicator({ id: account.id, position });
+      return;
+    }
+    if (types.includes(DT_FOLDER_REORDER)) {
+      // Allow un-nesting a folder by dropping it on its account header
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
   };
 
   const handleAccountDrop = (e: React.DragEvent, targetAccount: MailAccount) => {
+    // Folder un-nest to root
+    const folderRaw = e.dataTransfer.getData(DT_FOLDER_REORDER);
+    if (folderRaw) {
+      try {
+        const payload = JSON.parse(folderRaw) as { accountId: string; path: string };
+        if (payload.accountId === targetAccount.id && onMoveFolder) {
+          e.preventDefault();
+          e.stopPropagation();
+          const acctFolders = accounts.find((a) => a.id === targetAccount.id) ? folders : [];
+          // Use delimiter from the folder being moved
+          const srcFolder = (acctFolders as MailFolder[]).find((f) => f.path === payload.path);
+          const delimiter = srcFolder?.delimiter || '.';
+          const idx = payload.path.lastIndexOf(delimiter);
+          if (idx < 0) {
+            setAccountDropIndicator(null);
+            return; // already at root
+          }
+          const baseName = payload.path.slice(idx + delimiter.length);
+          if (baseName && baseName !== payload.path) {
+            onMoveFolder(targetAccount.id, payload.path, baseName);
+          }
+          setAccountDropIndicator(null);
+          return;
+        }
+      } catch {}
+    }
+
     const draggedId = e.dataTransfer.getData(DT_ACCOUNT_REORDER);
     if (!draggedId || draggedId === targetAccount.id) {
       setAccountDropIndicator(null);
@@ -261,6 +297,7 @@ export default function FolderPane({
                   onContextMenu={(folder, x, y) => setFolderContextMenu({ x, y, account, folder })}
                   onDropMessage={onDropMessage}
                   onCopyFolder={onCopyFolderBetweenAccounts}
+                  onMoveFolder={onMoveFolder}
                   onFolderOrderChanged={triggerRerender}
                   prefsVersion={prefsVersion}
                 />
@@ -319,13 +356,14 @@ interface AccountFoldersProps {
   onContextMenu: (folder: MailFolder, x: number, y: number) => void;
   onDropMessage?: FolderPaneProps['onDropMessage'];
   onCopyFolder?: FolderPaneProps['onCopyFolderBetweenAccounts'];
+  onMoveFolder?: FolderPaneProps['onMoveFolder'];
   onFolderOrderChanged?: () => void;
   prefsVersion?: number;
 }
 
 function AccountFolders({
   account, selectedAccountId, selectedFolder, externalFolders,
-  onSelectFolder, onContextMenu, onDropMessage, onCopyFolder, onFolderOrderChanged, prefsVersion,
+  onSelectFolder, onContextMenu, onDropMessage, onCopyFolder, onMoveFolder, onFolderOrderChanged, prefsVersion,
 }: AccountFoldersProps) {
   const { data } = useQuery({
     queryKey: ['folders', account.id],
@@ -359,10 +397,16 @@ function AccountFolders({
     if (types.includes(DT_FOLDER_REORDER)) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const position: DropPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-      setFolderDropIndicator({ path: folder.path, position });
-      setDragOver(null);
+      if (e.shiftKey) {
+        // Nesting mode: highlight as container, no position indicator
+        setDragOver(folder.path);
+        setFolderDropIndicator(null);
+      } else {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const position: DropPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        setFolderDropIndicator({ path: folder.path, position });
+        setDragOver(null);
+      }
       return;
     }
     if (types.includes(DT_FOLDER)) {
@@ -388,15 +432,30 @@ function AccountFolders({
       try {
         const payload = JSON.parse(reorderRaw) as { accountId: string; path: string };
         if (payload.accountId === account.id && payload.path !== folder.path) {
-          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          const position: DropPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-          const currentOrder = ordered.map((f) => f.path);
-          const withoutDragged = currentOrder.filter((p) => p !== payload.path);
-          const targetIdx = withoutDragged.indexOf(folder.path);
-          const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
-          withoutDragged.splice(insertAt, 0, payload.path);
-          setFolderOrder(account.id, withoutDragged);
-          onFolderOrderChanged?.();
+          if (e.shiftKey && onMoveFolder) {
+            // Nest: make dragged folder a child of this folder
+            const srcFolder = folders.find((f) => f.path === payload.path);
+            const d = srcFolder?.delimiter || folder.delimiter || '.';
+            const idx = payload.path.lastIndexOf(d);
+            const baseName = idx >= 0 ? payload.path.slice(idx + d.length) : payload.path;
+            // Prevent moving a folder into itself or its own descendant
+            if (!folder.path.startsWith(payload.path + d) && folder.path !== payload.path) {
+              const newPath = `${folder.path}${d}${baseName}`;
+              if (newPath !== payload.path) {
+                onMoveFolder(account.id, payload.path, newPath);
+              }
+            }
+          } else {
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            const position: DropPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+            const currentOrder = ordered.map((f) => f.path);
+            const withoutDragged = currentOrder.filter((p) => p !== payload.path);
+            const targetIdx = withoutDragged.indexOf(folder.path);
+            const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
+            withoutDragged.splice(insertAt, 0, payload.path);
+            setFolderOrder(account.id, withoutDragged);
+            onFolderOrderChanged?.();
+          }
         } else if (payload.accountId !== account.id && onCopyFolder) {
           const folderPayload = e.dataTransfer.getData(DT_FOLDER);
           if (folderPayload) {
