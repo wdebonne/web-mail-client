@@ -227,6 +227,30 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Coins arrondis complets et cohérents dans les deux modes (inline et modal)
 - Meilleure hiérarchie visuelle pour mettre en avant l'action principale
 
+## [1.6.0] - 2026-04-21
+
+### Corrigé
+
+#### Envoi de mail
+- **Erreur 400 sur `POST /api/mail/send`** : normalisation automatique côté client des destinataires (`address` → `email`) pour correspondre au schéma Zod du serveur
+- **Mails envoyés absents du dossier "Éléments envoyés"** : copie IMAP automatique du message dans le dossier Envoyés après envoi SMTP réussi
+  - Détection automatique du dossier via `specialUse = \Sent` puis fallback sur les noms courants (`Sent`, `Sent Items`, `INBOX.Sent`, `Envoyés`, `Éléments envoyés`, etc., avec normalisation des accents)
+  - Ajout silencieux en cas d'erreur (log uniquement, l'envoi reste réussi)
+
+#### "De la part de" (send_on_behalf)
+- **Classement systématique en spam** : refonte de la stratégie d'en-têtes pour améliorer la délivrabilité
+  - En-tête `Sender` conservé uniquement quand le domaine de l'utilisateur délégué correspond au domaine de la boîte partagée (comportement "on behalf of" classique)
+  - En domaine différent : suppression de `Sender` (souvent pénalisé par les filtres anti-spam) et utilisation de `Reply-To` vers l'utilisateur délégué
+- **Nom de l'utilisateur manquant** : réaffichage du nom de l'utilisateur délégué dans le champ `From` (avec l'email de la boîte partagée)
+  - `From: "Prénom Nom" <boite@domaine.fr>`
+  - Préserve la lisibilité côté destinataire tout en gardant l'identité mail alignée sur la boîte
+
+### Ajouté
+
+#### Service mail
+- Support de `replyTo` dans les options `sendMail()` (`MailService`)
+- Méthodes privées : `formatAddress`, `plainTextFromHtml`, `resolveSentMailboxPath`, `appendToSentFolder`
+
 ## [Non publié]
 
 ### Ajouté

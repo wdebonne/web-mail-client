@@ -7,6 +7,8 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 ### Messagerie
 - 📧 Multi-comptes IMAP/SMTP (compatible o2switch / cPanel)
 - 📥 Boîte de réception, envoyés, brouillons, corbeille, spam, archives
+- 📤 **Sauvegarde automatique dans "Envoyés"** : copie IMAP après envoi SMTP avec détection automatique du dossier
+- 🤝 **Envoi "de la part de"** : stratégie d'en-têtes optimisée pour la délivrabilité (Sender/Reply-To selon domaine)
 - ⭐ Drapeaux, marquage lu/non-lu, déplacement entre dossiers
 - 🖱️ Drag & drop des messages entre dossiers
 - 🧹 Masquage visuel du préfixe `INBOX.` pour les dossiers personnalisés (le chemin IMAP reste inchangé)

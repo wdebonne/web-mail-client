@@ -272,24 +272,51 @@ Récupère le contenu complet d'un message.
 
 ### POST /api/mail/send
 
-Envoie un email.
+Envoie un email. Le serveur valide les destinataires au format `{ email, name? }`.
+
+**⚠️ Note client** : Le client stocke les destinataires au format `{ address, name? }`. La méthode `api.sendMail()` convertit automatiquement `address` → `email` avant l'envoi.
 
 **Body :**
 ```json
 {
   "accountId": "uuid",
-  "to": [{ "name": "Marie", "address": "marie@example.com" }],
+  "to": [{ "name": "Marie", "email": "marie@example.com" }],
   "cc": [],
   "bcc": [],
   "subject": "Re: Réunion de projet",
-  "html": "<p>Merci pour le rappel !</p>",
-  "text": "Merci pour le rappel !",
+  "bodyHtml": "<p>Merci pour le rappel !</p>",
+  "bodyText": "Merci pour le rappel !",
   "attachments": [],
-  "inReplyTo": "<id@example.com>"
+  "inReplyTo": "<id@example.com>",
+  "references": "<id1@example.com> <id2@example.com>"
 }
 ```
 
-**Réponse 200 :** `{ "message": "Email envoyé", "messageId": "<new-id@example.com>" }`
+**Réponse 200 :** `{ "success": true, "messageId": "<new-id@example.com>" }`
+
+**Erreur 400 :** `{ "error": "Données invalides", "details": [...] }` si le schéma Zod échoue
+
+**Erreur 403 :** `{ "error": "Vous n'avez pas la permission d'envoyer depuis ce compte" }` si `send_permission = 'none'`
+
+#### Comportement "de la part de" (`send_permission = 'send_on_behalf'`)
+
+Le serveur applique une stratégie d'en-têtes adaptée à la délivrabilité :
+
+- **Même domaine** (utilisateur et boîte partagée sur le même domaine) :
+  - `From: "Prénom Nom" <boite@domaine.fr>` (nom de l'utilisateur, email de la boîte)
+  - `Sender: "Prénom Nom" <utilisateur@domaine.fr>` (en-tête RFC "on behalf of" standard)
+- **Domaines différents** :
+  - `From: "Prénom Nom" <boite@domaine1.fr>` (nom de l'utilisateur, email de la boîte)
+  - `Sender` non défini (évite le spam cross-domain)
+  - `Reply-To: "Prénom Nom" <utilisateur@domaine2.fr>` (les réponses reviennent à l'utilisateur)
+
+#### Sauvegarde automatique dans "Envoyés"
+
+Après un envoi SMTP réussi, une copie IMAP du message est automatiquement ajoutée au dossier Envoyés de la boîte :
+
+1. Recherche du dossier avec `specialUse = \Sent`
+2. Fallback sur les noms courants (normalisation des accents) : `Sent`, `Sent Items`, `INBOX.Sent`, `Envoyés`, `Éléments envoyés`, etc.
+3. Ajout silencieux avec flag `\Seen` (erreurs loggées uniquement, n'affecte pas le retour de l'API)
 
 ### PUT /api/mail/:accountId/flags/:folder/:uid
 
