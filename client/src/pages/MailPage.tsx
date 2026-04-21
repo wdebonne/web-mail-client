@@ -12,6 +12,8 @@ import Ribbon from '../components/mail/Ribbon';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
 
+type AttachmentActionMode = 'preview' | 'download' | 'menu';
+
 export default function MailPage() {
   const isOnline = useNetworkStatus();
   const queryClient = useQueryClient();
@@ -41,6 +43,24 @@ export default function MailPage() {
   const attachmentMinVisibleKb = Number.isFinite(Number(userSettings?.attachment_visibility_min_kb))
     ? Math.max(0, Number(userSettings?.attachment_visibility_min_kb))
     : 10;
+
+  const attachmentActionMode: AttachmentActionMode = ['preview', 'download', 'menu'].includes(userSettings?.attachment_action_mode)
+    ? userSettings.attachment_action_mode
+    : 'preview';
+
+  const attachmentModeMutation = useMutation({
+    mutationFn: (mode: AttachmentActionMode) => api.updateSettings({ attachmentActionMode: mode }),
+    onSuccess: (_result, mode) => {
+      queryClient.setQueryData(['settings'], (prev: any) => ({
+        ...(prev || {}),
+        attachment_action_mode: mode,
+      }));
+      toast.success('Préférence pièces jointes mise à jour');
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || 'Impossible d\'enregistrer la préférence');
+    },
+  });
 
   useEffect(() => {
     if (accountsData) {
@@ -481,6 +501,8 @@ export default function MailPage() {
           onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
           onPrint={handlePrint}
           onDownloadEml={handleDownloadEml}
+          attachmentActionMode={attachmentActionMode}
+          onChangeAttachmentActionMode={(mode) => attachmentModeMutation.mutate(mode)}
           isCollapsed={ribbonCollapsed}
           onToggleCollapse={toggleRibbonCollapsed}
           ribbonMode={ribbonMode}
@@ -640,6 +662,7 @@ export default function MailPage() {
                 onToggleFlag={() => selectedMessage && flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged })}
                 onMove={(folder) => selectedMessage && moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder })}
                 attachmentMinVisibleKb={attachmentMinVisibleKb}
+                attachmentActionMode={attachmentActionMode}
               />
             )}
           </div>

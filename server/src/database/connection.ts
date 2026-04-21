@@ -38,9 +38,12 @@ export async function initDatabase() {
         language VARCHAR(10) DEFAULT 'fr',
         timezone VARCHAR(50) DEFAULT 'Europe/Paris',
         theme VARCHAR(20) DEFAULT 'light',
+        attachment_action_mode VARCHAR(20) DEFAULT 'preview',
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS attachment_action_mode VARCHAR(20) DEFAULT 'preview';
 
       -- User groups
       CREATE TABLE IF NOT EXISTS groups (

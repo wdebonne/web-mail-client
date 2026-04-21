@@ -5,12 +5,13 @@ import {
   FolderInput, MailPlus, RefreshCw, ChevronDown, Printer,
   Download, Eye, EyeOff, PanelLeftOpen, PanelLeftClose,
   Columns2, Rows2, LayoutGrid, Settings, Info, FileDown,
-  MoreHorizontal, Layers, Minus, Plus,
+  MoreHorizontal, Layers, Minus, Plus, Paperclip,
 } from 'lucide-react';
 import type { TabMode } from '../../stores/mailStore';
 
 type RibbonTab = 'accueil' | 'afficher';
 type RibbonMode = 'classic' | 'simplified';
+type AttachmentActionMode = 'preview' | 'download' | 'menu';
 
 interface RibbonProps {
   // Accueil actions
@@ -33,6 +34,8 @@ interface RibbonProps {
   onToggleFolderPane: () => void;
   onPrint: () => void;
   onDownloadEml: () => void;
+  attachmentActionMode: AttachmentActionMode;
+  onChangeAttachmentActionMode: (mode: AttachmentActionMode) => void;
 
   // Ribbon visibility
   isCollapsed: boolean;
@@ -114,14 +117,18 @@ export default function Ribbon({
   onToggleFlag, onMarkRead, onMarkUnread, onSync,
   hasSelectedMessage, isFlagged, isRead,
   showFolderPane, onToggleFolderPane, onPrint, onDownloadEml,
+  attachmentActionMode, onChangeAttachmentActionMode,
   isCollapsed, onToggleCollapse,
   ribbonMode, onChangeRibbonMode,
   tabMode, maxTabs, onChangeTabMode, onChangeMaxTabs,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
+  const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
 
   const openTabMenu = () => {
@@ -130,6 +137,14 @@ export default function Ribbon({
       setTabMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowTabMenu(v => !v);
+  };
+
+  const openAttachmentMenu = () => {
+    if (attachmentMenuBtnRef.current) {
+      const rect = attachmentMenuBtnRef.current.getBoundingClientRect();
+      setAttachmentMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowAttachmentMenu(v => !v);
   };
 
   // Auto-switch between classic and simplified based on width
@@ -385,6 +400,59 @@ export default function Ribbon({
               <RibbonGroup label="Actions">
                 <RibbonButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
                 <RibbonButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
+              </RibbonGroup>
+              <RibbonSeparator />
+
+              {/* Pièces jointes */}
+              <RibbonGroup label="Pièce jointe">
+                <div className="relative">
+                  <button
+                    ref={attachmentMenuBtnRef}
+                    onClick={openAttachmentMenu}
+                    className="flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer"
+                    title="Comportement des pièces jointes"
+                  >
+                    <Paperclip size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Pièce jointe <ChevronDown size={8} />
+                    </span>
+                  </button>
+                  {showAttachmentMenu && createPortal(
+                    <>
+                      <div className="fixed inset-0 z-[9998]" onClick={() => setShowAttachmentMenu(false)} />
+                      <div
+                        className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-56"
+                        style={{ top: attachmentMenuPos.top, left: attachmentMenuPos.left }}
+                      >
+                        <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+                          Ouverture des pièces jointes
+                        </div>
+                        <button
+                          onClick={() => { onChangeAttachmentActionMode('preview'); setShowAttachmentMenu(false); }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                        >
+                          <span className={`w-2 h-2 rounded-full ${attachmentActionMode === 'preview' ? 'bg-outlook-blue' : 'bg-transparent border border-outlook-border'}`} />
+                          Aperçu
+                        </button>
+                        <button
+                          onClick={() => { onChangeAttachmentActionMode('download'); setShowAttachmentMenu(false); }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                        >
+                          <span className={`w-2 h-2 rounded-full ${attachmentActionMode === 'download' ? 'bg-outlook-blue' : 'bg-transparent border border-outlook-border'}`} />
+                          Téléchargement
+                        </button>
+                        <button
+                          onClick={() => { onChangeAttachmentActionMode('menu'); setShowAttachmentMenu(false); }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                        >
+                          <span className={`w-2 h-2 rounded-full ${attachmentActionMode === 'menu' ? 'bg-outlook-blue' : 'bg-transparent border border-outlook-border'}`} />
+                          Menu (Aperçu / Téléchargement)
+                        </button>
+                      </div>
+                    </>,
+                    document.body
+                  )}
+                </div>
               </RibbonGroup>
               <RibbonSeparator />
 

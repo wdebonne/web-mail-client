@@ -9,7 +9,7 @@ settingsRouter.get('/', async (req: AuthRequest, res) => {
   try {
     const [userResult, attachmentSetting] = await Promise.all([
       pool.query(
-        'SELECT display_name, avatar_url, language, timezone, theme FROM users WHERE id = $1',
+        'SELECT display_name, avatar_url, language, timezone, theme, attachment_action_mode FROM users WHERE id = $1',
         [req.userId]
       ),
       pool.query(
@@ -33,16 +33,22 @@ settingsRouter.get('/', async (req: AuthRequest, res) => {
 // Update user settings
 settingsRouter.put('/', async (req: AuthRequest, res) => {
   try {
-    const { displayName, language, timezone, theme } = req.body;
+    const { displayName, language, timezone, theme, attachmentActionMode } = req.body;
+
+    const safeAttachmentMode = ['preview', 'download', 'menu'].includes(attachmentActionMode)
+      ? attachmentActionMode
+      : undefined;
+
     const result = await pool.query(
       `UPDATE users SET 
         display_name = COALESCE($1, display_name),
         language = COALESCE($2, language),
         timezone = COALESCE($3, timezone),
         theme = COALESCE($4, theme),
+        attachment_action_mode = COALESCE($5, attachment_action_mode),
         updated_at = NOW()
-       WHERE id = $5 RETURNING display_name, language, timezone, theme`,
-      [displayName, language, timezone, theme, req.userId]
+       WHERE id = $6 RETURNING display_name, language, timezone, theme, attachment_action_mode`,
+      [displayName, language, timezone, theme, safeAttachmentMode, req.userId]
     );
     res.json(result.rows[0]);
   } catch (error: any) {

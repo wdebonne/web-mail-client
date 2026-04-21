@@ -3,11 +3,22 @@ import { fr } from 'date-fns/locale';
 import DOMPurify from 'dompurify';
 import {
   Reply, ReplyAll, Forward, Trash2, Star, MoreHorizontal,
-  Paperclip, Download, Archive, Flag, FolderInput, Eye, X
+  Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+
+type AttachmentActionMode = 'preview' | 'download' | 'menu';
+
+type PreviewAttachmentState = {
+  name: string;
+  contentType: string;
+  renderMode: 'image' | 'iframe' | 'html' | 'unsupported';
+  url?: string;
+  html?: string;
+  error?: string;
+};
 
 interface MessageViewProps {
   message: Email | null;
@@ -18,13 +29,16 @@ interface MessageViewProps {
   onToggleFlag: () => void;
   onMove: (folder: string) => void;
   attachmentMinVisibleKb?: number;
+  attachmentActionMode?: AttachmentActionMode;
 }
 
 export default function MessageView({
-  message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove, attachmentMinVisibleKb = 0,
+  message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove, attachmentMinVisibleKb = 0, attachmentActionMode = 'preview',
 }: MessageViewProps) {
   const [showMore, setShowMore] = useState(false);
-  const [previewAttachment, setPreviewAttachment] = useState<{ name: string; url: string; contentType: string } | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachmentState | null>(null);
+  const [previewLoadingName, setPreviewLoadingName] = useState<string | null>(null);
+  const [activeAttachmentMenuIndex, setActiveAttachmentMenuIndex] = useState<number | null>(null);
 
   const sanitizedHtml = message?.bodyHtml
     ? DOMPurify.sanitize(message.bodyHtml, {
@@ -70,6 +84,140 @@ export default function MessageView({
       URL.revokeObjectURL(previewAttachment.url);
     }
     setPreviewAttachment(null);
+    setPreviewLoadingName(null);
+  };
+
+  const decodeBase64ToUint8Array = (b64: string) => {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  };
+
+  const getFileExtension = (filename: string) => {
+    const match = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+    return match ? match[1] : '';
+  };
+
+  const isHeic = (contentType: string, filename: string) => {
+    const ext = getFileExtension(filename);
+    return contentType.includes('image/heic') || contentType.includes('image/heif') || ext === 'heic' || ext === 'heif';
+  };
+
+  const isDocx = (contentType: string, filename: string) => {
+    const ext = getFileExtension(filename);
+    return contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document') || ext === 'docx';
+  };
+
+  const isXlsx = (contentType: string, filename: string) => {
+    const ext = getFileExtension(filename);
+    return contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') || ext === 'xlsx';
+  };
+
+  const downloadAttachment = (att: { filename: string; contentType?: string; content?: string }) => {
+    if (!att.content) return;
+    const bytes = decodeBase64ToUint8Array(att.content);
+    const blob = new Blob([bytes], { type: att.contentType || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = att.filename || 'piece-jointe';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2_000);
+  };
+
+  const openAttachmentPreview = async (att: { filename: string; contentType?: string; content?: string }) => {
+    if (!att.content) return;
+
+    try {
+      setPreviewLoadingName(att.filename);
+
+      const bytes = decodeBase64ToUint8Array(att.content);
+      const normalizedType = (att.contentType || '').toLowerCase();
+
+      if (isHeic(normalizedType, att.filename)) {
+        const { default: heic2any } = await import('heic2any');
+        const heicBlob = new Blob([bytes], { type: normalizedType || 'image/heic' });
+        const converted = await heic2any({ blob: heicBlob, toType: 'image/jpeg', quality: 0.9 });
+        const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+        const url = URL.createObjectURL(jpegBlob as Blob);
+        if (previewAttachment?.url) URL.revokeObjectURL(previewAttachment.url);
+        setPreviewAttachment({
+          name: att.filename,
+          contentType: 'image/jpeg',
+          renderMode: 'image',
+          url,
+        });
+        return;
+      }
+
+      if (isDocx(normalizedType, att.filename)) {
+        const mammoth = await import('mammoth');
+        const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const { value } = await mammoth.convertToHtml({ arrayBuffer });
+        if (previewAttachment?.url) URL.revokeObjectURL(previewAttachment.url);
+        setPreviewAttachment({
+          name: att.filename,
+          contentType: normalizedType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          renderMode: 'html',
+          html: DOMPurify.sanitize(value),
+        });
+        return;
+      }
+
+      if (isXlsx(normalizedType, att.filename)) {
+        const XLSX = await import('xlsx');
+        const workbook = XLSX.read(bytes, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const firstSheet = workbook.Sheets[firstSheetName];
+        const sheetHtml = XLSX.utils.sheet_to_html(firstSheet, { editable: false });
+        if (previewAttachment?.url) URL.revokeObjectURL(previewAttachment.url);
+        setPreviewAttachment({
+          name: att.filename,
+          contentType: normalizedType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          renderMode: 'html',
+          html: DOMPurify.sanitize(sheetHtml),
+        });
+        return;
+      }
+
+      const blob = new Blob([bytes], { type: normalizedType || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const renderMode = (normalizedType.startsWith('image/')) ? 'image' : 'iframe';
+
+      if (previewAttachment?.url) URL.revokeObjectURL(previewAttachment.url);
+      setPreviewAttachment({
+        name: att.filename,
+        contentType: normalizedType || 'application/octet-stream',
+        renderMode,
+        url,
+      });
+    } catch {
+      if (previewAttachment?.url) URL.revokeObjectURL(previewAttachment.url);
+      setPreviewAttachment({
+        name: att.filename,
+        contentType: att.contentType || 'application/octet-stream',
+        renderMode: 'unsupported',
+        error: 'Aperçu non disponible pour ce fichier sur votre navigateur. Vous pouvez le télécharger.',
+      });
+    } finally {
+      setPreviewLoadingName(null);
+    }
+  };
+
+  const handleAttachmentOpen = async (att: { filename: string; contentType?: string; content?: string }, index: number) => {
+    if (!att.content) return;
+    if (attachmentActionMode === 'download') {
+      downloadAttachment(att);
+      return;
+    }
+    if (attachmentActionMode === 'menu') {
+      setActiveAttachmentMenuIndex(prev => (prev === index ? null : index));
+      return;
+    }
+    await openAttachmentPreview(att);
   };
 
   if (!message) {
@@ -192,30 +340,42 @@ export default function MessageView({
           <div className="flex items-center gap-2 flex-wrap">
             <Paperclip size={14} className="text-outlook-text-secondary" />
             {visibleAttachments.map((att, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  if (att.content) {
-                    const blob = new Blob([Uint8Array.from(atob(att.content), c => c.charCodeAt(0))], { type: att.contentType });
-                    const url = URL.createObjectURL(blob);
-                    if (previewAttachment?.url) {
-                      URL.revokeObjectURL(previewAttachment.url);
-                    }
-                    setPreviewAttachment({
-                      name: att.filename,
-                      url,
-                      contentType: att.contentType || 'application/octet-stream',
-                    });
-                  }
-                }}
-                className="flex items-center gap-1.5 bg-white border border-outlook-border rounded px-2 py-1 text-xs hover:bg-outlook-bg-hover transition-colors"
-              >
-                <Eye size={12} />
-                <span className="truncate max-w-32">{att.filename}</span>
-                <span className="text-outlook-text-disabled">
-                  ({formatFileSize(att.size)})
-                </span>
-              </button>
+              <div key={i} className="relative">
+                <button
+                  onClick={() => handleAttachmentOpen(att, i)}
+                  className="flex items-center gap-1.5 bg-white border border-outlook-border rounded px-2 py-1 text-xs hover:bg-outlook-bg-hover transition-colors"
+                >
+                  {attachmentActionMode === 'download' ? <Download size={12} /> : <Eye size={12} />}
+                  <span className="truncate max-w-32">{att.filename}</span>
+                  <span className="text-outlook-text-disabled">
+                    ({formatFileSize(att.size)})
+                  </span>
+                  {attachmentActionMode === 'menu' && <ChevronDown size={11} className="text-outlook-text-secondary" />}
+                </button>
+
+                {attachmentActionMode === 'menu' && activeAttachmentMenuIndex === i && (
+                  <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-outlook-border rounded-md shadow-lg py-1 min-w-40">
+                    <button
+                      onClick={async () => {
+                        setActiveAttachmentMenuIndex(null);
+                        await openAttachmentPreview(att);
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover flex items-center gap-2"
+                    >
+                      <Eye size={12} /> Aperçu
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveAttachmentMenuIndex(null);
+                        downloadAttachment(att);
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover flex items-center gap-2"
+                    >
+                      <Download size={12} /> Télécharger
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -254,6 +414,9 @@ export default function MessageView({
       </div>
 
       <AnimatePresence>
+        {activeAttachmentMenuIndex !== null && (
+          <div className="fixed inset-0 z-20" onClick={() => setActiveAttachmentMenuIndex(null)} />
+        )}
         {previewAttachment && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -292,18 +455,43 @@ export default function MessageView({
               </div>
 
               <div className="flex-1 min-h-0 p-3">
-                {previewAttachment.contentType.startsWith('image/') ? (
+                {previewLoadingName ? (
+                  <div className="h-full w-full flex items-center justify-center text-white text-sm">
+                    Ouverture de {previewLoadingName}...
+                  </div>
+                ) : previewAttachment.renderMode === 'image' && previewAttachment.url ? (
                   <img
                     src={previewAttachment.url}
                     alt={previewAttachment.name}
                     className="w-full h-full object-contain"
                   />
-                ) : (
+                ) : previewAttachment.renderMode === 'html' && previewAttachment.html ? (
+                  <div className="w-full h-full overflow-auto rounded border border-white/15 bg-white p-4">
+                    <div
+                      className="prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: previewAttachment.html }}
+                    />
+                  </div>
+                ) : previewAttachment.renderMode === 'iframe' && previewAttachment.url ? (
                   <iframe
                     src={previewAttachment.url}
                     title={previewAttachment.name}
                     className="w-full h-full rounded border border-white/15 bg-white"
                   />
+                ) : (
+                  <div className="h-full w-full flex flex-col items-center justify-center text-white gap-3">
+                    <p className="text-sm text-white/90">{previewAttachment.error || 'Aperçu non disponible'}</p>
+                    {previewAttachment.url && (
+                      <a
+                        href={previewAttachment.url}
+                        download={previewAttachment.name}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-white/15 hover:bg-white/25 text-xs"
+                      >
+                        <Download size={13} />
+                        Télécharger le fichier
+                      </a>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
