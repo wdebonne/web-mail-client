@@ -10,6 +10,7 @@ import MessageView from '../components/mail/MessageView';
 import ComposeModal from '../components/mail/ComposeModal';
 import type { ComposeApi } from '../components/mail/ComposeModal';
 import Ribbon from '../components/mail/Ribbon';
+import EmojiPanel from '../components/mail/EmojiPanel';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil } from 'lucide-react';
 import { getAccountDisplayName } from '../utils/mailPreferences';
@@ -349,6 +350,42 @@ export default function MailPage() {
   const composeEditorRef = useRef<HTMLDivElement>(null);
   // Shared API ref — allows the ribbon Insérer tab to drive compose actions (attach files, etc.)
   const composeApiRef = useRef<ComposeApi | null>(null);
+  // Emoji side panel (opened from the Insérer tab)
+  const [showEmojiPanel, setShowEmojiPanel] = useState(false);
+  const savedEmojiRangeRef = useRef<Range | null>(null);
+
+  // Auto-close the emoji panel when composition ends.
+  useEffect(() => {
+    if (!isComposing && showEmojiPanel) setShowEmojiPanel(false);
+  }, [isComposing, showEmojiPanel]);
+
+  const saveComposeSelection = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const editor = composeEditorRef.current;
+    if (editor && editor.contains(range.commonAncestorContainer)) {
+      savedEmojiRangeRef.current = range.cloneRange();
+    }
+  }, []);
+
+  const insertEmojiIntoCompose = useCallback((emoji: string) => {
+    const editor = composeEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const sel = window.getSelection();
+    const range = savedEmojiRangeRef.current;
+    if (sel && range && editor.contains(range.commonAncestorContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    document.execCommand('insertText', false, emoji);
+    // Re-save the collapsed range after insertion so next emoji appends in order.
+    const newSel = window.getSelection();
+    if (newSel && newSel.rangeCount > 0) {
+      savedEmojiRangeRef.current = newSel.getRangeAt(0).cloneRange();
+    }
+  }, []);
 
   // Resizable message list pane
   const [listWidth, setListWidth] = useState(() => {
@@ -621,6 +658,11 @@ export default function MailPage() {
           isComposing={isComposing}
           composeEditorRef={composeEditorRef}
           onComposeAttachFiles={(files) => composeApiRef.current?.addFiles(files)}
+          onToggleEmojiPanel={() => {
+            saveComposeSelection();
+            setShowEmojiPanel(v => !v);
+          }}
+          isEmojiPanelOpen={showEmojiPanel}
         />
       </div>
 
@@ -744,6 +786,8 @@ export default function MailPage() {
           ${mobileView === 'message' ? 'flex' : 'hidden'} md:flex
           flex-col flex-1 min-w-0 overflow-hidden
         `}>
+          {/* Compose + optional side panels (emoji, etc.) laid out horizontally */}
+          <div className="flex-1 flex min-h-0 gap-1">
           {/* Reading / Compose block */}
           <div className={`flex-1 flex flex-col min-h-0 bg-white shadow-sm overflow-hidden ${openTabs.length >= 2 ? 'rounded-t-md' : 'rounded-md'}`}>
             {/* Mobile back button */}
@@ -786,6 +830,16 @@ export default function MailPage() {
                 attachmentActionMode={attachmentActionMode}
               />
             )}
+          </div>
+
+          {/* Emoji side panel — only while composing */}
+          {isComposing && (
+            <EmojiPanel
+              open={showEmojiPanel}
+              onClose={() => setShowEmojiPanel(false)}
+              onSelect={insertEmojiIntoCompose}
+            />
+          )}
           </div>
 
           {/* Tab bar block — visible only when >= 2 tabs */}

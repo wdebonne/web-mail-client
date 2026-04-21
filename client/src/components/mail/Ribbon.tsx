@@ -77,6 +77,8 @@ interface RibbonProps {
   isComposing?: boolean;
   composeEditorRef?: React.RefObject<HTMLDivElement>;
   onComposeAttachFiles?: (files: FileList | File[]) => void;
+  onToggleEmojiPanel?: () => void;
+  isEmojiPanelOpen?: boolean;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -149,6 +151,7 @@ export default function Ribbon({
   ribbonMode, onChangeRibbonMode,
   tabMode, maxTabs, onChangeTabMode, onChangeMaxTabs,
   isComposing = false, composeEditorRef, onComposeAttachFiles,
+  onToggleEmojiPanel, isEmojiPanelOpen = false,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -292,7 +295,7 @@ export default function Ribbon({
           )}
 
           {activeTab === 'inserer' && (
-            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} compact />
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} compact />
           )}
         </div>
       </div>
@@ -360,7 +363,7 @@ export default function Ribbon({
           )}
 
           {activeTab === 'inserer' && (
-            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} />
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} />
           )}
 
           {activeTab === 'afficher' && (
@@ -861,9 +864,11 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
 // ─────────────────────────────────────────────────────────────────────────────
 // Insérer tab — Outlook-web-style insertion tools
 // ─────────────────────────────────────────────────────────────────────────────
-function InsererTabContent({ editorRef, onAttachFiles, compact = false }: {
+function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmojiPanelOpen = false, compact = false }: {
   editorRef?: React.RefObject<HTMLDivElement>;
   onAttachFiles?: (files: FileList | File[]) => void;
+  onToggleEmojiPanel?: () => void;
+  isEmojiPanelOpen?: boolean;
   compact?: boolean;
 }) {
   const { exec, saveSelection, restoreSelection, insertHTML } = useEditorControl(editorRef);
@@ -876,6 +881,16 @@ function InsererTabContent({ editorRef, onAttachFiles, compact = false }: {
   const [linkText, setLinkText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [showTableGrid, setShowTableGrid] = useState(false);
+
+  const handleEmojiClick = () => {
+    if (onToggleEmojiPanel) {
+      saveSelection();
+      onToggleEmojiPanel();
+    } else {
+      saveSelection();
+      setShowEmoji(v => !v);
+    }
+  };
 
   const triggerAttach = () => fileInputRef.current?.click();
 
@@ -1008,7 +1023,7 @@ function InsererTabContent({ editorRef, onAttachFiles, compact = false }: {
         </span>
         <SimplifiedButton icon={ImageIcon} label="Image" onClick={insertImage} />
         <span ref={el => { emojiBtnRef.current = el; }} className="inline-flex">
-          <SimplifiedButton icon={Smile} label="Emoji" onClick={() => { saveSelection(); setShowEmoji(v => !v); }} />
+          <SimplifiedButton icon={Smile} label="Emoji" onClick={handleEmojiClick} active={isEmojiPanelOpen} />
         </span>
         <span ref={el => { tableBtnRef.current = el; }} className="inline-flex">
           <SimplifiedButton icon={TableIcon} label="Tableau" onClick={() => { saveSelection(); setShowTableGrid(v => !v); }} />
@@ -1046,7 +1061,7 @@ function InsererTabContent({ editorRef, onAttachFiles, compact = false }: {
       {/* Symboles */}
       <RibbonGroup label="Symboles">
         <span ref={el => { emojiBtnRef.current = el; }} className="inline-flex">
-          <RibbonButton icon={Smile} label="Emoji" onClick={() => { saveSelection(); setShowEmoji(s => !s); }} />
+          <RibbonButton icon={Smile} label="Emoji" onClick={handleEmojiClick} active={isEmojiPanelOpen} />
         </span>
         <RibbonButton icon={MinusIcon} label="Ligne horizontale" onClick={insertHorizontalRule} />
         <RibbonButton icon={Calendar} label="Date et heure" onClick={insertDate} />
