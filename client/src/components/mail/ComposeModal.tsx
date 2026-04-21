@@ -128,13 +128,36 @@ export default function ComposeModal({
   };
 
   const handleSend = () => {
-    if (to.length === 0) return;
+    // Auto-add pending recipients from input fields
+    let finalTo = [...to];
+    let finalCc = [...cc];
+    let finalBcc = [...bcc];
+
+    // Helper to add email if valid
+    const addEmailIfValid = (email: string, field: EmailAddress[]) => {
+      const trimmed = email.trim().replace(/,$/, '');
+      if (trimmed && trimmed.includes('@')) {
+        if (!field.some(r => r.address === trimmed)) {
+          field.push({ address: trimmed });
+        }
+      }
+    };
+
+    // Process any pending input before sending
+    if (toInput.trim()) addEmailIfValid(toInput, finalTo);
+    if (ccInput.trim()) addEmailIfValid(ccInput, finalCc);
+    if (bccInput.trim()) addEmailIfValid(bccInput, finalBcc);
+
+    if (finalTo.length === 0) {
+      alert('Veuillez ajouter au moins un destinataire');
+      return;
+    }
     
     const data = {
       accountId,
-      to,
-      cc: showCc ? cc : [],
-      bcc: showBcc ? bcc : [],
+      to: finalTo,
+      cc: showCc ? finalCc : [],
+      bcc: showBcc ? finalBcc : [],
       subject,
       bodyHtml: editorRef.current?.innerHTML || bodyHtml,
       bodyText: editorRef.current?.innerText || '',
@@ -208,7 +231,7 @@ export default function ComposeModal({
         <div className="flex items-center gap-2 px-4 py-2 border-b border-outlook-border flex-shrink-0 bg-outlook-bg-primary/30">
           <button
             onClick={handleSend}
-            disabled={isSending || to.length === 0}
+            disabled={isSending || (to.length === 0 && !toInput.trim())}
             className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
           >
             <Send size={14} />
@@ -384,7 +407,7 @@ export default function ComposeModal({
       <div className="flex items-center justify-between px-4 py-2 border-t border-outlook-border flex-shrink-0">
         <button
           onClick={handleSend}
-          disabled={isSending || to.length === 0}
+          disabled={isSending || (to.length === 0 && !toInput.trim())}
           className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 rounded font-medium flex items-center gap-2 disabled:opacity-50 transition-colors shadow-sm hover:shadow-md"
         >
           <Send size={16} />
