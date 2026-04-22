@@ -256,12 +256,14 @@ export default function MessageList({
   // Thread-size map used by the conversation indicator — computed only when conversation view is on.
   // Key is the normalised thread root (same logic as the server-side grouping would use).
   const threadKeyOf = (msg: Email): string => {
-    const refs = msg.headers?.references?.trim();
+    const rawRefs: unknown = msg.headers?.references;
+    const refs = (Array.isArray(rawRefs) ? rawRefs.join(' ') : (typeof rawRefs === 'string' ? rawRefs : '')).trim();
     if (refs) {
       const first = refs.split(/\s+/)[0];
       if (first) return first;
     }
-    const inReplyTo = msg.headers?.inReplyTo?.trim();
+    const rawIrt: unknown = msg.headers?.inReplyTo;
+    const inReplyTo = (Array.isArray(rawIrt) ? rawIrt.join(' ') : (typeof rawIrt === 'string' ? rawIrt : '')).trim();
     if (inReplyTo) return inReplyTo;
     if (msg.messageId) return msg.messageId;
     return 'subj:' + (msg.subject || '').replace(/^\s*(re|fwd?|tr|rép|réf)\s*:\s*/gi, '').trim().toLowerCase();

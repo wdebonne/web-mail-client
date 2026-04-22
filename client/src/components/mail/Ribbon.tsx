@@ -391,6 +391,212 @@ export default function Ribbon({
     </div>
   );
 
+  // ─── Shared popup menus (rendered by both classic & simplified ribbons) ──
+  const sharedPopups = (
+    <>
+      {/* Favorites mailbox menu */}
+      {showFavoritesMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowFavoritesMenu(false)} />
+          <FavoritesMailboxMenu
+            top={favoritesMenuPos.top}
+            left={favoritesMenuPos.left}
+            accounts={accounts}
+            prefsVersion={favPrefsVersion}
+            onChanged={bumpFavPrefs}
+            onClose={() => setShowFavoritesMenu(false)}
+          />
+        </>,
+        document.body
+      )}
+
+      {/* Category picker — Accueil tab */}
+      {showCategoryMenu && (
+        <CategoryPicker
+          top={categoryMenuPos.top}
+          left={categoryMenuPos.left}
+          assigned={messageCategoryIds}
+          onToggle={(id) => onCategorize?.(id)}
+          onClear={() => { onClearCategories?.(); setShowCategoryMenu(false); }}
+          onCreate={() => { setShowCategoryMenu(false); onNewCategory?.(); }}
+          onManage={() => { setShowCategoryMenu(false); onManageCategories?.(); }}
+          onClose={() => setShowCategoryMenu(false)}
+        />
+      )}
+
+      {/* Reading pane mode menu */}
+      {showReadingPaneMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowReadingPaneMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-64"
+            style={{ top: readingPaneMenuPos.top, left: readingPaneMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Volet de lecture
+            </div>
+            {[
+              { id: 'right' as const, label: 'Afficher à droite', icon: Columns2 },
+              { id: 'bottom' as const, label: 'Afficher en bas', icon: Rows2 },
+              { id: 'hidden' as const, label: 'Plein écran', icon: EyeOff },
+            ].map((opt) => {
+              const Icon = opt.icon;
+              const active = readingPaneMode === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => { onChangeReadingPaneMode && onChangeReadingPaneMode(opt.id); setShowReadingPaneMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  <span className="w-4 flex items-center justify-center text-outlook-blue">
+                    {active ? '✓' : ''}
+                  </span>
+                  <Icon size={14} className="text-outlook-text-secondary" />
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Conversations menu */}
+      {showConversationsMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowConversationsMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-80"
+            style={{ top: conversationsMenuPos.top, left: conversationsMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Liste de messages
+            </div>
+            {[
+              { id: 'conversation' as const, label: 'Regrouper les messages par conversation' },
+              { id: 'branches' as const, label: 'Regrouper les messages par branches dans les conversations' },
+              { id: 'none' as const, label: 'Ne pas regrouper les messages' },
+            ].map((opt) => {
+              const active = conversationGrouping === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => { onChangeConversationGrouping && onChangeConversationGrouping(opt.id); setShowConversationsMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  <span className="w-4 flex items-center justify-center text-outlook-blue">
+                    {active ? '✓' : ''}
+                  </span>
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+            <div className="border-t border-outlook-border my-1" />
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Volet de lecture — Organisation des messages
+            </div>
+            {[
+              { show: true, label: 'Afficher tous les messages de la conversation sélectionnée' },
+              { show: false, label: 'Afficher uniquement le message sélectionné' },
+            ].map((opt) => {
+              const active = conversationShowAllInReadingPane === opt.show;
+              return (
+                <button
+                  key={String(opt.show)}
+                  onClick={() => {
+                    if (conversationShowAllInReadingPane !== opt.show) {
+                      onToggleConversationShowAllInReadingPane && onToggleConversationShowAllInReadingPane();
+                    }
+                    setShowConversationsMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                  disabled={conversationGrouping === 'none'}
+                  style={conversationGrouping === 'none' ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                >
+                  <span className="w-4 flex items-center justify-center text-outlook-blue">
+                    {active ? '✓' : ''}
+                  </span>
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Density menu */}
+      {showDensityMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowDensityMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-56"
+            style={{ top: densityMenuPos.top, left: densityMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Densité
+            </div>
+            {[
+              { id: 'spacious' as const, label: 'Spacieux' },
+              { id: 'comfortable' as const, label: 'Confortable' },
+              { id: 'compact' as const, label: 'Compacte' },
+            ].map((opt) => {
+              const active = listDensity === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => { onChangeListDensity && onChangeListDensity(opt.id); setShowDensityMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  <span className="w-4 flex items-center justify-center text-outlook-blue">
+                    {active ? '✓' : ''}
+                  </span>
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* List display mode menu */}
+      {showListModeMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowListModeMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-64"
+            style={{ top: listModeMenuPos.top, left: listModeMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Liste des mails
+            </div>
+            {[
+              { id: 'auto' as const, label: 'Automatique (selon la largeur)' },
+              { id: 'wide' as const, label: 'Une seule ligne (colonnes)' },
+              { id: 'compact' as const, label: 'Aperçu multi-lignes' },
+            ].map((opt) => {
+              const active = listDisplayMode === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => { onChangeListDisplayMode && onChangeListDisplayMode(opt.id); setShowListModeMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  <span className="w-4 flex items-center justify-center text-outlook-blue">
+                    {active ? '✓' : ''}
+                  </span>
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  );
+
   // ─── Simplified ribbon ─────────────────────────────────────
   if (ribbonMode === 'simplified') {
     return (
@@ -534,6 +740,7 @@ export default function Ribbon({
             <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} compact />
           )}
         </div>
+        {sharedPopups}
       </div>
     );
   }
@@ -873,208 +1080,8 @@ export default function Ribbon({
           )}
         </div>
 
-        {/* Favorites mailbox menu — rendered globally so it works from both classic & simplified Afficher tab */}
-        {showFavoritesMenu && createPortal(
-          <>
-            <div className="fixed inset-0 z-[9998]" onClick={() => setShowFavoritesMenu(false)} />
-            <FavoritesMailboxMenu
-              top={favoritesMenuPos.top}
-              left={favoritesMenuPos.left}
-              accounts={accounts}
-              prefsVersion={favPrefsVersion}
-              onChanged={bumpFavPrefs}
-              onClose={() => setShowFavoritesMenu(false)}
-            />
-          </>,
-          document.body
-        )}
-
-        {/* Category picker — Accueil tab */}
-        {showCategoryMenu && (
-          <CategoryPicker
-            top={categoryMenuPos.top}
-            left={categoryMenuPos.left}
-            assigned={messageCategoryIds}
-            onToggle={(id) => onCategorize?.(id)}
-            onClear={() => { onClearCategories?.(); setShowCategoryMenu(false); }}
-            onCreate={() => { setShowCategoryMenu(false); onNewCategory?.(); }}
-            onManage={() => { setShowCategoryMenu(false); onManageCategories?.(); }}
-            onClose={() => setShowCategoryMenu(false)}
-          />
-        )}
-
-        {/* Reading pane mode menu — rendered globally so it works from both classic & simplified Afficher tab */}
-        {showReadingPaneMenu && createPortal(
-          <>
-            <div className="fixed inset-0 z-[9998]" onClick={() => setShowReadingPaneMenu(false)} />
-            <div
-              className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-64"
-              style={{ top: readingPaneMenuPos.top, left: readingPaneMenuPos.left }}
-            >
-              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
-                Volet de lecture
-              </div>
-              {[
-                { id: 'right' as const, label: 'Afficher à droite', icon: Columns2 },
-                { id: 'bottom' as const, label: 'Afficher en bas', icon: Rows2 },
-                { id: 'hidden' as const, label: 'Plein écran', icon: EyeOff },
-              ].map((opt) => {
-                const Icon = opt.icon;
-                const active = readingPaneMode === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => { onChangeReadingPaneMode && onChangeReadingPaneMode(opt.id); setShowReadingPaneMenu(false); }}
-                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                  >
-                    <span className="w-4 flex items-center justify-center text-outlook-blue">
-                      {active ? '✓' : ''}
-                    </span>
-                    <Icon size={14} className="text-outlook-text-secondary" />
-                    <span>{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>,
-          document.body
-        )}
-
-        {/* Conversations menu — mimics Outlook's "Conversations" split dropdown (Liste de
-            messages + Volet de lecture sub-sections). Rendered globally so both ribbon
-            variants use the same menu. */}
-        {showConversationsMenu && createPortal(
-          <>
-            <div className="fixed inset-0 z-[9998]" onClick={() => setShowConversationsMenu(false)} />
-            <div
-              className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-80"
-              style={{ top: conversationsMenuPos.top, left: conversationsMenuPos.left }}
-            >
-              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
-                Liste de messages
-              </div>
-              {[
-                { id: 'conversation' as const, label: 'Regrouper les messages par conversation' },
-                { id: 'branches' as const, label: 'Regrouper les messages par branches dans les conversations' },
-                { id: 'none' as const, label: 'Ne pas regrouper les messages' },
-              ].map((opt) => {
-                const active = conversationGrouping === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => { onChangeConversationGrouping && onChangeConversationGrouping(opt.id); setShowConversationsMenu(false); }}
-                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                  >
-                    <span className="w-4 flex items-center justify-center text-outlook-blue">
-                      {active ? '✓' : ''}
-                    </span>
-                    <span>{opt.label}</span>
-                  </button>
-                );
-              })}
-              <div className="border-t border-outlook-border my-1" />
-              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
-                Volet de lecture — Organisation des messages
-              </div>
-              {[
-                { show: true, label: 'Afficher tous les messages de la conversation sélectionnée' },
-                { show: false, label: 'Afficher uniquement le message sélectionné' },
-              ].map((opt) => {
-                const active = conversationShowAllInReadingPane === opt.show;
-                return (
-                  <button
-                    key={String(opt.show)}
-                    onClick={() => {
-                      if (conversationShowAllInReadingPane !== opt.show) {
-                        onToggleConversationShowAllInReadingPane && onToggleConversationShowAllInReadingPane();
-                      }
-                      setShowConversationsMenu(false);
-                    }}
-                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                    disabled={conversationGrouping === 'none'}
-                    style={conversationGrouping === 'none' ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                  >
-                    <span className="w-4 flex items-center justify-center text-outlook-blue">
-                      {active ? '✓' : ''}
-                    </span>
-                    <span>{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>,
-          document.body
-        )}
-
-        {/* Density menu */}
-        {showDensityMenu && createPortal(
-          <>
-            <div className="fixed inset-0 z-[9998]" onClick={() => setShowDensityMenu(false)} />
-            <div
-              className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-56"
-              style={{ top: densityMenuPos.top, left: densityMenuPos.left }}
-            >
-              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
-                Densité
-              </div>
-              {[
-                { id: 'spacious' as const, label: 'Spacieux' },
-                { id: 'comfortable' as const, label: 'Confortable' },
-                { id: 'compact' as const, label: 'Compacte' },
-              ].map((opt) => {
-                const active = listDensity === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => { onChangeListDensity && onChangeListDensity(opt.id); setShowDensityMenu(false); }}
-                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                  >
-                    <span className="w-4 flex items-center justify-center text-outlook-blue">
-                      {active ? '✓' : ''}
-                    </span>
-                    <span>{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>,
-          document.body
-        )}
-
-        {/* List display mode menu */}
-        {showListModeMenu && createPortal(
-          <>
-            <div className="fixed inset-0 z-[9998]" onClick={() => setShowListModeMenu(false)} />
-            <div
-              className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-64"
-              style={{ top: listModeMenuPos.top, left: listModeMenuPos.left }}
-            >
-              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
-                Liste des mails
-              </div>
-              {[
-                { id: 'auto' as const, label: 'Automatique (selon la largeur)' },
-                { id: 'wide' as const, label: 'Une seule ligne (colonnes)' },
-                { id: 'compact' as const, label: 'Aperçu multi-lignes' },
-              ].map((opt) => {
-                const active = listDisplayMode === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => { onChangeListDisplayMode && onChangeListDisplayMode(opt.id); setShowListModeMenu(false); }}
-                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                  >
-                    <span className="w-4 flex items-center justify-center text-outlook-blue">
-                      {active ? '✓' : ''}
-                    </span>
-                    <span>{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>,
-          document.body
-        )}
+        {/* Shared popup menus (favorites / category / reading pane / conversations / density / list mode) */}
+        {sharedPopups}
     </div>
   );
 }

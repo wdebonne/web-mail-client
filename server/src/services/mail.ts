@@ -209,8 +209,12 @@ export class MailService {
             content: att.content.toString('base64'),
           })) || [],
           headers: {
-            inReplyTo: parsed.inReplyTo,
-            references: parsed.references,
+            inReplyTo: Array.isArray(parsed.inReplyTo)
+              ? parsed.inReplyTo.join(' ')
+              : (typeof parsed.inReplyTo === 'string' ? parsed.inReplyTo : undefined),
+            references: Array.isArray(parsed.references)
+              ? parsed.references.join(' ')
+              : (typeof parsed.references === 'string' ? parsed.references : undefined),
           },
           size: message.size,
         };
