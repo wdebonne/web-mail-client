@@ -17,6 +17,11 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **Persistance locale** (`client/src/utils/signatures.ts`) : stockage dans `localStorage` (`mail.signatures.v1`, `mail.signatures.defaultNew`, `mail.signatures.defaultReply`) avec événement `mail.signatures.changed` pour synchroniser toutes les vues (ruban, modales) en temps réel. Les signatures et leurs valeurs par défaut restent 100 % côté client et ne transitent jamais par le serveur.
 - **Bloc signature isolé** : chaque signature insérée est enveloppée dans un `<div class="outlook-signature" data-signature="true">` précédé d'un saut de ligne, pour faciliter un repérage / remplacement futur et préserver le formatage d'origine.
 
+### Corrigé
+
+#### Build Docker — compilation TypeScript du client
+- **Échec de `npm run build` dans le Dockerfile** (`compose build operation failed … exit code: 1`) : le type du paramètre de `upsertSignature` (`client/src/utils/signatures.ts`) combinait `Omit<MailSignature, 'updatedAt'>` avec `& { id?: string }`, mais une intersection TypeScript **ne rend pas une propriété déjà requise optionnelle** — `id` restait donc obligatoire et `SignatureEditorModal.save()` échouait avec `TS2322: Type 'string | undefined' is not assignable to type 'string'` lors de la création d'une nouvelle signature (`signature?.id` vaut `undefined`). Le type a été remplacé par un littéral explicite `{ id?: string; name: string; html: string }`, ce qui débloque le build Docker et la compilation locale.
+
 ### Amélioré
 
 #### Mode sombre — lisibilité du corps des e-mails HTML
