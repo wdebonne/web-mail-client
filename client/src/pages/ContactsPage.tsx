@@ -730,7 +730,6 @@ function ContactDetail({
           <div className="flex-1 pb-3">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-semibold text-outlook-text-primary leading-tight">{getFullName(contact)}</h1>
-              {contact.is_favorite && <Star size={18} className="text-amber-500 fill-amber-500" />}
               {isSender && (
                 <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
                   Non enregistré
