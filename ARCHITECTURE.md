@@ -483,7 +483,7 @@ Pilotée depuis `client/src/pages/MailPage.tsx`.
 | `listHeight` | `number (120–900 px)` | Hauteur de la liste quand le volet est en bas | `localStorage.listHeight` |
 | `listDensity` | `'spacious' \| 'comfortable' \| 'compact'` | Hauteur des lignes de la liste | `localStorage.listDensity` |
 | `listDisplayMode` | `'auto' \| 'wide' \| 'compact'` | Affichage forcé des lignes (auto = selon largeur) | `localStorage.listDisplayMode` |
-| `conversationView` | `boolean` | Regroupe la liste par fil de discussion (clé : `References[0]` → `In-Reply-To` → `Message-ID` → sujet normalisé) | `localStorage.conversationView` (défaut `false`) |
+| `conversationView` | `boolean` | Quand `true`, la vue du mail affiche un bandeau listant tous les messages du fil (clé : `References[0]` → `In-Reply-To` → `Message-ID` → sujet normalisé). La liste n'est pas regroupée mais affiche un icône *conversation* sur les mails faisant partie d'un fil. | `localStorage.conversationView` (défaut `false`) |
 
 - Mode **Plein écran** (`hidden`) : la liste occupe toute la largeur ; à la sélection d'un message, la vue de lecture remplace la liste dans le même bloc, avec un bouton **×** pour revenir à la liste (désélection du message).
 - Mode **Afficher en bas** (`bottom`) : wrapper `md:flex-col`, poignée `cursor-row-resize` qui pilote `listHeight`. En mode `listDisplayMode === 'auto'`, la liste bascule automatiquement en aperçu multi-lignes pour optimiser la lecture.

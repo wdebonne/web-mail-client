@@ -943,6 +943,26 @@ export default function MailPage() {
     });
   }, [messages, categoryFilter, originOf]);
 
+  // Conversation thread of the currently selected message — computed only when the conversation
+  // view is enabled. The matching key mirrors the one used by MessageList to decorate rows.
+  const conversationThreadKeyOf = (msg: any): string => {
+    const refs: string | undefined = msg.headers?.references?.trim();
+    if (refs) {
+      const first = refs.split(/\s+/)[0];
+      if (first) return first;
+    }
+    const inReplyTo: string | undefined = msg.headers?.inReplyTo?.trim();
+    if (inReplyTo) return inReplyTo;
+    if (msg.messageId) return msg.messageId;
+    return 'subj:' + (msg.subject || '').replace(/^\s*(re|fwd?|tr|rép|réf)\s*:\s*/gi, '').trim().toLowerCase();
+  };
+  const conversationThread = useMemo(() => {
+    if (!conversationView || !selectedMessage) return undefined;
+    const key = conversationThreadKeyOf(selectedMessage);
+    const thread = visibleMessages.filter((m) => conversationThreadKeyOf(m) === key);
+    return thread.length > 1 ? thread : undefined;
+  }, [conversationView, selectedMessage, visibleMessages]);
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-outlook-bg-tertiary">
       {/* Ribbon toolbar block */}
@@ -1172,6 +1192,8 @@ export default function MailPage() {
                     }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
+                    conversationMessages={conversationThread}
+                    onSelectThreadMessage={(m) => handleSelectMessage(m)}
                   />
                 </>
               ) : (
@@ -1357,6 +1379,8 @@ export default function MailPage() {
                     }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
+                    conversationMessages={conversationThread}
+                    onSelectThreadMessage={(m) => handleSelectMessage(m)}
                   />
                 </div>
                 {/* Split resize handle */}
@@ -1422,6 +1446,8 @@ export default function MailPage() {
                 }}
                 attachmentMinVisibleKb={attachmentMinVisibleKb}
                 attachmentActionMode={attachmentActionMode}
+                conversationMessages={conversationThread}
+                onSelectThreadMessage={(m) => handleSelectMessage(m)}
               />
             )}
           </div>

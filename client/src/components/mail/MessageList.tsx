@@ -8,7 +8,7 @@ import {
   Flag, FolderInput, Copy, Archive, ChevronDown, ChevronRight,
   ArrowUpDown, ListFilter, Calendar, CheckSquare, FolderIcon,
   Check, MailCheck, PanelLeftOpen, PanelLeftClose,
-  Tag,
+  Tag, MessagesSquare,
 } from 'lucide-react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
@@ -212,58 +212,6 @@ export default function MessageList({
 
   // Group messages by time period
   const groupedMessages = useMemo(() => {
-    if (conversationView) {
-      // Build conversation threads from message-id / in-reply-to / references headers,
-      // falling back to a normalised subject (Re:/Fwd: stripped) when headers are missing.
-      const rootKeyOf = (msg: Email): string => {
-        const refs = msg.headers?.references?.trim();
-        if (refs) {
-          // First reference is conventionally the thread root.
-          const first = refs.split(/\s+/)[0];
-          if (first) return first;
-        }
-        const inReplyTo = msg.headers?.inReplyTo?.trim();
-        if (inReplyTo) return inReplyTo;
-        if (msg.messageId) return msg.messageId;
-        // Last resort: normalised subject as the grouping key.
-        return 'subj:' + (msg.subject || '').replace(/^\s*(re|fwd?|tr|rép|réf)\s*:\s*/gi, '').trim().toLowerCase();
-      };
-
-      const groupMap = new Map<string, Email[]>();
-      const subjectByKey = new Map<string, string>();
-      const latestDateByKey = new Map<string, number>();
-
-      for (const msg of sortedMessages) {
-        const key = rootKeyOf(msg);
-        if (!groupMap.has(key)) groupMap.set(key, []);
-        groupMap.get(key)!.push(msg);
-        const t = new Date(msg.date).getTime();
-        const cur = latestDateByKey.get(key) ?? -Infinity;
-        if (t > cur) {
-          latestDateByKey.set(key, t);
-          subjectByKey.set(key, msg.subject || '(Sans objet)');
-        }
-        if (!subjectByKey.has(key)) {
-          subjectByKey.set(key, msg.subject || '(Sans objet)');
-        }
-      }
-
-      const groups: MessageGroup[] = Array.from(groupMap.entries()).map(([key, msgs]) => ({
-        key,
-        label: subjectByKey.get(key) || '(Sans objet)',
-        messages: msgs,
-      }));
-
-      // Order groups by their latest message date, respecting the active sort order.
-      groups.sort((a, b) => {
-        const da = latestDateByKey.get(a.key) ?? 0;
-        const db = latestDateByKey.get(b.key) ?? 0;
-        return sortOrder === 'asc' ? da - db : db - da;
-      });
-
-      return groups;
-    }
-
     const now = new Date();
     const groups: MessageGroup[] = [];
     const groupMap = new Map<string, Email[]>();
@@ -289,7 +237,30 @@ export default function MessageList({
     }
 
     return groups;
-  }, [sortedMessages, conversationView, sortOrder]);
+  }, [sortedMessages]);
+
+  // Thread-size map used by the conversation indicator — computed only when conversation view is on.
+  // Key is the normalised thread root (same logic as the server-side grouping would use).
+  const threadKeyOf = (msg: Email): string => {
+    const refs = msg.headers?.references?.trim();
+    if (refs) {
+      const first = refs.split(/\s+/)[0];
+      if (first) return first;
+    }
+    const inReplyTo = msg.headers?.inReplyTo?.trim();
+    if (inReplyTo) return inReplyTo;
+    if (msg.messageId) return msg.messageId;
+    return 'subj:' + (msg.subject || '').replace(/^\s*(re|fwd?|tr|rép|réf)\s*:\s*/gi, '').trim().toLowerCase();
+  };
+  const threadSizeMap = useMemo(() => {
+    if (!conversationView) return null;
+    const m = new Map<string, number>();
+    for (const msg of messages) {
+      const k = threadKeyOf(msg);
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+    return m;
+  }, [messages, conversationView]);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -675,12 +646,6 @@ export default function MessageList({
                             {message.from?.name || message.from?.address || 'Inconnu'}
                           </span>
 
-                          {/* Icons: replied, attachment */}
-                          <div className="flex items-center gap-0.5 flex-shrink-0 w-8">
-                            {message.flags?.answered && <Reply size={11} className="text-outlook-text-disabled" />}
-                            {hasVisibleAttachment(message) && <Paperclip size={11} className="text-outlook-text-disabled" />}
-                          </div>
-
                           {/* Subject + snippet */}
                           <div className="flex-1 min-w-0 flex items-center gap-1.5">
                             <span className={`text-xs truncate ${isUnread ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
@@ -704,13 +669,24 @@ export default function MessageList({
                             </span>
                           </div>
 
-                          {/* Date — shown normally, hidden on hover */}
-                          <span
-                            className="text-2xs text-outlook-text-secondary flex-shrink-0 w-20 text-right group-hover:hidden"
-                            title={formatFullDate(message.date)}
-                          >
-                            {formatDate(message.date)}
-                          </span>
+                          {/* Status icons (conversation, replied, attachment) + Date — shown normally, hidden on hover */}
+                          <div className="flex items-center gap-1 flex-shrink-0 group-hover:hidden">
+                            {conversationView && (threadSizeMap?.get(threadKeyOf(message)) ?? 0) > 1 && (
+                              <MessagesSquare size={11} className="text-outlook-blue" aria-label="Conversation en cours" />
+                            )}
+                            {message.flags?.answered && (
+                              <Reply size={11} className="text-outlook-text-disabled" aria-label="Répondu" />
+                            )}
+                            {hasVisibleAttachment(message) && (
+                              <Paperclip size={11} className="text-outlook-text-disabled" />
+                            )}
+                            <span
+                              className="text-2xs text-outlook-text-secondary w-20 text-right"
+                              title={formatFullDate(message.date)}
+                            >
+                              {formatDate(message.date)}
+                            </span>
+                          </div>
 
                           {/* Hover actions */}
                           <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
@@ -812,11 +788,14 @@ export default function MessageList({
                             </span>
                             
                             <div className="flex items-center gap-1 flex-shrink-0">
+                              {conversationView && (threadSizeMap?.get(threadKeyOf(message)) ?? 0) > 1 && (
+                                <MessagesSquare size={12} className="text-outlook-blue" aria-label="Conversation en cours" />
+                              )}
                               {hasVisibleAttachment(message) && (
                                 <Paperclip size={12} className="text-outlook-text-disabled" />
                               )}
                               {message.flags?.answered && (
-                                <Reply size={12} className="text-outlook-text-disabled" />
+                                <Reply size={12} className="text-outlook-text-disabled" aria-label="Répondu" />
                               )}
                               <button
                                 onClick={(e) => {

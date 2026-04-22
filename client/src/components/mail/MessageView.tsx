@@ -3,7 +3,8 @@ import { fr } from 'date-fns/locale';
 import DOMPurify from 'dompurify';
 import {
   Reply, ReplyAll, Forward, Trash2, Star, MoreHorizontal,
-  Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown
+  Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown,
+  MessagesSquare,
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useEffect, useMemo, useState } from 'react';
@@ -33,10 +34,16 @@ interface MessageViewProps {
   onArchive?: () => void;
   attachmentMinVisibleKb?: number;
   attachmentActionMode?: AttachmentActionMode;
+  /** All messages belonging to the same conversation thread as `message` (including `message` itself).
+   *  When provided and length > 1, the view renders a clickable conversation strip. */
+  conversationMessages?: Email[];
+  /** Called when the user clicks on another message from the conversation strip. */
+  onSelectThreadMessage?: (message: Email) => void;
 }
 
 export default function MessageView({
   message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove, onArchive, attachmentMinVisibleKb = 0, attachmentActionMode = 'preview',
+  conversationMessages, onSelectThreadMessage,
 }: MessageViewProps) {
   const [showMore, setShowMore] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachmentState | null>(null);
@@ -253,6 +260,51 @@ export default function MessageView({
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="flex-1 flex flex-col bg-white overflow-hidden">
+      {/* Conversation strip — only in conversation view and when the thread has more than one message */}
+      {conversationMessages && conversationMessages.length > 1 && (
+        <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/40 flex-shrink-0">
+          <div className="flex items-center gap-2 mb-1.5">
+            <MessagesSquare size={13} className="text-outlook-blue flex-shrink-0" />
+            <span className="text-xs font-semibold text-outlook-text-primary">
+              Conversation ({conversationMessages.length} messages)
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+            {[...conversationMessages]
+              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+              .map((m) => {
+                const isCurrent = m.uid === message.uid && m._accountId === message._accountId;
+                const senderLabel = m.from?.name || m.from?.address || 'Inconnu';
+                return (
+                  <button
+                    key={`${m._accountId || ''}-${m.uid}-${m.messageId}`}
+                    type="button"
+                    onClick={() => { if (!isCurrent) onSelectThreadMessage?.(m); }}
+                    className={`flex items-center gap-2 px-2 py-1 rounded text-left text-xs transition-colors
+                      ${isCurrent
+                        ? 'bg-outlook-blue/10 text-outlook-text-primary font-medium cursor-default'
+                        : 'hover:bg-outlook-bg-hover text-outlook-text-secondary cursor-pointer'}`}
+                    title={senderLabel}
+                  >
+                    <div
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
+                      style={{ backgroundColor: getAvatarColor(m.from?.name, m.from?.address) }}
+                    >
+                      {getInitials(m.from?.name, m.from?.address)}
+                    </div>
+                    <span className="truncate flex-1">{senderLabel}</span>
+                    {m.flags?.answered && <Reply size={10} className="text-outlook-text-disabled flex-shrink-0" />}
+                    {m.hasAttachments && <Paperclip size={10} className="text-outlook-text-disabled flex-shrink-0" />}
+                    <span className="text-2xs text-outlook-text-disabled flex-shrink-0">
+                      {format(new Date(m.date), 'dd/MM HH:mm', { locale: fr })}
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
       {/* Subject bar */}
       <div className="px-6 py-3 border-b border-outlook-border flex-shrink-0">
         <h1 className="text-base font-semibold text-outlook-text-primary truncate">
