@@ -48,6 +48,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 🪟 **Vue côte à côte** : clic droit sur un onglet → « Afficher côte à côte », deux messages ouverts en parallèle avec poignée centrale redimensionnable (15 %–85 %)
   - Bouton **Inverser les côtés** dans l'onglet Accueil du ruban
   - Personnalisation dans l'onglet Afficher du ruban (garder les Dossiers / la Liste des messages visibles, activer la **Réponse à côté** pour garder le mail d'origine visible pendant la rédaction)
+- 💬 **Vue conversation** (optionnelle) : bouton dans l'onglet *Afficher* du ruban pour regrouper la liste des messages par fil de discussion (basé sur les en-têtes `References`/`In-Reply-To`/`Message-ID`, avec repli sur le sujet normalisé). Désactivée par défaut, préférence persistée localement.
 - 📏 Volet dossiers et liste de messages redimensionnables
 - 🗜️ **Rédaction plein-largeur** : bouton Agrandir/Réduire dans l'en-tête du compose pour masquer les volets et donner toute la largeur au brouillon
 - 📎 **Glisser-déposer de pièces jointes** directement sur la fenêtre de rédaction (overlay visuel pendant le survol)

@@ -466,7 +466,7 @@ Basculement automatique via `ResizeObserver`. Basculement manuel via chevron ▲
 
 L'onglet **Afficher** contient :
 - Volet Dossiers (afficher/masquer)
-- **Disposition** : Volet de lecture (droite / bas / plein écran), Liste mail (auto / colonnes / multi-lignes), Densité (spacieux / confortable / compacte)
+- **Disposition** : Volet de lecture (droite / bas / plein écran), Liste mail (auto / colonnes / multi-lignes), Densité (spacieux / confortable / compacte), **Conversation** (regroupement par thread, désactivé par défaut)
 - **Côte à côte** (Dossiers / Liste / Réponse)
 - **Boîtes favoris** (comptes inclus dans les vues unifiées)
 - **Paramètres d'onglets** (mode d'ouverture + nombre max)
@@ -483,6 +483,7 @@ Pilotée depuis `client/src/pages/MailPage.tsx`.
 | `listHeight` | `number (120–900 px)` | Hauteur de la liste quand le volet est en bas | `localStorage.listHeight` |
 | `listDensity` | `'spacious' \| 'comfortable' \| 'compact'` | Hauteur des lignes de la liste | `localStorage.listDensity` |
 | `listDisplayMode` | `'auto' \| 'wide' \| 'compact'` | Affichage forcé des lignes (auto = selon largeur) | `localStorage.listDisplayMode` |
+| `conversationView` | `boolean` | Regroupe la liste par fil de discussion (clé : `References[0]` → `In-Reply-To` → `Message-ID` → sujet normalisé) | `localStorage.conversationView` (défaut `false`) |
 
 - Mode **Plein écran** (`hidden`) : la liste occupe toute la largeur ; à la sélection d'un message, la vue de lecture remplace la liste dans le même bloc, avec un bouton **×** pour revenir à la liste (désélection du message).
 - Mode **Afficher en bas** (`bottom`) : wrapper `md:flex-col`, poignée `cursor-row-resize` qui pilote `listHeight`. En mode `listDisplayMode === 'auto'`, la liste bascule automatiquement en aperçu multi-lignes pour optimiser la lecture.
