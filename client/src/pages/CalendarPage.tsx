@@ -556,8 +556,6 @@ function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, onE
   );
 }
 
-function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, 
-function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, 
 function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor }: {
   currentDate: Date;
   workWeek: boolean;
@@ -596,8 +594,9 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
   days: Date[];
   timeScale: number;
   events: CalendarEvent[];
-  onEventContextM
-  onSlotClick: (d: Date) => void;ev: Calendaenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
+  onSlotClick: (d: Date) => void;
+  onEventClick: (ev: CalendarEvent) => void;
+  onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
 }) {
   const HOUR_HEIGHT = 48;
@@ -619,9 +618,9 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
     return (
       <button
         key={ev.id}
-        onContextMenu={(clickEvt) => onEventContextMenu(clickEvt, ev)}
         onClick={(clickEvt) => { clickEvt.stopPropagation(); onEventClick(ev); }}
-        onContextMenu={(clickEvt) => onEventContextMenu(clickEvt, ev) text-left truncate hover:opacity-90 transition-opacity shadow-sm"
+        onContextMenu={(clickEvt) => onEventContextMenu(clickEvt, ev)}
+        className="absolute left-0.5 right-0.5 rounded px-1.5 py-0.5 text-[11px] text-left truncate hover:opacity-90 transition-opacity shadow-sm"
         style={{ top, height, backgroundColor: `${eventColor(ev)}20`, color: eventColor(ev), borderLeft: `3px solid ${eventColor(ev)}` }}
         title={ev.title}
       >
