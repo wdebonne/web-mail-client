@@ -3,6 +3,8 @@ import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
 import { encrypt } from '../utils/encryption';
 import { z } from 'zod';
+import { CalDAVService } from '../services/caldav';
+import { logger } from '../utils/logger';
 
 export const accountRouter = Router();
 
@@ -21,7 +23,19 @@ const accountSchema = z.object({
   signatureHtml: z.string().optional(),
   signatureText: z.string().optional(),
   color: z.string().default('#0078D4'),
+  // Auto-configure CalDAV + CardDAV for o2switch cPanel hosts (https://<host>:2080/...).
+  o2switchAutoSync: z.boolean().optional(),
 });
+
+/** Build default o2switch CalDAV/CardDAV collection URLs. */
+function o2switchUrls(email: string, host?: string): { caldav: string; carddav: string } {
+  const cpanelHost =
+    host && /o2switch\.net$/i.test(host) ? host : 'colorant.o2switch.net';
+  return {
+    caldav: `https://${cpanelHost}:2080/calendars/${email}/calendar`,
+    carddav: `https://${cpanelHost}:2080/addressbooks/${email}/addressbook`,
+  };
+}
 
 // List accounts (via assignments + direct ownership)
 accountRouter.get('/', async (req: AuthRequest, res) => {
@@ -68,6 +82,31 @@ accountRouter.post('/', async (req: AuthRequest, res) => {
        RETURNING id, name, email, imap_host, imap_port, smtp_host, smtp_port, is_default, color`,
       [req.userId, data.name, data.email, data.imapHost, data.imapPort, data.imapSecure, data.smtpHost, data.smtpPort, data.smtpSecure, data.username, encryptedPassword, data.isDefault, data.signatureHtml, data.signatureText, data.color]
     );
+
+    const accountId: string = result.rows[0].id;
+
+    // O2switch auto-configuration: pre-fill CalDAV + CardDAV URLs and enable sync.
+    const isO2switch = data.o2switchAutoSync === true || /\.o2switch\.net$/i.test(data.imapHost);
+    if (isO2switch) {
+      const urls = o2switchUrls(data.email, data.imapHost);
+      await pool.query(
+        `UPDATE mail_accounts SET
+           caldav_url = $1, caldav_username = $2, caldav_sync_enabled = true,
+           carddav_url = $3, carddav_username = $2,  carddav_sync_enabled = true,
+           updated_at = NOW()
+         WHERE id = $4`,
+        [urls.caldav, data.email, urls.carddav, accountId]
+      );
+
+      // Kick off an initial CalDAV pull (fire-and-forget).
+      try {
+        const svc = new CalDAVService({ baseUrl: urls.caldav, username: data.email, password: data.password });
+        svc.syncForMailAccount(req.userId!, accountId, data.color)
+          .catch(err => logger.error(err, 'Initial o2switch CalDAV sync failed'));
+      } catch (e) {
+        logger.error(e as Error, 'Initial CalDAV sync bootstrap failed');
+      }
+    }
 
     res.status(201).json(result.rows[0]);
   } catch (error: any) {

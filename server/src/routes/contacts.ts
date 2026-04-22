@@ -2,6 +2,11 @@ import { Router } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
 import { z } from 'zod';
+import crypto from 'crypto';
+import { CardDAVService } from '../services/carddav';
+import { buildVCard } from '../utils/vcard';
+import { decrypt } from '../utils/encryption';
+import { logger } from '../utils/logger';
 
 export const contactRouter = Router();
 
@@ -128,11 +133,25 @@ contactRouter.post('/', async (req: AuthRequest, res) => {
     
     const displayName = data.displayName || [data.firstName, data.lastName].filter(Boolean).join(' ') || data.email;
 
+    // Allocate a stable UID used both as DB external id and as CardDAV item name.
+    const uid = crypto.randomUUID();
+
+    // Pick a CardDAV-enabled mail account (default one first) to anchor this contact.
+    const davAccount = await findCardDAVAccount(req.userId!);
+
     const result = await pool.query(
-      `INSERT INTO contacts (user_id, email, first_name, last_name, display_name, phone, mobile, company, job_title, department, avatar_url, notes, is_favorite)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `INSERT INTO contacts (
+         user_id, email, first_name, last_name, display_name, phone, mobile, company,
+         job_title, department, avatar_url, notes, is_favorite,
+         external_id, mail_account_id, carddav_url
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
-      [req.userId, data.email, data.firstName, data.lastName, displayName, data.phone, data.mobile, data.company, data.jobTitle, data.department, data.avatarUrl, data.notes, data.isFavorite || false]
+      [
+        req.userId, data.email, data.firstName, data.lastName, displayName,
+        data.phone, data.mobile, data.company, data.jobTitle, data.department,
+        data.avatarUrl, data.notes, data.isFavorite || false,
+        uid, davAccount?.id || null, davAccount?.carddav_url || null,
+      ]
     );
 
     // Add to groups
@@ -144,6 +163,9 @@ contactRouter.post('/', async (req: AuthRequest, res) => {
         );
       }
     }
+
+    // Fire-and-forget CardDAV push
+    pushContactToCardDAV(result.rows[0].id).catch(err => logger.error(err, 'CardDAV push (create) failed'));
 
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
@@ -195,6 +217,8 @@ contactRouter.put('/:id', async (req: AuthRequest, res) => {
       }
     }
 
+    pushContactToCardDAV(id).catch(err => logger.error(err, 'CardDAV push (update) failed'));
+
     res.json(result.rows[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -204,6 +228,13 @@ contactRouter.put('/:id', async (req: AuthRequest, res) => {
 // Delete contact
 contactRouter.delete('/:id', async (req: AuthRequest, res) => {
   try {
+    // Capture CardDAV info before deletion so we can also remove it remotely.
+    const snap = await pool.query(
+      `SELECT id, mail_account_id, carddav_url, carddav_href, external_id
+       FROM contacts WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.userId]
+    );
+
     const result = await pool.query(
       'DELETE FROM contacts WHERE id = $1 AND user_id = $2 RETURNING id',
       [req.params.id, req.userId]
@@ -211,6 +242,12 @@ contactRouter.delete('/:id', async (req: AuthRequest, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Contact non trouvé' });
+    }
+
+    const row = snap.rows[0];
+    if (row?.mail_account_id && row?.carddav_url && (row?.carddav_href || row?.external_id)) {
+      deleteContactFromCardDAV(row.mail_account_id, row.carddav_url, row.carddav_href || `${row.external_id}.vcf`)
+        .catch(err => logger.error(err, 'CardDAV push (delete) failed'));
     }
 
     res.json({ success: true });
@@ -505,3 +542,85 @@ contactRouter.delete('/distribution-lists/:id', async (req: AuthRequest, res) =>
     res.status(500).json({ error: error.message });
   }
 });
+
+// ---- CardDAV push helpers (fire-and-forget) ----
+
+/** Find a CardDAV-enabled mail account owned by or assigned to the user. */
+async function findCardDAVAccount(userId: string): Promise<{ id: string; carddav_url: string } | null> {
+  const r = await pool.query(
+    `SELECT ma.id, ma.carddav_url
+     FROM mail_accounts ma
+     LEFT JOIN mailbox_assignments mba ON mba.mail_account_id = ma.id AND mba.user_id = $1
+     WHERE (ma.user_id = $1 OR mba.user_id = $1)
+       AND ma.carddav_sync_enabled = true
+       AND ma.carddav_url IS NOT NULL
+     ORDER BY ma.is_default DESC NULLS LAST, ma.created_at ASC
+     LIMIT 1`,
+    [userId]
+  );
+  return r.rows[0] || null;
+}
+
+async function buildCardDAVServiceForAccount(mailAccountId: string, collectionUrl: string): Promise<CardDAVService | null> {
+  const acc = await pool.query(
+    'SELECT carddav_username, username, password_encrypted FROM mail_accounts WHERE id = $1',
+    [mailAccountId]
+  );
+  if (acc.rows.length === 0) return null;
+  const row = acc.rows[0];
+  try {
+    const password = decrypt(row.password_encrypted);
+    return new CardDAVService({
+      baseUrl: collectionUrl,
+      username: row.carddav_username || row.username,
+      password,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function pushContactToCardDAV(contactId: string): Promise<void> {
+  const r = await pool.query(
+    `SELECT id, email, first_name, last_name, display_name, phone, mobile, company,
+            job_title, department, notes, external_id, mail_account_id, carddav_url, carddav_etag
+     FROM contacts WHERE id = $1`,
+    [contactId]
+  );
+  if (r.rows.length === 0) return;
+  const c = r.rows[0];
+  if (!c.mail_account_id || !c.carddav_url || !c.external_id) return;
+
+  const svc = await buildCardDAVServiceForAccount(c.mail_account_id, c.carddav_url);
+  if (!svc) return;
+
+  const vcard = buildVCard({
+    uid: c.external_id,
+    email: c.email,
+    first_name: c.first_name,
+    last_name: c.last_name,
+    display_name: c.display_name,
+    phone: c.phone,
+    mobile: c.mobile,
+    company: c.company,
+    job_title: c.job_title,
+    department: c.department,
+    notes: c.notes,
+  });
+
+  const out = await svc.putContact(c.external_id, vcard, c.carddav_etag || undefined);
+  if (!out.ok) {
+    logger.error(new Error(`PUT ${out.href} -> ${out.status}: ${out.error || ''}`), 'CardDAV push failed');
+    return;
+  }
+  await pool.query(
+    'UPDATE contacts SET carddav_href = $1, carddav_etag = $2, updated_at = NOW() WHERE id = $3',
+    [out.href, out.etag || null, contactId]
+  );
+}
+
+async function deleteContactFromCardDAV(mailAccountId: string, collectionUrl: string, hrefOrFile: string): Promise<void> {
+  const svc = await buildCardDAVServiceForAccount(mailAccountId, collectionUrl);
+  if (!svc) return;
+  await svc.deleteContact(hrefOrFile);
+}

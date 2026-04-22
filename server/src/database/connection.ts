@@ -51,12 +51,25 @@ export async function initDatabase() {
       ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_sync_enabled BOOLEAN DEFAULT false;
       ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_last_sync TIMESTAMP;
 
+      -- CardDAV sync settings on mail accounts
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_url TEXT;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_username VARCHAR(255);
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_sync_enabled BOOLEAN DEFAULT false;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_last_sync TIMESTAMP;
+
       -- Link calendars back to the mail account they were synced from
       ALTER TABLE IF EXISTS calendars ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE CASCADE;
       CREATE INDEX IF NOT EXISTS idx_calendars_mail_account ON calendars(mail_account_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_calendars_caldav_unique
         ON calendars(mail_account_id, external_id)
         WHERE mail_account_id IS NOT NULL AND external_id IS NOT NULL;
+
+      -- Link contacts back to the mail account + CardDAV item identifiers (for push-back)
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE SET NULL;
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_url TEXT;
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_href TEXT;
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_etag TEXT;
+      CREATE INDEX IF NOT EXISTS idx_contacts_mail_account ON contacts(mail_account_id);
 
       -- User groups
       CREATE TABLE IF NOT EXISTS groups (

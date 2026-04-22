@@ -887,7 +887,7 @@ adminRouter.post('/o2switch/accounts/:id/sync', async (req: AuthRequest, res) =>
 // Link an O2Switch email to a local mail account
 adminRouter.post('/o2switch/accounts/:id/link', async (req: AuthRequest, res) => {
   try {
-    const { remoteEmail, password, name, assignToUserIds, assignToGroupIds } = req.body;
+    const { remoteEmail, password, name, assignToUserIds, assignToGroupIds, autoSyncDav } = req.body;
     if (!remoteEmail || !password) return res.status(400).json({ error: 'remoteEmail et password requis' });
 
     const o2account = (await pool.query('SELECT * FROM o2switch_accounts WHERE id = $1', [req.params.id])).rows[0];
@@ -922,6 +922,33 @@ adminRouter.post('/o2switch/accounts/:id/link', async (req: AuthRequest, res) =>
        ON CONFLICT (o2switch_account_id, remote_email) DO UPDATE SET mail_account_id = $3`,
       [req.params.id, remoteEmail, mailAccountId]
     );
+
+    // Auto-configure CalDAV + CardDAV for this o2switch mailbox (opt-in, default true).
+    if (autoSyncDav !== false) {
+      const cpanelHost = /o2switch\.net$/i.test(o2account.hostname) ? o2account.hostname : 'colorant.o2switch.net';
+      const caldavUrl = `https://${cpanelHost}:2080/calendars/${remoteEmail}/calendar`;
+      const carddavUrl = `https://${cpanelHost}:2080/addressbooks/${remoteEmail}/addressbook`;
+      await pool.query(
+        `UPDATE mail_accounts SET
+           caldav_url = $1, caldav_username = $2, caldav_sync_enabled = true,
+           carddav_url = $3, carddav_username = $2, carddav_sync_enabled = true,
+           updated_at = NOW()
+         WHERE id = $4`,
+        [caldavUrl, remoteEmail, carddavUrl, mailAccountId]
+      );
+
+      // Initial background CalDAV pull for each assigned user (so calendars appear immediately).
+      try {
+        const { CalDAVService } = await import('../services/caldav');
+        const svc = new CalDAVService({ baseUrl: caldavUrl, username: remoteEmail, password });
+        for (const userId of (assignToUserIds || [])) {
+          svc.syncForMailAccount(userId, mailAccountId)
+            .catch(err => logger.error(err, `Initial CalDAV sync failed for user ${userId}`));
+        }
+      } catch (e) {
+        logger.error(e as Error, 'CalDAV auto-sync bootstrap failed');
+      }
+    }
 
     // Assign to users
     if (assignToUserIds?.length) {

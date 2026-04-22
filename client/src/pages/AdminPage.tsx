@@ -441,6 +441,7 @@ function O2SwitchLinkForm({ email, users, groups, onSubmit, onCancel, loading }:
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [groupSearch, setGroupSearch] = useState('');
+  const [autoSyncDav, setAutoSyncDav] = useState(true);
 
   const filteredUsers = useMemo(() => {
     const q = userSearch.toLowerCase();
@@ -495,9 +496,23 @@ function O2SwitchLinkForm({ email, users, groups, onSubmit, onCancel, loading }:
               ))}
             </div>
           </div>
+          <label className="flex items-start gap-2 pt-2 border-t border-outlook-border text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoSyncDav}
+              onChange={e => setAutoSyncDav(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium">Activer la synchronisation O2Switch (CalDAV + CardDAV)</span>
+              <span className="block text-outlook-text-secondary mt-0.5">
+                Configure automatiquement les calendriers et carnets d'adresses avec le même mot de passe que la boite mail.
+              </span>
+            </span>
+          </label>
         </div>
         <div className="flex gap-2 mt-4">
-          <button onClick={() => onSubmit({ remoteEmail: email, password, name, assignToUserIds: selectedUsers, assignToGroupIds: selectedGroups })}
+          <button onClick={() => onSubmit({ remoteEmail: email, password, name, assignToUserIds: selectedUsers, assignToGroupIds: selectedGroups, autoSyncDav })}
             disabled={!password || loading} className="bg-outlook-blue text-white px-3 py-1.5 text-sm rounded disabled:opacity-50 hover:bg-outlook-blue-hover">
             {loading ? 'Liaison...' : 'Lier et attribuer'}
           </button>
