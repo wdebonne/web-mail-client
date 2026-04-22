@@ -633,7 +633,7 @@ function ContactDetail({
   return (
     <div>
       {/* Header with gradient banner */}
-      <div className={`h-40 bg-gradient-to-br ${color} relative`}>
+      <div className={`h-48 bg-gradient-to-br ${color} relative`}>
         <div className="absolute top-3 right-3 flex gap-1">
           <button
             onClick={onToggleFav}
@@ -660,13 +660,13 @@ function ContactDetail({
       </div>
 
       <div className="max-w-3xl mx-auto px-6 pb-8 relative z-10">
-        <div className="flex items-end gap-4 mb-5 -mt-16">
-          <div className="ring-4 ring-white rounded-full flex-shrink-0 relative z-10">
+        <div className="flex items-end gap-5 mb-6 -mt-14">
+          <div className="ring-4 ring-outlook-bg-primary rounded-full flex-shrink-0 relative z-10">
             <Avatar contact={contact} size="xl" />
           </div>
-          <div className="flex-1 pb-2">
+          <div className="flex-1 pb-3">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-semibold text-outlook-text-primary">{getFullName(contact)}</h1>
+              <h1 className="text-2xl font-semibold text-outlook-text-primary leading-tight">{getFullName(contact)}</h1>
               {contact.is_favorite && <Star size={18} className="text-amber-500 fill-amber-500" />}
               {isSender && (
                 <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
@@ -675,7 +675,7 @@ function ContactDetail({
               )}
             </div>
             {contact.job_title && (
-              <p className="text-sm text-outlook-text-secondary flex items-center gap-1 mt-0.5">
+              <p className="text-sm text-outlook-text-secondary flex items-center gap-1 mt-1">
                 <Briefcase size={12} /> {contact.job_title}
                 {contact.company && <span className="text-outlook-text-disabled"> · {contact.company}</span>}
               </p>
@@ -714,7 +714,7 @@ function ContactDetail({
         )}
 
         {/* Sections */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4">
           <Section title="Coordonnées" icon={<Mail size={14} />}>
             {contact.email && <InfoRow icon={Mail} label="E-mail" value={contact.email} link={`mailto:${contact.email}`} />}
             {contact.phone && <InfoRow icon={Phone} label="Téléphone" value={contact.phone} link={`tel:${contact.phone}`} />}
@@ -738,8 +738,8 @@ function ContactDetail({
           )}
 
           {contact.notes && (
-            <Section title="Notes" icon={<FileText size={14} />} className="md:col-span-2">
-              <p className="text-sm text-outlook-text-primary whitespace-pre-wrap">{contact.notes}</p>
+            <Section title="Notes" icon={<FileText size={14} />}>
+              <p className="text-sm text-outlook-text-primary whitespace-pre-wrap sm:col-span-2">{contact.notes}</p>
             </Section>
           )}
         </div>
@@ -759,11 +759,11 @@ function Section({
   title, icon, children, className = '',
 }: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-white border border-outlook-border rounded-lg p-4 ${className}`}>
-      <h3 className="text-xs font-semibold text-outlook-text-secondary uppercase tracking-wider flex items-center gap-1.5 mb-3">
+    <div className={`bg-outlook-bg-primary border border-outlook-border rounded-lg p-5 ${className}`}>
+      <h3 className="text-xs font-semibold text-outlook-text-secondary uppercase tracking-wider flex items-center gap-1.5 mb-4">
         {icon} {title}
       </h3>
-      <div className="space-y-2.5">{children}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">{children}</div>
     </div>
   );
 }
