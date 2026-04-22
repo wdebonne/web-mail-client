@@ -13,12 +13,15 @@ import Ribbon from '../components/mail/Ribbon';
 import EmojiPanel from '../components/mail/EmojiPanel';
 import GifPanel from '../components/mail/GifPanel';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil, Columns2 } from 'lucide-react';
 import { getAccountDisplayName } from '../utils/mailPreferences';
 import {
   getUnifiedAccountIds, getUnifiedInboxEnabled, getUnifiedSentEnabled,
   findInboxFolderPath, findSentFolderPath,
+  findTrashFolderPath, isTrashFolderPath,
+  getDeleteConfirmEnabled,
 } from '../utils/mailPreferences';
 import {
   toggleMessageCategory, clearMessageCategories, getMessageCategories,
@@ -210,18 +213,94 @@ export default function MailPage() {
     },
   });
 
-  // Delete mutation
+  // Delete mutation — either moves a message to the Trash folder (safe
+  // delete, recoverable) or performs an IMAP permanent delete when
+  // toTrash=false or when a Trash folder cannot be located.
   const deleteMutation = useMutation({
-    mutationFn: ({ uid, accountId, folder }: { uid: number; accountId?: string; folder?: string }) => {
+    mutationFn: async (
+      { uid, accountId, folder, toTrash, trashPath }:
+      { uid: number; accountId?: string; folder?: string; toTrash?: boolean; trashPath?: string }
+    ) => {
       const accId = accountId || selectedAccount?.id;
       const fld = folder || selectedFolder;
-      return accId ? api.deleteMessage(accId, uid, fld) : Promise.resolve();
+      if (!accId) return { moved: false };
+      if (toTrash && trashPath && trashPath !== fld) {
+        await api.moveMessage(accId, uid, fld, trashPath);
+        return { moved: true };
+      }
+      await api.deleteMessage(accId, uid, fld);
+      return { moved: false };
     },
-    onSuccess: (_, { uid }) => {
+    onSuccess: (data: any, { uid, accountId }) => {
       removeMessage(uid);
-      toast.success('Message supprimé');
+      if (data?.moved) {
+        toast.success('Message envoyé dans la corbeille');
+        // The trash folder count changed — refresh folders list for the account.
+        queryClient.invalidateQueries({ queryKey: ['folders', accountId || selectedAccount?.id] });
+      } else {
+        toast.success('Message supprimé');
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Erreur lors de la suppression');
     },
   });
+
+  // Confirmation dialog state (delete) — decoupled from the mutation so the
+  // user can cancel without triggering any IMAP call.
+  const [deleteConfirm, setDeleteConfirm] = useState<
+    | { title: string; description: string; permanent: boolean; onConfirm: () => void }
+    | null
+  >(null);
+
+  /** Wrap a delete request: resolve the Trash folder of the origin account,
+   *  move the message there when possible, or fall back to a permanent IMAP
+   *  delete when the message is already in Trash (or no Trash exists).
+   *  Shows a confirmation dialog when the user enabled this safeguard. */
+  const requestDelete = useCallback(async (
+    args: { uid: number; accountId?: string; folder?: string },
+  ) => {
+    const accId = args.accountId || selectedAccount?.id;
+    const fld = args.folder || selectedFolder;
+    if (!accId) return;
+
+    // Resolve the account's folders (from cache or network) so we can locate Trash.
+    let accFolders = queryClient.getQueryData<MailFolder[]>(['folders', accId]);
+    if (!accFolders) {
+      try {
+        accFolders = await queryClient.fetchQuery({
+          queryKey: ['folders', accId],
+          queryFn: () => api.getFolders(accId),
+        });
+      } catch {
+        accFolders = [];
+      }
+    }
+    const trashPath = findTrashFolderPath(accFolders || []);
+    const alreadyInTrash = isTrashFolderPath(accFolders || [], fld);
+    const permanent = alreadyInTrash || !trashPath;
+
+    const run = () => {
+      deleteMutation.mutate({
+        uid: args.uid,
+        accountId: accId,
+        folder: fld,
+        toTrash: !permanent,
+        trashPath: trashPath || undefined,
+      });
+    };
+
+    if (!getDeleteConfirmEnabled()) { run(); return; }
+
+    setDeleteConfirm({
+      title: permanent ? 'Supprimer définitivement ?' : 'Supprimer ce message ?',
+      description: permanent
+        ? 'Ce message sera supprimé définitivement du serveur et ne pourra pas être récupéré.'
+        : `Le message sera déplacé dans la corbeille${trashPath ? ` (${trashPath})` : ''}. Vous pourrez le récupérer depuis ce dossier.`,
+      permanent,
+      onConfirm: () => { setDeleteConfirm(null); run(); },
+    });
+  }, [selectedAccount, selectedFolder, deleteMutation, queryClient]);
 
   // Move mutation
   const moveMutation = useMutation({
@@ -1018,7 +1097,7 @@ export default function MailPage() {
           onDelete={() => {
             if (!selectedMessage) return;
             const o = originOf(selectedMessage);
-            deleteMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
+            requestDelete({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
           }}
           onArchive={() => {
             if (!selectedMessage) return;
@@ -1169,7 +1248,7 @@ export default function MailPage() {
             onSelectMessage={handleSelectMessageMobile}
             onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
             onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
-            onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
+            onDelete={(uid) => { const o = originByUid(uid); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
             folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
             onReply={(msg) => handleReply(msg)}
             onReplyAll={(msg) => handleReply(msg, true)}
@@ -1222,7 +1301,7 @@ export default function MailPage() {
                     onForward={() => handleForward(selectedMessage)}
                     onDelete={() => {
                       const o = originOf(selectedMessage);
-                      deleteMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
+                      requestDelete({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
                     }}
                     onToggleFlag={() => {
                       const o = originOf(selectedMessage);
@@ -1250,7 +1329,7 @@ export default function MailPage() {
                   onSelectMessage={handleSelectMessageMobile}
                   onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
                   onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
-                  onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
+                  onDelete={(uid) => { const o = originByUid(uid); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
                   folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
                   onReply={(msg) => handleReply(msg)}
                   onReplyAll={(msg) => handleReply(msg, true)}
@@ -1338,7 +1417,7 @@ export default function MailPage() {
                     onForward={() => handleForward(composeAlongsideMessage)}
                     onDelete={() => {
                       const o = originOf(composeAlongsideMessage);
-                      deleteMutation.mutate({ uid: composeAlongsideMessage.uid, accountId: o.accountId, folder: o.folder });
+                      requestDelete({ uid: composeAlongsideMessage.uid, accountId: o.accountId, folder: o.folder });
                     }}
                     onToggleFlag={() => {
                       const o = originOf(composeAlongsideMessage);
@@ -1407,7 +1486,7 @@ export default function MailPage() {
                     onDelete={() => {
                       if (!selectedMessage) return;
                       const o = originOf(selectedMessage);
-                      deleteMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
+                      requestDelete({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
                     }}
                     onToggleFlag={() => {
                       if (!selectedMessage) return;
@@ -1446,7 +1525,7 @@ export default function MailPage() {
                     onForward={() => handleForward(splitMessage!)}
                     onDelete={() => {
                       const o = originOf(splitMessage!);
-                      deleteMutation.mutate({ uid: splitMessage!.uid, accountId: o.accountId, folder: o.folder });
+                      requestDelete({ uid: splitMessage!.uid, accountId: o.accountId, folder: o.folder });
                     }}
                     onToggleFlag={() => {
                       const o = originOf(splitMessage!);
@@ -1474,7 +1553,7 @@ export default function MailPage() {
                 onDelete={() => {
                   if (!selectedMessage) return;
                   const o = originOf(selectedMessage);
-                  deleteMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
+                  requestDelete({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
                 }}
                 onToggleFlag={() => {
                   if (!selectedMessage) return;
@@ -1637,6 +1716,19 @@ export default function MailPage() {
           />
         );
       })()}
+
+      {/* Delete confirmation dialog — bypassable via the "Afficher" ribbon tab. */}
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        title={deleteConfirm?.title || ''}
+        description={deleteConfirm?.description}
+        confirmLabel={deleteConfirm?.permanent ? 'Supprimer définitivement' : 'Déplacer dans la corbeille'}
+        cancelLabel="Annuler"
+        danger={!!deleteConfirm?.permanent}
+        icon={deleteConfirm?.permanent ? 'warning' : 'trash'}
+        onConfirm={() => deleteConfirm?.onConfirm()}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }

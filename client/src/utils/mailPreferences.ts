@@ -234,3 +234,44 @@ export function findInboxFolderPath(folders: MailFolder[]): string {
   const byName = folders.find((f) => f.name.toUpperCase() === 'INBOX');
   return byName ? byName.path : 'INBOX';
 }
+
+/** Return the Trash/Corbeille folder path for an account, preferring specialUse, then common names. */
+export function findTrashFolderPath(folders: MailFolder[]): string | null {
+  const bySpecial = folders.find((f) => f.specialUse === '\\Trash');
+  if (bySpecial) return bySpecial.path;
+  const byName = folders.find((f) => {
+    const n = f.name.toLowerCase();
+    return n === 'trash' || n === 'corbeille' || n.includes('corbeille')
+      || n === 'deleted items' || n === 'deleted' || n.includes('éléments supprimés')
+      || n.includes('elements supprimes') || n.includes('supprim');
+  });
+  if (byName) return byName.path;
+  const byPath = folders.find((f) => {
+    const p = f.path.toLowerCase();
+    return p === 'trash' || p.endsWith('.trash') || p.includes('corbeille') || p.includes('deleted');
+  });
+  return byPath ? byPath.path : null;
+}
+
+/** Returns true when the given folder path is the Trash folder for this account. */
+export function isTrashFolderPath(folders: MailFolder[], path: string): boolean {
+  if (!path) return false;
+  const trash = findTrashFolderPath(folders);
+  if (trash && trash === path) return true;
+  // Fallback — heuristics on path/name
+  const p = path.toLowerCase();
+  return p === 'trash' || p.endsWith('.trash') || p.includes('corbeille')
+    || p.includes('deleted') || p.includes('supprim');
+}
+
+// --- Delete confirmation preference ---
+const KEY_DELETE_CONFIRM = 'mail.deleteConfirmEnabled'; // boolean (default true)
+
+export function getDeleteConfirmEnabled(): boolean {
+  const raw = localStorage.getItem(KEY_DELETE_CONFIRM);
+  return raw === null ? true : raw === 'true';
+}
+
+export function setDeleteConfirmEnabled(enabled: boolean) {
+  localStorage.setItem(KEY_DELETE_CONFIRM, String(enabled));
+}

@@ -12,7 +12,7 @@ import {
   Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
   Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film,
   Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
-  Tag, MessagesSquare,
+  Tag, MessagesSquare, ShieldAlert, ShieldOff,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
 import type { TabMode } from '../../stores/mailStore';
@@ -22,6 +22,7 @@ import {
   getUnifiedInboxEnabled, setUnifiedInboxEnabled,
   getUnifiedSentEnabled, setUnifiedSentEnabled,
   getAccountDisplayName,
+  getDeleteConfirmEnabled, setDeleteConfirmEnabled,
 } from '../../utils/mailPreferences';
 
 type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer';
@@ -253,6 +254,17 @@ export default function Ribbon({
   const bumpFavPrefs = () => {
     setFavPrefsVersion((n) => n + 1);
     onFavoritesChanged?.();
+  };
+
+  // Delete confirmation preference (per-user, localStorage) — exposed as a
+  // toggle in the "Afficher" tab so each user can opt-out of the dialog.
+  const [deleteConfirmEnabled, setDeleteConfirmEnabledState] = useState<boolean>(
+    () => getDeleteConfirmEnabled(),
+  );
+  const toggleDeleteConfirm = () => {
+    const next = !deleteConfirmEnabled;
+    setDeleteConfirmEnabled(next);
+    setDeleteConfirmEnabledState(next);
   };
 
   // Auto-switch to Message tab when composing starts; go back to Accueil when it ends
@@ -1069,6 +1081,17 @@ export default function Ribbon({
                     document.body
                   )}
                 </div>
+              </RibbonGroup>
+              <RibbonSeparator />
+
+              {/* Sécurité — confirmations et garde-fous utilisateur */}
+              <RibbonGroup label="Sécurité">
+                <RibbonButton
+                  icon={deleteConfirmEnabled ? ShieldAlert : ShieldOff}
+                  label={deleteConfirmEnabled ? 'Confirmer suppr.' : 'Suppr. directe'}
+                  onClick={toggleDeleteConfirm}
+                  active={deleteConfirmEnabled}
+                />
               </RibbonGroup>
               <RibbonSeparator />
 
