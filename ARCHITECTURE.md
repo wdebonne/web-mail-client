@@ -597,6 +597,27 @@ Module : `client/src/utils/categories.ts` + `client/src/components/mail/Category
 
 6 catégories par défaut (`Orange`, `Blue`, `Green`, `Purple`, `Red`, `Yellow`) sont seedées au premier accès.
 
+### Signatures (multiples, style Outlook Web)
+
+Module : `client/src/utils/signatures.ts` + `client/src/components/mail/SignatureModals.tsx`. Modèle 100 % côté client, indépendant des comptes IMAP et de la table serveur `mail_accounts.signature` (les deux peuvent coexister).
+
+| Clé `localStorage` | Type | Rôle |
+|---|---|---|
+| `mail.signatures.v1` | `MailSignature[]` | Liste des signatures (`{id, name, html, updatedAt}`) |
+| `mail.signatures.defaultNew` | `string` | ID de la signature insérée par défaut dans un nouveau message |
+| `mail.signatures.defaultReply` | `string` | ID de la signature insérée par défaut dans une réponse / un transfert |
+
+**API du module** : `getSignatures`, `getSignatureById`, `upsertSignature`, `deleteSignature` (nettoie les défauts pointant sur l'ID supprimé), `getDefaultNewId` / `setDefaultNewId`, `getDefaultReplyId` / `setDefaultReplyId`, `wrapSignatureHtml` (enveloppe la signature dans `<div class="outlook-signature" data-signature="true">` précédé d'un `<br>`). Tous les mutateurs émettent un évènement `mail.signatures.changed` sur `window` pour notifier les composants abonnés.
+
+**Points d'intégration UI** :
+- **Ruban → Insérer** (`Ribbon.tsx`, `InsererTabContent`) — modes classique et simplifié : bouton **Signature** (icône `PenTool`) ouvrant un menu ancré (`AnchoredPortal`) qui liste les signatures existantes + entrée **Signatures…** pour ouvrir le gestionnaire.
+- **Compose** (`ComposeModal.tsx`) : à l'initialisation de l'état `bodyHtml`, sélection automatique de la signature par défaut selon la présence de `initialData.inReplyTo` (réponse/transfert vs nouveau message). La signature est placée **sous** le corps pour un nouveau message, et **au-dessus** de la citation pour une réponse/transfert, comme Outlook Web.
+- **Modals** :
+  - `SignaturesManagerModal` — liste avec *Modifier* / *Supprimer* / menu **…** (définir par défaut pour nouveaux messages / pour réponses-transferts) + deux sélecteurs `<select>` pour les défauts + bouton **+ Ajouter une signature**.
+  - `SignatureEditorModal` — onglets *Mettre le texte en forme* / *Insérer*, champ nom, éditeur `contentEditable` (WYSIWYG via `document.execCommand`), cases à cocher pour basculer les défauts à l'enregistrement.
+
+Les signatures et leurs défauts ne sont jamais envoyés au serveur ; ils restent purement locaux à l'appareil.
+
 ### État des onglets (Zustand `mailStore`)
 
 ```

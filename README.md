@@ -33,6 +33,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
   - 🎞️ **Panneau GIF latéral** propulsé par **GIPHY** (tendances, stickers, recherche) — voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#clé-api-giphy)
 - 🔄 Synchronisation automatique
 - 📝 Signature par compte
+- ✍️ **Signatures multiples (style Outlook Web)** : création / édition / suppression de plusieurs signatures HTML depuis l'onglet **Insérer → Signature** du ruban de rédaction. Choix d'une **valeur par défaut pour les nouveaux messages** et d'une autre pour les **réponses et transferts**, insertion automatique à l'ouverture du compose, insertion ponctuelle via le menu déroulant. Éditeur WYSIWYG dédié (gras, italique, souligné, barré, couleurs, listes, alignements, liens, images). Stockage local (`localStorage`), jamais envoyé au serveur.
 - 📱 Interface responsive (navigation mobile adaptative)
 
 ### Interface Outlook Web
