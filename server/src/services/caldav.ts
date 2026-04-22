@@ -215,44 +215,154 @@ export class CalDAVService {
   }
 
   /**
-   * Create a new CalDAV collection (calendar) on the remote server via MKCALENDAR.
+   * Create a new CalDAV collection (calendar) on the remote server.
+   * First tries RFC 4791 `MKCALENDAR`. If the server doesn't support that
+   * method (cPanel/Horde-based DAV notably returns 500 or 501 with
+   * *"does not support the MKCALENDAR method"*), falls back to:
+   *  1. Extended MKCOL (RFC 5689) with `resourcetype = collection + calendar`,
+   *  2. or, if the server also rejects extended MKCOL, a plain `MKCOL`
+   *     followed by a `PROPPATCH` to set displayname, calendar-color and
+   *     `resourcetype`.
+   *
    * `slug` is the path-safe identifier appended to the base URL.
    * Returns the absolute href of the newly created calendar.
    */
   async createRemoteCalendar(displayName: string, color?: string, slug?: string):
-    Promise<{ ok: boolean; href?: string; status: number; error?: string }> {
+    Promise<{ ok: boolean; href?: string; status: number; error?: string; method?: string }> {
     const safeSlug = (slug || this.slugify(displayName)) || `cal-${Date.now()}`;
     const base = this.config.baseUrl;
     const url = (base.endsWith('/') ? base : base + '/') + encodeURIComponent(safeSlug) + '/';
-    const body = `<?xml version="1.0" encoding="utf-8" ?>
+    const nameXml = this.escapeXml(displayName);
+    const colorXml = color ? this.escapeXml(color) : '';
+
+    // ── Attempt 1: RFC 4791 MKCALENDAR ───────────────────────────────────
+    const mkcalendarBody = `<?xml version="1.0" encoding="utf-8" ?>
 <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">
   <D:set>
     <D:prop>
-      <D:displayname>${this.escapeXml(displayName)}</D:displayname>
-      ${color ? `<A:calendar-color>${this.escapeXml(color)}</A:calendar-color>` : ''}
+      <D:displayname>${nameXml}</D:displayname>
+      ${colorXml ? `<A:calendar-color>${colorXml}</A:calendar-color>` : ''}
       <C:supported-calendar-component-set>
         <C:comp name="VEVENT"/>
       </C:supported-calendar-component-set>
     </D:prop>
   </D:set>
 </C:mkcalendar>`;
-    try {
-      const res = await fetch(url, {
-        method: 'MKCALENDAR',
+    const mkcalendar = await this.safeFetch(url, {
+      method: 'MKCALENDAR',
+      headers: {
+        Authorization: this.authHeader(),
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: mkcalendarBody,
+    });
+    if (mkcalendar.ok) return { ok: true, status: mkcalendar.status, href: url, method: 'MKCALENDAR' };
+    const mkcalendarUnsupported = this.looksUnsupported(mkcalendar);
+    if (!mkcalendarUnsupported && mkcalendar.status !== 0) {
+      return { ok: false, status: mkcalendar.status, error: mkcalendar.error, method: 'MKCALENDAR' };
+    }
+
+    // ── Attempt 2: RFC 5689 extended MKCOL ───────────────────────────────
+    const extMkcolBody = `<?xml version="1.0" encoding="utf-8" ?>
+<D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">
+  <D:set>
+    <D:prop>
+      <D:resourcetype>
+        <D:collection/>
+        <C:calendar/>
+      </D:resourcetype>
+      <D:displayname>${nameXml}</D:displayname>
+      ${colorXml ? `<A:calendar-color>${colorXml}</A:calendar-color>` : ''}
+      <C:supported-calendar-component-set>
+        <C:comp name="VEVENT"/>
+      </C:supported-calendar-component-set>
+    </D:prop>
+  </D:set>
+</D:mkcol>`;
+    const extMkcol = await this.safeFetch(url, {
+      method: 'MKCOL',
+      headers: {
+        Authorization: this.authHeader(),
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: extMkcolBody,
+    });
+    if (extMkcol.ok) return { ok: true, status: extMkcol.status, href: url, method: 'MKCOL-extended' };
+    const extMkcolUnsupported = this.looksUnsupported(extMkcol);
+
+    // ── Attempt 3: plain MKCOL + PROPPATCH ───────────────────────────────
+    if (extMkcolUnsupported || extMkcol.status === 0) {
+      const plainMkcol = await this.safeFetch(url, {
+        method: 'MKCOL',
+        headers: { Authorization: this.authHeader() },
+      });
+      if (!plainMkcol.ok) {
+        return {
+          ok: false,
+          status: plainMkcol.status || mkcalendar.status,
+          error: plainMkcol.error || mkcalendar.error,
+          method: 'MKCOL',
+        };
+      }
+      const proppatchBody = `<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">
+  <D:set>
+    <D:prop>
+      <D:resourcetype>
+        <D:collection/>
+        <C:calendar/>
+      </D:resourcetype>
+      <D:displayname>${nameXml}</D:displayname>
+      ${colorXml ? `<A:calendar-color>${colorXml}</A:calendar-color>` : ''}
+      <C:supported-calendar-component-set>
+        <C:comp name="VEVENT"/>
+      </C:supported-calendar-component-set>
+    </D:prop>
+  </D:set>
+</D:propertyupdate>`;
+      const pp = await this.safeFetch(url, {
+        method: 'PROPPATCH',
         headers: {
           Authorization: this.authHeader(),
           'Content-Type': 'application/xml; charset=utf-8',
         },
-        body,
+        body: proppatchBody,
       });
+      if (pp.ok) return { ok: true, status: pp.status, href: url, method: 'MKCOL+PROPPATCH' };
+      // Collection exists but resourcetype could not be upgraded — still usable
+      // for many CalDAV servers because they infer calendar from URL scope.
+      return {
+        ok: false,
+        status: pp.status,
+        error: `Collection créée (MKCOL) mais PROPPATCH a échoué : ${pp.error || 'erreur inconnue'}`,
+        method: 'MKCOL+PROPPATCH',
+      };
+    }
+
+    return { ok: false, status: extMkcol.status, error: extMkcol.error, method: 'MKCOL-extended' };
+  }
+
+  /** Wrap fetch so network errors become a structured result instead of throwing. */
+  private async safeFetch(url: string, init: RequestInit): Promise<{ ok: boolean; status: number; error?: string }> {
+    try {
+      const res = await fetch(url, init);
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         return { ok: false, status: res.status, error: text.slice(0, 300) };
       }
-      return { ok: true, status: res.status, href: url };
+      return { ok: true, status: res.status };
     } catch (e: any) {
       return { ok: false, status: 0, error: e?.message || 'network error' };
     }
+  }
+
+  /** Heuristic: does the server response look like "method not supported"? */
+  private looksUnsupported(r: { status: number; error?: string }): boolean {
+    if (r.status === 405 || r.status === 501) return true;
+    const msg = (r.error || '').toLowerCase();
+    // Covers English ("does not support the MKCALENDAR method", "method not allowed",
+    // "unknown method") and French cPanel/o2switch ("ne prend pas en charge la méthode").
+    return /not\s+support|unsupported|unknown method|method.*disallowed|not\s+allowed|ne\s+prend\s+pas\s+en\s+charge|non\s+support/.test(msg);
   }
 
   private slugify(s: string): string {
