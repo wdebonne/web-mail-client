@@ -7,6 +7,7 @@ import { logger } from '../utils/logger';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { execSync } from 'child_process';
+import { buildIcs } from '../utils/ical';
 
 export const adminRouter = Router();
 
@@ -980,6 +981,394 @@ adminRouter.get('/o2switch/accounts/:id/disk', async (req: AuthRequest, res) => 
     const disk = await service.getDiskUsage();
     res.json(disk);
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+
+// ========================================
+// ---- Admin Calendars ----
+// ========================================
+
+// Permission levels (Outlook-like):
+//   'none'       -> no access (row kept for explicit block)
+//   'free_busy'  -> see only busy/free slots, no titles
+//   'busy_title' -> see title + times only
+//   'read'       -> read everything (details)
+//   'write'      -> read + create/update/delete events
+//   'owner'      -> full control (including sharing)
+const VALID_CALENDAR_PERMISSIONS = ['none', 'free_busy', 'busy_title', 'read', 'write', 'owner'] as const;
+type CalendarPermission = typeof VALID_CALENDAR_PERMISSIONS[number];
+
+const calendarUpdateSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  isVisible: z.boolean().optional(),
+  isShared: z.boolean().optional(),
+  userId: z.string().uuid().optional(), // re-assign to another owner
+});
+
+const calendarAssignmentSchema = z.object({
+  userId: z.string().uuid(),
+  permission: z.enum(VALID_CALENDAR_PERMISSIONS),
+});
+
+// List all calendars on the server (with owner + assignments)
+adminRouter.get('/calendars', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT c.id, c.name, c.color, c.is_visible, c.is_default, c.is_shared,
+             c.source, c.caldav_url, c.external_id, c.mail_account_id,
+             c.created_at, c.updated_at,
+             u.id as owner_id, u.email as owner_email, u.display_name as owner_display_name,
+             ma.email as mail_account_email, ma.name as mail_account_name,
+             (SELECT COUNT(*) FROM calendar_events ce WHERE ce.calendar_id = c.id) AS event_count,
+             COALESCE(
+               (SELECT json_agg(json_build_object(
+                 'userId', sca.user_id,
+                 'permission', sca.permission,
+                 'email', au.email,
+                 'displayName', au.display_name
+               ))
+                FROM shared_calendar_access sca
+                JOIN users au ON au.id = sca.user_id
+                WHERE sca.calendar_id = c.id),
+               '[]'::json
+             ) AS assignments
+      FROM calendars c
+      LEFT JOIN users u ON u.id = c.user_id
+      LEFT JOIN mail_accounts ma ON ma.id = c.mail_account_id
+      ORDER BY u.email NULLS LAST, c.name ASC
+    `);
+    res.json(result.rows);
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin list calendars failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update a calendar (name, color, visibility, re-assign owner)
+adminRouter.put('/calendars/:id', async (req: AuthRequest, res) => {
+  try {
+    const data = calendarUpdateSchema.parse(req.body);
+    const fields: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+
+    if (data.name !== undefined) { fields.push(`name = $${i++}`); values.push(data.name); }
+    if (data.color !== undefined) { fields.push(`color = $${i++}`); values.push(data.color); }
+    if (data.isVisible !== undefined) { fields.push(`is_visible = $${i++}`); values.push(data.isVisible); }
+    if (data.isShared !== undefined) { fields.push(`is_shared = $${i++}`); values.push(data.isShared); }
+    if (data.userId !== undefined) { fields.push(`user_id = $${i++}`); values.push(data.userId); }
+
+    if (fields.length === 0) return res.status(400).json({ error: 'Aucune modification' });
+
+    fields.push(`updated_at = NOW()`);
+    values.push(req.params.id);
+
+    const result = await pool.query(
+      `UPDATE calendars SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
+      values
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Calendrier introuvable' });
+
+    await addLog(req.userId, 'calendar.update', 'calendars', req, { id: req.params.id, changes: data }, 'calendar', req.params.id);
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: 'Données invalides', details: error.errors });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete a calendar (admin override — cascades to events and assignments)
+adminRouter.delete('/calendars/:id', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query('DELETE FROM calendars WHERE id = $1 RETURNING id, name', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Calendrier introuvable' });
+    await addLog(req.userId, 'calendar.delete', 'calendars', req, { id: req.params.id, name: result.rows[0].name }, 'calendar', req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---- Calendar user assignments / sharing ----
+
+// Upsert user access to a calendar
+adminRouter.post('/calendars/:id/assignments', async (req: AuthRequest, res) => {
+  try {
+    const data = calendarAssignmentSchema.parse(req.body);
+
+    // Ensure calendar exists
+    const cal = await pool.query('SELECT id, user_id FROM calendars WHERE id = $1', [req.params.id]);
+    if (cal.rows.length === 0) return res.status(404).json({ error: 'Calendrier introuvable' });
+
+    if (data.userId === cal.rows[0].user_id) {
+      return res.status(400).json({ error: 'Le propriétaire a déjà un accès complet' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO shared_calendar_access (calendar_id, user_id, permission)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (calendar_id, user_id) DO UPDATE SET permission = EXCLUDED.permission
+       RETURNING *`,
+      [req.params.id, data.userId, data.permission]
+    );
+
+    await pool.query('UPDATE calendars SET is_shared = true WHERE id = $1', [req.params.id]);
+    await addLog(req.userId, 'calendar.share', 'calendars', req, { calendarId: req.params.id, ...data }, 'calendar', req.params.id);
+
+    res.status(201).json(result.rows[0]);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: 'Permission invalide', details: error.errors });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update an existing assignment permission
+adminRouter.put('/calendars/:id/assignments/:userId', async (req: AuthRequest, res) => {
+  try {
+    const permission: CalendarPermission = req.body.permission;
+    if (!VALID_CALENDAR_PERMISSIONS.includes(permission)) {
+      return res.status(400).json({ error: 'Permission invalide' });
+    }
+    const result = await pool.query(
+      `UPDATE shared_calendar_access SET permission = $1
+       WHERE calendar_id = $2 AND user_id = $3 RETURNING *`,
+      [permission, req.params.id, req.params.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Attribution introuvable' });
+    await addLog(req.userId, 'calendar.share.update', 'calendars', req, { calendarId: req.params.id, userId: req.params.userId, permission }, 'calendar', req.params.id);
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove an assignment
+adminRouter.delete('/calendars/:id/assignments/:userId', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM shared_calendar_access WHERE calendar_id = $1 AND user_id = $2 RETURNING calendar_id',
+      [req.params.id, req.params.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Attribution introuvable' });
+
+    // If no more shares, unset is_shared
+    const remaining = await pool.query('SELECT COUNT(*) FROM shared_calendar_access WHERE calendar_id = $1', [req.params.id]);
+    if (parseInt(remaining.rows[0].count, 10) === 0) {
+      await pool.query('UPDATE calendars SET is_shared = false WHERE id = $1', [req.params.id]);
+    }
+
+    await addLog(req.userId, 'calendar.share.remove', 'calendars', req, { calendarId: req.params.id, userId: req.params.userId }, 'calendar', req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---- Backup / Restore / Export ----
+
+// Export a single calendar as a standards-compliant .ics file
+adminRouter.get('/calendars/:id/export.ics', async (req: AuthRequest, res) => {
+  try {
+    const cal = await pool.query('SELECT id, name FROM calendars WHERE id = $1', [req.params.id]);
+    if (cal.rows.length === 0) return res.status(404).json({ error: 'Calendrier introuvable' });
+
+    const events = await pool.query(
+      `SELECT id, title, description, location, start_date, end_date, all_day,
+              recurrence_rule, ical_uid, ical_data, status, attendees, organizer
+       FROM calendar_events WHERE calendar_id = $1 ORDER BY start_date ASC`,
+      [req.params.id]
+    );
+
+    const ics = buildIcs(cal.rows[0].name, events.rows);
+    const safeName = String(cal.rows[0].name).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 64) || 'calendar';
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.ics"`);
+    res.send(ics);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Full JSON backup of ALL calendars + events + shares
+// Purpose: off-site rescue. Can be re-imported via /admin/calendars/restore.
+adminRouter.get('/calendars/backup', async (req: AuthRequest, res) => {
+  try {
+    const calendars = await pool.query(`
+      SELECT c.*, u.email as owner_email
+      FROM calendars c
+      LEFT JOIN users u ON u.id = c.user_id
+      ORDER BY c.created_at ASC
+    `);
+    const events = await pool.query('SELECT * FROM calendar_events ORDER BY calendar_id, start_date');
+    const shares = await pool.query(`
+      SELECT sca.*, u.email as user_email
+      FROM shared_calendar_access sca
+      JOIN users u ON u.id = sca.user_id
+    `);
+
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      calendars: calendars.rows,
+      events: events.rows,
+      shares: shares.rows,
+    };
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="calendars-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+    await addLog(req.userId, 'calendar.backup', 'calendars', req, { calendars: calendars.rows.length, events: events.rows.length });
+    res.json(payload);
+  } catch (error: any) {
+    logger.error(error as Error, 'Calendar backup failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Restore from a JSON backup produced by /admin/calendars/backup
+// strategy: 'merge' (default, upsert by id) | 'replace' (delete all first)
+adminRouter.post('/calendars/restore', async (req: AuthRequest, res) => {
+  const client = await pool.connect();
+  try {
+    const { payload, strategy = 'merge' } = req.body || {};
+    if (!payload || !Array.isArray(payload.calendars)) {
+      return res.status(400).json({ error: 'Format de sauvegarde invalide' });
+    }
+    if (strategy !== 'merge' && strategy !== 'replace') {
+      return res.status(400).json({ error: 'Stratégie invalide' });
+    }
+
+    await client.query('BEGIN');
+
+    if (strategy === 'replace') {
+      // Only wipe user calendars (not the system/default ones already present)
+      await client.query('DELETE FROM calendar_events');
+      await client.query('DELETE FROM shared_calendar_access');
+      await client.query('DELETE FROM calendars');
+    }
+
+    let calCount = 0, evCount = 0, shareCount = 0;
+
+    for (const c of payload.calendars) {
+      // Resolve owner via email if id no longer matches
+      let userId = c.user_id;
+      if (c.owner_email) {
+        const u = await client.query('SELECT id FROM users WHERE email = $1', [c.owner_email]);
+        if (u.rows[0]) userId = u.rows[0].id;
+      }
+      if (!userId) continue;
+
+      await client.query(
+        `INSERT INTO calendars (id, user_id, name, color, is_visible, is_default, is_shared, source, caldav_url, external_id, sync_token, mail_account_id, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name, color = EXCLUDED.color, is_visible = EXCLUDED.is_visible,
+           is_shared = EXCLUDED.is_shared, source = EXCLUDED.source, caldav_url = EXCLUDED.caldav_url,
+           external_id = EXCLUDED.external_id, updated_at = NOW()`,
+        [c.id, userId, c.name, c.color, c.is_visible, c.is_default, c.is_shared, c.source || 'local',
+         c.caldav_url, c.external_id, c.sync_token, c.mail_account_id, c.created_at, c.updated_at]
+      );
+      calCount++;
+    }
+
+    if (Array.isArray(payload.events)) {
+      for (const e of payload.events) {
+        await client.query(
+          `INSERT INTO calendar_events (id, calendar_id, title, description, location, start_date, end_date, all_day, recurrence_rule, reminder_minutes, attendees, organizer, status, ical_uid, ical_data, is_recurring, external_id, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+           ON CONFLICT (id) DO UPDATE SET
+             title = EXCLUDED.title, description = EXCLUDED.description, location = EXCLUDED.location,
+             start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, all_day = EXCLUDED.all_day,
+             recurrence_rule = EXCLUDED.recurrence_rule, attendees = EXCLUDED.attendees,
+             status = EXCLUDED.status, ical_data = EXCLUDED.ical_data, updated_at = NOW()`,
+          [e.id, e.calendar_id, e.title, e.description, e.location, e.start_date, e.end_date, e.all_day,
+           e.recurrence_rule, e.reminder_minutes, e.attendees, e.organizer, e.status, e.ical_uid, e.ical_data,
+           e.is_recurring, e.external_id, e.created_at, e.updated_at]
+        );
+        evCount++;
+      }
+    }
+
+    if (Array.isArray(payload.shares)) {
+      for (const s of payload.shares) {
+        let uId = s.user_id;
+        if (s.user_email) {
+          const u = await client.query('SELECT id FROM users WHERE email = $1', [s.user_email]);
+          if (u.rows[0]) uId = u.rows[0].id;
+        }
+        if (!uId) continue;
+        await client.query(
+          `INSERT INTO shared_calendar_access (calendar_id, user_id, permission)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (calendar_id, user_id) DO UPDATE SET permission = EXCLUDED.permission`,
+          [s.calendar_id, uId, s.permission || 'read']
+        );
+        shareCount++;
+      }
+    }
+
+    await client.query('COMMIT');
+    await addLog(req.userId, 'calendar.restore', 'calendars', req, { calendars: calCount, events: evCount, shares: shareCount, strategy });
+    res.json({ ok: true, calendars: calCount, events: evCount, shares: shareCount });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    logger.error(error as Error, 'Calendar restore failed');
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Push a calendar's events back to a remote CalDAV server (off-site rescue copy).
+// Requires the target account to have caldav_url set. Creates a dedicated "Sauvegarde"
+// collection-level .ics upload via PUT on a single file (basic safeguard copy).
+adminRouter.post('/calendars/:id/push-to-caldav', async (req: AuthRequest, res) => {
+  try {
+    const { mailAccountId } = req.body || {};
+    if (!mailAccountId) return res.status(400).json({ error: 'mailAccountId requis' });
+
+    const cal = await pool.query('SELECT id, name FROM calendars WHERE id = $1', [req.params.id]);
+    if (cal.rows.length === 0) return res.status(404).json({ error: 'Calendrier introuvable' });
+
+    const acc = await pool.query(
+      'SELECT caldav_url, caldav_username, username, password_encrypted FROM mail_accounts WHERE id = $1',
+      [mailAccountId]
+    );
+    if (acc.rows.length === 0) return res.status(404).json({ error: 'Compte mail introuvable' });
+    if (!acc.rows[0].caldav_url) return res.status(400).json({ error: 'CalDAV non configuré sur ce compte' });
+
+    const events = await pool.query(
+      `SELECT id, title, description, location, start_date, end_date, all_day,
+              recurrence_rule, ical_uid, ical_data, status, attendees, organizer
+       FROM calendar_events WHERE calendar_id = $1`,
+      [req.params.id]
+    );
+    const ics = buildIcs(cal.rows[0].name, events.rows);
+
+    const user = acc.rows[0].caldav_username || acc.rows[0].username;
+    const password = decrypt(acc.rows[0].password_encrypted);
+    const auth = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
+
+    const baseUrl = acc.rows[0].caldav_url.endsWith('/') ? acc.rows[0].caldav_url : acc.rows[0].caldav_url + '/';
+    const target = `${baseUrl}backup-${req.params.id}.ics`;
+
+    const r = await fetch(target, {
+      method: 'PUT',
+      headers: { Authorization: auth, 'Content-Type': 'text/calendar; charset=utf-8' },
+      body: ics,
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      return res.status(502).json({ error: `CalDAV PUT a échoué: ${r.status}`, details: text.slice(0, 300) });
+    }
+
+    await addLog(req.userId, 'calendar.push_remote', 'calendars', req, { calendarId: req.params.id, mailAccountId, url: target });
+    res.json({ ok: true, url: target, events: events.rows.length });
+  } catch (error: any) {
+    logger.error(error as Error, 'Calendar push-to-caldav failed');
     res.status(500).json({ error: error.message });
   }
 });

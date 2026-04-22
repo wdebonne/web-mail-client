@@ -315,6 +315,45 @@ export const api = {
   testNextcloud: (url: string, username: string, password: string) =>
     request<any>('/admin/nextcloud/test', { method: 'POST', body: JSON.stringify({ url, username, password }) }),
 
+  // Admin calendars
+  getAdminCalendars: () => request<any[]>('/admin/calendars'),
+  updateAdminCalendar: (id: string, data: { name?: string; color?: string; isVisible?: boolean; isShared?: boolean; userId?: string }) =>
+    request(`/admin/calendars/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteAdminCalendar: (id: string) =>
+    request(`/admin/calendars/${id}`, { method: 'DELETE' }),
+  addAdminCalendarAssignment: (calendarId: string, userId: string, permission: string) =>
+    request(`/admin/calendars/${calendarId}/assignments`, { method: 'POST', body: JSON.stringify({ userId, permission }) }),
+  updateAdminCalendarAssignment: (calendarId: string, userId: string, permission: string) =>
+    request(`/admin/calendars/${calendarId}/assignments/${userId}`, { method: 'PUT', body: JSON.stringify({ permission }) }),
+  removeAdminCalendarAssignment: (calendarId: string, userId: string) =>
+    request(`/admin/calendars/${calendarId}/assignments/${userId}`, { method: 'DELETE' }),
+  exportAdminCalendarIcs: async (id: string) => {
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(`${API_BASE}/admin/calendars/${id}/export.ics`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Export échoué');
+    return res.blob();
+  },
+  backupAdminCalendars: async () => {
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(`${API_BASE}/admin/calendars/backup`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Sauvegarde échouée');
+    return res.blob();
+  },
+  restoreAdminCalendars: (payload: any, strategy: 'merge' | 'replace' = 'merge') =>
+    request<{ ok: boolean; calendars: number; events: number; shares: number }>(
+      '/admin/calendars/restore',
+      { method: 'POST', body: JSON.stringify({ payload, strategy }) }
+    ),
+  pushAdminCalendarToCaldav: (id: string, mailAccountId: string) =>
+    request<{ ok: boolean; url: string; events: number }>(`/admin/calendars/${id}/push-to-caldav`, {
+      method: 'POST',
+      body: JSON.stringify({ mailAccountId }),
+    }),
+
   // Branding
   getBranding: () => request<{
     app_name: string;
