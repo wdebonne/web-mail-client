@@ -11,6 +11,7 @@ import MailPage from './pages/MailPage';
 import CalendarPage from './pages/CalendarPage';
 import ContactsPage from './pages/ContactsPage';
 import SettingsPage from './pages/SettingsPage';
+import SecurityPage from './pages/SecurityPage';
 import AdminPage from './pages/AdminPage';
 import { listenForNotificationClicks } from './pwa/push';
 
@@ -87,6 +88,7 @@ function App() {
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/security" element={<SecurityPage />} />
               {user.isAdmin && <Route path="/admin/*" element={<AdminPage />} />}
               <Route path="*" element={<Navigate to="/mail" replace />} />
             </Routes>

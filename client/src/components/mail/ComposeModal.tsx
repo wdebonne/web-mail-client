@@ -4,7 +4,7 @@ import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link as LinkIcon, Image, Palette, Type, Indent, Outdent,
-  Users, Check,
+  Users, Check, ShieldCheck,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ComposeData } from '../../stores/mailStore';
@@ -13,6 +13,8 @@ import { api } from '../../api';
 import { offlineDB } from '../../pwa/offlineDB';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useQuery } from '@tanstack/react-query';
+import { prepareSecureSend, SecurityMode } from '../../crypto/composePipeline';
+import toast from 'react-hot-toast';
 
 interface ComposeModalProps {
   initialData: ComposeData;
@@ -48,6 +50,8 @@ export default function ComposeModal({
   const [to, setTo] = useState<EmailAddress[]>(initialData.to || []);
   const [cc, setCc] = useState<EmailAddress[]>(initialData.cc || []);
   const [bcc, setBcc] = useState<EmailAddress[]>(initialData.bcc || []);
+  const [securityMode, setSecurityMode] = useState<SecurityMode>('none');
+  const [securityMenuOpen, setSecurityMenuOpen] = useState(false);
   const [subject, setSubject] = useState(initialData.subject || '');
   const [bodyHtml, setBodyHtml] = useState(initialData.bodyHtml || '');
   const [showCc, setShowCc] = useState(initialData.cc?.length > 0);
@@ -197,7 +201,7 @@ export default function ComposeModal({
     if (files && files.length > 0) addFiles(files);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     // Auto-add pending recipients from input fields
     let finalTo = [...to];
     let finalCc = [...cc];
@@ -222,15 +226,81 @@ export default function ComposeModal({
       alert('Veuillez ajouter au moins un destinataire');
       return;
     }
-    
+
+    const rawBodyHtml = editorRef.current?.innerHTML || bodyHtml;
+    const rawBodyText = editorRef.current?.innerText || '';
+    const selectedAccount = accounts.find(a => a.id === accountId);
+    const senderEmail = selectedAccount?.email || '';
+    const senderName = (selectedAccount as any)?.assigned_display_name || selectedAccount?.name;
+
+    // When a security mode is active, route through the crypto pipeline before dispatching.
+    if (securityMode !== 'none') {
+      try {
+        const secured = await prepareSecureSend({
+          mode: securityMode,
+          senderEmail,
+          senderName,
+          recipients: finalTo.map(r => ({ email: r.address, name: r.name })),
+          ccRecipients: (showCc ? finalCc : []).map(r => ({ email: r.address, name: r.name })),
+          subject,
+          bodyHtml: rawBodyHtml,
+          bodyText: rawBodyText,
+          attachments,
+          inReplyTo: initialData.inReplyTo,
+          references: initialData.references,
+        });
+
+        if (secured.kind === 'raw') {
+          // S/MIME: hand the pre-built RFC 822 MIME payload to the parent, which will
+          // route it through `api.sendMailRaw` via its `sendMutation`. The parent detects
+          // the raw payload by the presence of `rawMime` on the data object.
+          onSend({
+            accountId,
+            to: finalTo,
+            cc: showCc ? finalCc : [],
+            bcc: showBcc ? finalBcc : [],
+            subject,
+            bodyHtml: '',
+            bodyText: '',
+            attachments: [],
+            rawMime: secured.rawMime,
+            inReplyTo: initialData.inReplyTo,
+            references: initialData.references,
+            inReplyToUid: initialData.inReplyToUid,
+            inReplyToFolder: initialData.inReplyToFolder,
+          } as any);
+          return;
+        }
+
+        onSend({
+          accountId,
+          to: finalTo,
+          cc: showCc ? finalCc : [],
+          bcc: showBcc ? finalBcc : [],
+          subject,
+          bodyHtml: secured.bodyHtml,
+          bodyText: secured.bodyText,
+          attachments,
+          inReplyTo: initialData.inReplyTo,
+          references: initialData.references,
+          inReplyToUid: initialData.inReplyToUid,
+          inReplyToFolder: initialData.inReplyToFolder,
+        });
+        return;
+      } catch (err: any) {
+        toast.error(err?.message || 'Erreur du pipeline de sécurité');
+        return;
+      }
+    }
+
     const data = {
       accountId,
       to: finalTo,
       cc: showCc ? finalCc : [],
       bcc: showBcc ? finalBcc : [],
       subject,
-      bodyHtml: editorRef.current?.innerHTML || bodyHtml,
-      bodyText: editorRef.current?.innerText || '',
+      bodyHtml: rawBodyHtml,
+      bodyText: rawBodyText,
       attachments,
       inReplyTo: initialData.inReplyTo,
       references: initialData.references,
@@ -342,6 +412,7 @@ export default function ComposeModal({
             >
               <Paperclip size={15} />
             </button>
+            <SecurityMenu mode={securityMode} onChange={setSecurityMode} open={securityMenuOpen} setOpen={setSecurityMenuOpen} />
             {onToggleExpand && (
               <button
                 onClick={onToggleExpand}
@@ -522,6 +593,7 @@ export default function ComposeModal({
           >
             <Paperclip size={16} />
           </button>
+          <SecurityMenu mode={securityMode} onChange={setSecurityMode} open={securityMenuOpen} setOpen={setSecurityMenuOpen} />
         </div>
       </div>
       )}
@@ -536,6 +608,76 @@ export default function ComposeModal({
         />
       )}
     </motion.div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SecurityMenu — pick the signing/encryption mode for this outgoing message.
+// The selected mode is consumed by `handleSend` which routes the payload through
+// `prepareSecureSend` before dispatching to the regular or raw send API.
+// ─────────────────────────────────────────────────────────────────────────────
+function SecurityMenu({ mode, onChange, open, setOpen }: {
+  mode: SecurityMode;
+  onChange: (m: SecurityMode) => void;
+  open: boolean;
+  setOpen: (o: boolean) => void;
+}) {
+  const active = mode !== 'none';
+  const label: Record<SecurityMode, string> = {
+    'none': 'Aucun',
+    'pgp-sign': 'PGP · Signer',
+    'pgp-encrypt': 'PGP · Chiffrer',
+    'pgp-sign-encrypt': 'PGP · Signer + Chiffrer',
+    'smime-sign': 'S/MIME · Signer',
+    'smime-encrypt': 'S/MIME · Chiffrer',
+    'smime-sign-encrypt': 'S/MIME · Signer + Chiffrer',
+  };
+  const entries: { group: string; items: { mode: SecurityMode; label: string }[] }[] = [
+    { group: 'OpenPGP', items: [
+      { mode: 'pgp-sign', label: 'Signer (cleartext)' },
+      { mode: 'pgp-encrypt', label: 'Chiffrer' },
+      { mode: 'pgp-sign-encrypt', label: 'Signer + Chiffrer' },
+    ]},
+    { group: 'S/MIME', items: [
+      { mode: 'smime-sign', label: 'Signer' },
+      { mode: 'smime-encrypt', label: 'Chiffrer' },
+      { mode: 'smime-sign-encrypt', label: 'Signer + Chiffrer' },
+    ]},
+  ];
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`p-1.5 rounded flex items-center gap-1 ${active ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover'}`}
+        title={`Sécurité: ${label[mode]}`}
+      >
+        <ShieldCheck size={15} />
+        {active && <span className="text-2xs font-semibold hidden md:inline">{label[mode]}</span>}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-50 min-w-56">
+            <button onClick={() => { onChange('none'); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover ${mode === 'none' ? 'font-semibold text-outlook-blue' : ''}`}>
+              Aucun
+            </button>
+            {entries.map(g => (
+              <div key={g.group}>
+                <div className="px-3 pt-2 pb-1 text-2xs uppercase tracking-wider text-outlook-text-disabled">{g.group}</div>
+                {g.items.map(it => (
+                  <button key={it.mode} onClick={() => { onChange(it.mode); setOpen(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover ${mode === it.mode ? 'font-semibold text-outlook-blue' : ''}`}>
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

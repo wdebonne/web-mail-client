@@ -279,6 +279,48 @@ export class MailService {
     return result;
   }
 
+  /**
+   * Relay a pre-built RFC 822 MIME message (for example a client-side S/MIME or PGP/MIME
+   * payload) to the SMTP server without modification. The same message is also appended
+   * to the IMAP Sent folder so the user can see it in their outbox.
+   */
+  async sendRaw(params: {
+    rawMime: string;
+    envelopeFrom: string;
+    envelopeTo: string[];
+    envelopeCc?: string[];
+    envelopeBcc?: string[];
+  }) {
+    const transport = this.createSmtpTransport();
+    const result = await transport.sendMail({
+      envelope: {
+        from: params.envelopeFrom,
+        to: [...(params.envelopeTo || []), ...(params.envelopeCc || []), ...(params.envelopeBcc || [])],
+      },
+      raw: params.rawMime,
+    } as any);
+
+    await this.appendRawToSent(params.rawMime).catch((error) => {
+      logger.warn(`Unable to append raw message to Sent folder: ${error?.message || error}`);
+    });
+
+    logger.info(`Raw email sent: ${result.messageId || '(no id)'}`);
+    return result;
+  }
+
+  private async appendRawToSent(rawMime: string) {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const sentPath = await this.resolveSentMailboxPath(client);
+      if (!sentPath) return;
+      const buf = Buffer.from(rawMime, 'utf8');
+      await client.append(sentPath, buf, ['\\Seen']);
+    } finally {
+      await client.logout();
+    }
+  }
+
   private formatAddress(address: { email: string; name?: string }) {
     return address.name ? `"${address.name}" <${address.email}>` : address.email;
   }

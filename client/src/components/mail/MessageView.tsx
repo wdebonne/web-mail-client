@@ -4,12 +4,14 @@ import DOMPurify from 'dompurify';
 import {
   Reply, ReplyAll, Forward, Trash2, Star, MoreHorizontal,
   Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown,
-  ChevronRight, MessagesSquare,
+  ChevronRight, MessagesSquare, Lock, ShieldCheck, ShieldAlert, ShieldX, KeyRound,
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../../api';
+import { inspectIncoming, SecurityVerdict } from '../../crypto/inbound';
+import { useSecurityStore } from '../../stores/securityStore';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
 
@@ -99,6 +101,21 @@ export default function MessageView({
         ALLOW_DATA_ATTR: false,
       })
     : '';
+
+  // ───── Security pipeline — detect PGP armor in inbound message and verify/decrypt.
+  // The verdict is re-evaluated whenever the viewed message changes or the unlocked-key
+  // set changes (so unlocking a key live in the Security page retroactively decrypts).
+  const unlockedPgpCount = useSecurityStore(s => Object.keys(s.unlockedPgp).length);
+  const [verdict, setVerdict] = useState<SecurityVerdict>({ kind: 'plain' });
+  useEffect(() => {
+    let cancelled = false;
+    const raw = message?.bodyText || message?.bodyHtml || '';
+    if (!raw) { setVerdict({ kind: 'plain' }); return; }
+    inspectIncoming(raw).then(v => { if (!cancelled) setVerdict(v); });
+    return () => { cancelled = true; };
+  }, [message?.uid, message?._accountId, message?.bodyText, unlockedPgpCount]);
+
+  const securePlaintext = verdict.kind === 'pgp-signed' || verdict.kind === 'pgp-encrypted' ? verdict.plaintext : null;
 
   const attachmentMinVisibleBytes = Math.max(0, attachmentMinVisibleKb) * 1024;
   const visibleAttachments = useMemo(
@@ -577,7 +594,12 @@ export default function MessageView({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {sanitizedHtml ? (
+          <SecurityBanner verdict={verdict} />
+          {securePlaintext ? (
+            <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
+              {securePlaintext}
+            </pre>
+          ) : sanitizedHtml ? (
             <div
               className="email-body"
               dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
@@ -734,6 +756,66 @@ function getAvatarColor(name?: string, email?: string) {
   for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
   const colors = ['#0078D4', '#107C10', '#D13438', '#FFB900', '#8764B8', '#00B7C3', '#E3008C', '#4F6BED'];
   return colors[Math.abs(hash) % colors.length];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SecurityBanner — renders the PGP/S/MIME status of the currently displayed
+// message. The colour and icon reflect the verdict (verified, encrypted,
+// locked, invalid). Hidden when the verdict is `plain`.
+// ─────────────────────────────────────────────────────────────────────────────
+function SecurityBanner({ verdict }: { verdict: SecurityVerdict }) {
+  if (verdict.kind === 'plain') return null;
+
+  let tone = 'bg-emerald-50 border-emerald-200 text-emerald-900';
+  let Icon: any = ShieldCheck;
+  let title = '';
+  let subtitle = '';
+
+  switch (verdict.kind) {
+    case 'pgp-signed':
+      if (verdict.valid) {
+        title = 'Message signé OpenPGP — signature vérifiée';
+        subtitle = verdict.signerKeyId ? `Clé signataire : ${verdict.signerKeyId}` : '';
+      } else {
+        tone = 'bg-amber-50 border-amber-200 text-amber-900';
+        Icon = ShieldAlert;
+        title = 'Message signé OpenPGP — signature invalide ou non vérifiée';
+        subtitle = 'La clé publique du signataire n\'est pas dans votre trousseau.';
+      }
+      break;
+    case 'pgp-encrypted':
+      Icon = Lock;
+      title = 'Message déchiffré (OpenPGP)';
+      if (verdict.signedValid === true) subtitle = `Signature vérifiée · ${verdict.signerKeyId || ''}`;
+      else if (verdict.signedValid === false) {
+        tone = 'bg-amber-50 border-amber-200 text-amber-900';
+        Icon = ShieldAlert;
+        subtitle = 'Déchiffré, mais la signature n\'a pas pu être vérifiée.';
+      } else subtitle = 'Message non signé';
+      break;
+    case 'pgp-encrypted-locked':
+      tone = 'bg-blue-50 border-blue-200 text-blue-900';
+      Icon = KeyRound;
+      title = 'Message chiffré OpenPGP';
+      subtitle = 'Déverrouillez votre clé privée dans Sécurité → OpenPGP pour lire ce message.';
+      break;
+    case 'pgp-encrypted-error':
+      tone = 'bg-red-50 border-red-200 text-red-900';
+      Icon = ShieldX;
+      title = 'Échec du déchiffrement OpenPGP';
+      subtitle = verdict.message;
+      break;
+  }
+
+  return (
+    <div className={`mb-4 flex items-start gap-2 px-3 py-2 border rounded ${tone}`}>
+      <Icon size={16} className="mt-0.5 flex-shrink-0" />
+      <div className="text-xs">
+        <div className="font-semibold">{title}</div>
+        {subtitle && <div className="opacity-80 mt-0.5">{subtitle}</div>}
+      </div>
+    </div>
+  );
 }
 
 function formatFileSize(bytes: number): string {

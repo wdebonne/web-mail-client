@@ -255,6 +255,57 @@ mailRouter.post('/send', async (req: AuthRequest, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /send-raw — relay a pre-built RFC 822 MIME payload. Used by S/MIME and
+// PGP/MIME composition flows which build the entire MIME tree client-side.
+// The server only needs the SMTP envelope (MAIL FROM / RCPT TO) and forwards
+// the raw bytes without parsing, sanitizing, or rewriting any header.
+// ─────────────────────────────────────────────────────────────────────────────
+mailRouter.post('/send-raw', async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      accountId: z.string().uuid(),
+      to: z.array(z.object({ email: z.string().email(), name: z.string().optional() })),
+      cc: z.array(z.object({ email: z.string().email(), name: z.string().optional() })).optional(),
+      bcc: z.array(z.object({ email: z.string().email(), name: z.string().optional() })).optional(),
+      rawMime: z.string().min(10),
+      inReplyToUid: z.number().int().optional(),
+      inReplyToFolder: z.string().optional(),
+    });
+    const data = schema.parse(req.body);
+    const account = await getAccountForUser(data.accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+    if (account.send_permission === 'none') {
+      return res.status(403).json({ error: 'Vous n\'avez pas la permission d\'envoyer depuis ce compte' });
+    }
+
+    const mailService = new MailService(account);
+    const result = await mailService.sendRaw({
+      rawMime: data.rawMime,
+      envelopeFrom: account.email,
+      envelopeTo: data.to.map(r => r.email),
+      envelopeCc: (data.cc || []).map(r => r.email),
+      envelopeBcc: (data.bcc || []).map(r => r.email),
+    });
+
+    if (data.inReplyToUid && data.inReplyToFolder) {
+      try {
+        await mailService.setFlags(data.inReplyToFolder, data.inReplyToUid, { answered: true });
+      } catch (err: any) {
+        logger.warn(`Unable to flag original message as answered (uid=${data.inReplyToUid}): ${err?.message || err}`);
+      }
+    }
+
+    res.json({ success: true, messageId: result.messageId });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides', details: error.errors });
+    }
+    console.error('Send raw mail error:', error);
+    res.status(500).json({ error: error.message || 'Erreur d\'envoi' });
+  }
+});
+
 // Save to outbox (for offline sending)
 mailRouter.post('/outbox', async (req: AuthRequest, res) => {
   try {

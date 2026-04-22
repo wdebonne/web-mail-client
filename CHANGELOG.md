@@ -9,6 +9,28 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Chiffrement et signature — OpenPGP & S/MIME
+- **Nouvelle page « Sécurité »** (icône clé dans la barre latérale) permettant de gérer un trousseau local de clés **OpenPGP** et de certificats **S/MIME** :
+  - **OpenPGP** : génération de clé (Curve25519, nom / email / date d'expiration), import de clé privée ou publique ASCII-armored, exportation, détermination d'une clé par défaut, empreinte affichée.
+  - **S/MIME** : import d'un certificat au format **PKCS#12 (.p12 / .pfx)** avec la passphrase d'origine, reconnaissance automatique du CN et de l'adresse e-mail (champ emailAddress ou SubjectAltName rfc822Name), empreinte affichée.
+  - Système de **déverrouillage** par clé : la clé privée est chiffrée avec une passphrase locale (AES-GCM 256 bits via WebCrypto, dérivée par PBKDF2-SHA-256 310 000 itérations, sel unique). La clé déverrouillée est conservée **en mémoire uniquement** (jamais sur le disque) et se reverrouille à la fermeture de l'onglet.
+  - Stockage des clés dans **IndexedDB** côté client ; la clé privée en clair ne quitte jamais le navigateur et n'est jamais envoyée au serveur.
+- **Composition sécurisée** : un sélecteur « Sécurité » (icône bouclier) dans la barre d'outils de **Rédiger** permet de choisir parmi 7 modes :
+  - `Aucun` · `PGP · Signer (cleartext)` · `PGP · Chiffrer` · `PGP · Signer + Chiffrer`
+  - `S/MIME · Signer` · `S/MIME · Chiffrer` · `S/MIME · Signer + Chiffrer`
+  - La signature **OpenPGP cleartext** et le chiffrement PGP **inline ASCII-armored** transitent par la route d'envoi habituelle (le payload est placé dans le corps `text/plain` + `<pre>` HTML).
+  - Le **S/MIME** construit entièrement la MIME RFC 5751 côté client (`multipart/signed; protocol="application/pkcs7-signature"` ou `application/pkcs7-mime; smime-type=enveloped-data`) et l'envoi passe par la nouvelle route serveur `POST /api/mail/send-raw` qui relaie le RFC 822 sans le modifier (envelope SMTP + append IMAP dans **Sent**).
+  - Chiffrement **également vers soi-même** : le message envoyé reste lisible depuis son propre dossier *Envoyés*.
+  - Détection des destinataires dont la clé publique / certificat manque, avec message d'erreur clair avant l'envoi.
+- **Réception sécurisée** : la vue d'un message détecte automatiquement la présence d'un bloc OpenPGP (`-----BEGIN PGP MESSAGE-----` ou `-----BEGIN PGP SIGNED MESSAGE-----`) dans le corps et :
+  - **Vérifie** la signature cleartext avec toutes les clés publiques du trousseau.
+  - **Déchiffre** avec chaque clé privée déverrouillée jusqu'à réussir, et indique si une signature imbriquée est valide.
+  - Affiche une **bannière de statut** en tête du message (icône et couleur adaptées) : signature vérifiée / invalide, message déchiffré, clé verrouillée requise, échec de déchiffrement.
+  - Remplace l'affichage du corps par le texte en clair une fois le déchiffrement réussi.
+- **Nouveau module crypto côté client** (`client/src/crypto/`) reposant sur **openpgp v6**, **pkijs** et **asn1js** — aucune opération cryptographique n'est faite côté serveur, qui n'agit que comme relai SMTP/IMAP.
+
+### Ajouté (hors sécurité)
+
 #### Catégories de messages (style Outlook)
 - Nouveau bouton **Catégoriser** dans l'onglet **Accueil** du ruban (modes classique et simplifié) ainsi qu'une entrée **Catégoriser** dans le menu contextuel de la liste de mails.
 - Sélecteur (popup) avec champ de recherche, cases à cocher, et raccourcis « Nouvelle catégorie », « Effacer les catégories » et « Gérer les catégories ».

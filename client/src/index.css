@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .input {
+    @apply w-full px-2.5 py-1.5 text-sm border border-outlook-border rounded bg-white text-outlook-text-primary
+           focus:outline-none focus:ring-2 focus:ring-outlook-blue/30 focus:border-outlook-blue;
+  }
+}
+
 /* ---------------------------------------------------------------
    Theme variables — RGB triplets (used with Tailwind `rgb(var(--x) / <alpha>)`)
    --------------------------------------------------------------- */

@@ -348,6 +348,18 @@ export default function MailPage() {
   // Send mutation
   const sendMutation = useMutation({
     mutationFn: async (data: any) => {
+      // Pre-built RFC 822 MIME (S/MIME or PGP/MIME) — route to the raw passthrough endpoint.
+      if (data?.rawMime) {
+        return api.sendMailRaw({
+          accountId: data.accountId,
+          to: (data.to || []).map((r: any) => ({ email: r.address, name: r.name })),
+          cc: (data.cc || []).map((r: any) => ({ email: r.address, name: r.name })),
+          bcc: (data.bcc || []).map((r: any) => ({ email: r.address, name: r.name })),
+          rawMime: data.rawMime,
+          inReplyToUid: data.inReplyToUid,
+          inReplyToFolder: data.inReplyToFolder,
+        });
+      }
       if (isOnline) {
         return api.sendMail(data);
       } else {

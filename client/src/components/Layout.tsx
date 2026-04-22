@@ -4,7 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
 import { motion } from 'motion/react';
 import {
-  Mail, Calendar, Users, Settings, Shield, Search,
+  Mail, Calendar, Users, Settings, Shield, Search, KeyRound,
   ChevronLeft, LogOut, Menu, X, Sun, Moon, Monitor
 } from 'lucide-react';
 
@@ -33,6 +33,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const bottomItems = [
     { path: '/settings', icon: Settings, label: 'Paramètres' },
+    { path: '/security', icon: KeyRound, label: 'Sécurité' },
     ...(user?.isAdmin ? [{ path: '/admin', icon: Shield, label: 'Administration' }] : []),
   ];
 

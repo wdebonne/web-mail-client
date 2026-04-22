@@ -112,6 +112,12 @@ export const api = {
     return request('/mail/send', { method: 'POST', body: JSON.stringify(payload) });
   },
 
+  /** Send a pre-built RFC 822 MIME message (S/MIME or PGP/MIME). The server relays it
+   *  as-is through SMTP and appends a copy to the Sent folder. */
+  sendMailRaw: (data: { accountId: string; to: any[]; cc?: any[]; bcc?: any[]; rawMime: string; inReplyToUid?: number; inReplyToFolder?: string }) => {
+    return request('/mail/send-raw', { method: 'POST', body: JSON.stringify(data) });
+  },
+
   saveToOutbox: (data: any) =>
     request('/mail/outbox', { method: 'POST', body: JSON.stringify(data) }),
 
