@@ -1047,7 +1047,7 @@ export default function MailPage() {
         {!composeExpanded && (!splitActive || splitKeepMessageList) && (!splitComposeActive || splitKeepMessageList) && (
           <>
             <div
-              className={`hidden md:flex flex-col flex-shrink-0 bg-white rounded-md shadow-sm overflow-hidden ${readingPaneMode === 'bottom' ? 'w-full h-auto' : 'h-full'} ${readingPaneMode === 'hidden' ? 'md:flex-1' : ''}`}
+              className={`hidden md:flex flex-col flex-shrink-0 bg-white rounded-md shadow-sm overflow-hidden ${readingPaneMode === 'bottom' ? 'w-full h-auto' : 'h-full'} ${readingPaneMode === 'hidden' ? 'md:flex-1 relative' : ''}`}
               style={
                 readingPaneMode === 'bottom'
                   ? { height: listHeight, width: '100%' }
@@ -1056,29 +1056,62 @@ export default function MailPage() {
                     : { width: listWidth }
               }
             >
-              <MessageList
-                messages={messages}
-                selectedMessage={selectedMessage}
-                loading={loadingMessages}
-                onSelectMessage={handleSelectMessageMobile}
-                onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
-                onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
-                folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
-                onReply={(msg) => handleReply(msg)}
-                onReplyAll={(msg) => handleReply(msg, true)}
-                onForward={(msg) => handleForward(msg)}
-                onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
-                onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-                onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-                folders={folders}
-                onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
-                showFolderPane={showFolderPane}
-                listWidth={listWidth}
-                attachmentMinVisibleKb={attachmentMinVisibleKb}
-                accountId={selectedAccount?.id}
-                density={listDensity}
-                listDisplayMode={effectiveListDisplayMode}
-              />
+              {readingPaneMode === 'hidden' && selectedMessage ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => selectMessage(null)}
+                    className="absolute top-2 right-2 z-10 w-8 h-8 flex items-center justify-center rounded hover:bg-outlook-bg-hover text-outlook-text-secondary hover:text-outlook-text-primary bg-white/80 backdrop-blur-sm border border-outlook-border shadow-sm"
+                    title="Fermer et revenir à la liste"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <MessageView
+                    message={selectedMessage}
+                    onReply={() => handleReply(selectedMessage)}
+                    onReplyAll={() => handleReply(selectedMessage, true)}
+                    onForward={() => handleForward(selectedMessage)}
+                    onDelete={() => {
+                      const o = originOf(selectedMessage);
+                      deleteMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, folder: o.folder });
+                    }}
+                    onToggleFlag={() => {
+                      const o = originOf(selectedMessage);
+                      flagMutation.mutate({ uid: selectedMessage.uid, isFlagged: !selectedMessage.flags.flagged, accountId: o.accountId, folder: o.folder });
+                    }}
+                    onMove={(folder) => {
+                      const o = originOf(selectedMessage);
+                      moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
+                    }}
+                    attachmentMinVisibleKb={attachmentMinVisibleKb}
+                    attachmentActionMode={attachmentActionMode}
+                  />
+                </>
+              ) : (
+                <MessageList
+                  messages={messages}
+                  selectedMessage={selectedMessage}
+                  loading={loadingMessages}
+                  onSelectMessage={handleSelectMessageMobile}
+                  onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
+                  onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
+                  folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
+                  onReply={(msg) => handleReply(msg)}
+                  onReplyAll={(msg) => handleReply(msg, true)}
+                  onForward={(msg) => handleForward(msg)}
+                  onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
+                  onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+                  onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+                  folders={folders}
+                  onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
+                  showFolderPane={showFolderPane}
+                  listWidth={listWidth}
+                  attachmentMinVisibleKb={attachmentMinVisibleKb}
+                  accountId={selectedAccount?.id}
+                  density={listDensity}
+                  listDisplayMode={effectiveListDisplayMode}
+                />
+              )}
             </div>
 
             {/* Message list resize handle — desktop only; orientation depends on reading pane mode */}

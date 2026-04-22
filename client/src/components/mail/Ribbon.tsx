@@ -802,7 +802,7 @@ export default function Ribbon({
               {[
                 { id: 'right' as const, label: 'Afficher à droite', icon: Columns2 },
                 { id: 'bottom' as const, label: 'Afficher en bas', icon: Rows2 },
-                { id: 'hidden' as const, label: 'Masqué (menu contextuel uniquement)', icon: EyeOff },
+                { id: 'hidden' as const, label: 'Plein écran', icon: EyeOff },
               ].map((opt) => {
                 const Icon = opt.icon;
                 const active = readingPaneMode === opt.id;
