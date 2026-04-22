@@ -17,6 +17,7 @@ import { prepareSecureSend, SecurityMode } from '../../crypto/composePipeline';
 import {
   getSignatureById, getDefaultNewId, getDefaultReplyId, wrapSignatureHtml,
 } from '../../utils/signatures';
+import { attachImageEditing } from '../../utils/imageEditing';
 import toast from 'react-hot-toast';
 
 interface ComposeModalProps {
@@ -90,6 +91,12 @@ export default function ComposeModal({
   const internalEditorRef = useRef<HTMLDivElement>(null);
   const editorRef = externalEditorRef ?? internalEditorRef;
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Enable click-to-select + resize/align toolbar on images inside the editor.
+  useEffect(() => {
+    if (!editorRef.current) return;
+    return attachImageEditing(editorRef.current);
+  }, [editorRef]);
 
   // Autocomplete search
   const searchContacts = useCallback(async (query: string) => {

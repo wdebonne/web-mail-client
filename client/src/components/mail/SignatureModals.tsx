@@ -16,6 +16,7 @@ import {
   getDefaultReplyId,
   setDefaultReplyId,
 } from '../../utils/signatures';
+import { attachImageEditing } from '../../utils/imageEditing';
 import toast from 'react-hot-toast';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,6 +267,12 @@ export function SignatureEditorModal({ onClose, signature, accountEmail }: Signa
   useEffect(() => {
     if (!isEdit) setTimeout(() => nameRef.current?.focus(), 50);
   }, [isEdit]);
+
+  // Enable click-to-select + resize/align toolbar on images inside the editor.
+  useEffect(() => {
+    if (!editorRef.current) return;
+    return attachImageEditing(editorRef.current);
+  }, []);
 
   const exec = (cmd: string, val?: string) => {
     editorRef.current?.focus();
