@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@melloware/coloris": "^0.25.0",
     "@tanstack/react-query": "^5.51.21",
     "asn1js": "^3.0.10",
     "date-fns": "^3.6.0",

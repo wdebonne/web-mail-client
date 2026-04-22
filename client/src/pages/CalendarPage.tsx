@@ -18,6 +18,7 @@ import CalendarRibbon, { CalendarViewMode, CalendarFilters } from '../components
 import CalendarSidebar from '../components/calendar/CalendarSidebar';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { SyncCalendarsDialog } from '../components/calendar/SyncCalendarsDialog';
+import { AddCalendarUrlDialog } from '../components/calendar/AddCalendarUrlDialog';
 import {
   getCalendarView, setCalendarView,
   getRibbonMode, setRibbonMode,
@@ -54,6 +55,18 @@ export default function CalendarPage() {
   const [confirmDelete, setConfirmDelete] = useState<Calendar | null>(null);
   const [newCalendarOpen, setNewCalendarOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [addCalendarUrlOpen, setAddCalendarUrlOpen] = useState(false);
+
+  const syncAllMutation = useMutation({
+    mutationFn: () => api.syncAllCalendars(),
+    onSuccess: (data: any) => {
+      toast.success(`Synchronisation terminée (${data?.synced ?? 0} compte(s))`);
+      queryClient.invalidateQueries({ queryKey: ['calendar-accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['calendars'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+    },
+    onError: (err: any) => toast.error(err.message || 'Échec de la synchronisation'),
+  });
 
   useEffect(() => setCalendarView(view), [view]);
   useEffect(() => setRibbonMode(ribbonMode), [ribbonMode]);
@@ -229,7 +242,7 @@ export default function CalendarPage() {
           onNewEvent={() => openCreateEvent(currentDate)}
           onShareCalendar={() => { if (calendars[0]) handleShareCalendar(calendars[0].id); }}
           onPrint={() => window.print()}
-          onSync={() => setSyncDialogOpen(true)}
+          onSync={() => syncAllMutation.mutate()}
           view={view}
           onChangeView={setView}
           dayCount={dayCount}
@@ -247,7 +260,7 @@ export default function CalendarPage() {
           onToggleCollapse={() => setRibbonCollapsedState(v => !v)}
           ribbonMode={ribbonMode}
           onChangeRibbonMode={setRibbonModeState}
-          onOpenSettings={() => toast('Paramètres à venir')}
+          onOpenSettings={() => setSyncDialogOpen(true)}
           onManageCalendars={() => setNewCalendarOpen(true)}
         />
       </div>
@@ -260,7 +273,7 @@ export default function CalendarPage() {
             onChangeCurrentDate={setCurrentDate}
             selectedRange={selectedRange}
             onNewCalendar={() => setNewCalendarOpen(true)}
-            onSubscribeCalendar={() => setSyncDialogOpen(true)}
+            onSubscribeCalendar={() => setAddCalendarUrlOpen(true)}
             onToggleCalendarVisibility={handleToggleVisibility}
             onRenameCalendar={handleRenameCalendar}
             onChangeColor={handleChangeColor}
@@ -402,6 +415,7 @@ export default function CalendarPage() {
       )}
 
       <SyncCalendarsDialog open={syncDialogOpen} onClose={() => setSyncDialogOpen(false)} />
+      <AddCalendarUrlDialog open={addCalendarUrlOpen} onClose={() => setAddCalendarUrlOpen(false)} />
 
       <ConfirmDialog
         open={!!confirmDelete}

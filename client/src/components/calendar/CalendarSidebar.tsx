@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Coloris from '@melloware/coloris';
+import '@melloware/coloris/dist/coloris.css';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths,
@@ -16,9 +18,38 @@ import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
 import {
   arrangeCalendars, CalendarGroup, createGroup, renameGroup, deleteGroup,
   moveCalendarToGroup, reorderGroups, isGroupExpanded, setGroupExpanded,
-  CALENDAR_COLORS, getNameOverrides, setNameOverride,
+  getNameOverrides, setNameOverride,
   getColorOverrides, setColorOverride,
 } from '../../utils/calendarPreferences';
+
+/** Named base colors exposed in the calendar colour submenu / popover. */
+const BASE_COLORS: { label: string; value: string }[] = [
+  { label: 'Rouge', value: '#E81123' },
+  { label: 'Orange', value: '#F7630C' },
+  { label: 'Jaune', value: '#FFB900' },
+  { label: 'Vert', value: '#107C10' },
+  { label: 'Turquoise', value: '#00B294' },
+  { label: 'Bleu', value: '#0078D4' },
+  { label: 'Violet', value: '#744DA9' },
+  { label: 'Rose', value: '#E3008C' },
+  { label: 'Gris', value: '#767676' },
+  { label: 'Noir', value: '#000000' },
+];
+
+let colorisReady = false;
+function ensureColoris() {
+  if (colorisReady) return;
+  colorisReady = true;
+  Coloris.init();
+  Coloris({
+    el: '.coloris-calendar',
+    themeMode: 'auto',
+    alpha: false,
+    format: 'hex',
+    swatches: BASE_COLORS.map(c => c.value),
+    swatchesOnly: false,
+  });
+}
 
 interface CalendarSidebarProps {
   calendars: Calendar[];
@@ -79,6 +110,23 @@ export default function CalendarSidebar({
   const [dropGroupTarget, setDropGroupTarget] = useState<string | null>(null);
 
   const bump = () => onChangeRefreshKey?.();
+
+  // ── Coloris custom color picker ───────────────────────────
+  const colorisInputRef = useRef<HTMLInputElement>(null);
+  const colorisTargetRef = useRef<Calendar | null>(null);
+  useEffect(() => { ensureColoris(); }, []);
+
+  const openCustomColorPicker = (cal: Calendar, currentColor: string) => {
+    const input = colorisInputRef.current;
+    if (!input) return;
+    colorisTargetRef.current = cal;
+    input.value = currentColor;
+    // Close any open menus so the picker isn't clipped
+    setCalMenu(null);
+    setColorPicker(null);
+    // Defer to next tick so state updates don't steal focus back
+    setTimeout(() => input.click(), 0);
+  };
 
   // ── Mini date picker ──────────────────────────────────────
   const monthStart = startOfMonth(miniDate);
@@ -194,11 +242,19 @@ export default function CalendarSidebar({
         label: 'Couleur',
         icon: <Palette size={14} />,
         onClick: () => {},
-        submenu: CALENDAR_COLORS.map(col => ({
-          label: col,
-          icon: <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: col }} />,
-          onClick: () => handlePickColor(c, col),
-        })),
+        submenu: [
+          ...BASE_COLORS.map(col => ({
+            label: col.label,
+            icon: <span className="inline-block w-3 h-3 rounded-sm border border-outlook-border" style={{ backgroundColor: col.value }} />,
+            onClick: () => handlePickColor(c, col.value),
+          })),
+          { separator: true, label: '', onClick: () => {} },
+          {
+            label: 'Personnaliser…',
+            icon: <Palette size={14} />,
+            onClick: () => openCustomColorPicker(c, displayColor(c)),
+          },
+        ],
       },
       { label: 'Dupliquer', icon: <Copy size={14} />, onClick: () => {
           // fire through parent by calling create via existing handler
@@ -533,24 +589,46 @@ export default function CalendarSidebar({
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => setColorPicker(null)} />
           <div
-            className="fixed z-[9999] bg-white border border-outlook-border rounded-md shadow-lg p-2"
+            className="fixed z-[9999] bg-white border border-outlook-border rounded-md shadow-lg p-2 w-52"
             style={{ top: colorPicker.y + 4, left: colorPicker.x + 4 }}
           >
-            <div className="grid grid-cols-6 gap-1">
-              {CALENDAR_COLORS.map(col => (
+            <div className="grid grid-cols-5 gap-1">
+              {BASE_COLORS.map(col => (
                 <button
-                  key={col}
-                  onClick={() => handlePickColor(colorPicker.cal, col)}
-                  className="w-5 h-5 rounded-full border border-outlook-border hover:scale-110 transition-transform"
-                  style={{ backgroundColor: col }}
-                  title={col}
+                  key={col.value}
+                  onClick={() => handlePickColor(colorPicker.cal, col.value)}
+                  className="w-6 h-6 rounded-full border border-outlook-border hover:scale-110 transition-transform"
+                  style={{ backgroundColor: col.value }}
+                  title={col.label}
                 />
               ))}
             </div>
+            <button
+              onClick={() => openCustomColorPicker(colorPicker.cal, displayColor(colorPicker.cal))}
+              className="mt-2 w-full flex items-center justify-center gap-1 text-xs border border-outlook-border rounded px-2 py-1 hover:bg-outlook-bg-hover"
+            >
+              <Palette size={12} /> Personnaliser…
+            </button>
           </div>
         </>,
         document.body,
       )}
+
+      {/* Hidden Coloris input used by the "Personnaliser…" flow */}
+      <input
+        ref={colorisInputRef}
+        type="text"
+        className="coloris-calendar"
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: -9999, top: -9999 }}
+        defaultValue="#0078D4"
+        onChange={(e) => {
+          const target = colorisTargetRef.current;
+          const value = e.currentTarget.value;
+          if (target && value) handlePickColor(target, value);
+        }}
+      />
     </div>
   );
 }
