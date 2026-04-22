@@ -4,10 +4,10 @@ import DOMPurify from 'dompurify';
 import {
   Reply, ReplyAll, Forward, Trash2, Star, MoreHorizontal,
   Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown,
-  MessagesSquare,
+  ChevronRight, MessagesSquare,
 } from 'lucide-react';
 import { Email } from '../../types';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../../api';
 
@@ -49,6 +49,44 @@ export default function MessageView({
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachmentState | null>(null);
   const [previewLoadingName, setPreviewLoadingName] = useState<string | null>(null);
   const [activeAttachmentMenuIndex, setActiveAttachmentMenuIndex] = useState<number | null>(null);
+
+  // --- Conversation thread (expandable stack) ---
+  const isThreadMode = !!(conversationMessages && conversationMessages.length > 1);
+  const threadKeyOf = (m: Email) => `${m._accountId || ''}-${m.uid}-${m.messageId || ''}`;
+  const sortedThread = useMemo(() => {
+    if (!isThreadMode) return [] as Email[];
+    return [...conversationMessages!].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+  }, [conversationMessages, isThreadMode]);
+  const threadIdentity = sortedThread.map(threadKeyOf).join('|');
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
+  const lastThreadIdRef = useRef<string>('');
+  useEffect(() => {
+    if (!isThreadMode) return;
+    // When the thread itself changes (different selected conversation), reset to « seul le plus
+    // récent déplié ». When the thread content is unchanged but the user selects another message
+    // of the same thread, simply ensure it's expanded without collapsing the others.
+    if (lastThreadIdRef.current !== threadIdentity) {
+      const newest = sortedThread[sortedThread.length - 1];
+      const initial = new Set<string>();
+      if (newest) initial.add(threadKeyOf(newest));
+      if (message) initial.add(threadKeyOf(message));
+      setExpandedKeys(initial);
+      lastThreadIdRef.current = threadIdentity;
+    } else if (message) {
+      const k = threadKeyOf(message);
+      setExpandedKeys(prev => (prev.has(k) ? prev : new Set(prev).add(k)));
+    }
+  }, [threadIdentity, message?.uid, message?._accountId, isThreadMode]);
+  const toggleExpand = (key: string) => {
+    setExpandedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const sanitizedHtml = message?.bodyHtml
     ? DOMPurify.sanitize(message.bodyHtml, {
@@ -260,59 +298,23 @@ export default function MessageView({
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="flex-1 flex flex-col bg-white overflow-hidden">
-      {/* Conversation strip — only in conversation view and when the thread has more than one message */}
-      {conversationMessages && conversationMessages.length > 1 && (
-        <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/40 flex-shrink-0">
-          <div className="flex items-center gap-2 mb-1.5">
-            <MessagesSquare size={13} className="text-outlook-blue flex-shrink-0" />
-            <span className="text-xs font-semibold text-outlook-text-primary">
-              Conversation ({conversationMessages.length} messages)
-            </span>
-          </div>
-          <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
-            {[...conversationMessages]
-              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-              .map((m) => {
-                const isCurrent = m.uid === message.uid && m._accountId === message._accountId;
-                const senderLabel = m.from?.name || m.from?.address || 'Inconnu';
-                return (
-                  <button
-                    key={`${m._accountId || ''}-${m.uid}-${m.messageId}`}
-                    type="button"
-                    onClick={() => { if (!isCurrent) onSelectThreadMessage?.(m); }}
-                    className={`flex items-center gap-2 px-2 py-1 rounded text-left text-xs transition-colors
-                      ${isCurrent
-                        ? 'bg-outlook-blue/10 text-outlook-text-primary font-medium cursor-default'
-                        : 'hover:bg-outlook-bg-hover text-outlook-text-secondary cursor-pointer'}`}
-                    title={senderLabel}
-                  >
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
-                      style={{ backgroundColor: getAvatarColor(m.from?.name, m.from?.address) }}
-                    >
-                      {getInitials(m.from?.name, m.from?.address)}
-                    </div>
-                    <span className="truncate flex-1">{senderLabel}</span>
-                    {m.flags?.answered && <Reply size={10} className="text-outlook-text-disabled flex-shrink-0" />}
-                    {m.hasAttachments && <Paperclip size={10} className="text-outlook-text-disabled flex-shrink-0" />}
-                    <span className="text-2xs text-outlook-text-disabled flex-shrink-0">
-                      {format(new Date(m.date), 'dd/MM HH:mm', { locale: fr })}
-                    </span>
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-      )}
-
-      {/* Subject bar */}
+      {/* Subject bar (shared across the whole conversation when in thread mode) */}
       <div className="px-6 py-3 border-b border-outlook-border flex-shrink-0">
-        <h1 className="text-base font-semibold text-outlook-text-primary truncate">
-          {message.subject || '(Sans objet)'}
-        </h1>
+        <div className="flex items-center gap-2 min-w-0">
+          {isThreadMode && (
+            <div className="flex items-center gap-1 text-outlook-blue flex-shrink-0" title="Vue conversation">
+              <MessagesSquare size={14} />
+              <span className="text-xs font-semibold">{sortedThread.length}</span>
+            </div>
+          )}
+          <h1 className="text-base font-semibold text-outlook-text-primary truncate">
+            {message.subject || '(Sans objet)'}
+          </h1>
+        </div>
       </div>
 
-      {/* Message header — sender info left, actions right */}
+      {/* Message header — sender info left, actions right (single-message mode only) */}
+      {!isThreadMode && (
       <div className="px-6 py-3 border-b border-outlook-border flex-shrink-0">
         <div className="flex items-start gap-3">
           <div
@@ -395,9 +397,10 @@ export default function MessageView({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Attachments */}
-      {visibleAttachments.length > 0 && (
+      {/* Attachments (single-message mode only — in thread mode, each card has its own) */}
+      {!isThreadMode && visibleAttachments.length > 0 && (
         <div className="px-6 py-2 border-b border-outlook-border bg-outlook-bg-primary/30 flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
             <Paperclip size={14} className="text-outlook-text-secondary" />
@@ -443,37 +446,167 @@ export default function MessageView({
         </div>
       )}
 
-      {/* Message body */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        {sanitizedHtml ? (
-          <div
-            className="email-body"
-            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-          />
-        ) : (
-          <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
-            {message.bodyText || ''}
-          </pre>
-        )}
+      {/* Message body — in thread mode, render a vertical stack of collapsible cards */}
+      {isThreadMode ? (
+        <div className="flex-1 overflow-y-auto bg-outlook-bg-primary/20">
+          <div className="flex flex-col gap-2 p-3">
+            {sortedThread.map((m, idx) => {
+              const key = threadKeyOf(m);
+              const isOpen = expandedKeys.has(key);
+              const isLast = idx === sortedThread.length - 1;
+              const bodyHtml = m.bodyHtml
+                ? DOMPurify.sanitize(m.bodyHtml, {
+                    ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'img', 'div', 'span',
+                      'table', 'tr', 'td', 'th', 'thead', 'tbody', 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+                      'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'style', 'font', 'center'],
+                    ALLOWED_ATTR: ['href', 'src', 'alt', 'style', 'class', 'width', 'height', 'target',
+                      'color', 'size', 'face', 'align', 'valign', 'bgcolor', 'border', 'cellpadding',
+                      'cellspacing', 'colspan', 'rowspan', 'rel'],
+                    ALLOW_DATA_ATTR: false,
+                  })
+                : '';
+              const cardAttachments = (m.attachments || []).filter(att => (att.size || 0) >= attachmentMinVisibleBytes);
+              return (
+                <div
+                  key={key}
+                  className={`bg-white border rounded-md overflow-hidden transition-shadow
+                    ${isOpen ? 'border-outlook-border shadow-sm' : 'border-outlook-border'}`}
+                >
+                  {/* Collapsible header */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleExpand(key);
+                      if (!isOpen) onSelectThreadMessage?.(m);
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors
+                      ${isOpen ? 'bg-white' : 'hover:bg-outlook-bg-hover'}`}
+                  >
+                    {isOpen
+                      ? <ChevronDown size={14} className="text-outlook-text-secondary flex-shrink-0" />
+                      : <ChevronRight size={14} className="text-outlook-text-secondary flex-shrink-0" />}
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                      style={{ backgroundColor: getAvatarColor(m.from?.name, m.from?.address) }}
+                    >
+                      {getInitials(m.from?.name, m.from?.address)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-semibold text-sm text-outlook-text-primary truncate">
+                          {m.from?.name || m.from?.address || 'Inconnu'}
+                        </span>
+                        {!isOpen && (m.bodyText || m.bodyHtml) && (
+                          <span className="text-xs text-outlook-text-secondary truncate">
+                            {(m.bodyText || '').replace(/\s+/g, ' ').slice(0, 120)}
+                          </span>
+                        )}
+                      </div>
+                      {isOpen && (
+                        <div className="text-xs text-outlook-text-secondary mt-0.5 truncate">
+                          À : {m.to?.map((a: any) => a.name || a.address).join('; ')}
+                          {m.cc && m.cc.length > 0 && (
+                            <span> • Cc : {m.cc.map((a: any) => a.name || a.address).join('; ')}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0 text-outlook-text-disabled">
+                      {m.flags?.answered && <Reply size={12} title="Répondu" />}
+                      {m.hasAttachments && <Paperclip size={12} title="Pièce jointe" />}
+                      <span className="text-xs">
+                        {format(new Date(m.date), isLast ? "EEE dd/MM/yyyy HH:mm" : 'dd/MM HH:mm', { locale: fr })}
+                      </span>
+                    </div>
+                  </button>
 
-        {/* Bottom reply/forward buttons */}
-        <div className="flex items-center gap-2 mt-6 pt-4 border-t border-outlook-border">
-          <button
-            onClick={onReply}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
-          >
-            <Reply size={14} />
-            Répondre
-          </button>
-          <button
-            onClick={onForward}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
-          >
-            <Forward size={14} />
-            Transférer
-          </button>
+                  {/* Expanded content */}
+                  {isOpen && (
+                    <div className="border-t border-outlook-border">
+                      {cardAttachments.length > 0 && (
+                        <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/30">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Paperclip size={14} className="text-outlook-text-secondary" />
+                            {cardAttachments.map((att, i) => (
+                              <div key={i} className="relative">
+                                <button
+                                  onClick={() => handleAttachmentOpen(att, i)}
+                                  className="flex items-center gap-1.5 bg-white border border-outlook-border rounded px-2 py-1 text-xs hover:bg-outlook-bg-hover transition-colors"
+                                >
+                                  {attachmentActionMode === 'download' ? <Download size={12} /> : <Eye size={12} />}
+                                  <span className="truncate max-w-32">{att.filename}</span>
+                                  <span className="text-outlook-text-disabled">({formatFileSize(att.size)})</span>
+                                  {attachmentActionMode === 'menu' && <ChevronDown size={11} className="text-outlook-text-secondary" />}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="px-5 py-3">
+                        {bodyHtml ? (
+                          <div className="email-body" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+                        ) : (
+                          <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
+                            {m.bodyText || ''}
+                          </pre>
+                        )}
+                        {isLast && (
+                          <div className="flex items-center gap-2 mt-6 pt-4 border-t border-outlook-border">
+                            <button
+                              onClick={onReply}
+                              className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
+                            >
+                              <Reply size={14} /> Répondre
+                            </button>
+                            <button
+                              onClick={onForward}
+                              className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
+                            >
+                              <Forward size={14} /> Transférer
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {sanitizedHtml ? (
+            <div
+              className="email-body"
+              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+            />
+          ) : (
+            <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
+              {message.bodyText || ''}
+            </pre>
+          )}
+
+          {/* Bottom reply/forward buttons */}
+          <div className="flex items-center gap-2 mt-6 pt-4 border-t border-outlook-border">
+            <button
+              onClick={onReply}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
+            >
+              <Reply size={14} />
+              Répondre
+            </button>
+            <button
+              onClick={onForward}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
+            >
+              <Forward size={14} />
+              Transférer
+            </button>
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {activeAttachmentMenuIndex !== null && (
