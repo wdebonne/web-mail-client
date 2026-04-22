@@ -7,6 +7,7 @@ import {
   Users, User, UserCheck, UserX, Star, Upload, Download,
   Camera, Globe, Calendar as CalIcon, MapPin, Briefcase, FileText,
   Loader2, ChevronDown, SortAsc, CheckCircle2, AlertCircle, Cloud,
+  Palette, Image as ImageIcon,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -32,6 +33,33 @@ const AVATAR_COLORS = [
   'from-teal-400 to-teal-600',
   'from-orange-400 to-orange-600',
 ];
+
+// Couleurs prédéfinies pour la bannière personnalisée (classes Tailwind gradient)
+const BANNER_PRESETS: { id: string; label: string; gradient: string }[] = [
+  { id: 'auto', label: 'Auto', gradient: '' },
+  { id: 'blue', label: 'Bleu', gradient: 'from-blue-400 to-blue-600' },
+  { id: 'emerald', label: 'Vert', gradient: 'from-emerald-400 to-emerald-600' },
+  { id: 'purple', label: 'Violet', gradient: 'from-purple-400 to-purple-600' },
+  { id: 'pink', label: 'Rose', gradient: 'from-pink-400 to-pink-600' },
+  { id: 'amber', label: 'Ambre', gradient: 'from-amber-400 to-amber-600' },
+  { id: 'cyan', label: 'Cyan', gradient: 'from-cyan-400 to-cyan-600' },
+  { id: 'rose', label: 'Corail', gradient: 'from-rose-400 to-rose-600' },
+  { id: 'indigo', label: 'Indigo', gradient: 'from-indigo-400 to-indigo-600' },
+  { id: 'teal', label: 'Turquoise', gradient: 'from-teal-400 to-teal-600' },
+  { id: 'orange', label: 'Orange', gradient: 'from-orange-400 to-orange-600' },
+  { id: 'slate', label: 'Ardoise', gradient: 'from-slate-500 to-slate-700' },
+  { id: 'sunset', label: 'Coucher de soleil', gradient: 'from-orange-400 via-red-400 to-pink-500' },
+  { id: 'ocean', label: 'Océan', gradient: 'from-cyan-400 via-blue-500 to-indigo-600' },
+  { id: 'forest', label: 'Forêt', gradient: 'from-green-400 via-emerald-500 to-teal-600' },
+];
+
+function bannerGradient(bannerColor: string | undefined, fallbackSeed: string): string {
+  if (bannerColor && bannerColor !== 'auto') {
+    const preset = BANNER_PRESETS.find(p => p.id === bannerColor);
+    if (preset && preset.gradient) return preset.gradient;
+  }
+  return avatarColor(fallbackSeed);
+}
 
 function avatarColor(seed: string): string {
   let h = 0;
@@ -627,13 +655,23 @@ function ContactDetail({
   promoting: boolean;
 }) {
   const meta = (contact.metadata as any) || {};
-  const color = avatarColor(contact.email || contact.id || 'x');
+  const seed = contact.email || contact.id || 'x';
+  const gradient = bannerGradient(meta.bannerColor, seed);
+  const bannerImage: string | undefined = meta.bannerImage;
   const isSender = contact.source === 'sender';
 
   return (
     <div>
-      {/* Header with gradient banner */}
-      <div className={`h-48 bg-gradient-to-br ${color} relative`}>
+      {/* Header with gradient banner or custom image */}
+      <div
+        className={`h-48 relative ${bannerImage ? '' : `bg-gradient-to-br ${gradient}`}`}
+        style={bannerImage ? {
+          backgroundImage: `url(${bannerImage})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        } : undefined}
+      >
+        {bannerImage && <div className="absolute inset-0 bg-black/10" />}
         <div className="absolute top-3 right-3 flex gap-1">
           <button
             onClick={onToggleFav}
@@ -818,8 +856,11 @@ function ContactForm({
   const [notes, setNotes] = useState(contact?.notes || '');
   const [avatarUrl, setAvatarUrl] = useState(contact?.avatar_url || '');
   const [isFavorite, setIsFavorite] = useState(!!contact?.is_favorite);
-  const [tab, setTab] = useState<'general' | 'work' | 'more'>('general');
+  const [bannerColor, setBannerColor] = useState<string>(meta.bannerColor || 'auto');
+  const [bannerImage, setBannerImage] = useState<string>(meta.bannerImage || '');
+  const [tab, setTab] = useState<'general' | 'work' | 'more' | 'appearance'>('general');
   const fileRef = useRef<HTMLInputElement>(null);
+  const bannerFileRef = useRef<HTMLInputElement>(null);
 
   const handleAvatar = (file: File) => {
     if (file.size > 2 * 1024 * 1024) {
@@ -846,6 +887,29 @@ function ContactForm({
     reader.readAsDataURL(file);
   };
 
+  const handleBanner = (file: File) => {
+    if (file.size > 3 * 1024 * 1024) {
+      toast.error('L\'image doit faire moins de 3 Mo');
+      return;
+    }
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxW = 1200;
+        let { width, height } = img;
+        if (width > maxW) { height = (height / width) * maxW; width = maxW; }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        setBannerImage(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const displayName = [firstName, lastName].filter(Boolean).join(' ').trim() || email;
@@ -855,22 +919,37 @@ function ContactForm({
       displayName,
       avatarUrl: avatarUrl || undefined,
       isFavorite,
-      metadata: { ...meta, website: website || undefined, birthday: birthday || undefined, address: address || undefined },
+      metadata: {
+        ...meta,
+        website: website || undefined,
+        birthday: birthday || undefined,
+        address: address || undefined,
+        bannerColor: bannerColor !== 'auto' ? bannerColor : undefined,
+        bannerImage: bannerImage || undefined,
+      },
     });
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Header with gradient banner */}
-        <div className={`bg-gradient-to-br ${avatarColor(email || firstName || 'new')} h-28 relative flex-shrink-0`}>
+        {/* Header with live preview of banner */}
+        <div
+          className={`h-28 relative flex-shrink-0 ${bannerImage ? '' : `bg-gradient-to-br ${bannerGradient(bannerColor, email || firstName || 'new')}`}`}
+          style={bannerImage ? {
+            backgroundImage: `url(${bannerImage})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          } : undefined}
+        >
+          {bannerImage && <div className="absolute inset-0 bg-black/20" />}
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 text-white/90 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1"
+            className="absolute top-3 right-3 text-white/90 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1 z-10"
           >
             <X size={18} />
           </button>
-          <h2 className="absolute top-3 left-4 text-white font-semibold text-lg">
+          <h2 className="absolute top-3 left-4 text-white font-semibold text-lg drop-shadow z-10">
             {contact ? 'Modifier le contact' : 'Nouveau contact'}
           </h2>
         </div>
@@ -930,11 +1009,12 @@ function ContactForm({
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col min-h-0">
           {/* Tabs */}
-          <div className="px-6 border-b border-outlook-border flex gap-4 flex-shrink-0">
+          <div className="px-6 border-b border-outlook-border flex gap-4 flex-shrink-0 overflow-x-auto">
             {([
               ['general', 'Général'],
               ['work', 'Professionnel'],
               ['more', 'Plus'],
+              ['appearance', 'Apparence'],
             ] as const).map(([k, label]) => (
               <button
                 key={k}
@@ -989,6 +1069,100 @@ function ContactForm({
                   />
                 </div>
               </>
+            )}
+            {tab === 'appearance' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-outlook-text-secondary flex items-center gap-1 mb-2 font-medium">
+                    <Palette size={12} /> Couleur de la bannière
+                  </label>
+                  <div className="grid grid-cols-5 gap-2">
+                    {BANNER_PRESETS.map(preset => {
+                      const isSelected = bannerColor === preset.id && !bannerImage;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => { setBannerColor(preset.id); setBannerImage(''); }}
+                          title={preset.label}
+                          className={`relative h-12 rounded-md overflow-hidden border-2 transition ${
+                            isSelected ? 'border-outlook-blue ring-2 ring-outlook-blue/30' : 'border-outlook-border hover:border-outlook-blue/50'
+                          }`}
+                        >
+                          {preset.id === 'auto' ? (
+                            <div className={`w-full h-full bg-gradient-to-br ${avatarColor(email || firstName || 'new')} flex items-center justify-center`}>
+                              <span className="text-[10px] text-white font-medium drop-shadow">Auto</span>
+                            </div>
+                          ) : (
+                            <div className={`w-full h-full bg-gradient-to-br ${preset.gradient}`} />
+                          )}
+                          {isSelected && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <CheckCircle2 size={16} className="text-white drop-shadow" />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-outlook-text-secondary flex items-center gap-1 mb-2 font-medium">
+                    <ImageIcon size={12} /> Image de la bannière
+                  </label>
+                  <div
+                    onClick={() => bannerFileRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files[0]) handleBanner(e.dataTransfer.files[0]);
+                    }}
+                    className={`relative h-28 rounded-lg border-2 border-dashed cursor-pointer transition overflow-hidden ${
+                      bannerImage
+                        ? 'border-solid border-outlook-blue'
+                        : 'border-outlook-border hover:border-outlook-blue hover:bg-outlook-bg-hover'
+                    }`}
+                    style={bannerImage ? {
+                      backgroundImage: `url(${bannerImage})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                    } : undefined}
+                  >
+                    {bannerImage ? (
+                      <>
+                        <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100 transition flex items-center justify-center gap-2">
+                          <span className="text-white text-xs font-medium">Remplacer</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setBannerImage(''); }}
+                          className="absolute top-2 right-2 bg-white/90 hover:bg-white text-red-500 p-1 rounded-full shadow"
+                          title="Supprimer l'image"
+                        >
+                          <X size={12} />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-outlook-text-secondary gap-1">
+                        <ImageIcon size={20} />
+                        <span className="text-xs">Cliquez ou glissez une image</span>
+                        <span className="text-[10px] text-outlook-text-disabled">JPG, PNG · 3 Mo max</span>
+                      </div>
+                    )}
+                    <input
+                      ref={bannerFileRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => e.target.files?.[0] && handleBanner(e.target.files[0])}
+                    />
+                  </div>
+                  <p className="text-[10px] text-outlook-text-disabled mt-1">
+                    Si une image est définie, elle remplace la couleur choisie.
+                  </p>
+                </div>
+              </div>
             )}
           </div>
 

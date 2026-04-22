@@ -550,6 +550,53 @@ Promeut un contact de `source = 'sender'` à `source = 'local'`.
 
 **Erreur 400 :** Si le contact n'a pas `source = 'sender'`
 
+### POST /api/contacts/import
+
+Import en masse de contacts depuis un fichier vCard ou CSV (Gmail / Outlook / générique). Le parsing est effectué côté client (`client/src/utils/contactImportExport.ts`) ; seules les données normalisées arrivent au serveur.
+
+**Corps** :
+```json
+{
+  "contacts": [
+    {
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Dupont",
+      "phone": "+33 1 23 45 67 89",
+      "mobile": "+33 6 12 34 56 78",
+      "company": "Acme",
+      "jobTitle": "CTO",
+      "department": "R&D",
+      "notes": "Rencontrée au salon…",
+      "avatarUrl": "data:image/jpeg;base64,...",
+      "website": "https://example.com",
+      "birthday": "1990-03-14",
+      "address": "1 rue de la Paix, 75001 Paris"
+    }
+  ],
+  "mode": "merge"
+}
+```
+
+Modes de dédoublonnage (clé = e-mail insensible à la casse) :
+
+| Mode | Comportement |
+|------|--------------|
+| `merge` | Complète les champs vides du contact existant sans écraser les valeurs déjà présentes. Un expéditeur (`source = 'sender'`) est promu en `local` lors d'un merge. |
+| `skip` | Ignore les contacts dont l'e-mail existe déjà. |
+| `replace` | Écrase tous les champs du contact existant. |
+
+**Réponse 200** :
+```json
+{
+  "imported": 12,
+  "updated": 3,
+  "skipped": 1,
+  "errors": [],
+  "total": 16
+}
+```
+
 ### GET /api/contacts/autocomplete
 
 Autocomplétion pour le composeur d'email.

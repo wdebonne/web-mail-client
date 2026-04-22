@@ -12,6 +12,159 @@ WebMail dispose d'un système de gestion des contacts complet avec support de tr
 
 ---
 
+## Interface de la page Contacts
+
+### Barre latérale (redimensionnable)
+
+La liste de gauche est **redimensionnable** : glissez la poignée verticale entre la liste et la fiche détaillée (240–600 px), double-clic pour réinitialiser à 320 px. La valeur est persistée dans `localStorage` sous la clé `contacts-sidebar-width`.
+
+### Filtres
+
+| Filtre | Icône / Couleur | Description |
+|--------|-----------------|-------------|
+| **Tous les contacts** | `Users`, bleu | Tous les contacts permanents et expéditeurs |
+| **Favoris** | `Star`, ambre | Contacts marqués comme favoris (`is_favorite = true`) |
+| **Enregistrés** | `UserCheck`, vert | Contacts permanents (`source = 'local'`) |
+| **Expéditeurs non enregistrés** | `UserX`, orange | Expéditeurs auto-enregistrés (`source = 'sender'`) |
+| **NextCloud** | `Cloud`, bleu | Contacts synchronisés depuis NextCloud — **visible seulement si au moins un contact existe** |
+| **Groupes** | `Users` | Groupes de contacts personnalisés |
+
+### Tri
+
+La liste peut être triée par **Nom** (avec en-têtes alphabétiques collants A/B/C…), **Récent** (dernière modification) ou **Entreprise**.
+
+### Fiche contact
+
+La fiche affichée à droite comporte :
+
+- **Bannière personnalisable** (couleur ou image — voir [Personnalisation de la bannière](#personnalisation-de-la-bannière))
+- **Avatar XL** (photo ou initiales sur dégradé) à cheval sur la bannière
+- **Nom, fonction, entreprise** et badges (favori, non enregistré)
+- **Actions** : favori, modifier, supprimer, enregistrer (pour les expéditeurs)
+- **Boutons rapides** : envoyer un e-mail, appeler
+- **Sections** : Coordonnées (e-mail, téléphone, mobile, site web), Professionnel (entreprise, fonction, service), Informations (anniversaire, adresse), Notes
+
+---
+
+## Import / Export
+
+Le client supporte l'import et l'export compatibles avec les principaux logiciels.
+
+### Formats supportés
+
+| Format | Extension | Compatible avec |
+|--------|-----------|-----------------|
+| **vCard 3.0 / 4.0** | `.vcf`, `.vcard` | Apple Contacts, iOS, macOS, Android, Thunderbird |
+| **CSV Google** | `.csv` | Gmail / Google Contacts |
+| **CSV Outlook** | `.csv` | Outlook / Microsoft 365 |
+| **CSV générique** | `.csv` | Tableurs (Excel, LibreOffice…) |
+
+### Import
+
+Bouton **Importer** dans la barre latérale → modale d'import avec :
+
+- Glisser-déposer ou sélection de fichier
+- Détection automatique du format (extension + contenu)
+- Aperçu des 50 premiers contacts détectés
+- Choix du mode de fusion en cas de doublon (par e-mail) :
+  - `merge` : compléter les champs existants (conserve les valeurs non-null existantes pour les champs manquants dans l'import)
+  - `skip` : ne pas modifier les contacts déjà présents
+  - `replace` : écraser tous les champs avec les valeurs de l'import
+
+#### Endpoint
+
+`POST /api/contacts/import`
+
+```json
+{
+  "contacts": [
+    {
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Dupont",
+      "phone": "...",
+      "mobile": "...",
+      "company": "...",
+      "jobTitle": "...",
+      "department": "...",
+      "notes": "...",
+      "avatarUrl": "data:image/jpeg;base64,...",
+      "website": "...",
+      "birthday": "YYYY-MM-DD",
+      "address": "..."
+    }
+  ],
+  "mode": "merge"
+}
+```
+
+**Réponse 200** :
+```json
+{
+  "imported": 12,
+  "updated": 3,
+  "skipped": 1,
+  "errors": [],
+  "total": 16
+}
+```
+
+### Export
+
+Menu **Exporter** dans la barre latérale. Le fichier est téléchargé directement dans le navigateur (aucun appel serveur ni dépendance externe — génération dans `client/src/utils/contactImportExport.ts`) :
+
+- `contacts-YYYY-MM-DD.vcf`
+- `contacts-YYYY-MM-DD-google.csv`
+- `contacts-YYYY-MM-DD-outlook.csv`
+- `contacts-YYYY-MM-DD-generic.csv`
+
+Les expéditeurs non enregistrés sont **exclus** de l'export.
+
+---
+
+## Personnalisation de la bannière
+
+Chaque contact peut avoir une **bannière personnalisée** (visible sur sa fiche détaillée) : couleur de dégradé prédéfinie ou image custom.
+
+### Accès
+
+Dans la modale d'édition du contact → onglet **Apparence**.
+
+### Couleurs prédéfinies
+
+15 options :
+
+| ID | Label |
+|----|-------|
+| `auto` | Auto (dégradé déterministe basé sur l'e-mail) |
+| `blue`, `emerald`, `purple`, `pink`, `amber`, `cyan`, `rose`, `indigo`, `teal`, `orange`, `slate` | Couleurs unies |
+| `sunset` | Coucher de soleil (orange → rouge → rose) |
+| `ocean` | Océan (cyan → bleu → indigo) |
+| `forest` | Forêt (vert → émeraude → turquoise) |
+
+### Image personnalisée
+
+- JPG ou PNG, **3 Mo maximum**
+- Redimensionnée automatiquement à **1200 px** de large, JPEG 80 %
+- Glisser-déposer ou sélection depuis la modale
+- Si une image est définie, elle **prime sur la couleur** choisie
+- Un léger voile noir (`bg-black/10` en vue détail, `bg-black/20` en modale) améliore la lisibilité des icônes blanches superposées
+
+### Stockage
+
+Les préférences sont persistées dans la colonne `contacts.metadata` (jsonb) :
+
+```json
+{
+  "bannerColor": "sunset",
+  "bannerImage": "data:image/jpeg;base64,..."
+}
+```
+
+Les images sont stockées inline (base64). Pour un grand nombre de contacts avec images, envisager un stockage externe.
+
+---
+
 ## Expéditeurs automatiques
 
 ### Concept
