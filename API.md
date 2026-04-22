@@ -683,7 +683,29 @@ Liste les calendriers de l'utilisateur.
 
 Crée un nouveau calendrier.
 
-**Body :** `{ "name": "Projet X", "color": "#e74c3c" }`
+**Body :**
+
+```json
+{
+  "name": "Projet X",
+  "color": "#e74c3c",
+  "mailAccountId": "uuid | optionnel",
+  "createOnCaldav": true
+}
+```
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| `name` | string | Nom affiché (requis). |
+| `color` | string | Couleur hexadécimale (défaut `#0078D4`). |
+| `mailAccountId` | UUID \| null | Si fourni, le calendrier est rattaché à cette boîte mail (propriété directe ou via `mailbox_assignments`). Sinon le calendrier est purement local. |
+| `createOnCaldav` | boolean | Ignoré si `mailAccountId` est absent. Lorsqu'il vaut `true` et que la boîte mail cible a une `caldav_url` + `caldav_sync_enabled`, le serveur envoie une requête **`MKCALENDAR`** au serveur CalDAV distant avant d'insérer la ligne locale ; celle-ci est alors créée avec `source = 'caldav'`, `caldav_url` et `external_id` positionnés à l'URL du nouveau collection remote. |
+
+**Erreurs :**
+
+- `400 Bad Request` — `name` manquant ou `createOnCaldav` sans URL CalDAV sur la boîte mail.
+- `404 Not Found` — `mailAccountId` introuvable ou non accessible à l'utilisateur.
+- `502 Bad Gateway` — le serveur CalDAV a refusé `MKCALENDAR` (corps : `{ error: "Création CalDAV échouée (<status>) : <message>" }`). Aucune ligne locale n'est alors insérée.
 
 ### PUT /api/calendar/calendars/:id
 
@@ -980,9 +1002,12 @@ Crée un compte mail administré.
   "isShared": true,
   "signatureHtml": "<p>Cordialement</p>",
   "signatureText": "Cordialement",
-  "color": "#0078D4"
+  "color": "#0078D4",
+  "o2switchAutoSync": true
 }
 ```
+
+Quand `o2switchAutoSync` vaut `true` **ou** que `imapHost` se termine par `.o2switch.net`, le serveur pré-remplit automatiquement `caldav_url`, `caldav_username`, `caldav_sync_enabled`, `carddav_url`, `carddav_username`, `carddav_sync_enabled` selon le gabarit SabreDAV o2switch (`https://{cpanel}:2080/calendars/{email}/calendar` et `/addressbooks/{email}/addressbook`). Une première synchronisation CalDAV est déclenchée en arrière-plan dès qu'un utilisateur est assigné à cette boîte via `POST /api/admin/mail-accounts/:id/assignments`.
 
 ### PUT /api/admin/mail-accounts/:id
 
@@ -1001,6 +1026,32 @@ Teste la connexion IMAP d'un compte mail administré.
 **Réponse 200 :**
 ```json
 { "success": true, "folders": 8 }
+```
+
+### POST /api/admin/calendars/import-caldav
+
+Importe un calendrier distant via une URL CalDAV pour le compte d'un utilisateur (utilisé par *Administration → Gestion des calendriers → Ajouter via CalDAV*).
+
+**Body :**
+
+```json
+{
+  "url": "https://colorant.o2switch.net:2080/calendars/user@example.com/calendar",
+  "ownerId": "uuid-de-l-utilisateur",
+  "username": "user@example.com",
+  "password": "mot_de_passe_caldav",
+  "color": "#0078D4"
+}
+```
+
+- `username` / `password` sont optionnels à la première tentative.
+- Si le serveur CalDAV répond `401` ou `403`, la route renvoie délibérément **HTTP 200** avec `{ ok: false, needsAuth: true, error: "Authentification requise" }` (ne pas renvoyer `401` ici : le client admin utilise un middleware global qui redirige automatiquement vers l'écran de connexion en cas de `401`, ce qui fermerait la session administrateur).
+- Les calendriers distants sont dédoublonnés localement sur `(user_id, external_id, mail_account_id IS NULL)` puis leurs événements sont importés sur la fenêtre `[−1 mois ; +6 mois]` via l'upsert `ON CONFLICT (calendar_id, ical_uid) WHERE external_id IS NOT NULL`.
+
+**Réponse 200 (succès) :**
+
+```json
+{ "ok": true, "calendars": 2, "events": 74 }
 ```
 
 ### POST /api/admin/nextcloud/test

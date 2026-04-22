@@ -136,10 +136,15 @@ export default function CalendarPage() {
   });
   const createCalendarMutation = useMutation({
     mutationFn: (data: any) => api.createCalendar(data),
-    onSuccess: () => {
+    onSuccess: (_r: any, vars: any) => {
       queryClient.invalidateQueries({ queryKey: ['calendars'] });
-      toast.success('Calendrier créé');
+      if (vars?.mailAccountId) {
+        queryClient.invalidateQueries({ queryKey: ['calendar-accounts'] });
+        queryClient.invalidateQueries({ queryKey: ['events'] });
+      }
+      toast.success(vars?.createOnCaldav ? 'Calendrier créé sur le serveur CalDAV' : 'Calendrier créé');
     },
+    onError: (e: any) => toast.error(e?.message || 'Création impossible'),
   });
   const deleteCalendarMutation = useMutation({
     mutationFn: (id: string) => api.deleteCalendar(id),
@@ -740,33 +745,137 @@ function EventForm({ calendars, initialDate, editingEvent, onSubmit, onClose, is
 }
 
 function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
-  onCreate: (data: { name: string; color: string }) => void;
+  onCreate: (data: { name: string; color: string; mailAccountId?: string; createOnCaldav?: boolean }) => void;
   onClose: () => void;
   isSubmitting: boolean;
 }) {
   const [name, setName] = useState('');
   const [color, setColor] = useState('#0078D4');
+  const [target, setTarget] = useState<'local' | 'mail'>('local');
+  const [mailAccountId, setMailAccountId] = useState<string>('');
+  const [createOnCaldav, setCreateOnCaldav] = useState(true);
   const palette = ['#0078D4', '#107C10', '#B4009E', '#E3008C', '#E74856', '#CA5010', '#FFB900', '#5C2E91'];
+
+  const { data: accounts = [] } = useQuery<any[]>({
+    queryKey: ['calendar-accounts'],
+    queryFn: () => api.getCalendarAccounts(),
+  });
+
+  const selectedAccount = accounts.find((a: any) => a.id === mailAccountId);
+  const canCreateOnCaldav = !!selectedAccount?.caldav_url && !!selectedAccount?.caldav_sync_enabled;
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    if (target === 'local') {
+      onCreate({ name: name.trim(), color });
+    } else {
+      if (!mailAccountId) return;
+      onCreate({
+        name: name.trim(),
+        color,
+        mailAccountId,
+        createOnCaldav: canCreateOnCaldav && createOnCaldav,
+      });
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-lg shadow-xl w-[28rem] p-6" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Nouveau calendrier</h2>
           <button onClick={onClose} className="text-outlook-text-disabled hover:text-outlook-text-primary">
             <X size={18} />
           </button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) onCreate({ name: name.trim(), color }); }} className="space-y-3">
-          <input
-            autoFocus
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nom du calendrier"
-            required
-            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-outlook-blue"
-          />
+        <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className="text-xs text-outlook-text-secondary mb-1 block">Nom</label>
+            <input
+              autoFocus
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Nom du calendrier"
+              required
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-outlook-blue"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-outlook-text-secondary mb-1 block">Emplacement</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setTarget('local')}
+                className={`p-3 text-left rounded-md border text-sm ${
+                  target === 'local'
+                    ? 'border-outlook-blue bg-outlook-blue/5 ring-1 ring-outlook-blue'
+                    : 'border-outlook-border hover:bg-outlook-bg-hover'
+                }`}
+              >
+                <div className="font-medium">Local</div>
+                <div className="text-xs text-outlook-text-secondary">Visible uniquement ici.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTarget('mail')}
+                className={`p-3 text-left rounded-md border text-sm ${
+                  target === 'mail'
+                    ? 'border-outlook-blue bg-outlook-blue/5 ring-1 ring-outlook-blue'
+                    : 'border-outlook-border hover:bg-outlook-bg-hover'
+                }`}
+              >
+                <div className="font-medium">Boîte mail</div>
+                <div className="text-xs text-outlook-text-secondary">Rattaché à une boîte (CalDAV possible).</div>
+              </button>
+            </div>
+          </div>
+
+          {target === 'mail' && (
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs text-outlook-text-secondary mb-1 block">Compte mail</label>
+                <select
+                  value={mailAccountId}
+                  onChange={(e) => setMailAccountId(e.target.value)}
+                  required
+                  className="w-full border border-outlook-border rounded-md px-2 py-2 text-sm focus:outline-none focus:border-outlook-blue bg-white"
+                >
+                  <option value="">— Sélectionner —</option>
+                  {accounts.map((a: any) => (
+                    <option key={a.id} value={a.id}>
+                      {a.email}
+                      {a.caldav_url ? ` · CalDAV ${a.caldav_sync_enabled ? 'actif' : 'désactivé'}` : ' · sans CalDAV'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {mailAccountId && (
+                <label className={`flex items-start gap-2 text-sm p-2 rounded border ${
+                  canCreateOnCaldav ? 'border-outlook-border bg-outlook-bg-hover/30' : 'border-outlook-border/40 bg-gray-50 opacity-75'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={canCreateOnCaldav && createOnCaldav}
+                    disabled={!canCreateOnCaldav}
+                    onChange={(e) => setCreateOnCaldav(e.target.checked)}
+                    className="rounded mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium">Créer et synchroniser via CalDAV</span>
+                    <span className="block text-xs text-outlook-text-secondary">
+                      {canCreateOnCaldav
+                        ? 'Le calendrier est créé sur le serveur (MKCALENDAR) et sera synchronisé automatiquement.'
+                        : 'Indisponible : cette boîte mail n\'a pas de CalDAV actif. Activez-le dans « Paramètres du calendrier ».'}
+                    </span>
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="text-xs text-outlook-text-secondary mb-1 block">Couleur</label>
             <div className="flex gap-2">
@@ -785,7 +894,7 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Annuler</button>
             <button
               type="submit"
-              disabled={isSubmitting || !name.trim()}
+              disabled={isSubmitting || !name.trim() || (target === 'mail' && !mailAccountId)}
               className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50"
             >
               {isSubmitting ? 'Création...' : 'Créer'}

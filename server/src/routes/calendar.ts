@@ -49,12 +49,72 @@ calendarRouter.get('/', async (req: AuthRequest, res) => {
 // Create calendar
 calendarRouter.post('/', async (req: AuthRequest, res) => {
   try {
-    const { name, color } = req.body;
-    const result = await pool.query(
-      'INSERT INTO calendars (user_id, name, color) VALUES ($1, $2, $3) RETURNING *',
-      [req.userId, name, color || '#0078D4']
+    const { name, color, mailAccountId, createOnCaldav } = req.body || {};
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name requis' });
+    }
+    const resolvedColor = color || '#0078D4';
+
+    // Case 1: plain local calendar
+    if (!mailAccountId) {
+      const result = await pool.query(
+        'INSERT INTO calendars (user_id, name, color) VALUES ($1, $2, $3) RETURNING *',
+        [req.userId, name, resolvedColor]
+      );
+      return res.status(201).json(result.rows[0]);
+    }
+
+    // Case 2: calendar attached to a mail account (optionally created on CalDAV)
+    const mailAcc = await pool.query(
+      `SELECT ma.id, ma.caldav_url, ma.caldav_username, ma.caldav_sync_enabled, ma.username, ma.password_encrypted
+         FROM mail_accounts ma
+        WHERE ma.id = $1
+          AND (ma.user_id = $2
+               OR EXISTS (SELECT 1 FROM mailbox_assignments mba WHERE mba.mail_account_id = ma.id AND mba.user_id = $2))`,
+      [mailAccountId, req.userId]
     );
-    res.status(201).json(result.rows[0]);
+    if (mailAcc.rows.length === 0) {
+      return res.status(404).json({ error: 'Boîte mail introuvable ou inaccessible' });
+    }
+    const acc = mailAcc.rows[0];
+
+    let caldavUrl: string | null = null;
+    let externalId: string | null = null;
+    let source: 'local' | 'caldav' = 'local';
+
+    if (createOnCaldav) {
+      if (!acc.caldav_url) {
+        return res.status(400).json({ error: 'Cette boîte mail n\'a pas d\'URL CalDAV configurée.' });
+      }
+      try {
+        const password = decrypt(acc.password_encrypted);
+        const svc = new CalDAVService({
+          baseUrl: acc.caldav_url,
+          username: acc.caldav_username || acc.username,
+          password,
+        });
+        const mk = await svc.createRemoteCalendar(name, resolvedColor);
+        if (!mk.ok) {
+          return res.status(502).json({
+            error: `Création CalDAV échouée (${mk.status}) : ${mk.error || 'erreur inconnue'}`,
+          });
+        }
+        caldavUrl = mk.href!;
+        externalId = mk.href!;
+        source = 'caldav';
+      } catch (e: any) {
+        logger.error(e, 'MKCALENDAR failed');
+        return res.status(500).json({ error: e?.message || 'Erreur CalDAV' });
+      }
+    }
+
+    const result = await pool.query(
+      `INSERT INTO calendars (user_id, name, color, mail_account_id, source, caldav_url, external_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [req.userId, name, resolvedColor, mailAccountId, source, caldavUrl, externalId]
+    );
+    return res.status(201).json(result.rows[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

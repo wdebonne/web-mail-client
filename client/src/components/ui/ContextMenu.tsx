@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
-import { motion } from 'motion/react';
 
 export interface ContextMenuItem {
   label: string;
@@ -33,7 +32,14 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    const handleScroll = () => onClose();
+    // Close on page scroll, but NOT when the scroll happens inside the menu
+    // itself (e.g. the user scrolling a submenu such as the colour list).
+    const handleScroll = (e: Event) => {
+      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) {
+        return;
+      }
+      onClose();
+    };
 
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('keydown', handleEscape);
@@ -62,18 +68,15 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
   }, [x, y]);
 
   return (
-    <motion.div
+    <div
       ref={menuRef}
-      initial={{ opacity: 0, scale: 0.92 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.12, ease: 'easeOut' }}
-      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[200px]"
+      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[200px] animate-in fade-in zoom-in-95 duration-100"
       style={{ left: x, top: y }}
     >
       {items.map((item, index) => (
         <MenuItem key={index} item={item} onClose={onClose} />
       ))}
-    </motion.div>
+    </div>
   );
 }
 

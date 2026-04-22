@@ -214,6 +214,60 @@ export class CalDAVService {
     return { calendars: calendars.length, events: eventCount };
   }
 
+  /**
+   * Create a new CalDAV collection (calendar) on the remote server via MKCALENDAR.
+   * `slug` is the path-safe identifier appended to the base URL.
+   * Returns the absolute href of the newly created calendar.
+   */
+  async createRemoteCalendar(displayName: string, color?: string, slug?: string):
+    Promise<{ ok: boolean; href?: string; status: number; error?: string }> {
+    const safeSlug = (slug || this.slugify(displayName)) || `cal-${Date.now()}`;
+    const base = this.config.baseUrl;
+    const url = (base.endsWith('/') ? base : base + '/') + encodeURIComponent(safeSlug) + '/';
+    const body = `<?xml version="1.0" encoding="utf-8" ?>
+<C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">
+  <D:set>
+    <D:prop>
+      <D:displayname>${this.escapeXml(displayName)}</D:displayname>
+      ${color ? `<A:calendar-color>${this.escapeXml(color)}</A:calendar-color>` : ''}
+      <C:supported-calendar-component-set>
+        <C:comp name="VEVENT"/>
+      </C:supported-calendar-component-set>
+    </D:prop>
+  </D:set>
+</C:mkcalendar>`;
+    try {
+      const res = await fetch(url, {
+        method: 'MKCALENDAR',
+        headers: {
+          Authorization: this.authHeader(),
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+        body,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return { ok: false, status: res.status, error: text.slice(0, 300) };
+      }
+      return { ok: true, status: res.status, href: url };
+    } catch (e: any) {
+      return { ok: false, status: 0, error: e?.message || 'network error' };
+    }
+  }
+
+  private slugify(s: string): string {
+    return s
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48);
+  }
+
+  private escapeXml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   /** PUT a single VEVENT as its own resource inside a CalDAV collection. */
   async putEvent(calendarHref: string, icalUid: string, icsBody: string): Promise<{ ok: boolean; status: number; url: string; error?: string }> {
     const baseUrl = this.absolute(calendarHref);

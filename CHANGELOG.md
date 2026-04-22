@@ -9,8 +9,28 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Création de calendrier par boîte mail + CalDAV (MKCALENDAR)
+
+- **Modale « Nouveau calendrier » réécrite** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : l'utilisateur choisit désormais entre :
+  - *Local* — simple calendrier local (comportement historique).
+  - *Boîte mail* — sélection d'une boîte mail (via `GET /calendar/accounts`) ; si la boîte a une URL CalDAV active, une case **« Créer et synchroniser via CalDAV »** (cochée par défaut) permet de provisionner le calendrier directement sur le serveur distant.
+- **MKCALENDAR côté serveur** ([server/src/services/caldav.ts](server/src/services/caldav.ts)) : nouvelle méthode `CalDAVService.createRemoteCalendar(displayName, color?, slug?)` qui envoie une requête `MKCALENDAR` conforme RFC 4791 au serveur CalDAV avec `D:displayname`, `A:calendar-color` et `C:supported-calendar-component-set` limité à `VEVENT`. Le slug est dérivé du nom (normalisation NFD, ASCII, longueur ≤ 48).
+- **`POST /calendar` étendu** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts)) : accepte désormais `mailAccountId` et `createOnCaldav`. Lorsque `createOnCaldav = true`, le serveur :
+  1. vérifie l'accès à la boîte mail (propriété directe ou assignation via `mailbox_assignments`),
+  2. déchiffre le mot de passe IMAP pour construire un `CalDAVService`,
+  3. appelle `MKCALENDAR` distant,
+  4. insère la ligne locale avec `source = 'caldav'`, `caldav_url = external_id = <href créé>`, liée à `mail_account_id`.
+  Toute erreur MKCALENDAR (`4xx/5xx`) remonte en `502` avec le message du serveur, aucune ligne locale n'est créée pour éviter les calendriers « fantômes ».
+
+#### Menu contextuel — corrections
+
+- **Le sous-menu *Couleur* ne ferme plus le menu pendant le défilement** ([client/src/components/ui/ContextMenu.tsx](client/src/components/ui/ContextMenu.tsx)) : le `scroll` listener global filtre désormais les événements dont la cible est à l'intérieur du menu. On peut faire défiler la liste des couleurs (`max-h-[300px] overflow-y-auto`) sans refermer le clic droit.
+- **Stabilité du menu** : suppression de la dépendance `motion/react` pour l'animation d'ouverture (remplacée par les animations Tailwind `animate-in fade-in zoom-in-95`). Supprime la boucle de re-rendu constatée sur certains clics droits (trace `scheduleUpdateOnFiber` → `reconcileChildren` récursive visible dans les anciens logs).
+
 #### Synchronisation CalDAV & CardDAV liées à la boîte mail (o2switch / SabreDAV / SOGo)
 
+- **Administration — Ajout d'un calendrier via URL CalDAV** ([server/src/routes/admin.ts](server/src/routes/admin.ts), [client/src/components/admin/AdminCalendarManagement.tsx](client/src/components/admin/AdminCalendarManagement.tsx)) : nouveau bouton *« Ajouter via CalDAV »* dans *Gestion des calendriers*, ouvrant une modale qui demande l'URL, le propriétaire (utilisateur cible) et la couleur par défaut. Le backend (`POST /admin/calendars/import-caldav`) tente d'abord une connexion sans identifiants ; si le serveur répond `401/403`, la réponse est renvoyée en **HTTP 200** avec `{ ok: false, needsAuth: true }` pour éviter la déconnexion automatique de la session admin, et les champs *Identifiant* + *Mot de passe* s'affichent dans la modale. La dédup se fait sur `(user_id, external_id, mail_account_id IS NULL)`.
+- **Formulaire admin de création de boîte mail — case « Synchronisation O2Switch (CalDAV + CardDAV) »** ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx), [server/src/routes/admin.ts](server/src/routes/admin.ts)) : cochée par défaut, elle pré-remplit automatiquement les URLs CalDAV et CardDAV au format O2Switch. Lors de l'attribution ultérieure de la boîte à un utilisateur (`POST /admin/mail-accounts/:id/assignments`), une première synchronisation CalDAV est lancée en arrière-plan pour cet utilisateur.
 - **Auto-configuration o2switch** à la création ou à la liaison d'une boîte mail :
   - Nouveau flag `o2switchAutoSync` sur `POST /api/accounts` — quand il est coché (ou quand le champ `imapHost` se termine par `.o2switch.net`), le serveur pré-remplit automatiquement :
     - CalDAV : `https://colorant.o2switch.net:2080/calendars/{email}/calendar`
