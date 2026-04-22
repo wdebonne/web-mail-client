@@ -115,7 +115,14 @@ export const useMailStore = create<MailState>((set, get) => ({
     // Setting → switch into the unified inbox so we aggregate across mailboxes,
     // then filter by category id at render time.
     if (id) {
-      set({ categoryFilter: id, virtualFolder: 'unified-inbox', messages: [], selectedMessage: null, currentPage: 1 });
+      const { virtualFolder } = get();
+      if (virtualFolder === 'unified-inbox') {
+        // Already in the unified view: just swap the filter, keep the cached messages
+        // so the list stays populated (the React Query key is unchanged and would not refetch).
+        set({ categoryFilter: id, selectedMessage: null });
+      } else {
+        set({ categoryFilter: id, virtualFolder: 'unified-inbox', messages: [], selectedMessage: null, currentPage: 1 });
+      }
     } else {
       set({ categoryFilter: null });
     }
