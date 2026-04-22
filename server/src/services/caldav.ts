@@ -256,6 +256,7 @@ export class CalDAVService {
       },
       body: mkcalendarBody,
     });
+    logger.info({ url, status: mkcalendar.status, ok: mkcalendar.ok, error: mkcalendar.error?.slice(0, 200) }, 'CalDAV createRemoteCalendar: MKCALENDAR attempt');
     if (mkcalendar.ok) return { ok: true, status: mkcalendar.status, href: url, method: 'MKCALENDAR' };
     const mkcalendarUnsupported = this.looksUnsupported(mkcalendar);
     if (!mkcalendarUnsupported && mkcalendar.status !== 0) {
@@ -287,15 +288,19 @@ export class CalDAVService {
       },
       body: extMkcolBody,
     });
+    logger.info({ url, status: extMkcol.status, ok: extMkcol.ok, error: extMkcol.error?.slice(0, 200) }, 'CalDAV createRemoteCalendar: extended MKCOL attempt');
     if (extMkcol.ok) return { ok: true, status: extMkcol.status, href: url, method: 'MKCOL-extended' };
-    const extMkcolUnsupported = this.looksUnsupported(extMkcol);
 
     // ── Attempt 3: plain MKCOL + PROPPATCH ───────────────────────────────
-    if (extMkcolUnsupported || extMkcol.status === 0) {
+    // Always try the plain-MKCOL fallback when extended MKCOL didn't succeed:
+    // some servers (cPanel/Horde) accept only barebones MKCOL and require a
+    // separate PROPPATCH to set resourcetype/displayname/color.
+    {
       const plainMkcol = await this.safeFetch(url, {
         method: 'MKCOL',
         headers: { Authorization: this.authHeader() },
       });
+      logger.info({ url, status: plainMkcol.status, ok: plainMkcol.ok, error: plainMkcol.error?.slice(0, 200) }, 'CalDAV createRemoteCalendar: plain MKCOL attempt');
       if (!plainMkcol.ok) {
         return {
           ok: false,
@@ -328,6 +333,7 @@ export class CalDAVService {
         },
         body: proppatchBody,
       });
+      logger.info({ url, status: pp.status, ok: pp.ok, error: pp.error?.slice(0, 200) }, 'CalDAV createRemoteCalendar: PROPPATCH attempt');
       if (pp.ok) return { ok: true, status: pp.status, href: url, method: 'MKCOL+PROPPATCH' };
       // Collection exists but resourcetype could not be upgraded — still usable
       // for many CalDAV servers because they infer calendar from URL scope.
@@ -338,8 +344,6 @@ export class CalDAVService {
         method: 'MKCOL+PROPPATCH',
       };
     }
-
-    return { ok: false, status: extMkcol.status, error: extMkcol.error, method: 'MKCOL-extended' };
   }
 
   /** Wrap fetch so network errors become a structured result instead of throwing. */
