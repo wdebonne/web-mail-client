@@ -7,6 +7,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Amélioré
+
+#### Mode sombre — lisibilité du corps des e-mails HTML
+- **Rendu des e-mails sur surface claire en mode sombre** : beaucoup d'e-mails HTML embarquent des couleurs codées en dur via des styles inline (texte noir sur fond blanc, citations grises, signatures colorées…) qui restaient superposées au fond sombre de l'application et devenaient illisibles — certains blocs apparaissaient en noir sur gris foncé, d'autres en blanc sur blanc selon la façon dont l'expéditeur avait mis en forme le message. Le conteneur `.email-body` est désormais rendu sur un fond blanc dédié avec un padding et un `border-radius`, et `color-scheme: light` est forcé sur l'arbre HTML du message afin que les contrôles de formulaire et les citations restent cohérents (`client/src/index.css`). Cette approche est celle utilisée par Gmail et Outlook Web : le reste de l'interface (en-tête, barre de conversation, boutons *Répondre / Transférer*) conserve le thème sombre, seul le corps HTML est isolé sur sa propre surface pour préserver les couleurs d'origine conçues par l'expéditeur.
+- La couleur d'accent `#0078D4` est réappliquée explicitement aux liens à l'intérieur du corps pour rester lisible sur le fond blanc même si l'e-mail n'impose pas de couleur de lien.
+
 ### Ajouté
 
 #### Sécurité suppression — corbeille et confirmation
