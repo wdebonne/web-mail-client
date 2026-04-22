@@ -399,6 +399,15 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Clé API GIPHY configurable via la variable d'environnement `VITE_GIPHY_API_KEY` (build) ou saisissable directement dans le panneau (stockage local `giphyApiKey`).
 - Insertion du GIF sous forme d'`<img>` à la position du curseur.
 
+### Corrigé
+
+#### Build Docker cassé — `CalendarPage.tsx` corrompu
+- **Fusion ratée dans [client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)** faisant échouer `npm run build` (et donc `docker compose build` : `exit code: 1` sur l'étape `cd client && npm run build`). Trois zones étaient endommagées :
+  1. Déclaration de `WeekView` dupliquée trois fois avec deux lignes tronquées.
+  2. Signature de `TimeGridView` mélangée (`onEventContextM` / `onSlotClick: (d: Date) => void;ev: Calendaenu: …`) rendant le type de props invalide.
+  3. Bouton d'événement de `renderEvent` avec un `onContextMenu` dupliqué fusionné dans l'attribut `className`, guillemet orphelin cassant tout le JSX suivant (≈ 28 erreurs TS1005/TS1109/TS2657/TS1128).
+- **Correctif** : restauration de la version saine de ces trois blocs tout en conservant l'intention du commit `feat(calendar): ajouter la gestion des événements contextuels dans TimeGridView` — le bouton d'événement conserve `onClick` **et** `onContextMenu={(clickEvt) => onEventContextMenu(clickEvt, ev)}` pour propager le clic droit au menu contextuel.
+
 ## [1.0.0] - 2026-04-20
 
 ### Ajouté
