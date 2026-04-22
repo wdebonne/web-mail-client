@@ -40,6 +40,10 @@ interface MessageListProps {
   listWidth?: number;
   attachmentMinVisibleKb?: number;
   accountId?: string;
+  /** Density of list rows — affects row padding and inter-element spacing. */
+  density?: 'spacious' | 'comfortable' | 'compact';
+  /** Display mode for the message rows. 'auto' uses the list width; 'wide' forces single-line columns; 'compact' forces multi-line cards. */
+  listDisplayMode?: 'auto' | 'wide' | 'compact';
 }
 
 interface MessageGroup {
@@ -76,6 +80,8 @@ export default function MessageList({
   onToggleFolderPane, showFolderPane, listWidth,
   attachmentMinVisibleKb = 0,
   accountId,
+  density = 'comfortable',
+  listDisplayMode = 'auto',
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -460,7 +466,7 @@ export default function MessageList({
       </div>
 
       {/* Column headers — wide mode only */}
-      {(listWidth ?? 0) >= 400 && (
+      {(listDisplayMode === 'wide' || (listDisplayMode === 'auto' && (listWidth ?? 0) >= 400)) && (
         <div className="flex items-center gap-2 px-3 py-1 border-b border-outlook-border bg-outlook-bg-primary/50 text-2xs font-medium text-outlook-text-secondary">
           <span className="w-7 flex-shrink-0" />
           <span className="w-28 flex-shrink-0">De</span>
@@ -514,7 +520,14 @@ export default function MessageList({
                   const isSelected = selectedMessage?.uid === message.uid;
                   const isUnread = !message.flags?.seen;
                   const isChecked = selectedUids.has(message.uid);
-                  const isWide = (listWidth ?? 0) >= 400;
+                  const isWide = listDisplayMode === 'wide'
+                    ? true
+                    : listDisplayMode === 'compact'
+                      ? false
+                      : (listWidth ?? 0) >= 400;
+                  // Density-driven padding classes for the row
+                  const densityWide = density === 'spacious' ? 'py-2.5' : density === 'compact' ? 'py-0.5' : 'py-1.5';
+                  const densityCompact = density === 'spacious' ? 'py-3.5 gap-3' : density === 'compact' ? 'py-1 gap-2' : 'py-2.5 gap-3';
 
                   return (
                     <motion.div
@@ -545,7 +558,7 @@ export default function MessageList({
                         e.dataTransfer.effectAllowed = 'copyMove';
                       }}
                       className={`flex items-center gap-2 px-3 cursor-pointer border-b border-outlook-border transition-colors group relative
-                        ${isWide ? 'py-1.5' : 'py-2.5 gap-3'}
+                        ${isWide ? densityWide : densityCompact}
                         ${isSelected && !selectionMode ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
                         ${isChecked ? 'bg-blue-50' : ''}
                         ${isUnread ? '' : 'bg-outlook-bg-primary/30'}`}

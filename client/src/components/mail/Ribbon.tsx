@@ -11,7 +11,7 @@ import {
   Link as LinkIcon, Image as ImageIcon, Palette, Type, Indent, Outdent,
   Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
   Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film,
-  Star, ArrowLeftRight,
+  Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
 } from 'lucide-react';
 import type { TabMode } from '../../stores/mailStore';
 import type { MailAccount } from '../../types';
@@ -107,6 +107,14 @@ interface RibbonProps {
   // Reading pane mode (Volet de lecture)
   readingPaneMode?: 'right' | 'bottom' | 'hidden';
   onChangeReadingPaneMode?: (mode: 'right' | 'bottom' | 'hidden') => void;
+
+  // List density (Densité)
+  listDensity?: 'spacious' | 'comfortable' | 'compact';
+  onChangeListDensity?: (d: 'spacious' | 'comfortable' | 'compact') => void;
+
+  // List display mode (Liste mail)
+  listDisplayMode?: 'auto' | 'wide' | 'compact';
+  onChangeListDisplayMode?: (m: 'auto' | 'wide' | 'compact') => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -187,20 +195,28 @@ export default function Ribbon({
   splitKeepMessageList = false, onToggleSplitKeepMessageList,
   splitComposeReply = false, onToggleSplitComposeReply,
   readingPaneMode = 'right', onChangeReadingPaneMode,
+  listDensity = 'comfortable', onChangeListDensity,
+  listDisplayMode = 'auto', onChangeListDisplayMode,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [showFavoritesMenu, setShowFavoritesMenu] = useState(false);
   const [showReadingPaneMenu, setShowReadingPaneMenu] = useState(false);
+  const [showDensityMenu, setShowDensityMenu] = useState(false);
+  const [showListModeMenu, setShowListModeMenu] = useState(false);
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
   const favoritesMenuBtnRef = useRef<HTMLButtonElement>(null);
   const readingPaneMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const densityMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const listModeMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
   const [readingPaneMenuPos, setReadingPaneMenuPos] = useState({ top: 0, left: 0 });
+  const [densityMenuPos, setDensityMenuPos] = useState({ top: 0, left: 0 });
+  const [listModeMenuPos, setListModeMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -261,6 +277,24 @@ export default function Ribbon({
       setReadingPaneMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowReadingPaneMenu(v => !v);
+  };
+
+  const openDensityMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || densityMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setDensityMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowDensityMenu(v => !v);
+  };
+
+  const openListModeMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || listModeMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setListModeMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowListModeMenu(v => !v);
   };
 
   // Auto-switch between classic and simplified based on width
@@ -360,6 +394,26 @@ export default function Ribbon({
               >
                 {readingPaneMode === 'bottom' ? <Rows2 size={14} /> : readingPaneMode === 'hidden' ? <EyeOff size={14} /> : <Columns2 size={14} />}
                 <span className="text-xs whitespace-nowrap">Volet de lecture</span>
+                <ChevronDown size={10} />
+              </button>
+              <button
+                ref={listModeMenuBtnRef}
+                onClick={(e) => openListModeMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showListModeMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Affichage de la liste des mails"
+              >
+                <ListIcon size={14} />
+                <span className="text-xs whitespace-nowrap">Liste mail</span>
+                <ChevronDown size={10} />
+              </button>
+              <button
+                ref={densityMenuBtnRef}
+                onClick={(e) => openDensityMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showDensityMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Densité de la liste"
+              >
+                <AlignVerticalJustifyCenter size={14} />
+                <span className="text-xs whitespace-nowrap">Densité</span>
                 <ChevronDown size={10} />
               </button>
               <SimplifiedSep />
@@ -504,6 +558,32 @@ export default function Ribbon({
                     {readingPaneMode === 'bottom' ? <Rows2 size={18} /> : readingPaneMode === 'hidden' ? <EyeOff size={18} /> : <Columns2 size={18} />}
                     <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
                       Volet de lecture <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    ref={listModeMenuBtnRef}
+                    onClick={(e) => openListModeMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showListModeMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Affichage de la liste des mails"
+                  >
+                    <ListIcon size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Liste mail <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    ref={densityMenuBtnRef}
+                    onClick={(e) => openDensityMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showDensityMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Densité de la liste"
+                  >
+                    <AlignVerticalJustifyCenter size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Densité <ChevronDown size={8} />
                     </span>
                   </button>
                 </div>
@@ -736,6 +816,76 @@ export default function Ribbon({
                       {active ? '✓' : ''}
                     </span>
                     <Icon size={14} className="text-outlook-text-secondary" />
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>,
+          document.body
+        )}
+
+        {/* Density menu */}
+        {showDensityMenu && createPortal(
+          <>
+            <div className="fixed inset-0 z-[9998]" onClick={() => setShowDensityMenu(false)} />
+            <div
+              className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-56"
+              style={{ top: densityMenuPos.top, left: densityMenuPos.left }}
+            >
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+                Densité
+              </div>
+              {[
+                { id: 'spacious' as const, label: 'Spacieux' },
+                { id: 'comfortable' as const, label: 'Confortable' },
+                { id: 'compact' as const, label: 'Compacte' },
+              ].map((opt) => {
+                const active = listDensity === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => { onChangeListDensity && onChangeListDensity(opt.id); setShowDensityMenu(false); }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                  >
+                    <span className="w-4 flex items-center justify-center text-outlook-blue">
+                      {active ? '✓' : ''}
+                    </span>
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>,
+          document.body
+        )}
+
+        {/* List display mode menu */}
+        {showListModeMenu && createPortal(
+          <>
+            <div className="fixed inset-0 z-[9998]" onClick={() => setShowListModeMenu(false)} />
+            <div
+              className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-64"
+              style={{ top: listModeMenuPos.top, left: listModeMenuPos.left }}
+            >
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+                Liste des mails
+              </div>
+              {[
+                { id: 'auto' as const, label: 'Automatique (selon la largeur)' },
+                { id: 'wide' as const, label: 'Une seule ligne (colonnes)' },
+                { id: 'compact' as const, label: 'Aperçu multi-lignes' },
+              ].map((opt) => {
+                const active = listDisplayMode === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => { onChangeListDisplayMode && onChangeListDisplayMode(opt.id); setShowListModeMenu(false); }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                  >
+                    <span className="w-4 flex items-center justify-center text-outlook-blue">
+                      {active ? '✓' : ''}
+                    </span>
                     <span>{opt.label}</span>
                   </button>
                 );

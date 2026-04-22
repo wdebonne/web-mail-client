@@ -444,6 +444,23 @@ export default function MailPage() {
     return (v === 'bottom' || v === 'hidden' || v === 'right') ? v : 'right';
   });
   useEffect(() => { localStorage.setItem('readingPaneMode', readingPaneMode); }, [readingPaneMode]);
+  // Density of the message list rows.
+  type ListDensity = 'spacious' | 'comfortable' | 'compact';
+  const [listDensity, setListDensity] = useState<ListDensity>(() => {
+    const v = localStorage.getItem('listDensity');
+    return (v === 'spacious' || v === 'compact' || v === 'comfortable') ? v : 'comfortable';
+  });
+  useEffect(() => { localStorage.setItem('listDensity', listDensity); }, [listDensity]);
+  // Message list display mode (wide columns vs compact cards).
+  type ListDisplayMode = 'auto' | 'wide' | 'compact';
+  const [listDisplayMode, setListDisplayMode] = useState<ListDisplayMode>(() => {
+    const v = localStorage.getItem('listDisplayMode');
+    return (v === 'wide' || v === 'compact' || v === 'auto') ? v : 'auto';
+  });
+  useEffect(() => { localStorage.setItem('listDisplayMode', listDisplayMode); }, [listDisplayMode]);
+  // Effective display mode: in "bottom" disposition we force a compact layout unless the user explicitly overrode it.
+  const effectiveListDisplayMode: ListDisplayMode =
+    listDisplayMode !== 'auto' ? listDisplayMode : readingPaneMode === 'bottom' ? 'compact' : 'auto';
   // Height (in px) of the message list when the reading pane is docked at the bottom.
   const [listHeight, setListHeight] = useState<number>(() => {
     const n = parseInt(localStorage.getItem('listHeight') || '320', 10);
@@ -933,6 +950,10 @@ export default function MailPage() {
           onToggleSplitComposeReply={() => setSplitComposeReply(v => !v)}
           readingPaneMode={readingPaneMode}
           onChangeReadingPaneMode={(m) => setReadingPaneMode(m)}
+          listDensity={listDensity}
+          onChangeListDensity={(d) => setListDensity(d)}
+          listDisplayMode={listDisplayMode}
+          onChangeListDisplayMode={(m) => setListDisplayMode(m)}
         />
       </div>
 
@@ -1015,6 +1036,8 @@ export default function MailPage() {
             showFolderPane={showFolderPane}
             attachmentMinVisibleKb={attachmentMinVisibleKb}
             accountId={selectedAccount?.id}
+            density={listDensity}
+            listDisplayMode={effectiveListDisplayMode}
           />
         </div>
 
@@ -1053,6 +1076,8 @@ export default function MailPage() {
                 listWidth={listWidth}
                 attachmentMinVisibleKb={attachmentMinVisibleKb}
                 accountId={selectedAccount?.id}
+                density={listDensity}
+                listDisplayMode={effectiveListDisplayMode}
               />
             </div>
 
