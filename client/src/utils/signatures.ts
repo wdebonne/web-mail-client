@@ -105,7 +105,18 @@ export function getDefaultNewId(): string | null {
 }
 export function setDefaultNewId(id: string | null) {
   if (id) localStorage.setItem(KEY_DEFAULT_NEW, id);
- 
+  else localStorage.removeItem(KEY_DEFAULT_NEW);
+  try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
+}
+
+export function getDefaultReplyId(): string | null {
+  return localStorage.getItem(KEY_DEFAULT_REPLY) || null;
+}
+export function setDefaultReplyId(id: string | null) {
+  if (id) localStorage.setItem(KEY_DEFAULT_REPLY, id);
+  else localStorage.removeItem(KEY_DEFAULT_REPLY);
+  try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
+}
 
 // ─── Valeurs par défaut par compte de messagerie ────────────────────────────
 // Chaque compte (id) peut surcharger la signature par défaut globale :
@@ -168,17 +179,6 @@ export function resolveDefaultReplyId(accountId: string | null | undefined): str
   const override = getAccountDefaultReplyId(accountId);
   if (override !== undefined) return override ?? null;
   return getDefaultReplyId();
-} else localStorage.removeItem(KEY_DEFAULT_NEW);
-  try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
-}
-
-export function getDefaultReplyId(): string | null {
-  return localStorage.getItem(KEY_DEFAULT_REPLY) || null;
-}
-export function setDefaultReplyId(id: string | null) {
-  if (id) localStorage.setItem(KEY_DEFAULT_REPLY, id);
-  else localStorage.removeItem(KEY_DEFAULT_REPLY);
-  try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
 }
 
 /** Enveloppe la signature dans un bloc séparé (style Outlook). */

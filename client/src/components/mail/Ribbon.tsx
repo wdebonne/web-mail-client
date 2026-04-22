@@ -752,7 +752,7 @@ export default function Ribbon({
           )}
 
           {activeTab === 'inserer' && (
-            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} compact />
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} compact />
           )}
         </div>
         {sharedPopups}
@@ -845,7 +845,7 @@ export default function Ribbon({
           )}
 
           {activeTab === 'inserer' && (
-            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} />
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} />
           )}
 
           {activeTab === 'afficher' && (
@@ -1569,7 +1569,7 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
 // ─────────────────────────────────────────────────────────────────────────────
 // Insérer tab — Outlook-web-style insertion tools
 // ─────────────────────────────────────────────────────────────────────────────
-function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmojiPanelOpen = false, onToggleGifPanel, isGifPanelOpen = false, compact = false }: {
+function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmojiPanelOpen = false, onToggleGifPanel, isGifPanelOpen = false, compact = false, accounts = [] }: {
   editorRef?: React.RefObject<HTMLDivElement>;
   onAttachFiles?: (files: FileList | File[]) => void;
   onToggleEmojiPanel?: () => void;
@@ -1577,6 +1577,7 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
   onToggleGifPanel?: () => void;
   isGifPanelOpen?: boolean;
   compact?: boolean;
+  accounts?: MailAccount[];
 }) {
   const { exec, saveSelection, restoreSelection, insertHTML } = useEditorControl(editorRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
