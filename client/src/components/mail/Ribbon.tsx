@@ -1665,7 +1665,7 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
     reader.onload = () => {
       const dataUrl = typeof reader.result === 'string' ? reader.result : '';
       if (!dataUrl) return;
-      editorRef.current?.focus();
+      editorRef?.current?.focus();
       exec('insertImage', dataUrl);
     };
     reader.readAsDataURL(file);
