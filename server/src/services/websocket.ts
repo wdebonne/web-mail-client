@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '../utils/logger';
 import jwt from 'jsonwebtoken';
+import { sendPushToUser, PushPayload } from './push';
 
 interface WsClient {
   ws: WebSocket;
@@ -103,6 +104,39 @@ export function notifyAll(event: string, data: any) {
       if (client.ws.readyState === WebSocket.OPEN) {
         client.ws.send(message);
       }
+    }
+  }
+}
+
+/** Returns true if the user currently has at least one live WS connection. */
+export function hasActiveWebSocket(userId: string): boolean {
+  const list = clients.get(userId);
+  if (!list) return false;
+  return list.some(c => c.ws.readyState === WebSocket.OPEN);
+}
+
+/**
+ * Send a notification to a user: real-time via WebSocket if connected,
+ * and/or a native Web Push to all registered devices.
+ * Use `mode = 'both'` to do both (recommended for new-mail alerts so mobile
+ * devices in background get the push even while the desktop is in foreground).
+ */
+export async function notifyWithPush(
+  userId: string,
+  event: string,
+  data: any,
+  push: PushPayload,
+  mode: 'auto' | 'both' | 'push-only' = 'auto'
+) {
+  const hasWs = hasActiveWebSocket(userId);
+  if (mode !== 'push-only' && hasWs) {
+    notifyUser(userId, event, data);
+  }
+  if (mode === 'both' || mode === 'push-only' || !hasWs) {
+    try {
+      await sendPushToUser(userId, push);
+    } catch (err) {
+      logger.warn({ err }, 'Push fallback failed');
     }
   }
 }

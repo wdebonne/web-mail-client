@@ -7,6 +7,27 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+#### Notifications push natives (Web Push / VAPID)
+- **Notifications système natives** sur Windows, macOS, Android et iOS (PWA installée via Safari, iOS 16.4+), même application fermée.
+- Nouveau service Web Push côté serveur (`services/push.ts`) : génération et persistance automatique d'une paire de clés **VAPID** (dans `admin_settings`), envoi multi-appareils, purge automatique des abonnements expirés (HTTP 404/410).
+- Nouveau routeur `/api/push` : `GET /public-key`, `POST /subscribe`, `POST /unsubscribe`, `POST /test`, `GET /subscriptions`.
+- Nouvelle table `push_subscriptions` (endpoint unique, clés p256dh/auth, user-agent, plateforme détectée, `enabled`, horodatages).
+- Nouveau Service Worker **TypeScript personnalisé** (`client/src/sw.ts`) géré par `vite-plugin-pwa` en stratégie **injectManifest** : gestion des événements `push`, `notificationclick` (focus de l'onglet + navigation via `postMessage`) et `pushsubscriptionchange` (ré-inscription transparente).
+- Module client `client/src/pwa/push.ts` : détection du support, demande de permission, inscription/désinscription, test, écoute des clics de notification, détection de plateforme (Windows/macOS/Android/iOS).
+- Onglet **Notifications** des paramètres utilisateur refondu : bouton Activer/Désactiver, bouton « Envoyer une notification de test », messages d'aide contextuels (support navigateur, permission refusée, instructions PWA iOS/Android/Desktop).
+- Helper `notifyWithPush(userId, event, data, pushPayload, mode)` : diffuse en temps réel via WebSocket **et** en push natif aux appareils en arrière-plan (mode `auto`, `both` ou `push-only`).
+
+#### Détection de nouveaux messages
+- Nouveau **sondeur IMAP périodique** côté serveur (`services/newMailPoller.ts`) : toutes les 60 s (configurable via `NEW_MAIL_POLL_INTERVAL_MS`), il interroge l'INBOX des comptes appartenant aux utilisateurs **ayant au moins un abonnement push actif** (pour ne pas solliciter IMAP inutilement).
+- Détection incrémentale par UID maximal vu (cache mémoire, baseline au premier passage — pas de notifications rétroactives).
+- Notification envoyée via `notifyWithPush` en mode `both` : l'onglet ouvert reçoit un événement `new-mail` et les autres appareils reçoivent une notification système avec objet, expéditeur et aperçu (160 caractères max).
+- Protection anti-flood : maximum 5 notifications par compte et par cycle.
+
+### Paramètres d'environnement
+- Nouvelles variables optionnelles : `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT` (par défaut `mailto:admin@example.com`), `NEW_MAIL_POLL_INTERVAL_MS`. Si les clés VAPID ne sont pas fournies, elles sont générées automatiquement au premier démarrage et persistées en base.
+
 ### Corrigé
 - Liste des messages : stabilisation de la hauteur des lignes en mode étroit pour supprimer la légère variation de taille lors du survol ou de la sélection (réservation de la hauteur des boutons d'action).
 - Volet Dossiers : correction d'un crash (React #300 « Rendered fewer hooks than expected ») déclenché par le bouton « Masquer les dossiers » — le hook `useMailStore` était appelé conditionnellement dans le JSX.
@@ -381,7 +402,6 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Import/export de contacts (vCard, CSV)
 - Règles de filtrage automatique des emails
 - Support S/MIME et PGP
-- Notifications push natives
 - Vue conversation (groupement par thread)
 - Recherche avancée avec filtres
 - Support multi-langue complet (i18n)

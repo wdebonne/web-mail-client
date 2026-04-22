@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useThemeStore } from './stores/themeStore';
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { motion, AnimatePresence } from 'motion/react';
 import Layout from './components/Layout';
@@ -11,12 +12,14 @@ import CalendarPage from './pages/CalendarPage';
 import ContactsPage from './pages/ContactsPage';
 import SettingsPage from './pages/SettingsPage';
 import AdminPage from './pages/AdminPage';
+import { listenForNotificationClicks } from './pwa/push';
 
 function App() {
   const { user, token, checkAuth, isLoading } = useAuthStore();
   const initTheme = useThemeStore((s) => s.init);
   const isOnline = useNetworkStatus();
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     initTheme();
@@ -27,6 +30,17 @@ function App() {
       checkAuth();
     }
   }, []);
+
+  useEffect(() => {
+    listenForNotificationClicks((url) => {
+      try {
+        const target = new URL(url, window.location.origin);
+        navigate(target.pathname + target.search + target.hash);
+      } catch {
+        navigate('/mail');
+      }
+    });
+  }, [navigate]);
 
   if (isLoading && token) {
     return (

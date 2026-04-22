@@ -353,6 +353,21 @@ export async function initDatabase() {
         ('allow_registration', 'false', 'Allow self-registration'),
         ('plugins_enabled', 'true', 'Enable plugin system')
       ON CONFLICT (key) DO NOTHING;
+
+      -- Web Push subscriptions (native notifications)
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth_key TEXT NOT NULL,
+        user_agent TEXT,
+        platform VARCHAR(50),
+        enabled BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_used_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
     `);
 
     logger.info('Database schema created/updated successfully');

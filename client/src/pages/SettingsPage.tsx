@@ -288,22 +288,149 @@ function AppearanceSettings() {
 }
 
 function NotificationSettings() {
+  const [supported] = useState(() =>
+    typeof window !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    'Notification' in window
+  );
+  const [permission, setPermission] = useState<NotificationPermission>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'denied'
+  );
+  const [subscribed, setSubscribed] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [sound, setSound] = useState<boolean>(() => localStorage.getItem('notifications.sound') !== 'false');
+  const [calendar, setCalendar] = useState<boolean>(() => localStorage.getItem('notifications.calendar') !== 'false');
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { getExistingSubscription } = await import('../pwa/push');
+        const sub = await getExistingSubscription();
+        if (mounted) setSubscribed(!!sub);
+      } catch {
+        /* ignore */
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('notifications.sound', String(sound));
+  }, [sound]);
+  useEffect(() => {
+    localStorage.setItem('notifications.calendar', String(calendar));
+  }, [calendar]);
+
+  const toggle = async () => {
+    try {
+      const mod = await import('../pwa/push');
+      if (subscribed) {
+        await mod.unsubscribeFromPush();
+        setSubscribed(false);
+        toast.success('Notifications push désactivées');
+      } else {
+        await mod.subscribeToPush();
+        setSubscribed(true);
+        setPermission(Notification.permission);
+        toast.success('Notifications push activées');
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Échec de la mise à jour');
+    }
+  };
+
+  const test = async () => {
+    try {
+      const { sendTestPush } = await import('../pwa/push');
+      const sent = await sendTestPush();
+      toast.success(sent > 0
+        ? `Notification envoyée à ${sent} appareil${sent > 1 ? 's' : ''}`
+        : 'Aucun appareil enregistré');
+    } catch (e: any) {
+      toast.error(e.message || 'Échec du test');
+    }
+  };
+
   return (
     <div>
       <h3 className="text-base font-semibold mb-3">Notifications</h3>
-      <div className="space-y-3">
-        <label className="flex items-center justify-between">
-          <span className="text-sm">Notifications de nouveaux messages</span>
-          <input type="checkbox" defaultChecked className="rounded" />
-        </label>
+
+      {!supported && (
+        <div className="mb-4 p-3 rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+          Votre navigateur ne prend pas en charge les notifications push natives.
+          Sur iPhone / iPad, ajoutez l'application à l'écran d'accueil via Safari pour activer les notifications (iOS 16.4+).
+        </div>
+      )}
+
+      {supported && permission === 'denied' && (
+        <div className="mb-4 p-3 rounded border border-red-300 bg-red-50 text-red-900 text-sm">
+          Les notifications sont bloquées dans les paramètres du navigateur. Autorisez-les manuellement pour cette application.
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between p-3 rounded border border-outlook-border bg-outlook-bg-primary">
+          <div className="min-w-0">
+            <div className="text-sm font-medium">Notifications push natives</div>
+            <div className="text-xs text-outlook-text-secondary mt-0.5">
+              {subscribed
+                ? 'Actives sur cet appareil — les nouveaux messages déclenchent une notification système.'
+                : 'Recevez les nouveaux messages directement dans Windows, macOS, Android ou iOS (PWA installée).'}
+            </div>
+          </div>
+          <button
+            onClick={toggle}
+            disabled={!supported || loading || permission === 'denied'}
+            className={`ml-4 px-3 py-1.5 text-sm rounded font-medium transition-colors ${
+              subscribed
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-outlook-blue hover:brightness-110 text-white'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {subscribed ? 'Désactiver' : 'Activer'}
+          </button>
+        </div>
+
+        {subscribed && (
+          <div className="pl-1">
+            <button
+              onClick={test}
+              className="px-3 py-1.5 text-sm rounded border border-outlook-border hover:bg-outlook-bg-hover"
+            >
+              Envoyer une notification de test
+            </button>
+          </div>
+        )}
+
         <label className="flex items-center justify-between">
           <span className="text-sm">Son de notification</span>
-          <input type="checkbox" defaultChecked className="rounded" />
+          <input
+            type="checkbox"
+            checked={sound}
+            onChange={(e) => setSound(e.target.checked)}
+            className="rounded"
+          />
         </label>
         <label className="flex items-center justify-between">
           <span className="text-sm">Notifications du calendrier</span>
-          <input type="checkbox" defaultChecked className="rounded" />
+          <input
+            type="checkbox"
+            checked={calendar}
+            onChange={(e) => setCalendar(e.target.checked)}
+            className="rounded"
+          />
         </label>
+      </div>
+
+      <div className="mt-6 p-3 rounded border border-outlook-border bg-outlook-bg-secondary/40 text-xs text-outlook-text-secondary space-y-1">
+        <div><strong>Astuce :</strong></div>
+        <div>• Windows / macOS : installez l'application (Chrome/Edge → icône d'installation dans la barre d'adresse).</div>
+        <div>• Android : menu « Ajouter à l'écran d'accueil » depuis Chrome.</div>
+        <div>• iOS / iPadOS : Safari → Partager → « Sur l'écran d'accueil », puis activez les notifications ici (iOS 16.4+).</div>
       </div>
     </div>
   );

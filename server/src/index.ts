@@ -19,9 +19,12 @@ import { accountRouter } from './routes/accounts';
 import { adminRouter } from './routes/admin';
 import { pluginRouter } from './routes/plugins';
 import { searchRouter } from './routes/search';
+import { pushRouter } from './routes/push';
 import { authMiddleware } from './middleware/auth';
 import { setupWebSocket } from './services/websocket';
 import { PluginManager } from './plugins/manager';
+import { initPushService } from './services/push';
+import { startNewMailPoller } from './services/newMailPoller';
 
 const app = express();
 const server = createServer(app);
@@ -89,6 +92,7 @@ app.use('/api/accounts', authMiddleware, accountRouter);
 app.use('/api/admin', authMiddleware, adminRouter);
 app.use('/api/plugins', authMiddleware, pluginRouter);
 app.use('/api/search', authMiddleware, searchRouter);
+app.use('/api/push', authMiddleware, pushRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -113,10 +117,16 @@ async function start() {
     await initDatabase();
     logger.info('Database initialized');
 
+    // Initialize Web Push (VAPID)
+    await initPushService();
+
     // Initialize plugin manager
     const pluginManager = PluginManager.getInstance();
     await pluginManager.loadPlugins();
     logger.info('Plugins loaded');
+
+    // Start periodic new-mail poller (only polls accounts whose owner subscribed to push)
+    startNewMailPoller();
 
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);

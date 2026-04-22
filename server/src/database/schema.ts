@@ -237,3 +237,17 @@ export const adminSettings = pgTable('admin_settings', {
   description: text('description'),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+// Web Push subscriptions (native push notifications)
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  authKey: text('auth_key').notNull(),
+  userAgent: text('user_agent'),
+  platform: varchar('platform', { length: 50 }),
+  enabled: boolean('enabled').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  lastUsedAt: timestamp('last_used_at').defaultNow(),
+});
