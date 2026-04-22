@@ -30,13 +30,28 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
   - **Expéditeurs non enregistrés** (orange) — source `sender`
   - **NextCloud** (bleu, `Cloud` icon) — affiché uniquement si au moins un contact provient de NextCloud (filtre `source = 'nextcloud'`)
 - **Avatars colorés** avec dégradés déterministes par e-mail (10 couleurs) ; upload de photo de contact redimensionnée côté navigateur (256 px max, JPEG 85 %, 2 Mo max).
-- **Bannière personnalisable** sur la fiche contact : 15 couleurs/dégradés prédéfinis (Auto, Bleu, Vert, Violet, Rose, Ambre, Cyan, Corail, Indigo, Turquoise, Orange, Ardoise, Coucher de soleil, Océan, Forêt) ou image custom (JPG/PNG, 3 Mo max, redimensionnée à 1200 px de large). Les préférences sont stockées dans `contacts.metadata.bannerColor` / `contacts.metadata.bannerImage`.
+- **Bannière personnalisable** sur la fiche contact : 15 couleurs/dégradés prédéfinis (Auto, Bleu, Vert, Violet, Rose, Ambre, Cyan, Corail, Indigo, Turquoise, Orange, Ardoise, Coucher de soleil, Océan, Forêt) ou image custom (JPG/PNG, 3 Mo max, redimensionnée à 1200 px de large).
+- **Recadrage et ajustement de l'image de bannière** dans l'onglet *Apparence* :
+  - **3 modes d'ajustement** : *Remplir* (`cover`, recadrage automatique), *Étirer* (`fill`, déformation pour couvrir toute la surface), *Adapter* (`contain`, image entière avec bandes).
+  - **Glisser-déposer** directement sur l'aperçu pour repositionner le recadrage en mode *Remplir*.
+  - **Sliders X / Y** (0–100 %) pour un positionnement au pixel près.
+  - Boutons dédiés sur l'aperçu pour **remplacer** ou **supprimer** l'image.
+  - Préférences persistées dans `contacts.metadata.bannerFit`, `bannerPosX`, `bannerPosY`.
+- **Champs étendus** stockés dans `contacts.metadata` (jsonb) : `website`, `birthday`, `address`, `bannerColor`, `bannerImage`, `bannerFit`, `bannerPosX`, `bannerPosY`.
 - **Fiche contact enrichie** : bannière en tête, avatar XL à cheval sur la bannière, sections **Coordonnées**, **Professionnel**, **Informations** (anniversaire, adresse), **Notes** ; chaque section affiche ses champs en grille 2 colonnes. Boutons d'action rapide (e-mail, téléphone) et action « Enregistrer » pour promouvoir un expéditeur.
 - **Modale d'édition à onglets** : *Général* (identité, e-mail, téléphones) — *Professionnel* (entreprise, fonction, service, site web) — *Plus* (anniversaire, adresse, notes) — *Apparence* (couleur/image de la bannière avec aperçu en direct sur l'en-tête de la modale). Bouton favori en pilule, avatar avec boutons de prise de vue et de suppression.
 - **Groupement alphabétique** de la liste avec en-têtes collants (A, B, C…) et choix du tri : Nom / Récent / Entreprise.
 - **Barre latérale redimensionnable** : poignée verticale entre la liste et la fiche (240–600 px), persistée dans `localStorage` (`contacts-sidebar-width`), double-clic pour réinitialiser à 320 px.
 - **Couleurs adaptées au thème sombre** : utilisation de `bg-outlook-bg-selected`, `bg-outlook-bg-primary` et `bg-outlook-bg-tertiary` (variables CSS du thème) pour que le contact sélectionné, les en-têtes alphabétiques et les cartes restent lisibles en mode sombre.
-- **Champs étendus** stockés dans `contacts.metadata` (jsonb) : `website`, `birthday`, `address`, `bannerColor`, `bannerImage`.
+- **Champs étendus** stockés dans `contacts.metadata` (jsonb) : `website`, `birthday`, `address`, `bannerColor`, `bannerImage`, `bannerFit`, `bannerPosX`, `bannerPosY`.
+
+### Corrigé
+
+- **Persistance de la personnalisation du contact** : la route `PUT /api/contacts/:id` ignorait totalement la colonne `metadata`. Les champs personnalisation (bannière, site web, anniversaire, adresse) étaient donc perdus après enregistrement. Ajout d'une fusion jsonb `metadata = COALESCE(metadata, '{}'::jsonb) || $::jsonb` et envoi de `null` explicite côté client pour les valeurs effacées (sinon la clé absente laissait l'ancienne valeur).
+- **Rafraîchissement immédiat de la fiche contact après enregistrement** : la page Contacts stockait un snapshot (`selectedContact`) au lieu d'un identifiant. Après invalidation de React Query, la liste se mettait à jour mais la fiche affichée restait figée sur l'ancien objet jusqu'au rechargement. Remplacé par `selectedContactId` + `useMemo` pour toujours dériver le contact depuis la liste fraîche.
+- **Étoiles favori en doublon** retirées :
+  - dans la ligne de liste à gauche (seule l'étoile cliquable à droite reste)
+  - dans la fiche détaillée à côté du nom (seule l'étoile du bandeau supérieur droit reste)
 
 #### Édition interactive des images insérées — compose et signatures
 - **Nouvel utilitaire partagé** `client/src/utils/imageEditing.ts` exposant `attachImageEditing(editor)` : attaché à un éditeur `contenteditable`, il rend toutes les `<img>` interactives et renvoie un disposer qui nettoie les listeners, l'overlay et les styles injectés.

@@ -150,6 +150,23 @@ Dans la modale d'édition du contact → onglet **Apparence**.
 - Si une image est définie, elle **prime sur la couleur** choisie
 - Un léger voile noir (`bg-black/10` en vue détail, `bg-black/20` en modale) améliore la lisibilité des icônes blanches superposées
 
+### Ajustement et recadrage de l'image
+
+Une fois une image chargée, l'onglet *Apparence* propose trois modes d'ajustement :
+
+| Mode | Valeur `bannerFit` | Comportement CSS | Usage typique |
+|------|--------------------|------------------|---------------|
+| **Remplir** | `cover` | `background-size: cover` | Remplit toute la bannière en conservant les proportions, recadrage automatique. **Mode par défaut.** |
+| **Étirer** | `fill` | `background-size: 100% 100%` | Déforme l'image pour couvrir toute la surface, sans bande mais avec distorsion si le ratio diffère. |
+| **Adapter** | `contain` | `background-size: contain` | Affiche l'image entière sans recadrage ; bandes de fond possibles sur les côtés. |
+
+En mode **Remplir**, l'image peut être recadrée de deux façons :
+
+- **Glisser-déposer** : cliquez-glissez directement sur l'aperçu dans la modale pour déplacer la zone visible.
+- **Sliders X / Y** : deux curseurs sous l'aperçu permettent de régler la position en pourcentage (0–100 %) sur chaque axe.
+
+Les valeurs sont stockées dans `metadata.bannerPosX` et `metadata.bannerPosY` (par défaut 50 / 50 = centré).
+
 ### Stockage
 
 Les préférences sont persistées dans la colonne `contacts.metadata` (jsonb) :
@@ -157,11 +174,16 @@ Les préférences sont persistées dans la colonne `contacts.metadata` (jsonb) :
 ```json
 {
   "bannerColor": "sunset",
-  "bannerImage": "data:image/jpeg;base64,..."
+  "bannerImage": "data:image/jpeg;base64,...",
+  "bannerFit": "cover",
+  "bannerPosX": 50,
+  "bannerPosY": 30
 }
 ```
 
 Les images sont stockées inline (base64). Pour un grand nombre de contacts avec images, envisager un stockage externe.
+
+> **Note** : la route `PUT /api/contacts/:id` effectue une fusion jsonb (`metadata || $payload`). Le client envoie `null` explicite pour les valeurs effacées (auto/sans image) afin d'écraser l'ancienne clé ; un champ absent du payload conserve la valeur existante côté base.
 
 ---
 
