@@ -15,7 +15,8 @@ import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useQuery } from '@tanstack/react-query';
 import { prepareSecureSend, SecurityMode } from '../../crypto/composePipeline';
 import {
-  getSignatureById, getDefaultNewId, getDefaultReplyId, wrapSignatureHtml,
+  getSignatureById, wrapSignatureHtml,
+  resolveDefaultNewId, resolveDefaultReplyId,
 } from '../../utils/signatures';
 import { attachImageEditing } from '../../utils/imageEditing';
 import toast from 'react-hot-toast';
@@ -61,8 +62,12 @@ export default function ComposeModal({
     // Si du contenu est déjà fourni (brouillon / réponse avec citation), on le conserve tel quel.
     const base = initialData.bodyHtml || '';
     // Sélectionne la signature par défaut selon le contexte : nouveau message vs réponse/transfert.
+    // On tient compte d'un éventuel override par compte de messagerie.
+    const activeAccountId = initialData.accountId || selectedAccountId || accounts[0]?.id;
     const isReplyOrForward = !!initialData.inReplyTo;
-    const sigId = isReplyOrForward ? getDefaultReplyId() : getDefaultNewId();
+    const sigId = isReplyOrForward
+      ? resolveDefaultReplyId(activeAccountId)
+      : resolveDefaultNewId(activeAccountId);
     const sig = getSignatureById(sigId);
     if (!sig) return base;
     const sigBlock = wrapSignatureHtml(sig.html);

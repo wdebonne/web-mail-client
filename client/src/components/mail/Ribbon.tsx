@@ -1740,7 +1740,10 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
         </AnchoredPortal>
       )}
       {showSignaturesManager && (
-        <SignaturesManagerModal onClose={() => setShowSignaturesManager(false)} />
+        <SignaturesManagerModal
+          onClose={() => setShowSignaturesManager(false)}
+          accounts={accounts}
+        />
       )}
       {showEmoji && (
         <AnchoredPortal anchorEl={emojiBtnRef.current} onClose={() => setShowEmoji(false)}>

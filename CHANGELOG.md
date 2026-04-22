@@ -9,6 +9,32 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Édition interactive des images insérées — compose et signatures
+- **Nouvel utilitaire partagé** `client/src/utils/imageEditing.ts` exposant `attachImageEditing(editor)` : attaché à un éditeur `contenteditable`, il rend toutes les `<img>` interactives et renvoie un disposer qui nettoie les listeners, l'overlay et les styles injectés.
+- **Sélection visuelle** : un clic sur une image dans l'éditeur la sélectionne (contour bleu `outline: 2px solid #2563eb`). Un clic en dehors, la touche `Échap` ou la perte de focus la désélectionne. `Suppr` / `Retour arrière` supprime l'image sélectionnée.
+- **Barre flottante** (portée dans `document.body`, positionnée au-dessus de l'image et reclampée dans le viewport, repositionnée sur `scroll` / `resize` et via un `MutationObserver`) avec :
+  - alignements **gauche / centre / droite** (via `float` + marges pour gauche/droite, `display:block; margin:auto` pour le centre ; le bouton actif est mis en évidence) ;
+  - préréglages de largeur **25 % / 50 % / 75 % / 100 %** de la largeur naturelle de l'image, bridés à la largeur de l'éditeur ;
+  - **↺ Taille d'origine** (supprime `width`/`height` et recadre à la largeur de l'éditeur si nécessaire) ;
+  - **🗑 Supprimer** l'image.
+- **Poignée de redimensionnement** (coin bas-droit) : glisser pour redimensionner en conservant le ratio (`width` en `px`, `height: auto`), bridé à la largeur de l'éditeur ; émet un `input` event à la fin du drag pour que React sauvegarde le HTML.
+- **Persistance** : tous les styles (`float`, marges, `width`) sont écrits directement sur l'élément `<img>`, donc conservés à l'envoi du mail et à la sauvegarde de la signature.
+- **Intégration** : activé via un `useEffect` dans `ComposeModal.tsx` (sur l'éditeur interne *ou* externe passé par le ruban) et dans `SignatureEditorModal` (`SignatureModals.tsx`).
+
+#### Signature par compte de messagerie
+- **Signature par défaut distincte par boîte mail** : chaque compte peut désormais surcharger les signatures par défaut « nouveaux messages » et « réponses/transferts », indépendamment des défauts globaux.
+- **Module `signatures.ts`** enrichi :
+  - deux nouvelles maps `localStorage` : `mail.signatures.accountDefaultNew.v1` et `mail.signatures.accountDefaultReply.v1` (`Record<accountId, signatureId | null>`) — `undefined` (clé absente) = suit la valeur globale, `null` = « aucune signature » pour ce compte, `string` = id de signature ;
+  - helpers `getAccountDefaultNewId(accountId)` / `getAccountDefaultReplyId(accountId)`, `setAccountDefaultNewId(accountId, id)` / `setAccountDefaultReplyId(accountId, id)` (avec `id === undefined` pour retirer l'override) ;
+  - résolveurs `resolveDefaultNewId(accountId)` / `resolveDefaultReplyId(accountId)` qui retournent l'override du compte si présent, sinon la valeur globale ;
+  - `deleteSignature()` purge automatiquement les overrides par compte qui pointaient sur l'ID supprimé.
+- **UI `SignaturesManagerModal`** (`client/src/components/mail/SignatureModals.tsx`) : nouvelle section **« Signature par compte de messagerie »** entre les défauts globaux et la liste des signatures. Un bloc par compte avec :
+  - pastille colorée (`acc.color`) + nom et adresse du compte,
+  - deux `<select>` (*Nouveaux messages* / *Réponses et transferts*) proposant `(Valeur par défaut globale)`, `(Aucune signature)`, puis la liste des signatures ;
+  - re-render via un compteur `acctVersion` bumpé à chaque `mail.signatures.changed`.
+- **Propagation** : `Ribbon.tsx` passe désormais sa prop `accounts` au `SignaturesManagerModal` (`accounts?: MailAccount[]`).
+- **Intégration compose** (`ComposeModal.tsx`) : à l'initialisation de `bodyHtml`, la signature est choisie via `resolveDefault{New,Reply}Id(activeAccountId)` — l'override du compte l'emporte, sinon on retombe sur la valeur globale. Comportement inchangé si aucun override n'est défini.
+
 #### Sauvegarde & restauration de la configuration locale
 - **Nouvel onglet *Paramètres → Sauvegarde*** (`client/src/pages/SettingsPage.tsx` → `BackupSettings`, icône `HardDrive`) pour exporter, importer et automatiser la sauvegarde de toute la configuration **locale** à l'appareil : signatures, catégories (+ assignations), renommage et ordre des boîtes mail/dossiers, favoris, vues unifiées, thème, préférences d'affichage (reading pane, densité, conversations, ribbon, splits, largeurs, onglets), préférences de notifications, emojis récents. Les mails eux-mêmes restent sur le serveur IMAP et ne sont pas inclus.
 - **Module dédié** `client/src/utils/backup.ts` avec :

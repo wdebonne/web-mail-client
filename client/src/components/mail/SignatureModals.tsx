@@ -15,8 +15,13 @@ import {
   setDefaultNewId,
   getDefaultReplyId,
   setDefaultReplyId,
+  getAccountDefaultNewId,
+  getAccountDefaultReplyId,
+  setAccountDefaultNewId,
+  setAccountDefaultReplyId,
 } from '../../utils/signatures';
 import { attachImageEditing } from '../../utils/imageEditing';
+import type { MailAccount } from '../../types';
 import toast from 'react-hot-toast';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,21 +44,26 @@ function useSignatures(): [MailSignature[], () => void] {
 export interface SignaturesManagerProps {
   onClose: () => void;
   accountEmail?: string;
+  /** Liste des comptes de messagerie pour configurer les signatures par compte. */
+  accounts?: MailAccount[];
 }
 
-export function SignaturesManagerModal({ onClose, accountEmail }: SignaturesManagerProps) {
+export function SignaturesManagerModal({ onClose, accountEmail, accounts = [] }: SignaturesManagerProps) {
   const [list] = useSignatures();
   const [editing, setEditing] = useState<MailSignature | null>(null);
   const [creating, setCreating] = useState(false);
   const [defaultNew, setDefNew] = useState<string | null>(getDefaultNewId());
   const [defaultReply, setDefReply] = useState<string | null>(getDefaultReplyId());
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  // Version bumped on any signatures change event — re-reads per-account overrides.
+  const [, setAcctVersion] = useState(0);
 
   // Sync defaults on changes (e.g. when a signature used as default is removed).
   useEffect(() => {
     const handler = () => {
       setDefNew(getDefaultNewId());
       setDefReply(getDefaultReplyId());
+      setAcctVersion(v => v + 1);
     };
     window.addEventListener('mail.signatures.changed', handler);
     return () => window.removeEventListener('mail.signatures.changed', handler);
@@ -152,6 +162,99 @@ export function SignaturesManagerModal({ onClose, accountEmail }: SignaturesMana
               </div>
             </div>
           </div>
+
+          {/* Per-account defaults */}
+          {accounts.length > 0 && (
+            <div className="border-t border-outlook-border pt-4 space-y-3 mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-outlook-text-primary">
+                  Signature par compte de messagerie
+                </h3>
+                <p className="text-xs text-outlook-text-secondary mt-0.5">
+                  Définissez une signature spécifique par boîte mail. Sinon, la valeur
+                  par défaut globale ci-dessus est utilisée.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {accounts.map((acc) => {
+                  const overrideNew = getAccountDefaultNewId(acc.id);
+                  const overrideReply = getAccountDefaultReplyId(acc.id);
+                  const valNew =
+                    overrideNew === undefined ? '' :
+                    overrideNew === null ? '__none__' : overrideNew;
+                  const valReply =
+                    overrideReply === undefined ? '' :
+                    overrideReply === null ? '__none__' : overrideReply;
+                  const decode = (v: string): string | null | undefined => {
+                    if (v === '') return undefined;
+                    if (v === '__none__') return null;
+                    return v;
+                  };
+                  return (
+                    <div key={acc.id} className="border border-outlook-border rounded px-3 py-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span
+                          className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: acc.color || '#888' }}
+                        />
+                        <span className="text-sm font-medium text-outlook-text-primary truncate">
+                          {acc.name || acc.email}
+                        </span>
+                        {acc.name && acc.email && acc.name !== acc.email && (
+                          <span className="text-xs text-outlook-text-secondary truncate">
+                            &lt;{acc.email}&gt;
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="text-xs text-outlook-text-secondary flex flex-col gap-1">
+                          Nouveaux messages
+                          <div className="relative">
+                            <select
+                              value={valNew}
+                              onChange={(e) => {
+                                setAccountDefaultNewId(acc.id, decode(e.target.value));
+                                setAcctVersion(v => v + 1);
+                              }}
+                              className="w-full appearance-none text-sm border border-outlook-border rounded px-2 py-1 pr-7 bg-white focus:outline-none focus:border-outlook-blue text-outlook-text-primary"
+                            >
+                              <option value="">(Valeur par défaut globale)</option>
+                              <option value="__none__">(Aucune signature)</option>
+                              {list.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-outlook-text-secondary" />
+                          </div>
+                        </label>
+                        <label className="text-xs text-outlook-text-secondary flex flex-col gap-1">
+                          Réponses et transferts
+                          <div className="relative">
+                            <select
+                              value={valReply}
+                              onChange={(e) => {
+                                setAccountDefaultReplyId(acc.id, decode(e.target.value));
+                                setAcctVersion(v => v + 1);
+                              }}
+                              className="w-full appearance-none text-sm border border-outlook-border rounded px-2 py-1 pr-7 bg-white focus:outline-none focus:border-outlook-blue text-outlook-text-primary"
+                            >
+                              <option value="">(Valeur par défaut globale)</option>
+                              <option value="__none__">(Aucune signature)</option>
+                              {list.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-outlook-text-secondary" />
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* List */}
           <div className="border-t border-outlook-border">

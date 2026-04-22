@@ -18,6 +18,9 @@ export interface MailSignature {
 const KEY_LIST = 'mail.signatures.v1';
 const KEY_DEFAULT_NEW = 'mail.signatures.defaultNew';
 const KEY_DEFAULT_REPLY = 'mail.signatures.defaultReply';
+// Per-account defaults. Maps accountId → signatureId (or null to force "no signature").
+const KEY_ACCOUNT_DEFAULT_NEW = 'mail.signatures.accountDefaultNew.v1';
+const KEY_ACCOUNT_DEFAULT_REPLY = 'mail.signatures.accountDefaultReply.v1';
 
 function readJSON<T>(key: string, fallback: T): T {
   try {
@@ -83,6 +86,17 @@ export function deleteSignature(id: string) {
   // Nettoyer les valeurs par défaut pointant sur la signature supprimée.
   if (getDefaultNewId() === id) setDefaultNewId(null);
   if (getDefaultReplyId() === id) setDefaultReplyId(null);
+  // Purge des overrides par compte qui pointaient sur cette signature.
+  const mapNew = readJSON<Record<string, string | null>>(KEY_ACCOUNT_DEFAULT_NEW, {});
+  const mapReply = readJSON<Record<string, string | null>>(KEY_ACCOUNT_DEFAULT_REPLY, {});
+  let changed = false;
+  for (const k of Object.keys(mapNew)) if (mapNew[k] === id) { delete mapNew[k]; changed = true; }
+  for (const k of Object.keys(mapReply)) if (mapReply[k] === id) { delete mapReply[k]; changed = true; }
+  if (changed) {
+    writeJSON(KEY_ACCOUNT_DEFAULT_NEW, mapNew);
+    writeJSON(KEY_ACCOUNT_DEFAULT_REPLY, mapReply);
+    try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
+  }
 }
 
 // --- Valeurs par défaut ---
@@ -91,7 +105,70 @@ export function getDefaultNewId(): string | null {
 }
 export function setDefaultNewId(id: string | null) {
   if (id) localStorage.setItem(KEY_DEFAULT_NEW, id);
-  else localStorage.removeItem(KEY_DEFAULT_NEW);
+ 
+
+// ─── Valeurs par défaut par compte de messagerie ────────────────────────────
+// Chaque compte (id) peut surcharger la signature par défaut globale :
+//   • `undefined` dans la map   → suit la valeur globale,
+//   • `null` dans la map        → "aucune signature" pour ce compte,
+//   • `string` dans la map      → id de signature spécifique.
+// Les helpers `resolveDefault*Id(accountId)` renvoient la valeur effective.
+
+type SigOverrideMap = Record<string, string | null | undefined>;
+
+function readOverrideMap(key: string): SigOverrideMap {
+  return readJSON<SigOverrideMap>(key, {});
+}
+
+export function getAccountDefaultNewId(accountId: string | null | undefined): string | null | undefined {
+  if (!accountId) return undefined;
+  const map = readOverrideMap(KEY_ACCOUNT_DEFAULT_NEW);
+  return Object.prototype.hasOwnProperty.call(map, accountId) ? map[accountId] : undefined;
+}
+
+export function getAccountDefaultReplyId(accountId: string | null | undefined): string | null | undefined {
+  if (!accountId) return undefined;
+  const map = readOverrideMap(KEY_ACCOUNT_DEFAULT_REPLY);
+  return Object.prototype.hasOwnProperty.call(map, accountId) ? map[accountId] : undefined;
+}
+
+/**
+ * Définit la signature par défaut pour les nouveaux messages d'un compte.
+ *   • `id === undefined` : retire l'override (le compte suivra la valeur globale),
+ *   • `id === null`      : "aucune signature" pour ce compte,
+ *   • `id === string`    : id de signature.
+ */
+export function setAccountDefaultNewId(accountId: string, id: string | null | undefined) {
+  const map = readOverrideMap(KEY_ACCOUNT_DEFAULT_NEW);
+  if (id === undefined) delete map[accountId];
+  else map[accountId] = id;
+  writeJSON(KEY_ACCOUNT_DEFAULT_NEW, map);
+  try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
+}
+
+export function setAccountDefaultReplyId(accountId: string, id: string | null | undefined) {
+  const map = readOverrideMap(KEY_ACCOUNT_DEFAULT_REPLY);
+  if (id === undefined) delete map[accountId];
+  else map[accountId] = id;
+  writeJSON(KEY_ACCOUNT_DEFAULT_REPLY, map);
+  try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
+}
+
+/**
+ * Résout la signature par défaut effective pour un compte donné (nouveau message).
+ * Override du compte → valeur globale.
+ */
+export function resolveDefaultNewId(accountId: string | null | undefined): string | null {
+  const override = getAccountDefaultNewId(accountId);
+  if (override !== undefined) return override ?? null;
+  return getDefaultNewId();
+}
+
+export function resolveDefaultReplyId(accountId: string | null | undefined): string | null {
+  const override = getAccountDefaultReplyId(accountId);
+  if (override !== undefined) return override ?? null;
+  return getDefaultReplyId();
+} else localStorage.removeItem(KEY_DEFAULT_NEW);
   try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
 }
 
