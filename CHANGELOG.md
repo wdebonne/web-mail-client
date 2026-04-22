@@ -9,6 +9,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Disposition de la vue mail
+- Nouveau groupe **Disposition** dans l'onglet **Afficher** du ruban (classique et simplifié) regroupant trois menus :
+  - **Volet de lecture** : *Afficher à droite* (défaut), *Afficher en bas* ou *Plein écran*. Le choix est persisté (`readingPaneMode`). En mode *Afficher en bas*, la liste des messages est au-dessus et la lecture en dessous, avec une poignée de **redimensionnement vertical** (hauteur persistée dans `listHeight`). En mode *Plein écran*, la liste occupe toute la largeur ; à la sélection d'un mail, celui-ci remplace la liste en pleine largeur avec un bouton **×** pour revenir à la liste.
+  - **Liste mail** : *Automatique (selon la largeur)*, *Une seule ligne (colonnes)* ou *Aperçu multi-lignes*. Permet de forcer l'affichage compact ou large de la liste indépendamment de sa largeur réelle. Préférence persistée (`listDisplayMode`). En disposition *Afficher en bas* et mode *Automatique*, la liste bascule automatiquement en aperçu multi-lignes.
+  - **Densité** : *Spacieux*, *Confortable* (défaut) ou *Compacte*. Ajuste la hauteur des lignes de la liste. Préférence persistée (`listDensity`).
+
 #### Notifications push natives (Web Push / VAPID)
 - **Notifications système natives** sur Windows, macOS, Android et iOS (PWA installée via Safari, iOS 16.4+), même application fermée.
 - Nouveau service Web Push côté serveur (`services/push.ts`) : génération et persistance automatique d'une paire de clés **VAPID** (dans `admin_settings`), envoi multi-appareils, purge automatique des abonnements expirés (HTTP 404/410).
