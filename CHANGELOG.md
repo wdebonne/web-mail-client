@@ -9,6 +9,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Modale événement refondue — parité RoundCube / CalDAV
+
+- **Nouvel éditeur d'événement** ([client/src/components/calendar/EventModal.tsx](client/src/components/calendar/EventModal.tsx)) remplace la modale minimaliste historique par une modale moderne à **4 onglets** calquée sur l'éditeur RoundCube (o2switch) :
+  - *Résumé* — titre, lieu, description, début/fin avec bascule *toute la journée*, rappel (aucun · à l'heure · 5 / 10 / 15 / 30 min · 1 / 2 h · 1 / 2 j · 1 sem.), calendrier cible, catégories (tags libres), statut (Confirmé / Provisoire / Annulé), *Montrez-moi en tant que* (Occupé / Disponible = `TRANSP`), priorité (Basse / Normale / Haute = `PRIORITY`), URL.
+  - *Récurrence* — générateur RRULE complet : aucune / quotidienne / hebdomadaire (`BYDAY`) / mensuelle en mode *chaque X* (`BYMONTHDAY`) ou *le premier/deuxième/…/dernier [jour]* (`BYDAY=1MO`, etc.) / annuelle (`BYMONTH`) / *à certaines dates* (`RDATE`). Fin : toujours, `COUNT`, `UNTIL`.
+  - *Participants* — liste d'invités avec rôle (`REQ-PARTICIPANT` / `OPT-PARTICIPANT` / `CHAIR` / `NON-PARTICIPANT`), statut de réponse (`PARTSTAT`), organisateur pré-rempli depuis la session, zone de commentaire d'invitation.
+  - *Pièces jointes* — drag-drop / file picker multi-fichiers jusqu'à 250 Mo, encodés en base64 et poussés inline (`ATTACH;VALUE=BINARY;ENCODING=BASE64`) ou par URL.
+- **Sérialisation iCalendar RFC 5545 étendue** ([server/src/utils/ical.ts](server/src/utils/ical.ts)) : `buildIcs` émet désormais `SUMMARY`, `DESCRIPTION`, `LOCATION`, `STATUS`, `RRULE`, `RDATE[;VALUE=DATE]`, `TRANSP`, `PRIORITY`, `CATEGORIES`, `URL`, `ORGANIZER[;CN=…]:mailto:…`, `ATTENDEE[;ROLE=…;PARTSTAT=…;RSVP=TRUE;CN=…]:mailto:…`, `ATTACH` (URL ou inline base64), et un bloc `VALARM` (`ACTION:DISPLAY`, `TRIGGER:-PT<n>M`) lorsqu'un rappel est défini.
+- **Schéma et routes événements étendus** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts)) : `POST /api/calendar/events` et `PUT /api/calendar/events/:id` acceptent désormais `rdates`, `reminderMinutes`, `attendees[{role, rsvp, comment, …}]`, `organizer`, `priority (0-9)`, `url`, `categories[]`, `transparency ('OPAQUE'|'TRANSPARENT')`, `attachments[]`. Le `PUT` force `ical_data = NULL` pour que l'ICS soit reconstruit à partir de la base de données au prochain `pushEventToCalDAV`.
+- **Colonnes DB ajoutées** ([server/src/database/connection.ts](server/src/database/connection.ts)) : `calendar_events.priority INT`, `url TEXT`, `categories JSONB`, `transparency VARCHAR(20)`, `attachments JSONB`, `rdates JSONB` — ajoutées de manière idempotente (`ALTER TABLE IF EXISTS … ADD COLUMN IF NOT EXISTS`).
+- **Autosynchronisation CalDAV** : tous les nouveaux champs sont poussés automatiquement vers le serveur CalDAV (o2switch / SabreDAV / SOGo) dès qu'un événement est créé ou modifié sur un calendrier de source `caldav`, sans action manuelle — l'événement apparaît instantanément dans RoundCube avec rappels, récurrence, invités, catégories et pièces jointes.
+
 #### Création de calendrier par boîte mail + CalDAV (MKCALENDAR)
 
 - **Modale « Nouveau calendrier » réécrite** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : l'utilisateur choisit désormais entre :

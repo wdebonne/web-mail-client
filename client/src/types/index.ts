@@ -137,9 +137,16 @@ export interface CalendarEvent {
   end_date: string;
   all_day: boolean;
   recurrence_rule?: string;
-  reminder_minutes?: number;
+  rdates?: string[];
+  reminder_minutes?: number | null;
   attendees?: EventAttendee[];
+  organizer?: { email: string; name?: string };
   status: string;
+  priority?: number | null;
+  url?: string;
+  categories?: string[];
+  transparency?: 'OPAQUE' | 'TRANSPARENT';
+  attachments?: Array<{ name: string; mime?: string; size?: number; data?: string; url?: string }>;
   calendar_name?: string;
   calendar_color?: string;
 }
@@ -147,7 +154,10 @@ export interface CalendarEvent {
 export interface EventAttendee {
   email: string;
   name?: string;
+  role?: 'CHAIR' | 'REQ-PARTICIPANT' | 'OPT-PARTICIPANT' | 'NON-PARTICIPANT';
   status: string;
+  rsvp?: boolean;
+  comment?: string;
 }
 
 export interface Plugin {

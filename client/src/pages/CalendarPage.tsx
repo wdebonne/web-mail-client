@@ -19,6 +19,7 @@ import CalendarSidebar from '../components/calendar/CalendarSidebar';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { SyncCalendarsDialog } from '../components/calendar/SyncCalendarsDialog';
 import { AddCalendarUrlDialog } from '../components/calendar/AddCalendarUrlDialog';
+import EventModal from '../components/calendar/EventModal';
 import {
   getCalendarView, setCalendarView,
   getRibbonMode, setRibbonMode,
@@ -393,7 +394,7 @@ export default function CalendarPage() {
       )}
 
       {showEventForm && (
-        <EventForm
+        <EventModal
           calendars={calendars}
           initialDate={selectedRange?.start || currentDate}
           editingEvent={editingEvent}
@@ -626,119 +627,6 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, even
             );
           })}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function EventForm({ calendars, initialDate, editingEvent, onSubmit, onClose, isSubmitting }: {
-  calendars: Calendar[];
-  initialDate: Date;
-  editingEvent: CalendarEvent | null;
-  onSubmit: (data: any) => void;
-  onClose: () => void;
-  isSubmitting: boolean;
-}) {
-  const seedStart = editingEvent ? parseISO(editingEvent.start_date) : initialDate;
-  const seedEnd = editingEvent ? parseISO(editingEvent.end_date) : initialDate;
-
-  const [title, setTitle] = useState(editingEvent?.title || '');
-  const [calendarId, setCalendarId] = useState(editingEvent?.calendar_id || calendars.find((c: Calendar) => c.is_default)?.id || calendars[0]?.id || '');
-  const [startDate, setStartDate] = useState(format(seedStart, "yyyy-MM-dd'T'HH:mm"));
-  const [endDate, setEndDate] = useState(format(seedEnd, "yyyy-MM-dd'T'HH:mm"));
-  const [allDay, setAllDay] = useState(!!editingEvent?.all_day);
-  const [location, setLocation] = useState(editingEvent?.location || '');
-  const [description, setDescription] = useState(editingEvent?.description || '');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({
-      calendarId,
-      title,
-      startDate: allDay ? format(parseISO(startDate), 'yyyy-MM-dd') + 'T00:00:00' : startDate,
-      endDate: allDay ? format(parseISO(endDate || startDate), 'yyyy-MM-dd') + 'T23:59:59' : endDate,
-      allDay,
-      location,
-      description,
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[480px] p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">{editingEvent ? "Modifier l'événement" : 'Nouvel événement'}</h2>
-          <button onClick={onClose} className="text-outlook-text-disabled hover:text-outlook-text-primary">
-            <X size={18} />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Titre de l'événement"
-            required
-            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-outlook-blue"
-          />
-          {calendars.length > 1 && (
-            <select value={calendarId} onChange={(e) => setCalendarId(e.target.value)} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm">
-              {calendars.map((c: Calendar) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          )}
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} className="rounded" />
-            Toute la journée
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-outlook-text-secondary">Début</label>
-              <input
-                type={allDay ? 'date' : 'datetime-local'}
-                value={allDay ? startDate.split('T')[0] : startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-outlook-text-secondary">Fin</label>
-              <input
-                type={allDay ? 'date' : 'datetime-local'}
-                value={allDay ? (endDate?.split('T')[0] || startDate.split('T')[0]) : endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
-          <input
-            type="text"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="Lieu"
-            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm"
-          />
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description"
-            rows={3}
-            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm resize-none"
-          />
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">
-              Annuler
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !title}
-              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50"
-            >
-              {isSubmitting ? 'Enregistrement...' : editingEvent ? 'Enregistrer' : 'Créer'}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );

@@ -19,13 +19,29 @@ const eventSchema = z.object({
   endDate: z.string(),
   allDay: z.boolean().default(false),
   recurrenceRule: z.string().optional(),
-  reminderMinutes: z.number().optional(),
+  rdates: z.array(z.string()).optional(),
+  reminderMinutes: z.number().int().optional().nullable(),
   attendees: z.array(z.object({
     email: z.string().email(),
     name: z.string().optional(),
+    role: z.enum(['CHAIR', 'REQ-PARTICIPANT', 'OPT-PARTICIPANT', 'NON-PARTICIPANT']).optional(),
     status: z.string().default('pending'),
+    rsvp: z.boolean().optional(),
+    comment: z.string().optional(),
   })).optional(),
+  organizer: z.object({ email: z.string().email(), name: z.string().optional() }).optional(),
   status: z.string().default('confirmed'),
+  priority: z.number().int().min(0).max(9).optional().nullable(),
+  url: z.string().url().optional().or(z.literal('')).transform((v) => v || undefined),
+  categories: z.array(z.string()).optional(),
+  transparency: z.enum(['OPAQUE', 'TRANSPARENT']).optional(),
+  attachments: z.array(z.object({
+    name: z.string(),
+    mime: z.string().optional(),
+    size: z.number().optional(),
+    data: z.string().optional(), // base64 (for small attachments)
+    url: z.string().optional(),
+  })).optional(),
 });
 
 // List calendars
@@ -247,10 +263,26 @@ calendarRouter.post('/events', async (req: AuthRequest, res) => {
 
     const icalUid = `${crypto.randomUUID()}@webmail.local`;
     const result = await pool.query(
-      `INSERT INTO calendar_events (calendar_id, title, description, location, start_date, end_date, all_day, recurrence_rule, reminder_minutes, attendees, status, ical_uid)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO calendar_events
+         (calendar_id, title, description, location, start_date, end_date, all_day,
+          recurrence_rule, reminder_minutes, attendees, organizer, status, ical_uid,
+          priority, url, categories, transparency, attachments, rdates)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`,
-      [data.calendarId, data.title, data.description, data.location, data.startDate, data.endDate, data.allDay, data.recurrenceRule, data.reminderMinutes, JSON.stringify(data.attendees || []), data.status, icalUid]
+      [
+        data.calendarId, data.title, data.description, data.location,
+        data.startDate, data.endDate, data.allDay,
+        data.recurrenceRule, data.reminderMinutes ?? null,
+        JSON.stringify(data.attendees || []),
+        data.organizer ? JSON.stringify(data.organizer) : null,
+        data.status, icalUid,
+        data.priority ?? null,
+        data.url || null,
+        JSON.stringify(data.categories || []),
+        data.transparency || null,
+        JSON.stringify(data.attachments || []),
+        JSON.stringify(data.rdates || []),
+      ]
     );
 
     // Fire-and-forget: push to remote CalDAV if the calendar is linked to a mail account
@@ -282,15 +314,37 @@ calendarRouter.put('/events/:id', async (req: AuthRequest, res) => {
         recurrence_rule = COALESCE($7, recurrence_rule),
         reminder_minutes = COALESCE($8, reminder_minutes),
         attendees = COALESCE($9, attendees),
-        status = COALESCE($10, status),
+        organizer = COALESCE($10, organizer),
+        status = COALESCE($11, status),
+        priority = COALESCE($12, priority),
+        url = COALESCE($13, url),
+        categories = COALESCE($14, categories),
+        transparency = COALESCE($15, transparency),
+        attachments = COALESCE($16, attachments),
+        rdates = COALESCE($17, rdates),
+        ical_data = NULL,
         updated_at = NOW()
-       WHERE id = $11 AND calendar_id IN (
+       WHERE id = $18 AND calendar_id IN (
         SELECT c.id FROM calendars c
         LEFT JOIN shared_calendar_access sca ON sca.calendar_id = c.id
-        WHERE c.user_id = $12 OR (sca.user_id = $12 AND sca.permission = 'write')
+        WHERE c.user_id = $19 OR (sca.user_id = $19 AND sca.permission = 'write')
        )
        RETURNING *`,
-      [data.title, data.description, data.location, data.startDate, data.endDate, data.allDay, data.recurrenceRule, data.reminderMinutes, data.attendees ? JSON.stringify(data.attendees) : null, data.status, id, req.userId]
+      [
+        data.title, data.description, data.location,
+        data.startDate, data.endDate, data.allDay,
+        data.recurrenceRule, data.reminderMinutes,
+        data.attendees ? JSON.stringify(data.attendees) : null,
+        data.organizer ? JSON.stringify(data.organizer) : null,
+        data.status,
+        data.priority ?? null,
+        data.url ?? null,
+        data.categories ? JSON.stringify(data.categories) : null,
+        data.transparency ?? null,
+        data.attachments ? JSON.stringify(data.attachments) : null,
+        data.rdates ? JSON.stringify(data.rdates) : null,
+        id, req.userId,
+      ]
     );
 
     if (result.rows.length === 0) {
@@ -370,8 +424,9 @@ async function buildCalDAVServiceForAccount(mailAccountId: string): Promise<{ se
 async function pushEventToCalDAV(eventId: string): Promise<void> {
   const row = await pool.query(
     `SELECT ce.id, ce.title, ce.description, ce.location, ce.start_date, ce.end_date,
-            ce.all_day, ce.recurrence_rule, ce.ical_uid, ce.ical_data, ce.status,
-            ce.attendees, ce.organizer,
+            ce.all_day, ce.recurrence_rule, ce.rdates, ce.ical_uid, ce.ical_data, ce.status,
+            ce.attendees, ce.organizer, ce.priority, ce.url, ce.categories,
+            ce.transparency, ce.attachments, ce.reminder_minutes,
             c.id AS calendar_id, c.name AS calendar_name, c.caldav_url, c.mail_account_id
      FROM calendar_events ce
      JOIN calendars c ON c.id = ce.calendar_id

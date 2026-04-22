@@ -47,6 +47,44 @@ Quand `o2switchAutoSync` vaut `true` — ou quand `imapHost` se termine par `.o2
 
 Une synchronisation CalDAV initiale est lancée pour chaque utilisateur assigné à la boîte, afin que les calendriers apparaissent immédiatement dans leur interface.
 
+### 3. Création manuelle d'un compte mail depuis l'admin
+
+Le formulaire *Administration → Comptes mail → Nouveau / Modifier* expose maintenant une case **« Synchronisation O2Switch (CalDAV + CardDAV) »**, cochée par défaut. Lorsque la case est active (ou que `imapHost` se termine par `.o2switch.net`), `POST /api/admin/mail-accounts` renseigne immédiatement les URLs CalDAV + CardDAV et active les deux flags. Comme la boîte n'est pas encore attribuée, **aucune synchro n'est lancée à ce stade** : elle part en arrière-plan dès qu'un utilisateur est rattaché à la boîte via `POST /api/admin/mail-accounts/:id/assignments`.
+
+### 4. Ajout d'un calendrier CalDAV arbitraire (admin)
+
+L'administrateur peut aussi importer n'importe quel calendrier distant (o2switch ou autre) pour le compte d'un utilisateur via *Administration → Gestion des calendriers → Ajouter via CalDAV* (endpoint `POST /api/admin/calendars/import-caldav`). Le flux :
+
+1. Première tentative sans identifiants.
+2. Si le serveur renvoie `401/403`, la réponse revient en HTTP 200 avec `{ ok: false, needsAuth: true }` — la modale affiche alors les champs *Identifiant* + *Mot de passe* (ce contrat spécial évite la déconnexion automatique de la session admin).
+3. En cas de succès, chaque calendrier est dédupliqué sur `(user_id, external_id, mail_account_id IS NULL)` et ses événements sont importés sur `[−1 mois ; +6 mois]`.
+
+## Création d'un calendrier directement sur le serveur CalDAV
+
+Depuis la modale *Nouveau calendrier* (barre latérale du module *Calendrier*) :
+
+1. Sélectionnez *Boîte mail* et choisissez la boîte cible.
+2. Cochez *« Créer et synchroniser via CalDAV »*.
+3. À la validation, le serveur envoie une requête **`MKCALENDAR`** (RFC 4791) au serveur distant :
+
+```xml
+<C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">
+  <D:set>
+    <D:prop>
+      <D:displayname>Nom du calendrier</D:displayname>
+      <A:calendar-color>#0078D4</A:calendar-color>
+      <C:supported-calendar-component-set>
+        <C:comp name="VEVENT"/>
+      </C:supported-calendar-component-set>
+    </D:prop>
+  </D:set>
+</C:mkcalendar>
+```
+
+Le slug de l'URL est dérivé du nom (NFD → ASCII, lowercase, `[^a-z0-9]` → `-`, 48 caractères max). La ligne locale est créée avec `source = 'caldav'`, `mail_account_id` rempli et `caldav_url = external_id = <href du nouveau collection>`. Les événements ultérieurs seront poussés automatiquement (cf. *Push en temps réel* ci-dessous).
+
+Si le serveur CalDAV refuse `MKCALENDAR` (`4xx/5xx`), la route répond `502 Bad Gateway` avec le message du serveur et **aucune ligne locale n'est insérée** (pas de calendrier « fantôme »).
+
 ## Fusion du calendrier par défaut
 
 Lors de la **première** synchronisation d'un compte, le calendrier local de l'utilisateur marqué `is_default = true` est **promu** (au lieu d'être dupliqué) pour pointer vers le calendrier distant par défaut :
@@ -68,6 +106,30 @@ Résultat : le calendrier par défaut de l'application *est* le calendrier par d
 | Supprimer un contact | `DELETE /api/contacts/:id` | `DELETE {carddavUrl}/{href}` |
 
 Les appels distants sont **fire-and-forget** : ils n'empêchent jamais la réponse HTTP locale. En cas d'échec (réseau, 401), l'erreur est journalisée côté serveur (`CalDAV push failed`, `CardDAV push failed`) mais l'opération locale reste valide.
+
+### Champs synchronisés (VEVENT — RFC 5545)
+
+La modale événement ([client/src/components/calendar/EventModal.tsx](../client/src/components/calendar/EventModal.tsx)) expose l'intégralité des propriétés RoundCube ; le sérialiseur [server/src/utils/ical.ts](../server/src/utils/ical.ts) les pousse telles quelles vers o2switch :
+
+| Champ UI | Propriété iCal | Notes |
+|---|---|---|
+| Titre | `SUMMARY` | |
+| Description | `DESCRIPTION` | |
+| Lieu | `LOCATION` | |
+| Début / Fin | `DTSTART` / `DTEND` | `;VALUE=DATE` si *toute la journée* |
+| Statut | `STATUS` | `CONFIRMED` / `TENTATIVE` / `CANCELLED` |
+| Récurrence | `RRULE` | `FREQ`, `INTERVAL`, `BYDAY`, `BYMONTHDAY`, `BYMONTH`, `COUNT`, `UNTIL`, `BYDAY=1MO` (bysetpos) |
+| Dates explicites | `RDATE` | mode *à certaines dates* |
+| Rappel | `VALARM` | `ACTION:DISPLAY` + `TRIGGER:-PT<n>M` |
+| Montrez-moi en tant que | `TRANSP` | `OPAQUE` (occupé) / `TRANSPARENT` (disponible) |
+| Priorité | `PRIORITY` | `1` haute, `5` normale, `9` basse |
+| Catégories | `CATEGORIES` | liste séparée par virgules |
+| URL | `URL` | |
+| Organisateur | `ORGANIZER;CN=…:mailto:…` | pré-rempli depuis la session |
+| Participants | `ATTENDEE;ROLE=…;PARTSTAT=…;RSVP=TRUE;CN=…:mailto:…` | `REQ-PARTICIPANT`, `OPT-PARTICIPANT`, `CHAIR`, `NON-PARTICIPANT` |
+| Pièces jointes | `ATTACH` | URL, ou inline base64 (`;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=…`) jusqu'à 250 Mo par fichier |
+
+À chaque modification, `ical_data` est remis à `NULL` pour forcer la reconstruction de l'ICS à partir des colonnes DB (`priority`, `url`, `categories`, `transparency`, `attachments`, `rdates`, `reminder_minutes`, `attendees`, `organizer`) et garantir la cohérence avec la base locale.
 
 ## Schéma de données
 

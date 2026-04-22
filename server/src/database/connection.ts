@@ -69,6 +69,14 @@ export async function initDatabase() {
         ON calendar_events(calendar_id, ical_uid)
         WHERE external_id IS NOT NULL;
 
+      -- Rich RFC 5545 event fields (RoundCube-equivalent)
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS priority INT;
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS url TEXT;
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS transparency VARCHAR(20);
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS rdates JSONB DEFAULT '[]'::jsonb;
+
       -- Link contacts back to the mail account + CardDAV item identifiers (for push-back)
       ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE SET NULL;
       ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_url TEXT;

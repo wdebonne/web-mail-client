@@ -749,11 +749,48 @@ Liste les événements dans une plage de dates.
 
 Crée un événement.
 
-Si le calendrier cible est lié à un compte mail (`caldav_url` + `mail_account_id` renseignés), l'événement est automatiquement **poussé** vers le serveur CalDAV distant via `PUT {calendarHref}/{uid}.ics` en arrière-plan. Un `ical_uid` stable est généré à la création.
+**Body (application/json) :**
+
+```jsonc
+{
+  "calendarId": "uuid",                     // requis
+  "title": "string",                        // requis
+  "description": "string",                  // optionnel
+  "location": "string",                     // optionnel
+  "startDate": "2024-05-02T09:00:00",       // requis (ISO local ou UTC)
+  "endDate":   "2024-05-02T10:00:00",       // requis
+  "allDay": false,                          // optionnel, défaut false
+  "recurrenceRule": "FREQ=WEEKLY;BYDAY=MO,WE", // optionnel — RRULE RFC 5545
+  "rdates": ["2024-06-12T00:00:00"],        // optionnel — dates explicites (freq=CUSTOM)
+  "reminderMinutes": 15,                    // optionnel — null | 0 | 5 | 10 | 15 | 30 | 60 | 120 | 1440 | 2880 | 10080
+  "status": "confirmed",                    // 'confirmed' (défaut) | 'tentative' | 'cancelled'
+  "priority": 5,                            // optionnel — 0 (aucune) à 9, 1=haute / 5=normale / 9=basse
+  "url": "https://…",                       // optionnel
+  "categories": ["travail", "client-x"],    // optionnel
+  "transparency": "OPAQUE",                 // optionnel — 'OPAQUE' (occupé, défaut) | 'TRANSPARENT' (disponible)
+  "organizer": { "email": "me@dom.tld", "name": "Moi" },  // optionnel
+  "attendees": [                            // optionnel
+    {
+      "email": "alice@dom.tld",
+      "name": "Alice",                      // optionnel
+      "role": "REQ-PARTICIPANT",            // CHAIR | REQ-PARTICIPANT | OPT-PARTICIPANT | NON-PARTICIPANT
+      "status": "pending",                  // pending | accepted | declined | tentative | delegated
+      "rsvp": true,                         // optionnel
+      "comment": "string"                   // optionnel
+    }
+  ],
+  "attachments": [                          // optionnel (≤ 250 Mo inline par fichier)
+    { "name": "contrat.pdf", "mime": "application/pdf", "size": 23456, "data": "<base64>" },
+    { "name": "lien", "url": "https://…" }
+  ]
+}
+```
+
+Si le calendrier cible est lié à un compte mail (`caldav_url` + `mail_account_id` renseignés), l'événement est automatiquement **poussé** vers le serveur CalDAV distant via `PUT {calendarHref}/{uid}.ics` en arrière-plan. Un `ical_uid` stable est généré à la création. Le serveur sérialise en RFC 5545 toutes les propriétés ci-dessus — en particulier `RRULE`, `RDATE`, `TRANSP`, `PRIORITY`, `CATEGORIES`, `URL`, `ORGANIZER`, `ATTENDEE` (avec `ROLE`, `PARTSTAT`, `RSVP`, `CN`), `ATTACH` (URL ou inline base64) et un bloc `VALARM` (`ACTION:DISPLAY`, `TRIGGER:-PT<n>M`) dès qu'un rappel est configuré.
 
 ### PUT /api/calendar/events/:id
 
-Met à jour un événement. Re-pousse la vCalendar distante si le calendrier est lié à un compte CalDAV.
+Met à jour un événement (mêmes champs que `POST`). Re-pousse la vCalendar distante si le calendrier est lié à un compte CalDAV. Le champ `ical_data` est réinitialisé à `NULL` afin que la prochaine exportation reconstruise l'ICS à partir de l'état DB (pour intégrer les nouveaux champs ci-dessus).
 
 ### DELETE /api/calendar/events/:id
 
