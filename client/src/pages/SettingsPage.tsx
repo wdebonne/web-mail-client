@@ -428,9 +428,9 @@ function NotificationSettings() {
 
       <div className="mt-6 p-3 rounded border border-outlook-border bg-outlook-bg-secondary/40 text-xs text-outlook-text-secondary space-y-1">
         <div><strong>Astuce :</strong></div>
-        <div>• <strong>Windows 11</strong> : installez l'application (Chrome/Edge → icône d'installation dans la barre d'adresse) pour des notifications système complètes (bureau + Centre de notifications + son).</div>
-        <div>• <strong>Windows – pas de son ou notification trop petite ?</strong> Ouvrez <em>Paramètres &gt; Système &gt; Notifications</em>, activez les notifications pour Chrome/Edge/WebMail, puis cliquez sur l'app pour régler <em>son</em>, <em>bannière</em> et <em>priorité</em>. Vérifiez aussi que <em>« Ne pas déranger »</em> / Focus est désactivé.</div>
-        <div>• <strong>Chrome</strong> : dans <code>chrome://settings/content/notifications</code>, autorisez ce site et, sur Windows, activez « Utiliser les notifications système » dans <code>chrome://flags/#enable-system-notifications</code>.</div>
+        <div>• <strong>Windows 11</strong> : installez l'application (Chrome/Edge/Vivaldi → icône d'installation <em>⊕</em> dans la barre d'adresse, ou menu → « Installer WebMail… »). Une fois installée, les notifications s'affichent sous le nom « WebMail » (et non plus « Chrome » / « Vivaldi ») avec son, bannière et icône dédiés — comme Outlook.</div>
+        <div>• <strong>Vivaldi / Chrome / Edge — pas de son ou notification minuscule ?</strong> Activez les notifications système natives : ouvrez <code>vivaldi://flags/#enable-system-notifications</code> (ou <code>chrome://flags</code> / <code>edge://flags</code>), passez sur <em>Enabled</em> et redémarrez le navigateur.</div>
+        <div>• <strong>Windows</strong> : vérifiez <em>Paramètres &gt; Système &gt; Notifications</em> — activez l'app (Vivaldi/Chrome/WebMail) et, en cliquant dessus, réglez <em>Son</em>, <em>Bannière</em> et <em>Priorité : Élevée</em>. Désactivez <em>« Ne pas déranger »</em> / Focus.</div>
         <div>• <strong>macOS</strong> : installez l'app, puis autorisez-la dans <em>Réglages Système &gt; Notifications</em> (style « Alertes » pour qu'elles restent affichées).</div>
         <div>• <strong>Android</strong> : menu « Ajouter à l'écran d'accueil » depuis Chrome.</div>
         <div>• <strong>iOS / iPadOS</strong> : Safari → Partager → « Sur l'écran d'accueil », puis activez les notifications ici (iOS 16.4+).</div>
