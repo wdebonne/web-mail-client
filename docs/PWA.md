@@ -217,6 +217,48 @@ Le module [`server/src/services/newMailPoller.ts`](../server/src/services/newMai
 
 Pour **iOS / iPadOS** : l'application doit d'abord être installée (Safari → bouton Partager → **Sur l'écran d'accueil**), puis ouverte depuis l'icône installée. Les notifications push n'y fonctionnent **pas** depuis un onglet Safari classique.
 
+### Options du payload
+
+Le Service Worker (`client/src/sw.ts`) et le type `PushPayload` (`server/src/services/push.ts`) prennent en charge les propriétés suivantes :
+
+| Propriété | Type | Valeur par défaut | Description |
+|-----------|------|-------------------|-------------|
+| `title` | `string` | `"WebMail"` | Titre de la notification (obligatoire côté serveur). |
+| `body` | `string` | `""` | Corps du message. |
+| `icon` | `string` | `/icon-192.png` | Icône principale affichée à côté du texte. |
+| `badge` | `string` | `/icon-192.png` | Icône monochrome (Android : barre d'état). |
+| `image` | `string` | — | Grande vignette affichée dans la notification (facultatif). |
+| `tag` | `string` | — | Regroupe les notifications par sujet (même `tag` = remplacement). |
+| `url` | `string` | `/` | URL ouverte au clic (passée via `postMessage`). |
+| `renotify` | `boolean` | `true` si `tag` défini | Rejoue le son/bannière même si une notif avec le même `tag` existe déjà. |
+| `silent` | `boolean` | `false` | `true` = notification muette (son désactivé). |
+| `requireInteraction` | `boolean` | `true` | **La notification reste affichée jusqu'à interaction** (clic ou fermeture). Indispensable sur Windows 11 où les notifications disparaissent sinon après ~5 s. |
+| `actions` | `Array<{ action, title, icon? }>` | `[Ouvrir, Ignorer]` | Boutons affichés sous la notification. Windows 11 affiche une bannière plus large quand des actions sont présentes. |
+| `vibrate` | `number[]` | `[120, 60, 120]` | Motif de vibration (mobile uniquement). |
+| `timestamp` | `number` | `Date.now()` | Horodatage affiché dans le Centre de notifications. |
+| `data` | `object` | — | Données libres récupérables dans `notificationclick`. |
+
+> 💡 L'action `"dismiss"` est traitée par le Service Worker comme une simple fermeture : elle **ne focalise pas** la fenêtre et ne déclenche aucune navigation. Toute autre action (ou un clic direct sur la notification) focalise l'onglet et navigue vers `payload.url`.
+
+### Rendu selon la plateforme
+
+| Plateforme | Comportement observé |
+|-----------|----------------------|
+| **Windows 11** (Chrome / Edge / Vivaldi) | Bannière système dans le Centre de notifications + son, **si** : (1) le flag `enable-system-notifications` du navigateur est activé, (2) les notifications sont autorisées pour le navigateur/PWA dans *Paramètres Windows → Système → Notifications*, (3) le mode *Concentration / Ne pas déranger* est inactif. Sans PWA installée, la notification s'affiche sous le nom du navigateur (ex. « Vivaldi »). Une fois **la PWA installée**, elle apparaît sous son propre nom « WebMail » avec son icône dédiée et des réglages (son, priorité) indépendants. |
+| **macOS** | Bandeau ou alerte système selon le style choisi dans *Réglages Système → Notifications*. Style « Alertes » recommandé pour que la notification reste affichée. |
+| **Android** | Notification système native, son + vibration (si `vibrate` est défini). |
+| **iOS / iPadOS 16.4+** | Notification système native uniquement si la PWA a été installée depuis Safari (Partager → Sur l'écran d'accueil). Les `actions` sont ignorées. |
+
+### Dépannage (Windows / Chromium)
+
+| Symptôme | Cause probable / solution |
+|----------|---------------------------|
+| Notification petite et « dans la page » | Le navigateur utilise ses notifications internes au lieu du système. Activez `chrome://flags/#enable-system-notifications` (ou `vivaldi://flags/#enable-system-notifications`, `edge://flags/#enable-system-notifications`) puis redémarrez. |
+| Pas de son | Dans *Paramètres Windows → Système → Notifications*, ouvrez l'app concernée et activez **« Jouer un son à la réception d'une notification »** et passez la priorité en **Élevée**. Vérifiez aussi que le mode *Concentration* est désactivé. |
+| Notification disparaît trop vite | Défaut Windows ~5 s ; corrigé par `requireInteraction: true` (déjà appliqué). Si vous envoyez des notifications personnalisées, incluez `requireInteraction: true`. |
+| Notif affichée sous le nom du navigateur | Installez la PWA (Chrome/Edge/Vivaldi : icône ⊕ dans la barre d'adresse ou menu → « Installer WebMail… »). |
+| Plusieurs notifs écrasent la précédente sans son | Activer `renotify: true` côté serveur (déjà appliqué automatiquement dès qu'un `tag` est présent). |
+
 ### Dépannage push
 
 | Symptôme | Cause probable / solution |

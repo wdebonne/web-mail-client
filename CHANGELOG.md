@@ -7,6 +7,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Amélioré
+
+#### Notifications push — comportement Windows 11 / Chromium
+- **Notifications plus visibles et persistantes** : ajout de `requireInteraction: true` par défaut dans le Service Worker (`client/src/sw.ts`) — les notifications restent affichées jusqu'à interaction de l'utilisateur au lieu de disparaître après ~5 s (comportement par défaut trop rapide sur Windows 11).
+- **Boutons d'action natifs** : chaque notification expose désormais deux actions (`Ouvrir` / `Ignorer`, ou `Lire` / `Ignorer` pour les nouveaux mails). Windows 11 affiche alors une **bannière plus large** avec les boutons au lieu de la mini-bannière compacte.
+- **Son systématique** : `silent: false` explicite + `renotify: true` lorsqu'un `tag` est présent → chaque nouveau message déclenche son et bannière, même si une notification précédente est encore affichée.
+- **Champs enrichis** : support des propriétés `image` (grande vignette), `vibrate` (mobile), `timestamp` et `actions` dans le payload serveur (`PushPayload` étendu dans `server/src/services/push.ts`).
+- **Poller de nouveaux mails** (`server/src/services/newMailPoller.ts`) : émet désormais les notifications avec `requireInteraction`, `renotify`, `vibrate` et actions `Lire` / `Ignorer`.
+- **Route de test** (`POST /api/push/test`) : envoie une notification avec les mêmes options enrichies que les notifications réelles pour que le test reflète fidèlement le rendu final.
+- **Gestion du clic `Ignorer`** : le Service Worker distingue l'action `dismiss` (ferme la notification sans focaliser l'onglet) des actions `open` / clic principal (focalise l'application et navigue vers l'URL cible).
+- **Astuce paramètres enrichie** : l'onglet *Paramètres → Notifications* détaille maintenant comment activer les notifications système natives sur **Vivaldi** (`vivaldi://flags/#enable-system-notifications`), Chrome et Edge, et rappelle d'installer la PWA pour qu'elles s'affichent sous le nom **WebMail** (et non sous celui du navigateur hôte) avec leur propre icône, son et réglages dans *Paramètres Windows → Notifications*.
+
 ### Corrigé
 
 - **Ruban simplifié — menus non fonctionnels** : en mode simplifié, les boutons *Catégoriser*, *Volet de lecture*, *Liste mail*, *Densité*, *Conversations* et *Boîtes favoris* mettaient bien à jour leur état d'ouverture mais n'affichaient aucun popup. Les menus (`createPortal`) étaient rendus exclusivement dans le JSX du ruban classique, qui n'est jamais évalué quand le mode simplifié fait un `return` anticipé. Les 6 menus ont été extraits dans un fragment `sharedPopups` commun rendu dans les deux modes (`client/src/components/mail/Ribbon.tsx`).

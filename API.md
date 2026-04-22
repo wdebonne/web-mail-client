@@ -1286,7 +1286,7 @@ Supprime la souscription identifiée par son `endpoint`.
 
 ### POST /api/push/test
 
-Envoie une notification de test à tous les appareils actuellement enregistrés pour l'utilisateur.
+Envoie une notification de test à tous les appareils actuellement enregistrés pour l'utilisateur. La notification utilise les mêmes options enrichies que les notifications réelles (`requireInteraction`, `renotify`, boutons d'action `Ouvrir` / `Ignorer`, `vibrate`), afin que le test reflète fidèlement le rendu final sur chaque plateforme.
 
 **Réponse :**
 ```json
