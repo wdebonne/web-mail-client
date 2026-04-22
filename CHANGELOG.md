@@ -9,6 +9,19 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Sauvegarde & restauration de la configuration locale
+- **Nouvel onglet *Paramètres → Sauvegarde*** (`client/src/pages/SettingsPage.tsx` → `BackupSettings`, icône `HardDrive`) pour exporter, importer et automatiser la sauvegarde de toute la configuration **locale** à l'appareil : signatures, catégories (+ assignations), renommage et ordre des boîtes mail/dossiers, favoris, vues unifiées, thème, préférences d'affichage (reading pane, densité, conversations, ribbon, splits, largeurs, onglets), préférences de notifications, emojis récents. Les mails eux-mêmes restent sur le serveur IMAP et ne sont pas inclus.
+- **Module dédié** `client/src/utils/backup.ts` avec :
+  - `collectBackup()` / `applyBackup()` / `parseBackupFile()` basés sur une **whitelist** de clés `localStorage` (format versionné `{app, version, createdAt, userAgent, data}`, `app="web-mail-client"`, `version=1`).
+  - `downloadBackup()` — export manuel en `.json` avec horodatage.
+  - **Sauvegarde automatique** via **File System Access API** (`showDirectoryPicker` avec `startIn: 'documents'`) : l'utilisateur choisit un dossier sur son PC, le `FileSystemDirectoryHandle` est persisté en **IndexedDB** (store `web-mail-client-backup/handles`) pour survivre aux rechargements. Un seul et même fichier est réécrit à chaque modification.
+  - **Nom de fichier personnalisable** (`backup.auto.filename`) avec `sanitizeFilename()` (filtrage des caractères interdits Windows/Linux et forçage de l'extension `.json`) — permet de donner un nom explicite type `Web-Mail-Client-NE-PAS-SUPPRIMER.json` pour éviter les suppressions accidentelles.
+  - **Watcher non-invasif** (`startAutoBackupWatcher()`, démarré dans `client/src/main.tsx`) : monkey-patch de `Storage.prototype.setItem/removeItem` qui émet un événement `local-settings-changed` uniquement pour les clés de la whitelist, puis **débounce 4 s** avant de relancer l'écriture. Écoute aussi `mail.signatures.changed`, `mail-categories-changed`, `storage` (changements cross-onglets) et `beforeunload`.
+  - Vérification des permissions avant chaque écriture (`queryPermission({ mode: 'readwrite' })`) ; en mode non-interactif, les pertes de permission sont consignées dans `backup.auto.lastError` sans déranger l'utilisateur.
+- **Intégration UI** : sélecteur de dossier avec libellé persistant, toggle *Activer la sauvegarde automatique*, bouton *Sauvegarder maintenant*, bouton *Restaurer depuis un fichier…* avec confirmation + rechargement auto. Bandeau d'avertissement sur Firefox/Safari (fallback automatique sur téléchargement). Affichage de la date et de l'erreur de la dernière sauvegarde.
+- **Clés `localStorage` ajoutées** (scope `backup.*`, jamais incluses dans l'export lui-même) : `backup.auto.enabled`, `backup.auto.filename`, `backup.auto.lastAt`, `backup.auto.lastError`, `backup.auto.dirLabel`.
+- Nouveau fichier [docs/BACKUP.md](docs/BACKUP.md) documentant le format, les clés sauvegardées, les navigateurs compatibles et l'intégration avec Duplicati.
+
 #### Branding personnalisable — favicon et icônes PWA
 - **Upload d'icônes depuis l'admin** (`client/src/pages/AdminPage.tsx` → `BrandingSettings`, sous l'onglet **Système**) : un administrateur peut désormais téléverser le favicon (`favicon.ico`), les icônes PWA 192×192 et 512×512 ainsi que l'Apple Touch Icon (180×180) directement via l'interface, sans rebuild ni accès serveur. Aperçu en miniature, bouton **Réinitialiser** pour revenir à l'asset bundle par défaut, badge *Image personnalisée active* si un upload a été fait.
 - **Nouveau routeur serveur** `server/src/routes/branding.ts` avec :

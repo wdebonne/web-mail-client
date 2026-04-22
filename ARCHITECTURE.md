@@ -540,6 +540,18 @@ Module : `client/src/components/mail/FolderPane.tsx` + utilitaires `client/src/u
 | `mail.unifiedSentEnabled` | `boolean` | Affichage de la vue unifiée « Éléments envoyés » |
 | `mail.favoritesExpanded` | `boolean` | État plié/déplié de la section Favoris |
 
+**Clés liées à la sauvegarde & restauration locale** (gérées par `client/src/utils/backup.ts`, **exclues** du contenu exporté) :
+
+| Clé `localStorage` | Type | Rôle |
+|---|---|---|
+| `backup.auto.enabled` | `boolean` | Active la sauvegarde automatique sur modification locale |
+| `backup.auto.filename` | `string` | Nom du fichier unique réécrit en auto-backup (défaut `web-mail-client-backup.json`, extension `.json` imposée) |
+| `backup.auto.lastAt` | `ISO date` | Horodatage de la dernière sauvegarde réussie |
+| `backup.auto.lastError` | `string` | Dernier message d'erreur (permission refusée, dossier inaccessible…) |
+| `backup.auto.dirLabel` | `string` | Libellé du dossier cible (le `FileSystemDirectoryHandle` réel est stocké en IndexedDB) |
+
+Le handle du dossier sélectionné via `showDirectoryPicker()` est persisté dans une base **IndexedDB** dédiée (`web-mail-client-backup` → store `handles` → clé `dir-handle`) car un handle n'est pas sérialisable en `localStorage`. Voir [docs/BACKUP.md](../docs/BACKUP.md) pour le format complet du fichier exporté et la liste exhaustive des clés incluses.
+
 **Types MIME custom utilisés pour le drag-and-drop :**
 - `application/x-mail-message` — déplacement/copie d'un message (`{uid, srcAccountId, srcFolder}`)
 - `application/x-mail-folder` — copie cross-compte d'un dossier (`{accountId, path, name}`)
