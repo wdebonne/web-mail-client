@@ -111,8 +111,17 @@ calendarRouter.post('/', async (req: AuthRequest, res) => {
         });
         const mk = await svc.createRemoteCalendar(name, resolvedColor);
         if (!mk.ok) {
+          // If the server gave us a user-friendly, actionable message
+          // (e.g. the cPanel/o2switch detection), surface it as-is. Otherwise
+          // wrap the raw server payload with a generic prefix.
+          const raw = mk.error || '';
+          const looksFriendly = /\b(créez|créer|cpanel|interface|par URL|ne permet pas)\b/i.test(raw)
+            && !/^<\?xml|<d:error|<D:error/i.test(raw.trim());
           return res.status(502).json({
-            error: `Création CalDAV échouée (${mk.status}) : ${mk.error || 'erreur inconnue'}`,
+            error: looksFriendly
+              ? raw
+              : `Création CalDAV échouée (${mk.status}) : ${raw || 'erreur inconnue'}`,
+            serverSupportsCreation: !looksFriendly,
           });
         }
         caldavUrl = mk.href!;

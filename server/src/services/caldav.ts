@@ -302,6 +302,24 @@ export class CalDAVService {
       });
       logger.info({ url, status: plainMkcol.status, ok: plainMkcol.ok, error: plainMkcol.error?.slice(0, 200) }, 'CalDAV createRemoteCalendar: plain MKCOL attempt');
       if (!plainMkcol.ok) {
+        // All three attempts failed. Detect cPanel's CCS DAV server, which
+        // fundamentally does NOT support creating new calendar collections
+        // via DAV (MKCALENDAR *and* MKCOL are both rejected). Only the
+        // default `calendar` / `addressbook` collection is exposed, and new
+        // collections must be provisioned from cPanel → Calendars and Contacts.
+        const combined = `${mkcalendar.error || ''}\n${extMkcol.error || ''}\n${plainMkcol.error || ''}`;
+        const isCpanel = /cpanel-version|cpanel\.net\/ns/i.test(combined);
+        if (isCpanel) {
+          return {
+            ok: false,
+            status: plainMkcol.status || extMkcol.status || mkcalendar.status,
+            error:
+              'Votre serveur (cPanel CCS, utilisé notamment par o2switch) ne permet pas de créer de nouveaux calendriers via CalDAV. ' +
+              'Créez le calendrier depuis l\'interface cPanel (section « Calendriers et contacts » → « Manage Calendars and Address Books »), ' +
+              'puis utilisez « Ajouter un calendrier par URL » dans l\'application pour l\'y rattacher.',
+            method: 'MKCOL',
+          };
+        }
         return {
           ok: false,
           status: plainMkcol.status || mkcalendar.status,
