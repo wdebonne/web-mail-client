@@ -827,6 +827,14 @@ export default function MessageList({
                                 <Flag size={14} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
                               </button>
                               <button
+                                onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged); }}
+                                className={`p-1 rounded hover:bg-gray-200 transition-colors
+                                  ${message.flags?.flagged ? 'text-outlook-warning' : 'text-outlook-text-secondary hover:text-outlook-warning'}`}
+                                title={message.flags?.flagged ? 'Retirer le favori' : 'Marquer comme favori'}
+                              >
+                                <Star size={14} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
+                              </button>
+                              <button
                                 onClick={(e) => { e.stopPropagation(); onDelete(message.uid); }}
                                 className="p-1 rounded hover:bg-red-100 text-outlook-text-secondary hover:text-red-600 transition-colors"
                                 title="Supprimer"
@@ -888,19 +896,6 @@ export default function MessageList({
                               {message.flags?.answered && (
                                 <Reply size={12} className="text-outlook-text-disabled" aria-label="Répondu" />
                               )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onToggleFlag(message.uid, !message.flags?.flagged);
-                                }}
-                                className={`p-0.5 rounded transition-colors
-                                  ${message.flags?.flagged
-                                    ? 'text-outlook-warning'
-                                    : 'text-transparent group-hover:text-outlook-text-disabled hover:!text-outlook-warning'
-                                  }`}
-                              >
-                                <Star size={12} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
-                              </button>
                             </div>
                           </div>
                         </div>
