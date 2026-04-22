@@ -65,7 +65,9 @@ Depuis la modale *Nouveau calendrier* (barre latérale du module *Calendrier*) :
 
 1. Sélectionnez *Boîte mail* et choisissez la boîte cible.
 2. Cochez *« Créer et synchroniser via CalDAV »*.
-3. À la validation, le serveur envoie une requête **`MKCALENDAR`** (RFC 4791) au serveur distant :
+3. À la validation, le serveur essaie plusieurs méthodes dans l'ordre jusqu'à réussir :
+
+   **a. `MKCALENDAR`** (RFC 4791, standard Apple / SOGo / SabreDAV / Radicale) :
 
 ```xml
 <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">
@@ -81,9 +83,25 @@ Depuis la modale *Nouveau calendrier* (barre latérale du module *Calendrier*) :
 </C:mkcalendar>
 ```
 
-Le slug de l'URL est dérivé du nom (NFD → ASCII, lowercase, `[^a-z0-9]` → `-`, 48 caractères max). La ligne locale est créée avec `source = 'caldav'`, `mail_account_id` rempli et `caldav_url = external_id = <href du nouveau collection>`. Les événements ultérieurs seront poussés automatiquement (cf. *Push en temps réel* ci-dessous).
+   **b. `MKCOL` étendu** (RFC 5689) si le serveur refuse `MKCALENDAR` (HTTP 405 / 501, ou réponse *« not supported »* / *« ne prend pas en charge »*). Le `resourcetype` est passé dès la création :
 
-Si le serveur CalDAV refuse `MKCALENDAR` (`4xx/5xx`), la route répond `502 Bad Gateway` avec le message du serveur et **aucune ligne locale n'est insérée** (pas de calendrier « fantôme »).
+```xml
+<D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:set><D:prop>
+    <D:resourcetype><D:collection/><C:calendar/></D:resourcetype>
+    <D:displayname>...</D:displayname>
+    <C:supported-calendar-component-set><C:comp name="VEVENT"/></C:supported-calendar-component-set>
+  </D:prop></D:set>
+</D:mkcol>
+```
+
+   **c. `MKCOL` simple + `PROPPATCH`** — *c'est la méthode acceptée par le DAV d'o2switch / cPanel Horde*. Le serveur crée d'abord une collection WebDAV vide (`MKCOL` sans corps), puis la convertit en calendrier via `PROPPATCH` qui définit `resourcetype`, `displayname`, `calendar-color` et `supported-calendar-component-set`.
+
+Le slug de l'URL est dérivé du nom (NFD → ASCII, lowercase, `[^a-z0-9]` → `-`, 48 caractères max). La ligne locale est créée avec `source = 'caldav'`, `mail_account_id` rempli et `caldav_url = external_id = <href du nouveau collection>`. Le champ `method` retourné par le service (`MKCALENDAR` | `MKCOL-extended` | `MKCOL+PROPPATCH`) est journalisé pour le diagnostic. Les événements ultérieurs seront poussés automatiquement (cf. *Push en temps réel* ci-dessous).
+
+> **Note o2switch** : le DAV cPanel retourne un HTTP 500 (et non 405/501) avec le message français *« Le serveur CalDAV/CardDAV ne prend pas en charge la méthode MKCALENDAR »*. Le heuristique `looksUnsupported` reconnaît ce message et bascule automatiquement sur la méthode `c` — aucune configuration n'est requise.
+
+Si **les trois méthodes** échouent, la route `POST /api/calendar/calendars` répond `502 Bad Gateway` avec le message du serveur et **aucune ligne locale n'est insérée** (pas de calendrier « fantôme »).
 
 ## Fusion du calendrier par défaut
 

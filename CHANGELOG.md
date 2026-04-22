@@ -9,6 +9,21 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Menu contextuel sur les événements + durée par défaut liée à l'échelle
+
+- **Clic droit sur un événement** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : nouveau menu contextuel propagé via `onEventContextMenu` aux vues *Mois*, *Semaine*, *Semaine de travail* et *Jour*. Six actions : **Ouvrir**, **Modifier**, **Répéter** (ou *Modifier la récurrence* si l'événement en a déjà une — ouvre la modale directement sur l'onglet *Récurrence*), **Participants** (ouvre l'onglet *Participants*), **Dupliquer l'événement** (recrée une copie avec tous les champs, y compris RRULE et pièces jointes), **Supprimer**.
+- **Modale ciblée sur un onglet** ([client/src/components/calendar/EventModal.tsx](client/src/components/calendar/EventModal.tsx)) : nouvelle prop `initialTab: 'summary' | 'recurrence' | 'attendees' | 'attachments'` pour amener l'utilisateur directement sur l'onglet pertinent depuis le menu contextuel.
+- **L'échelle du ruban pilote la durée par défaut** : `defaultDurationMinutes` (nouvelle prop d'`EventModal`, défaut `60`) est alimentée par `timeScale` du `CalendarRibbon`. Si l'utilisateur choisit une échelle de 15 min, les nouveaux événements durent 15 min ; à 30 min ils durent 30 min, etc. Le comportement pour les événements existants (édition) reste inchangé — seul le *seed* d'un nouvel événement est affecté.
+
+#### Création CalDAV robuste — fallback MKCOL+PROPPATCH pour o2switch / cPanel
+
+- **Cascade de méthodes dans `createRemoteCalendar`** ([server/src/services/caldav.ts](server/src/services/caldav.ts)) : le serveur DAV d'o2switch (cPanel Horde-based) ne supporte pas `MKCALENDAR` (retourne HTTP 500 avec *« Le serveur CalDAV/CardDAV ne prend pas en charge la méthode MKCALENDAR »*). La méthode tente désormais trois approches dans l'ordre :
+  1. **MKCALENDAR** (RFC 4791, standard Apple/SOGo/SabreDAV/Radicale).
+  2. **MKCOL étendu** (RFC 5689) avec `resourcetype = collection + calendar` et les propriétés dans le même appel.
+  3. **MKCOL simple + PROPPATCH** pour définir `resourcetype`, `displayname`, `calendar-color` et `supported-calendar-component-set` dans un second temps — méthode acceptée par le DAV d'o2switch.
+- **Détection multilingue des échecs `method not supported`** : le heuristique `looksUnsupported` couvre maintenant HTTP 405/501 **et** les messages anglais (`not supported`, `unknown method`, `method not allowed`, `unsupported`) **et français** (`ne prend pas en charge`, `non supporté`). Le code HTTP 500 non-standard renvoyé par o2switch pour *Method Not Supported* est donc correctement reconnu, et la cascade bascule automatiquement en MKCOL.
+- **Méthode utilisée journalisée** : le retour de `createRemoteCalendar` inclut un champ `method` (`MKCALENDAR` | `MKCOL-extended` | `MKCOL+PROPPATCH`) pour faciliter le diagnostic côté logs.
+
 #### Modale événement refondue — parité RoundCube / CalDAV
 
 - **Nouvel éditeur d'événement** ([client/src/components/calendar/EventModal.tsx](client/src/components/calendar/EventModal.tsx)) remplace la modale minimaliste historique par une modale moderne à **4 onglets** calquée sur l'éditeur RoundCube (o2switch) :

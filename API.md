@@ -699,13 +699,13 @@ Crée un nouveau calendrier.
 | `name` | string | Nom affiché (requis). |
 | `color` | string | Couleur hexadécimale (défaut `#0078D4`). |
 | `mailAccountId` | UUID \| null | Si fourni, le calendrier est rattaché à cette boîte mail (propriété directe ou via `mailbox_assignments`). Sinon le calendrier est purement local. |
-| `createOnCaldav` | boolean | Ignoré si `mailAccountId` est absent. Lorsqu'il vaut `true` et que la boîte mail cible a une `caldav_url` + `caldav_sync_enabled`, le serveur envoie une requête **`MKCALENDAR`** au serveur CalDAV distant avant d'insérer la ligne locale ; celle-ci est alors créée avec `source = 'caldav'`, `caldav_url` et `external_id` positionnés à l'URL du nouveau collection remote. |
+| `createOnCaldav` | boolean | Ignoré si `mailAccountId` est absent. Lorsqu'il vaut `true` et que la boîte mail cible a une `caldav_url` + `caldav_sync_enabled`, le serveur provisionne le calendrier sur le serveur CalDAV distant avant d'insérer la ligne locale ; celle-ci est alors créée avec `source = 'caldav'`, `caldav_url` et `external_id` positionnés à l'URL du nouveau collection remote. Le serveur essaie les méthodes dans l'ordre : **`MKCALENDAR`** (RFC 4791) → **`MKCOL` étendu** (RFC 5689) → **`MKCOL` + `PROPPATCH`** (fallback compatible cPanel/o2switch qui rejettent `MKCALENDAR`). |
 
 **Erreurs :**
 
 - `400 Bad Request` — `name` manquant ou `createOnCaldav` sans URL CalDAV sur la boîte mail.
 - `404 Not Found` — `mailAccountId` introuvable ou non accessible à l'utilisateur.
-- `502 Bad Gateway` — le serveur CalDAV a refusé `MKCALENDAR` (corps : `{ error: "Création CalDAV échouée (<status>) : <message>" }`). Aucune ligne locale n'est alors insérée.
+- `502 Bad Gateway` — les trois méthodes (`MKCALENDAR`, `MKCOL` étendu, `MKCOL`+`PROPPATCH`) ont toutes échoué sur le serveur distant (corps : `{ error: "Création CalDAV échouée (<status>) : <message>" }`). Aucune ligne locale n'est alors insérée.
 
 ### PUT /api/calendar/calendars/:id
 
