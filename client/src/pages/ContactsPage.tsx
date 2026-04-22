@@ -542,7 +542,7 @@ function ContactDetail({
   return (
     <div>
       {/* Header with gradient banner */}
-      <div className={`h-32 bg-gradient-to-br ${color} relative`}>
+      <div className={`h-40 bg-gradient-to-br ${color} relative`}>
         <div className="absolute top-3 right-3 flex gap-1">
           <button
             onClick={onToggleFav}
@@ -568,9 +568,9 @@ function ContactDetail({
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-6 -mt-12 pb-8">
-        <div className="flex items-end gap-4 mb-5">
-          <div className="ring-4 ring-white rounded-full">
+      <div className="max-w-3xl mx-auto px-6 pb-8">
+        <div className="flex items-end gap-4 mb-5 -mt-16">
+          <div className="ring-4 ring-white rounded-full flex-shrink-0">
             <Avatar contact={contact} size="xl" />
           </div>
           <div className="flex-1 pb-2">
@@ -771,72 +771,72 @@ function ContactForm({
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Header with avatar */}
-        <div className={`bg-gradient-to-br ${avatarColor(email || firstName || 'new')} h-24 relative flex-shrink-0`}>
+        {/* Header with gradient banner */}
+        <div className={`bg-gradient-to-br ${avatarColor(email || firstName || 'new')} h-28 relative flex-shrink-0`}>
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1"
+            className="absolute top-3 right-3 text-white/90 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1"
           >
             <X size={18} />
           </button>
-          <h2 className="absolute bottom-3 left-4 text-white font-semibold text-lg">
+          <h2 className="absolute top-3 left-4 text-white font-semibold text-lg">
             {contact ? 'Modifier le contact' : 'Nouveau contact'}
           </h2>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
-          {/* Avatar row */}
-          <div className="px-6 -mt-10 flex items-end gap-4 mb-4">
-            <div className="relative group">
-              <div className="w-20 h-20 rounded-full ring-4 ring-white bg-white shadow-lg overflow-hidden flex items-center justify-center">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className={`w-full h-full bg-gradient-to-br ${avatarColor(email || 'new')} text-white flex items-center justify-center text-xl font-semibold`}>
-                    {(firstName[0] || '') + (lastName[0] || '') || '?'}
-                  </div>
-                )}
-              </div>
+        {/* Avatar row (outside the scrollable form to avoid clipping) */}
+        <div className="px-6 flex items-end gap-4 pb-3 -mt-12 flex-shrink-0">
+          <div className="relative group flex-shrink-0">
+            <div className="w-24 h-24 rounded-full ring-4 ring-white bg-white shadow-lg overflow-hidden flex items-center justify-center">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className={`w-full h-full bg-gradient-to-br ${avatarColor(email || 'new')} text-white flex items-center justify-center text-2xl font-semibold`}>
+                  {((firstName[0] || '') + (lastName[0] || '')).toUpperCase() || '?'}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="absolute bottom-0 right-0 bg-outlook-blue hover:bg-outlook-blue-hover text-white p-1.5 rounded-full shadow-md"
+              title="Changer la photo"
+            >
+              <Camera size={12} />
+            </button>
+            {avatarUrl && (
               <button
                 type="button"
-                onClick={() => fileRef.current?.click()}
-                className="absolute bottom-0 right-0 bg-outlook-blue hover:bg-outlook-blue-hover text-white p-1.5 rounded-full shadow-md"
-                title="Changer la photo"
+                onClick={() => setAvatarUrl('')}
+                className="absolute top-0 right-0 bg-white hover:bg-red-50 text-red-500 p-1 rounded-full shadow-md border border-outlook-border"
+                title="Supprimer la photo"
               >
-                <Camera size={12} />
+                <X size={10} />
               </button>
-              {avatarUrl && (
-                <button
-                  type="button"
-                  onClick={() => setAvatarUrl('')}
-                  className="absolute top-0 right-0 bg-white hover:bg-red-50 text-red-500 p-1 rounded-full shadow-md border border-outlook-border"
-                  title="Supprimer la photo"
-                >
-                  <X size={10} />
-                </button>
-              )}
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleAvatar(e.target.files[0])}
-              />
-            </div>
-            <label className="flex items-center gap-1.5 text-xs text-outlook-text-secondary pb-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isFavorite}
-                onChange={(e) => setIsFavorite(e.target.checked)}
-                className="rounded"
-              />
-              <Star size={12} className={isFavorite ? 'text-amber-500 fill-amber-500' : ''} />
-              Favori
-            </label>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => e.target.files?.[0] && handleAvatar(e.target.files[0])}
+            />
           </div>
+          <label className="flex items-center gap-1.5 text-xs text-outlook-text-secondary pb-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={isFavorite}
+              onChange={(e) => setIsFavorite(e.target.checked)}
+              className="rounded"
+            />
+            <Star size={12} className={isFavorite ? 'text-amber-500 fill-amber-500' : ''} />
+            Favori
+          </label>
+        </div>
 
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col min-h-0">
           {/* Tabs */}
-          <div className="px-6 border-b border-outlook-border flex gap-4">
+          <div className="px-6 border-b border-outlook-border flex gap-4 flex-shrink-0">
             {([
               ['general', 'Général'],
               ['work', 'Professionnel'],
@@ -855,7 +855,7 @@ function ContactForm({
             ))}
           </div>
 
-          <div className="px-6 py-4 space-y-3">
+          <div className="px-6 py-4 space-y-3 flex-1">
             {tab === 'general' && (
               <>
                 <div className="grid grid-cols-2 gap-3">
@@ -898,7 +898,7 @@ function ContactForm({
             )}
           </div>
 
-          <div className="px-6 py-3 border-t border-outlook-border flex justify-end gap-2 bg-gray-50">
+          <div className="px-6 py-3 border-t border-outlook-border flex justify-end gap-2 bg-gray-50 flex-shrink-0">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">
               Annuler
             </button>
