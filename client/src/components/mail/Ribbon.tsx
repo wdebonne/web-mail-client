@@ -12,7 +12,7 @@ import {
   Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
   Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film,
   Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
-  Tag,
+  Tag, MessagesSquare,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
 import type { TabMode } from '../../stores/mailStore';
@@ -118,6 +118,10 @@ interface RibbonProps {
   listDisplayMode?: 'auto' | 'wide' | 'compact';
   onChangeListDisplayMode?: (m: 'auto' | 'wide' | 'compact') => void;
 
+  // Conversation view (group messages by thread)
+  conversationView?: boolean;
+  onToggleConversationView?: () => void;
+
   // Categories
   onCategorize?: (categoryId: string) => void;
   onClearCategories?: () => void;
@@ -206,6 +210,7 @@ export default function Ribbon({
   readingPaneMode = 'right', onChangeReadingPaneMode,
   listDensity = 'comfortable', onChangeListDensity,
   listDisplayMode = 'auto', onChangeListDisplayMode,
+  conversationView = false, onToggleConversationView,
   onCategorize, onClearCategories, onNewCategory, onManageCategories,
   messageCategoryIds = [],
 }: RibbonProps) {
@@ -452,6 +457,12 @@ export default function Ribbon({
                 <span className="text-xs whitespace-nowrap">Densité</span>
                 <ChevronDown size={10} />
               </button>
+              <SimplifiedButton
+                icon={MessagesSquare}
+                label="Vue conversation"
+                onClick={() => onToggleConversationView && onToggleConversationView()}
+                active={conversationView}
+              />
               <SimplifiedSep />
               <SimplifiedButton
                 icon={PanelLeftOpen}
@@ -639,6 +650,12 @@ export default function Ribbon({
                     </span>
                   </button>
                 </div>
+                <RibbonButton
+                  icon={MessagesSquare}
+                  label="Conversation"
+                  onClick={() => onToggleConversationView && onToggleConversationView()}
+                  active={conversationView}
+                />
               </RibbonGroup>
               <RibbonSeparator />
 

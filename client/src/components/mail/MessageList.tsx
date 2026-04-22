@@ -51,6 +51,8 @@ interface MessageListProps {
   density?: 'spacious' | 'comfortable' | 'compact';
   /** Display mode for the message rows. 'auto' uses the list width; 'wide' forces single-line columns; 'compact' forces multi-line cards. */
   listDisplayMode?: 'auto' | 'wide' | 'compact';
+  /** When enabled, group messages by conversation thread instead of by date. */
+  conversationView?: boolean;
   /** Open the category picker for a given message (context menu entry). */
   onOpenCategoryPicker?: (message: Email, x: number, y: number) => void;
 }
@@ -91,6 +93,7 @@ export default function MessageList({
   accountId,
   density = 'comfortable',
   listDisplayMode = 'auto',
+  conversationView = false,
   onOpenCategoryPicker,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
@@ -209,6 +212,58 @@ export default function MessageList({
 
   // Group messages by time period
   const groupedMessages = useMemo(() => {
+    if (conversationView) {
+      // Build conversation threads from message-id / in-reply-to / references headers,
+      // falling back to a normalised subject (Re:/Fwd: stripped) when headers are missing.
+      const rootKeyOf = (msg: Email): string => {
+        const refs = msg.headers?.references?.trim();
+        if (refs) {
+          // First reference is conventionally the thread root.
+          const first = refs.split(/\s+/)[0];
+          if (first) return first;
+        }
+        const inReplyTo = msg.headers?.inReplyTo?.trim();
+        if (inReplyTo) return inReplyTo;
+        if (msg.messageId) return msg.messageId;
+        // Last resort: normalised subject as the grouping key.
+        return 'subj:' + (msg.subject || '').replace(/^\s*(re|fwd?|tr|rép|réf)\s*:\s*/gi, '').trim().toLowerCase();
+      };
+
+      const groupMap = new Map<string, Email[]>();
+      const subjectByKey = new Map<string, string>();
+      const latestDateByKey = new Map<string, number>();
+
+      for (const msg of sortedMessages) {
+        const key = rootKeyOf(msg);
+        if (!groupMap.has(key)) groupMap.set(key, []);
+        groupMap.get(key)!.push(msg);
+        const t = new Date(msg.date).getTime();
+        const cur = latestDateByKey.get(key) ?? -Infinity;
+        if (t > cur) {
+          latestDateByKey.set(key, t);
+          subjectByKey.set(key, msg.subject || '(Sans objet)');
+        }
+        if (!subjectByKey.has(key)) {
+          subjectByKey.set(key, msg.subject || '(Sans objet)');
+        }
+      }
+
+      const groups: MessageGroup[] = Array.from(groupMap.entries()).map(([key, msgs]) => ({
+        key,
+        label: subjectByKey.get(key) || '(Sans objet)',
+        messages: msgs,
+      }));
+
+      // Order groups by their latest message date, respecting the active sort order.
+      groups.sort((a, b) => {
+        const da = latestDateByKey.get(a.key) ?? 0;
+        const db = latestDateByKey.get(b.key) ?? 0;
+        return sortOrder === 'asc' ? da - db : db - da;
+      });
+
+      return groups;
+    }
+
     const now = new Date();
     const groups: MessageGroup[] = [];
     const groupMap = new Map<string, Email[]>();
@@ -234,7 +289,7 @@ export default function MessageList({
     }
 
     return groups;
-  }, [sortedMessages]);
+  }, [sortedMessages, conversationView, sortOrder]);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);

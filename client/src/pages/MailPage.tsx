@@ -484,6 +484,11 @@ export default function MailPage() {
     return (v === 'wide' || v === 'compact' || v === 'auto') ? v : 'auto';
   });
   useEffect(() => { localStorage.setItem('listDisplayMode', listDisplayMode); }, [listDisplayMode]);
+  // Conversation view — group messages by thread. Disabled by default.
+  const [conversationView, setConversationView] = useState<boolean>(() => {
+    return localStorage.getItem('conversationView') === '1';
+  });
+  useEffect(() => { localStorage.setItem('conversationView', conversationView ? '1' : '0'); }, [conversationView]);
   // Effective display mode: in "bottom" disposition we force a compact layout unless the user explicitly overrode it.
   const effectiveListDisplayMode: ListDisplayMode =
     listDisplayMode !== 'auto' ? listDisplayMode : readingPaneMode === 'bottom' ? 'compact' : 'auto';
@@ -1022,6 +1027,8 @@ export default function MailPage() {
           onChangeListDensity={(d) => setListDensity(d)}
           listDisplayMode={listDisplayMode}
           onChangeListDisplayMode={(m) => setListDisplayMode(m)}
+          conversationView={conversationView}
+          onToggleConversationView={() => setConversationView(v => !v)}
           onCategorize={(catId) => selectedMessage && handleCategorize(selectedMessage, catId)}
           onClearCategories={() => selectedMessage && handleClearCategories(selectedMessage)}
           onNewCategory={() => setCategoryCreateOpen(true)}
@@ -1113,6 +1120,7 @@ export default function MailPage() {
             accountId={selectedAccount?.id}
             density={listDensity}
             listDisplayMode={effectiveListDisplayMode}
+            conversationView={conversationView}
           />
         </div>
 
@@ -1191,6 +1199,7 @@ export default function MailPage() {
                   accountId={selectedAccount?.id}
                   density={listDensity}
                   listDisplayMode={effectiveListDisplayMode}
+                  conversationView={conversationView}
                 />
               )}
             </div>
