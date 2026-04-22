@@ -269,6 +269,24 @@ export const api = {
   deleteEvent: (id: string) =>
     request(`/calendar/events/${id}`, { method: 'DELETE' }),
 
+  // Calendar <-> Mail accounts CalDAV sync
+  getCalendarAccounts: () => request<any[]>('/calendar/accounts'),
+
+  updateAccountCaldav: (accountId: string, data: { caldavUrl?: string | null; caldavUsername?: string | null; caldavSyncEnabled?: boolean }) =>
+    request(`/calendar/accounts/${accountId}/caldav`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  testAccountCaldav: (accountId: string, data?: { caldavUrl?: string; caldavUsername?: string }) =>
+    request<{ ok: boolean; calendars?: Array<{ name: string; color?: string }>; warning?: string; error?: string }>(
+      `/calendar/accounts/${accountId}/caldav/test`,
+      { method: 'POST', body: JSON.stringify(data || {}) }
+    ),
+
+  syncAccountCalendars: (accountId: string) =>
+    request<{ ok: boolean; calendars: number; events: number }>(`/calendar/accounts/${accountId}/sync`, { method: 'POST' }),
+
+  syncAllCalendars: () =>
+    request<{ ok: boolean; synced: number; results: any[] }>(`/calendar/sync`, { method: 'POST' }),
+
   // Settings
   getSettings: () => request<any>('/settings'),
   updateSettings: (data: any) =>

@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
 import { z } from 'zod';
+import { CalDAVService } from '../services/caldav';
+import { decrypt } from '../utils/encryption';
+import { logger } from '../utils/logger';
 
 export const calendarRouter = Router();
 
@@ -251,6 +254,159 @@ calendarRouter.delete('/events/:id', async (req: AuthRequest, res) => {
     }
 
     res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---- CalDAV sync linked to mail accounts ----
+
+const caldavConfigSchema = z.object({
+  caldavUrl: z.string().url().nullable().optional(),
+  caldavUsername: z.string().nullable().optional(),
+  caldavSyncEnabled: z.boolean().optional(),
+});
+
+/** Resolve a mail account the user can sync (owned or assigned). */
+async function getAccessibleMailAccount(accountId: string, userId: string) {
+  const result = await pool.query(
+    `SELECT ma.* FROM mail_accounts ma
+     WHERE ma.id = $1 AND (
+       ma.user_id = $2
+       OR EXISTS (SELECT 1 FROM mailbox_assignments mba WHERE mba.mail_account_id = ma.id AND mba.user_id = $2)
+     )
+     LIMIT 1`,
+    [accountId, userId]
+  );
+  return result.rows[0] || null;
+}
+
+// List mail accounts with their CalDAV status, for the sync dialog
+calendarRouter.get('/accounts', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT ma.id, ma.name, ma.email, ma.color, ma.username, ma.imap_host,
+              ma.caldav_url, ma.caldav_username, ma.caldav_sync_enabled, ma.caldav_last_sync,
+              (SELECT COUNT(*) FROM calendars c WHERE c.mail_account_id = ma.id) AS calendar_count
+       FROM mail_accounts ma
+       WHERE ma.user_id = $1
+          OR EXISTS (SELECT 1 FROM mailbox_assignments mba WHERE mba.mail_account_id = ma.id AND mba.user_id = $1)
+       ORDER BY ma.is_default DESC, ma.name ASC`,
+      [req.userId]
+    );
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update CalDAV config for a mail account
+calendarRouter.put('/accounts/:accountId/caldav', async (req: AuthRequest, res) => {
+  try {
+    const account = await getAccessibleMailAccount(req.params.accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const data = caldavConfigSchema.parse(req.body);
+
+    const result = await pool.query(
+      `UPDATE mail_accounts SET
+         caldav_url = COALESCE($1, caldav_url),
+         caldav_username = COALESCE($2, caldav_username),
+         caldav_sync_enabled = COALESCE($3, caldav_sync_enabled),
+         updated_at = NOW()
+       WHERE id = $4
+       RETURNING id, caldav_url, caldav_username, caldav_sync_enabled, caldav_last_sync`,
+      [data.caldavUrl ?? null, data.caldavUsername ?? null, data.caldavSyncEnabled ?? null, req.params.accountId]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides', details: error.errors });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test CalDAV connectivity for a mail account (without saving)
+calendarRouter.post('/accounts/:accountId/caldav/test', async (req: AuthRequest, res) => {
+  try {
+    const account = await getAccessibleMailAccount(req.params.accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const url: string | undefined = req.body?.caldavUrl || account.caldav_url;
+    const username: string = req.body?.caldavUsername || account.caldav_username || account.username;
+    if (!url) return res.status(400).json({ error: 'URL CalDAV manquante' });
+
+    let password: string;
+    try { password = decrypt(account.password_encrypted); }
+    catch { return res.status(500).json({ error: 'Impossible de déchiffrer le mot de passe du compte' }); }
+
+    const svc = new CalDAVService({ baseUrl: url, username, password });
+    const test = await svc.testConnection();
+    if (!test.ok) return res.status(400).json({ ok: false, status: test.status, error: test.error || 'Connexion CalDAV refusée' });
+
+    // Also list calendars so user sees something was found
+    try {
+      const calendars = await svc.getCalendars();
+      return res.json({ ok: true, calendars: calendars.map(c => ({ name: c.name, color: c.color })) });
+    } catch (e: any) {
+      return res.json({ ok: true, calendars: [], warning: e?.message });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Trigger a CalDAV sync for a mail account
+calendarRouter.post('/accounts/:accountId/sync', async (req: AuthRequest, res) => {
+  try {
+    const account = await getAccessibleMailAccount(req.params.accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+    if (!account.caldav_url) return res.status(400).json({ error: 'CalDAV non configuré pour ce compte' });
+
+    const username: string = account.caldav_username || account.username;
+    let password: string;
+    try { password = decrypt(account.password_encrypted); }
+    catch { return res.status(500).json({ error: 'Impossible de déchiffrer le mot de passe du compte' }); }
+
+    const svc = new CalDAVService({ baseUrl: account.caldav_url, username, password });
+    const result = await svc.syncForMailAccount(req.userId!, account.id, account.color || undefined);
+
+    logger.info(`CalDAV synced for account ${account.email}: ${result.calendars} calendars, ${result.events} events`);
+    res.json({ ok: true, ...result });
+  } catch (error: any) {
+    logger.error(error, 'CalDAV sync failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sync all mail accounts with CalDAV enabled
+calendarRouter.post('/sync', async (req: AuthRequest, res) => {
+  try {
+    const accounts = await pool.query(
+      `SELECT ma.* FROM mail_accounts ma
+       WHERE (ma.user_id = $1
+              OR EXISTS (SELECT 1 FROM mailbox_assignments mba WHERE mba.mail_account_id = ma.id AND mba.user_id = $1))
+         AND ma.caldav_sync_enabled = true
+         AND ma.caldav_url IS NOT NULL`,
+      [req.userId]
+    );
+
+    const results: any[] = [];
+    for (const account of accounts.rows) {
+      try {
+        const username: string = account.caldav_username || account.username;
+        const password = decrypt(account.password_encrypted);
+        const svc = new CalDAVService({ baseUrl: account.caldav_url, username, password });
+        const r = await svc.syncForMailAccount(req.userId!, account.id, account.color || undefined);
+        results.push({ accountId: account.id, email: account.email, ok: true, ...r });
+      } catch (e: any) {
+        results.push({ accountId: account.id, email: account.email, ok: false, error: e?.message });
+      }
+    }
+
+    res.json({ ok: true, synced: results.filter(r => r.ok).length, results });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

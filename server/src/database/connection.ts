@@ -45,6 +45,19 @@ export async function initDatabase() {
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS attachment_action_mode VARCHAR(20) DEFAULT 'preview';
 
+      -- CalDAV sync settings on mail accounts (added later)
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_url TEXT;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_username VARCHAR(255);
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_sync_enabled BOOLEAN DEFAULT false;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_last_sync TIMESTAMP;
+
+      -- Link calendars back to the mail account they were synced from
+      ALTER TABLE IF EXISTS calendars ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE CASCADE;
+      CREATE INDEX IF NOT EXISTS idx_calendars_mail_account ON calendars(mail_account_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_calendars_caldav_unique
+        ON calendars(mail_account_id, external_id)
+        WHERE mail_account_id IS NOT NULL AND external_id IS NOT NULL;
+
       -- User groups
       CREATE TABLE IF NOT EXISTS groups (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

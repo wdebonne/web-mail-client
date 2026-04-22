@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import CalendarRibbon, { CalendarViewMode, CalendarFilters } from '../components/calendar/CalendarRibbon';
 import CalendarSidebar from '../components/calendar/CalendarSidebar';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { SyncCalendarsDialog } from '../components/calendar/SyncCalendarsDialog';
 import {
   getCalendarView, setCalendarView,
   getRibbonMode, setRibbonMode,
@@ -52,6 +53,7 @@ export default function CalendarPage() {
 
   const [confirmDelete, setConfirmDelete] = useState<Calendar | null>(null);
   const [newCalendarOpen, setNewCalendarOpen] = useState(false);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
 
   useEffect(() => setCalendarView(view), [view]);
   useEffect(() => setRibbonMode(ribbonMode), [ribbonMode]);
@@ -79,12 +81,12 @@ export default function CalendarPage() {
   const apiStart = format(rangeStart, 'yyyy-MM-dd');
   const apiEnd = format(rangeEnd, 'yyyy-MM-dd');
 
-  const { data: calendars = [], refetch: refetchCalendars } = useQuery<Calendar[]>({
+  const { data: calendars = [] } = useQuery<Calendar[]>({
     queryKey: ['calendars'],
     queryFn: api.getCalendars,
   });
 
-  const { data: events = [], refetch: refetchEvents } = useQuery<CalendarEvent[]>({
+  const { data: events = [] } = useQuery<CalendarEvent[]>({
     queryKey: ['events', apiStart, apiEnd],
     queryFn: () => api.getEvents(apiStart, apiEnd),
   });
@@ -227,7 +229,7 @@ export default function CalendarPage() {
           onNewEvent={() => openCreateEvent(currentDate)}
           onShareCalendar={() => { if (calendars[0]) handleShareCalendar(calendars[0].id); }}
           onPrint={() => window.print()}
-          onSync={() => { refetchCalendars(); refetchEvents(); toast.success('Synchronisation en cours'); }}
+          onSync={() => setSyncDialogOpen(true)}
           view={view}
           onChangeView={setView}
           dayCount={dayCount}
@@ -397,6 +399,8 @@ export default function CalendarPage() {
           isSubmitting={createCalendarMutation.isPending}
         />
       )}
+
+      <SyncCalendarsDialog open={syncDialogOpen} onClose={() => setSyncDialogOpen(false)} />
 
       <ConfirmDialog
         open={!!confirmDelete}
