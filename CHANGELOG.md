@@ -9,6 +9,32 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Synchronisation CalDAV & CardDAV liées à la boîte mail (o2switch / SabreDAV / SOGo)
+
+- **Auto-configuration o2switch** à la création ou à la liaison d'une boîte mail :
+  - Nouveau flag `o2switchAutoSync` sur `POST /api/accounts` — quand il est coché (ou quand le champ `imapHost` se termine par `.o2switch.net`), le serveur pré-remplit automatiquement :
+    - CalDAV : `https://colorant.o2switch.net:2080/calendars/{email}/calendar`
+    - CardDAV : `https://colorant.o2switch.net:2080/addressbooks/{email}/addressbook`
+    - les deux activés (`caldav_sync_enabled = true`, `carddav_sync_enabled = true`) avec le même mot de passe que IMAP/SMTP.
+  - Nouveau flag `autoSyncDav` (par défaut `true`) sur `POST /api/admin/o2switch/accounts/:id/link` qui applique la même configuration à une boîte cPanel liée à un compte local.
+  - Une **synchronisation CalDAV initiale** est lancée en arrière-plan juste après la création pour chaque utilisateur assigné, afin que les calendriers distants apparaissent immédiatement sans intervention manuelle.
+- **Bouton « Ajouter un calendrier (CalDAV) »** dans la barre latérale du calendrier ([CalendarSidebar.tsx](client/src/components/calendar/CalendarSidebar.tsx)) : une icône `CloudDownload` placée à gauche du bouton *Nouveau calendrier* ouvre la modale de synchronisation pour relier une boîte mail à un serveur CalDAV.
+- **Fusion du calendrier local par défaut avec le calendrier distant par défaut** ([caldav.ts](server/src/services/caldav.ts) → `syncForMailAccount`) : lors de la première synchro, le calendrier local marqué `is_default = true` est **promu** (au lieu d'être dupliqué) et rattaché au calendrier distant nommé *calendar / default / agenda* (ou le premier renvoyé par le serveur) — `mail_account_id`, `caldav_url`, `external_id` et `source = 'caldav'` sont mis à jour en place. Les événements existants restent visibles et les nouveaux événements sont désormais poussés vers l'URL CalDAV.
+- **Push automatique des événements vers le serveur CalDAV** ([calendar.ts](server/src/routes/calendar.ts)) : après chaque `POST /events`, `PUT /events/:id` et `DELETE /events/:id` sur un calendrier lié, l'événement est sérialisé en iCal (`buildIcs`) puis envoyé via `PUT {caldavUrl}/{uid}.ics` ou `DELETE`. Les appels sont en *fire-and-forget* : une erreur réseau côté CalDAV n'empêche jamais la réponse HTTP locale, mais est journalisée. Un `ical_uid` est désormais généré à la création pour garantir la correspondance distante.
+- **Push automatique des contacts vers le serveur CardDAV** ([contacts.ts](server/src/routes/contacts.ts)) :
+  - nouveau sérialiseur [server/src/utils/vcard.ts](server/src/utils/vcard.ts) — vCard 4.0 avec `UID`, `FN`, `N`, `EMAIL`, `TEL (WORK/CELL)`, `ORG`, `TITLE`, `NOTE`, `REV`, encodage RFC 6350 (escape `\`, `,`, `;`, `\n`) et fold à 75 octets.
+  - nouveau client [server/src/services/carddav.ts](server/src/services/carddav.ts) (`testConnection`, `putContact`, `deleteContact`) exposant `PUT {collection}/{uid}.vcf` avec `If-Match` sur l'ETag et `DELETE`.
+  - `POST /api/contacts` génère un UID stable, rattache le contact à la première boîte mail CardDAV disponible (`findCardDAVAccount`) puis pousse la vCard en arrière-plan ; `carddav_href` et `carddav_etag` sont stockés pour les mises à jour ultérieures.
+  - `PUT /api/contacts/:id` repousse la vCard avec l'ETag connu.
+  - `DELETE /api/contacts/:id` capture les infos CardDAV avant suppression locale puis envoie le `DELETE` distant.
+- **Heuristique `suggestCaldavUrl()`** améliorée dans la modale de synchro ([SyncCalendarsDialog.tsx](client/src/components/calendar/SyncCalendarsDialog.tsx)) : détection prioritaire d'o2switch (hôte contenant `o2switch`) et génération directe du chemin SabreDAV officiel `https://{cpanel}:2080/calendars/{email}/calendar`. Fallback NextCloud / SOGo générique conservé.
+- **Nouvelles colonnes BDD** ([server/src/database/connection.ts](server/src/database/connection.ts)) :
+  - `mail_accounts` : `carddav_url`, `carddav_username`, `carddav_sync_enabled`, `carddav_last_sync`.
+  - `contacts` : `mail_account_id` (FK → `mail_accounts`), `carddav_url`, `carddav_href`, `carddav_etag`.
+  - Nouveaux index : `idx_contacts_mail_account`, `idx_events_caldav_unique` (index partiel unique `(calendar_id, ical_uid) WHERE external_id IS NOT NULL` — requis par le `ON CONFLICT` de la synchro, son absence provoquait un 500 « *there is no unique or exclusion constraint matching the ON CONFLICT specification* »).
+
+### Ajouté (autres)
+
 #### Page Contacts — refonte majeure
 
 - **Import / Export multi-formats** : nouvel utilitaire `client/src/utils/contactImportExport.ts` avec parsers et générateurs compatibles avec les principaux logiciels :

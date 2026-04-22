@@ -155,9 +155,17 @@ Ajoute un nouveau compte mail.
   "smtpSecure": true,
   "color": "#0078d4",
   "isDefault": true,
-  "signature": "<p>Cordialement</p>"
+  "signature": "<p>Cordialement</p>",
+  "o2switchAutoSync": true
 }
 ```
+
+Si `o2switchAutoSync` vaut `true` (ou si `imapHost` se termine par `.o2switch.net`), le serveur active automatiquement les flags `caldav_sync_enabled` / `carddav_sync_enabled` sur ce compte et configure les URLs suivantes avec le même mot de passe que IMAP/SMTP :
+
+- CalDAV : `https://colorant.o2switch.net:2080/calendars/{email}/calendar`
+- CardDAV : `https://colorant.o2switch.net:2080/addressbooks/{email}/addressbook`
+
+Une première synchronisation CalDAV est lancée en arrière-plan (fire-and-forget).
 
 **Réponse 201 :** Le compte créé
 
@@ -494,13 +502,15 @@ Crée un nouveau contact.
 }
 ```
 
+Si l'utilisateur possède au moins un compte mail avec `carddav_sync_enabled = true` (par exemple une boîte o2switch configurée avec `o2switchAutoSync`), le contact est automatiquement **poussé** vers le serveur CardDAV distant en arrière-plan (`PUT {collection}/{uid}.vcf`). Un `UID` stable est généré et les champs `mail_account_id`, `carddav_url`, `carddav_href`, `carddav_etag` sont renseignés pour permettre les futures mises à jour / suppressions distantes.
+
 ### PUT /api/contacts/:id
 
-Met à jour un contact.
+Met à jour un contact. Re-pousse la vCard avec `If-Match: <etag>` si le contact est lié à un carnet CardDAV.
 
 ### DELETE /api/contacts/:id
 
-Supprime un contact.
+Supprime un contact (et envoie le `DELETE` au serveur CardDAV si le contact est lié).
 
 ### POST /api/contacts/senders/record
 
@@ -717,13 +727,27 @@ Liste les événements dans une plage de dates.
 
 Crée un événement.
 
+Si le calendrier cible est lié à un compte mail (`caldav_url` + `mail_account_id` renseignés), l'événement est automatiquement **poussé** vers le serveur CalDAV distant via `PUT {calendarHref}/{uid}.ics` en arrière-plan. Un `ical_uid` stable est généré à la création.
+
 ### PUT /api/calendar/events/:id
 
-Met à jour un événement.
+Met à jour un événement. Re-pousse la vCalendar distante si le calendrier est lié à un compte CalDAV.
 
 ### DELETE /api/calendar/events/:id
 
-Supprime un événement.
+Supprime un événement. Envoie également un `DELETE {calendarHref}/{uid}.ics` au serveur CalDAV si le calendrier est lié.
+
+### POST /api/calendar/accounts/:accountId/sync
+
+Déclenche une synchronisation CalDAV pour le compte mail indiqué. Le compte doit avoir `caldav_url` renseigné et `caldav_sync_enabled = true`.
+
+**Réponse 200 :** `{ "ok": true, "calendars": <int>, "events": <int> }`
+
+Lors de la première synchronisation, le calendrier local `is_default = true` de l'utilisateur est **fusionné** avec le calendrier distant par défaut (nommé *calendar / default / agenda*, ou le premier renvoyé) plutôt que dupliqué.
+
+### POST /api/calendar/sync
+
+Synchronise tous les comptes mail CalDAV-activés de l'utilisateur.
 
 ### POST /api/calendar/calendars/:id/share
 

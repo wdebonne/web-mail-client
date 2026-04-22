@@ -93,10 +93,12 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - ⚙️ Configuration par plugin
 - 👥 Attribution par utilisateur ou groupe
 
-### NextCloud (optionnel)
-- 📇 Synchronisation CardDAV (contacts)
-- 📅 Synchronisation CalDAV (calendriers)
-- 🖼️ Photos de profil
+### NextCloud / o2switch / SabreDAV (optionnel)
+- 📇 Synchronisation **CardDAV** (contacts) — push automatique à chaque création/modif/suppression
+- 📅 Synchronisation **CalDAV** (calendriers) — push automatique des événements
+- 🛰️ **Auto-configuration o2switch** : cocher une case à la création d'une boîte mail suffit à activer CalDAV + CardDAV avec les URLs et le mot de passe IMAP/SMTP
+- 🔁 Le calendrier par défaut de l'application est fusionné avec le calendrier par défaut de la boîte mail (visible dans RoundCube)
+- 🖼️ Photos de profil (NextCloud)
 - 📋 Listes de distribution
 - 📝 Préparation de l'intégration d'un rendu bureautique fidèle via l'écosystème Office de NextCloud (à activer ultérieurement selon l'instance)
 
@@ -125,8 +127,10 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - [Configuration](docs/CONFIGURATION.md)
 - [Contacts et Expéditeurs](docs/CONTACTS.md)
 - [NextCloud](docs/NEXTCLOUD.md)
+- [Synchronisation o2switch (CalDAV / CardDAV)](docs/O2SWITCH_DAV.md)
 - [Pièces jointes](docs/ATTACHMENTS.md)
 - [PWA et hors-ligne](docs/PWA.md)
+- [Sauvegarde & restauration](docs/BACKUP.md)
 
 ## Architecture
 
