@@ -77,6 +77,17 @@ pushRouter.post('/test', async (req: AuthRequest, res) => {
       body: 'Les notifications push fonctionnent correctement.',
       tag: 'test',
       url: '/mail',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      requireInteraction: true,
+      renotify: true,
+      silent: false,
+      timestamp: Date.now(),
+      vibrate: [120, 60, 120],
+      actions: [
+        { action: 'open', title: 'Ouvrir' },
+        { action: 'dismiss', title: 'Ignorer' },
+      ],
     });
     res.json({ ok: true, sent });
   } catch (error: any) {

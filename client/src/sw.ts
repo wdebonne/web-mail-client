@@ -52,12 +52,16 @@ interface PushPayload {
   body?: string;
   icon?: string;
   badge?: string;
+  image?: string;
   tag?: string;
   url?: string;
   data?: Record<string, unknown>;
   renotify?: boolean;
   silent?: boolean;
   requireInteraction?: boolean;
+  actions?: Array<{ action: string; title: string; icon?: string }>;
+  vibrate?: number[];
+  timestamp?: number;
 }
 
 self.addEventListener('push', (event: PushEvent) => {
@@ -68,14 +72,35 @@ self.addEventListener('push', (event: PushEvent) => {
   }
 
   const title = payload.title || 'WebMail';
-  const options: NotificationOptions = {
+  // Windows 11 / Chromium : sans `requireInteraction`, la notification disparaît après ~5s
+  // et reste minuscule. Avec `actions`, Windows affiche une bannière plus grande avec boutons.
+  const defaultActions = [
+    { action: 'open', title: 'Ouvrir' },
+    { action: 'dismiss', title: 'Ignorer' },
+  ];
+
+  const options: NotificationOptions & {
+    image?: string;
+    actions?: Array<{ action: string; title: string; icon?: string }>;
+    vibrate?: number[];
+    timestamp?: number;
+    renotify?: boolean;
+  } = {
     body: payload.body || '',
     icon: payload.icon || '/icon-192.png',
     badge: payload.badge || '/icon-192.png',
+    image: payload.image,
     tag: payload.tag,
-    renotify: payload.renotify ?? false,
+    // `renotify` force le son/bannière même si une notif avec le même tag existe déjà.
+    renotify: payload.renotify ?? Boolean(payload.tag),
     silent: payload.silent ?? false,
-    requireInteraction: payload.requireInteraction ?? false,
+    // Par défaut on garde la notification visible jusqu'à ce que l'utilisateur interagisse,
+    // sauf si l'émetteur précise explicitement `requireInteraction: false` (ex: test).
+    requireInteraction: payload.requireInteraction ?? true,
+    actions: payload.actions ?? defaultActions,
+    // Utile pour mobile ; ignoré sur desktop.
+    vibrate: payload.vibrate ?? [120, 60, 120],
+    timestamp: payload.timestamp ?? Date.now(),
     data: { url: payload.url || '/', ...(payload.data || {}) },
   };
 
@@ -84,6 +109,10 @@ self.addEventListener('push', (event: PushEvent) => {
 
 self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close();
+
+  // L'action "dismiss" ferme simplement la notification sans focaliser la fenêtre.
+  if (event.action === 'dismiss') return;
+
   const targetUrl = (event.notification.data && (event.notification.data as any).url) || '/';
 
   event.waitUntil((async () => {
@@ -92,7 +121,12 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
       const url = new URL(client.url);
       if (url.origin === self.location.origin) {
         await (client as WindowClient).focus();
-        (client as WindowClient).postMessage({ type: 'notification-click', url: targetUrl });
+        (client as WindowClient).postMessage({
+          type: 'notification-click',
+          url: targetUrl,
+          action: event.action || 'open',
+          data: event.notification.data,
+        });
         return;
       }
     }

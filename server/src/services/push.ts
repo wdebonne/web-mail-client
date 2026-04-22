@@ -7,12 +7,16 @@ export interface PushPayload {
   body?: string;
   icon?: string;
   badge?: string;
+  image?: string;
   tag?: string;
   url?: string;
   data?: Record<string, any>;
   renotify?: boolean;
   silent?: boolean;
   requireInteraction?: boolean;
+  actions?: Array<{ action: string; title: string; icon?: string }>;
+  vibrate?: number[];
+  timestamp?: number;
 }
 
 let vapidConfigured = false;

@@ -80,6 +80,15 @@ async function checkAccount(row: any) {
           badge: '/icon-192.png',
           url: `/mail/${row.id}/INBOX`,
           data: { accountId: row.id, uid, folder: 'INBOX' },
+          requireInteraction: true,
+          renotify: true,
+          silent: false,
+          timestamp: Date.now(),
+          vibrate: [120, 60, 120],
+          actions: [
+            { action: 'open', title: 'Lire' },
+            { action: 'dismiss', title: 'Ignorer' },
+          ],
         },
         'both',
       );
