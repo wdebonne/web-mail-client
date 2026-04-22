@@ -118,9 +118,16 @@ interface RibbonProps {
   listDisplayMode?: 'auto' | 'wide' | 'compact';
   onChangeListDisplayMode?: (m: 'auto' | 'wide' | 'compact') => void;
 
-  // Conversation view (group messages by thread)
-  conversationView?: boolean;
-  onToggleConversationView?: () => void;
+  // Conversation grouping (Outlook « Conversations » menu).
+  // - 'none'         : Ne pas regrouper les messages (plat, par date).
+  // - 'conversation' : Regrouper les messages par conversation (un seul nœud par thread).
+  // - 'branches'     : Regrouper les messages par branches dans les conversations (thread + sous-fils).
+  conversationGrouping?: 'none' | 'conversation' | 'branches';
+  onChangeConversationGrouping?: (mode: 'none' | 'conversation' | 'branches') => void;
+  // Reading pane thread behaviour. When false, the reading pane only shows the selected
+  // message; when true, it shows all messages of the conversation (stacked cards).
+  conversationShowAllInReadingPane?: boolean;
+  onToggleConversationShowAllInReadingPane?: () => void;
 
   // Categories
   onCategorize?: (categoryId: string) => void;
@@ -210,7 +217,8 @@ export default function Ribbon({
   readingPaneMode = 'right', onChangeReadingPaneMode,
   listDensity = 'comfortable', onChangeListDensity,
   listDisplayMode = 'auto', onChangeListDisplayMode,
-  conversationView = false, onToggleConversationView,
+  conversationGrouping = 'none', onChangeConversationGrouping,
+  conversationShowAllInReadingPane = true, onToggleConversationShowAllInReadingPane,
   onCategorize, onClearCategories, onNewCategory, onManageCategories,
   messageCategoryIds = [],
 }: RibbonProps) {
@@ -222,6 +230,7 @@ export default function Ribbon({
   const [showDensityMenu, setShowDensityMenu] = useState(false);
   const [showListModeMenu, setShowListModeMenu] = useState(false);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const [showConversationsMenu, setShowConversationsMenu] = useState(false);
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
   const favoritesMenuBtnRef = useRef<HTMLButtonElement>(null);
@@ -229,6 +238,7 @@ export default function Ribbon({
   const densityMenuBtnRef = useRef<HTMLButtonElement>(null);
   const listModeMenuBtnRef = useRef<HTMLButtonElement>(null);
   const categoryMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const conversationsMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
@@ -236,6 +246,7 @@ export default function Ribbon({
   const [densityMenuPos, setDensityMenuPos] = useState({ top: 0, left: 0 });
   const [listModeMenuPos, setListModeMenuPos] = useState({ top: 0, left: 0 });
   const [categoryMenuPos, setCategoryMenuPos] = useState({ top: 0, left: 0 });
+  const [conversationsMenuPos, setConversationsMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -296,6 +307,15 @@ export default function Ribbon({
       setReadingPaneMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowReadingPaneMenu(v => !v);
+  };
+
+  const openConversationsMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || conversationsMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setConversationsMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowConversationsMenu(v => !v);
   };
 
   const openDensityMenu = (e?: React.MouseEvent) => {
@@ -457,12 +477,17 @@ export default function Ribbon({
                 <span className="text-xs whitespace-nowrap">Densité</span>
                 <ChevronDown size={10} />
               </button>
-              <SimplifiedButton
-                icon={MessagesSquare}
-                label="Vue conversation"
-                onClick={() => onToggleConversationView && onToggleConversationView()}
-                active={conversationView}
-              />
+              <SimplifiedSep />
+              <button
+                ref={conversationsMenuBtnRef}
+                onClick={(e) => openConversationsMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showConversationsMenu || conversationGrouping !== 'none' ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Conversations"
+              >
+                <MessagesSquare size={14} />
+                <span className="text-xs whitespace-nowrap">Conversations</span>
+                <ChevronDown size={10} />
+              </button>
               <SimplifiedSep />
               <SimplifiedButton
                 icon={PanelLeftOpen}
@@ -650,12 +675,19 @@ export default function Ribbon({
                     </span>
                   </button>
                 </div>
-                <RibbonButton
-                  icon={MessagesSquare}
-                  label="Conversation"
-                  onClick={() => onToggleConversationView && onToggleConversationView()}
-                  active={conversationView}
-                />
+                <div className="relative">
+                  <button
+                    ref={conversationsMenuBtnRef}
+                    onClick={(e) => openConversationsMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showConversationsMenu || conversationGrouping !== 'none' ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Conversations"
+                  >
+                    <MessagesSquare size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Conversations <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
               </RibbonGroup>
               <RibbonSeparator />
 
@@ -899,6 +931,72 @@ export default function Ribbon({
                       {active ? '✓' : ''}
                     </span>
                     <Icon size={14} className="text-outlook-text-secondary" />
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>,
+          document.body
+        )}
+
+        {/* Conversations menu — mimics Outlook's "Conversations" split dropdown (Liste de
+            messages + Volet de lecture sub-sections). Rendered globally so both ribbon
+            variants use the same menu. */}
+        {showConversationsMenu && createPortal(
+          <>
+            <div className="fixed inset-0 z-[9998]" onClick={() => setShowConversationsMenu(false)} />
+            <div
+              className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-80"
+              style={{ top: conversationsMenuPos.top, left: conversationsMenuPos.left }}
+            >
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+                Liste de messages
+              </div>
+              {[
+                { id: 'conversation' as const, label: 'Regrouper les messages par conversation' },
+                { id: 'branches' as const, label: 'Regrouper les messages par branches dans les conversations' },
+                { id: 'none' as const, label: 'Ne pas regrouper les messages' },
+              ].map((opt) => {
+                const active = conversationGrouping === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => { onChangeConversationGrouping && onChangeConversationGrouping(opt.id); setShowConversationsMenu(false); }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                  >
+                    <span className="w-4 flex items-center justify-center text-outlook-blue">
+                      {active ? '✓' : ''}
+                    </span>
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+              <div className="border-t border-outlook-border my-1" />
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+                Volet de lecture — Organisation des messages
+              </div>
+              {[
+                { show: true, label: 'Afficher tous les messages de la conversation sélectionnée' },
+                { show: false, label: 'Afficher uniquement le message sélectionné' },
+              ].map((opt) => {
+                const active = conversationShowAllInReadingPane === opt.show;
+                return (
+                  <button
+                    key={String(opt.show)}
+                    onClick={() => {
+                      if (conversationShowAllInReadingPane !== opt.show) {
+                        onToggleConversationShowAllInReadingPane && onToggleConversationShowAllInReadingPane();
+                      }
+                      setShowConversationsMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                    disabled={conversationGrouping === 'none'}
+                    style={conversationGrouping === 'none' ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                  >
+                    <span className="w-4 flex items-center justify-center text-outlook-blue">
+                      {active ? '✓' : ''}
+                    </span>
                     <span>{opt.label}</span>
                   </button>
                 );

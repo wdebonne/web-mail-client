@@ -29,6 +29,15 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
   - Remplace l'affichage du corps par le texte en clair une fois le déchiffrement réussi.
 - **Nouveau module crypto côté client** (`client/src/crypto/`) reposant sur **openpgp v6**, **pkijs** et **asn1js** — aucune opération cryptographique n'est faite côté serveur, qui n'agit que comme relai SMTP/IMAP.
 
+#### Regroupement des conversations (style Outlook)
+- Nouveau menu **Conversations** dans l'onglet **Afficher** du ruban (icône bulle de dialogue, modes classique et simplifié), avec deux sections calquées sur Outlook :
+  - **Liste de messages** : `Regrouper les messages par conversation` · `Regrouper les messages par branches dans les conversations` · `Ne pas regrouper les messages`.
+  - **Volet de lecture → Organisation des messages** : `Afficher tous les messages de la conversation sélectionnée` · `Afficher uniquement le message sélectionné`.
+- **Regroupement en arborescence dans la liste** : lorsqu'un mode « Regrouper » est actif, chaque conversation est condensée en une seule ligne « racine » portant l'objet + un compteur de messages. Un **chevron** à gauche permet de déplier la conversation pour afficher les messages descendants indentés sous le parent.
+- **Badge de dossier d'origine** : en vue unifiée (multi-boîtes), chaque message enfant d'une conversation porte un petit badge indiquant son dossier (ex. `Éléments envoyés`), pour distinguer les mails reçus et ceux envoyés au sein du même fil.
+- **Volet de lecture thread-aware** : en mode « Afficher tous les messages de la conversation », le volet de lecture restitue l'empilement complet du fil (messages empilés, seul le plus récent déplié, en-têtes cliquables). En mode « Afficher uniquement le message sélectionné », il revient à l'affichage d'un seul message.
+- **Persistance** : `conversationGrouping` (`none` / `conversation` / `branches`) et `conversationShowAllInReadingPane` sont mémorisés dans `localStorage` et restaurés au prochain chargement.
+
 ### Ajouté (hors sécurité)
 
 #### Catégories de messages (style Outlook)

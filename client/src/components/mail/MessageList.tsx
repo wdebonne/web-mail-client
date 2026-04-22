@@ -53,6 +53,11 @@ interface MessageListProps {
   listDisplayMode?: 'auto' | 'wide' | 'compact';
   /** When enabled, group messages by conversation thread instead of by date. */
   conversationView?: boolean;
+  /** How to group messages in the list. 'none' keeps the flat date-grouped layout;
+   *  'conversation' collapses each thread into a single root row with an expandable
+   *  set of children; 'branches' does the same but displays a subtle sub-thread
+   *  indentation. The two grouping modes are visually identical at the moment. */
+  conversationGrouping?: 'none' | 'conversation' | 'branches';
   /** Open the category picker for a given message (context menu entry). */
   onOpenCategoryPicker?: (message: Email, x: number, y: number) => void;
 }
@@ -94,10 +99,19 @@ export default function MessageList({
   density = 'comfortable',
   listDisplayMode = 'auto',
   conversationView = false,
+  conversationGrouping = 'none',
   onOpenCategoryPicker,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+  const toggleThread = (key: string) => {
+    setExpandedThreads(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [filterType, setFilterType] = useState<FilterType>('all');
@@ -564,8 +578,43 @@ export default function MessageList({
                   </span>
                 </button>
 
-                {/* Messages in group */}
-                {!isCollapsed && group.messages.map((message, msgIndex) => {
+                {/* Messages in group — threaded when conversation grouping is active. */}
+                {!isCollapsed && (() => {
+                  type ThreadItem = { msg: Email; role: 'single' | 'root' | 'child'; threadKey: string; childCount?: number };
+                  const buildItems = (): ThreadItem[] => {
+                    if (conversationGrouping === 'none') {
+                      return group.messages.map((m): ThreadItem => ({ msg: m, role: 'single', threadKey: threadKeyOf(m) }));
+                    }
+                    const threads = new Map<string, Email[]>();
+                    const order: string[] = [];
+                    for (const m of group.messages) {
+                      const k = threadKeyOf(m);
+                      if (!threads.has(k)) { threads.set(k, []); order.push(k); }
+                      threads.get(k)!.push(m);
+                    }
+                    const items: ThreadItem[] = [];
+                    for (const k of order) {
+                      const arr = threads.get(k)!;
+                      if (arr.length === 1) {
+                        items.push({ msg: arr[0], role: 'single', threadKey: k });
+                      } else {
+                        // Display order: newest first as the thread head, followed by the older
+                        // messages indented beneath. `arr` already follows the outer sort order
+                        // (date desc by default).
+                        const [head, ...rest] = arr;
+                        items.push({ msg: head, role: 'root', threadKey: k, childCount: arr.length });
+                        if (expandedThreads.has(k)) {
+                          for (const c of rest) items.push({ msg: c, role: 'child', threadKey: k });
+                        }
+                      }
+                    }
+                    return items;
+                  };
+                  const threadItems = buildItems();
+                  return threadItems.map((item, msgIndex) => {
+                  const message = item.msg;
+                  const isThreadRoot = item.role === 'root';
+                  const isThreadChild = item.role === 'child';
                   const isSelected = selectedMessage?.uid === message.uid;
                   const isUnread = !message.flags?.seen;
                   const isChecked = selectedUids.has(message.uid);
@@ -614,10 +663,25 @@ export default function MessageList({
                       style={rowStyle}
                       className={`flex items-center gap-2 px-3 cursor-pointer border-b border-outlook-border transition-colors group relative
                         ${isWide ? densityWide : densityCompact}
+                        ${isThreadChild ? 'pl-10 bg-outlook-bg-primary/40' : ''}
                         ${isSelected && !selectionMode ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
                         ${isChecked ? 'bg-blue-50' : ''}
                         ${isUnread && !primaryCatColor ? '' : (!primaryCatColor ? 'bg-outlook-bg-primary/30' : '')}`}
                     >
+                      {/* Thread expansion chevron — only on root rows of a threaded conversation.
+                          Clicking toggles the sub-list visibility without selecting the message. */}
+                      {isThreadRoot && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleThread(item.threadKey); }}
+                          className="flex-shrink-0 p-0.5 -ml-1 text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover rounded"
+                          title={expandedThreads.has(item.threadKey) ? 'Réduire la conversation' : 'Développer la conversation'}
+                        >
+                          {expandedThreads.has(item.threadKey)
+                            ? <ChevronDown size={14} />
+                            : <ChevronRight size={14} />}
+                        </button>
+                      )}
+
                       {/* Checkbox (selection mode) or Avatar */}
                       {selectionMode ? (
                         <div className={`flex items-center justify-center flex-shrink-0 ${isWide ? 'w-7 h-7' : 'w-10 h-10 mt-0.5'}`}>
@@ -651,6 +715,16 @@ export default function MessageList({
                             <span className={`text-xs truncate ${isUnread ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
                               {message.subject || '(Sans objet)'}
                             </span>
+                            {isThreadRoot && item.childCount && item.childCount > 1 && (
+                              <span className="text-[10px] px-1.5 py-[1px] rounded-full bg-outlook-blue/10 text-outlook-blue border border-outlook-blue/30 whitespace-nowrap" title={`${item.childCount} messages dans cette conversation`}>
+                                {item.childCount}
+                              </span>
+                            )}
+                            {isThreadChild && message._folder && (
+                              <span className="text-[10px] px-1.5 py-[1px] rounded bg-outlook-bg-hover text-outlook-text-secondary border border-outlook-border whitespace-nowrap" title={message._folder}>
+                                {message._folder.split(/[\/.]/).pop() || message._folder}
+                              </span>
+                            )}
                             {msgCats.slice(0, 2).map((c) => (
                               <span
                                 key={c.id}
@@ -764,6 +838,21 @@ export default function MessageList({
                             {message.subject || '(Sans objet)'}
                           </div>
 
+                          {(isThreadRoot && item.childCount && item.childCount > 1) || (isThreadChild && message._folder) ? (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              {isThreadRoot && item.childCount && item.childCount > 1 && (
+                                <span className="text-[10px] px-1.5 py-[1px] rounded-full bg-outlook-blue/10 text-outlook-blue border border-outlook-blue/30 whitespace-nowrap">
+                                  {item.childCount} messages
+                                </span>
+                              )}
+                              {isThreadChild && message._folder && (
+                                <span className="text-[10px] px-1.5 py-[1px] rounded bg-outlook-bg-hover text-outlook-text-secondary border border-outlook-border whitespace-nowrap" title={message._folder}>
+                                  {message._folder.split(/[\/.]/).pop() || message._folder}
+                                </span>
+                              )}
+                            </div>
+                          ) : null}
+
                           {msgCats.length > 0 && (
                             <div className="flex items-center flex-wrap gap-1 mt-0.5">
                               {msgCats.slice(0, 3).map((c) => (
@@ -816,7 +905,8 @@ export default function MessageList({
                       )}
                     </motion.div>
                   );
-                })}
+                });
+                })()}
               </div>
             );
           })

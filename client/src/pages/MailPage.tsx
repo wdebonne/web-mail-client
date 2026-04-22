@@ -511,6 +511,27 @@ export default function MailPage() {
     return localStorage.getItem('conversationView') === '1';
   });
   useEffect(() => { localStorage.setItem('conversationView', conversationView ? '1' : '0'); }, [conversationView]);
+
+  // Outlook-style Conversations menu: separate the "grouping mode" (how the list is built)
+  // from the "show-all-in-reading-pane" flag (how the reading pane renders the thread).
+  // `conversationView` above remains as a legacy boolean kept in sync with `conversationGrouping`.
+  const [conversationGrouping, setConversationGrouping] = useState<'none' | 'conversation' | 'branches'>(() => {
+    const v = localStorage.getItem('conversationGrouping');
+    if (v === 'none' || v === 'conversation' || v === 'branches') return v;
+    return localStorage.getItem('conversationView') === '1' ? 'conversation' : 'none';
+  });
+  useEffect(() => {
+    localStorage.setItem('conversationGrouping', conversationGrouping);
+    setConversationView(conversationGrouping !== 'none');
+  }, [conversationGrouping]);
+
+  const [conversationShowAllInReadingPane, setConversationShowAllInReadingPane] = useState<boolean>(() => {
+    const v = localStorage.getItem('conversationShowAllInReadingPane');
+    return v === null ? true : v === '1';
+  });
+  useEffect(() => {
+    localStorage.setItem('conversationShowAllInReadingPane', conversationShowAllInReadingPane ? '1' : '0');
+  }, [conversationShowAllInReadingPane]);
   // Effective display mode: in "bottom" disposition we force a compact layout unless the user explicitly overrode it.
   const effectiveListDisplayMode: ListDisplayMode =
     listDisplayMode !== 'auto' ? listDisplayMode : readingPaneMode === 'bottom' ? 'compact' : 'auto';
@@ -979,11 +1000,11 @@ export default function MailPage() {
     return 'subj:' + (msg.subject || '').replace(/^\s*(re|fwd?|tr|rép|réf)\s*:\s*/gi, '').trim().toLowerCase();
   };
   const conversationThread = useMemo(() => {
-    if (!conversationView || !selectedMessage) return undefined;
+    if (!conversationView || !conversationShowAllInReadingPane || !selectedMessage) return undefined;
     const key = conversationThreadKeyOf(selectedMessage);
     const thread = visibleMessages.filter((m) => conversationThreadKeyOf(m) === key);
     return thread.length > 1 ? thread : undefined;
-  }, [conversationView, selectedMessage, visibleMessages]);
+  }, [conversationView, conversationShowAllInReadingPane, selectedMessage, visibleMessages]);
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-outlook-bg-tertiary">
@@ -1069,8 +1090,10 @@ export default function MailPage() {
           onChangeListDensity={(d) => setListDensity(d)}
           listDisplayMode={listDisplayMode}
           onChangeListDisplayMode={(m) => setListDisplayMode(m)}
-          conversationView={conversationView}
-          onToggleConversationView={() => setConversationView(v => !v)}
+          conversationGrouping={conversationGrouping}
+          onChangeConversationGrouping={(m) => setConversationGrouping(m)}
+          conversationShowAllInReadingPane={conversationShowAllInReadingPane}
+          onToggleConversationShowAllInReadingPane={() => setConversationShowAllInReadingPane(v => !v)}
           onCategorize={(catId) => selectedMessage && handleCategorize(selectedMessage, catId)}
           onClearCategories={() => selectedMessage && handleClearCategories(selectedMessage)}
           onNewCategory={() => setCategoryCreateOpen(true)}
@@ -1163,6 +1186,7 @@ export default function MailPage() {
             density={listDensity}
             listDisplayMode={effectiveListDisplayMode}
             conversationView={conversationView}
+            conversationGrouping={conversationGrouping}
           />
         </div>
 
@@ -1244,6 +1268,7 @@ export default function MailPage() {
                   density={listDensity}
                   listDisplayMode={effectiveListDisplayMode}
                   conversationView={conversationView}
+                  conversationGrouping={conversationGrouping}
                 />
               )}
             </div>
