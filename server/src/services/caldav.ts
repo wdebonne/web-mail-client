@@ -310,13 +310,25 @@ export class CalDAVService {
         const combined = `${mkcalendar.error || ''}\n${extMkcol.error || ''}\n${plainMkcol.error || ''}`;
         const isCpanel = /cpanel-version|cpanel\.net\/ns/i.test(combined);
         if (isCpanel) {
+          // Derive the Webmail management URL from the DAV base URL. cPanel's
+          // DAV server runs on port 2080 and the management UI is accessible
+          // at the same host via the standard Webmail port (2096 for SSL).
+          // We point users to the documented workflow:
+          //   Webmail » Calendars and Contacts Management
+          // See https://docs.cpanel.net/cpanel/email/calendars-and-contacts-management/
+          let webmailHint = '';
+          try {
+            const u = new URL(this.config.baseUrl);
+            webmailHint = ` (ex. : https://${u.hostname}:2096 → « Calendriers et contacts » → « Gérer les calendriers et carnets d'adresses »)`;
+          } catch { /* ignore */ }
           return {
             ok: false,
             status: plainMkcol.status || extMkcol.status || mkcalendar.status,
             error:
               'Votre serveur (cPanel CCS, utilisé notamment par o2switch) ne permet pas de créer de nouveaux calendriers via CalDAV. ' +
-              'Créez le calendrier depuis l\'interface cPanel (section « Calendriers et contacts » → « Manage Calendars and Address Books »), ' +
-              'puis utilisez « Ajouter un calendrier par URL » dans l\'application pour l\'y rattacher.',
+              'La création doit passer par l\'interface Webmail cPanel « Calendars and Contacts Management »' + webmailHint + '. ' +
+              'Une fois le calendrier créé côté cPanel, utilisez « Ajouter un calendrier par URL » dans l\'application pour l\'y rattacher ' +
+              '(l\'URL directe est de la forme https://<serveur>:2080/calendars/<email>/<slug>).',
             method: 'MKCOL',
           };
         }
