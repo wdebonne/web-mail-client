@@ -472,6 +472,7 @@ L'onglet **Afficher** contient :
 - **Paramètres d'onglets** (mode d'ouverture + nombre max)
 - Actions sur le message (imprimer, télécharger)
 - **Pièce jointe** (comportement : aperçu / téléchargement / menu)
+- **Sécurité** : bouton *Confirmer suppr.* / *Suppr. directe* pour activer/désactiver la boîte de dialogue de confirmation avant suppression. Persisté dans `localStorage` (`mail.deleteConfirmEnabled`). Lorsque la confirmation est active, la suppression passe par le composant `ConfirmDialog` et privilégie un déplacement vers le dossier **Corbeille** (détecté via `findTrashFolderPath` — `SPECIAL-USE \Trash`, *Corbeille*, *Deleted Items*, *Éléments supprimés*, etc.) ; la suppression définitive n'intervient que si le message est déjà dans la corbeille ou qu'aucun dossier correspondant n'existe.
 
 ### Disposition de la liste et du volet de lecture
 

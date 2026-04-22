@@ -7,7 +7,22 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+#### Sécurité suppression — corbeille et confirmation
+- **Suppression non destructive par défaut** : la suppression d'un message depuis le ruban, la liste, le contexte, la vue d'un message, la vue partagée (split) ou un brouillon compagnon déplace maintenant l'e-mail vers le dossier **Corbeille / Éléments supprimés** de son compte au lieu de l'effacer définitivement du serveur. Si le message est déjà dans la corbeille — ou si aucun dossier corbeille ne peut être localisé — la suppression devient définitive (comportement IMAP EXPUNGE historique).
+- **Détection robuste du dossier Corbeille** : nouveau helper `findTrashFolderPath` / `isTrashFolderPath` (`client/src/utils/mailPreferences.ts`) qui privilégie l'attribut IMAP `SPECIAL-USE \Trash`, puis reconnaît par nom/chemin les variantes courantes (*Trash*, *Corbeille*, *Deleted Items*, *Éléments supprimés*, `INBOX.Trash`, etc.).
+- **Dialogue de confirmation** : nouveau composant `ConfirmDialog` (`client/src/components/ui/ConfirmDialog.tsx`) affiché avant chaque suppression, avec :
+  - libellé et couleur adaptés (bleu *Déplacer dans la corbeille* vs rouge *Supprimer définitivement*) ;
+  - raccourcis clavier **Entrée** pour confirmer et **Échap** pour annuler ;
+  - focus automatique sur le bouton principal et fermeture par clic extérieur.
+- **Réglage par utilisateur dans le ruban → Afficher** : nouveau groupe **Sécurité** avec un bouton *Confirmer suppr.* / *Suppr. directe* (icônes `ShieldAlert` / `ShieldOff`). La préférence est persistée par utilisateur dans `localStorage` (`mail.deleteConfirmEnabled`, défaut `true`) et appliquée instantanément à toutes les entrées de suppression (ruban, liste, menu contextuel, vue message, split view).
+- **Feedback utilisateur** : le toast indique désormais *Message envoyé dans la corbeille* ou *Message supprimé* selon l'issue, et la liste des dossiers est invalidée pour refléter immédiatement le nouveau compteur de la corbeille.
+
 ### Amélioré
+
+#### Liste des messages — cohérence de l'étoile (favori)
+- L'étoile de la carte d'aperçu (mode narrow) n'est plus affichée en permanence en bas à droite : elle a été **déplacée en haut à droite**, à côté du drapeau, dans le même groupe d'actions de survol que *Marquer lu/non lu*, *Drapeau* et *Supprimer* (`client/src/components/mail/MessageList.tsx`). L'icône n'apparaît donc qu'au survol d'une ligne, pour une hiérarchie visuelle plus claire.
 
 #### Notifications push — comportement Windows 11 / Chromium
 - **Notifications plus visibles et persistantes** : ajout de `requireInteraction: true` par défaut dans le Service Worker (`client/src/sw.ts`) — les notifications restent affichées jusqu'à interaction de l'utilisateur au lieu de disparaître après ~5 s (comportement par défaut trop rapide sur Windows 11).

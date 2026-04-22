@@ -428,7 +428,7 @@ Déplace un message vers un autre dossier.
 
 ### DELETE /api/mail/:accountId/message/:folder/:uid
 
-Supprime un message (déplace vers la corbeille).
+Supprime un message sur le serveur IMAP (EXPUNGE). Le client appelle cette route uniquement lorsque l'utilisateur confirme une *suppression définitive* (message déjà dans la corbeille ou aucun dossier corbeille détectable). Dans les autres cas, le client préfère un **déplacement vers la Corbeille** (`PUT /move`) pour préserver la récupération du message.
 
 ### GET /api/mail/outbox
 
