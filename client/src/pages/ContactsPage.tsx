@@ -6,7 +6,7 @@ import {
   Search, Plus, X, Mail, Phone, Building, Edit2, Trash2,
   Users, User, UserCheck, UserX, Star, Upload, Download,
   Camera, Globe, Calendar as CalIcon, MapPin, Briefcase, FileText,
-  Loader2, ChevronDown, SortAsc, CheckCircle2, AlertCircle,
+  Loader2, ChevronDown, SortAsc, CheckCircle2, AlertCircle, Cloud,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -16,6 +16,8 @@ import {
 
 const SENDER_GROUP_ID = '__senders__';
 const FAV_GROUP_ID = '__favorites__';
+const LOCAL_GROUP_ID = '__registered__';
+const NEXTCLOUD_GROUP_ID = '__nextcloud__';
 
 // Palette de couleurs déterministes pour les avatars
 const AVATAR_COLORS = [
@@ -64,13 +66,21 @@ export default function ContactsPage() {
 
   const isSenderView = selectedGroup === SENDER_GROUP_ID;
   const isFavView = selectedGroup === FAV_GROUP_ID;
+  const isLocalView = selectedGroup === LOCAL_GROUP_ID;
+  const isNextcloudView = selectedGroup === NEXTCLOUD_GROUP_ID;
+  const isVirtualView = isSenderView || isFavView || isLocalView || isNextcloudView;
+
+  const sourceFilter = isSenderView ? 'sender'
+    : isLocalView ? 'local'
+      : isNextcloudView ? 'nextcloud'
+        : undefined;
 
   const { data: contactsData, isLoading } = useQuery({
     queryKey: ['contacts', searchQuery, selectedGroup],
     queryFn: () => api.getContacts({
       search: searchQuery || undefined,
-      groupId: isSenderView || isFavView ? undefined : selectedGroup,
-      source: isSenderView ? 'sender' : undefined,
+      groupId: isVirtualView ? undefined : selectedGroup,
+      source: sourceFilter,
       limit: 500,
     }),
   });
@@ -175,7 +185,11 @@ export default function ContactsPage() {
   }, [contacts, sortBy]);
 
   const totalContacts = contactsData?.total ?? 0;
-  const favCount = (allContactsForStats?.contacts || []).filter((c: Contact) => c.is_favorite).length;
+  const allStats = allContactsForStats?.contacts || [];
+  const favCount = allStats.filter((c: Contact) => c.is_favorite).length;
+  const localCount = allStats.filter((c: Contact) => c.source === 'local' || !c.source).length;
+  const nextcloudCount = allStats.filter((c: Contact) => c.source === 'nextcloud').length;
+  const hasNextcloud = nextcloudCount > 0;
 
   const handleExport = async (format: 'vcf' | 'csv-google' | 'csv-outlook' | 'csv-generic') => {
     setExportMenuOpen(false);
@@ -292,6 +306,14 @@ export default function ContactsPage() {
             color="amber"
           />
           <NavItem
+            label="Enregistrés"
+            icon={<UserCheck size={14} />}
+            count={localCount}
+            active={isLocalView}
+            onClick={() => { setSelectedGroup(LOCAL_GROUP_ID); setSelectedContact(null); }}
+            color="green"
+          />
+          <NavItem
             label="Expéditeurs non enregistrés"
             icon={<UserX size={14} />}
             count={sendersCount?.total ?? 0}
@@ -299,6 +321,16 @@ export default function ContactsPage() {
             onClick={() => { setSelectedGroup(SENDER_GROUP_ID); setSelectedContact(null); }}
             color="orange"
           />
+          {hasNextcloud && (
+            <NavItem
+              label="NextCloud"
+              icon={<Cloud size={14} />}
+              count={nextcloudCount}
+              active={isNextcloudView}
+              onClick={() => { setSelectedGroup(NEXTCLOUD_GROUP_ID); setSelectedContact(null); }}
+              color="blue"
+            />
+          )}
           {groups.length > 0 && (
             <div className="mt-2 pt-2 border-t border-outlook-border">
               <div className="px-2 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wider mb-1">Groupes</div>
@@ -433,18 +465,26 @@ function NavItem({
   label, icon, count, active, onClick, color,
 }: {
   label: string; icon: React.ReactNode; count?: number; active: boolean; onClick: () => void;
-  color?: 'orange' | 'amber';
+  color?: 'orange' | 'amber' | 'green' | 'blue';
 }) {
   const activeColor = color === 'orange'
     ? 'bg-orange-50 text-orange-700 font-medium'
     : color === 'amber'
       ? 'bg-amber-50 text-amber-700 font-medium'
-      : 'bg-outlook-bg-selected font-medium text-outlook-blue';
+      : color === 'green'
+        ? 'bg-green-50 text-green-700 font-medium'
+        : color === 'blue'
+          ? 'bg-blue-50 text-blue-700 font-medium'
+          : 'bg-outlook-bg-selected font-medium text-outlook-blue';
   const badgeColor = color === 'orange'
     ? 'bg-orange-100 text-orange-600'
     : color === 'amber'
       ? 'bg-amber-100 text-amber-700'
-      : 'bg-gray-100 text-outlook-text-secondary';
+      : color === 'green'
+        ? 'bg-green-100 text-green-700'
+        : color === 'blue'
+          ? 'bg-blue-100 text-blue-700'
+          : 'bg-gray-100 text-outlook-text-secondary';
   return (
     <button
       onClick={onClick}
