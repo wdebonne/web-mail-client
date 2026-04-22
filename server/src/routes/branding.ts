@@ -36,7 +36,8 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
   fileFilter: (_req, file, cb) => {
     const ok = /^image\/(png|jpeg|gif|webp|svg\+xml|x-icon|vnd\.microsoft\.icon)$/.test(file.mimetype);
-    cb(ok ? null : new Error('Type de fichier non supporté'), ok);
+    if (ok) cb(null, true);
+    else cb(new Error('Type de fichier non supporté') as any, false);
   },
 });
 
