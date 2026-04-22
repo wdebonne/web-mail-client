@@ -85,7 +85,7 @@ export default function ContactsPage() {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string | undefined>();
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [showImport, setShowImport] = useState(false);
@@ -162,7 +162,7 @@ export default function ContactsPage() {
     mutationFn: api.deleteContact,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      setSelectedContact(null);
+      setSelectedContactId(null);
       toast.success('Contact supprimé');
     },
   });
@@ -206,6 +206,10 @@ export default function ContactsPage() {
   });
 
   const rawContacts = contactsData?.contacts || [];
+  const selectedContact = useMemo<Contact | null>(
+    () => rawContacts.find((c: Contact) => c.id === selectedContactId) || null,
+    [rawContacts, selectedContactId]
+  );
 
   // Filter locally for favorites + sort
   const contacts = useMemo(() => {
@@ -361,7 +365,7 @@ export default function ContactsPage() {
             icon={<Star size={14} />}
             count={favCount}
             active={isFavView}
-            onClick={() => { setSelectedGroup(FAV_GROUP_ID); setSelectedContact(null); }}
+            onClick={() => { setSelectedGroup(FAV_GROUP_ID); setSelectedContactId(null); }}
             color="amber"
           />
           <NavItem
@@ -369,7 +373,7 @@ export default function ContactsPage() {
             icon={<UserCheck size={14} />}
             count={localCount}
             active={isLocalView}
-            onClick={() => { setSelectedGroup(LOCAL_GROUP_ID); setSelectedContact(null); }}
+            onClick={() => { setSelectedGroup(LOCAL_GROUP_ID); setSelectedContactId(null); }}
             color="green"
           />
           <NavItem
@@ -377,7 +381,7 @@ export default function ContactsPage() {
             icon={<UserX size={14} />}
             count={sendersCount?.total ?? 0}
             active={isSenderView}
-            onClick={() => { setSelectedGroup(SENDER_GROUP_ID); setSelectedContact(null); }}
+            onClick={() => { setSelectedGroup(SENDER_GROUP_ID); setSelectedContactId(null); }}
             color="orange"
           />
           {hasNextcloud && (
@@ -386,7 +390,7 @@ export default function ContactsPage() {
               icon={<Cloud size={14} />}
               count={nextcloudCount}
               active={isNextcloudView}
-              onClick={() => { setSelectedGroup(NEXTCLOUD_GROUP_ID); setSelectedContact(null); }}
+              onClick={() => { setSelectedGroup(NEXTCLOUD_GROUP_ID); setSelectedContactId(null); }}
               color="blue"
             />
           )}
@@ -451,8 +455,8 @@ export default function ContactsPage() {
                   <ContactRow
                     key={c.id}
                     contact={c}
-                    selected={selectedContact?.id === c.id}
-                    onClick={() => setSelectedContact(c)}
+                    selected={selectedContactId === c.id}
+                    onClick={() => setSelectedContactId(c.id)}
                     onFav={(val) => favoriteMutation.mutate({ id: c.id, isFavorite: val })}
                   />
                 ))}
@@ -463,8 +467,8 @@ export default function ContactsPage() {
               <ContactRow
                 key={c.id}
                 contact={c}
-                selected={selectedContact?.id === c.id}
-                onClick={() => setSelectedContact(c)}
+                selected={selectedContactId === c.id}
+                onClick={() => setSelectedContactId(c.id)}
                 onFav={(val) => favoriteMutation.mutate({ id: c.id, isFavorite: val })}
               />
             ))
