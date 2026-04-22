@@ -10,6 +10,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 📤 **Sauvegarde automatique dans "Envoyés"** : copie IMAP après envoi SMTP avec détection automatique du dossier
 - 🤝 **Envoi "de la part de"** : stratégie d'en-têtes optimisée pour la délivrabilité (Sender/Reply-To selon domaine)
 - ⭐ Drapeaux, marquage lu/non-lu, déplacement entre dossiers
+- 🗃️ **Archivage hiérarchique par date** : le bouton « Archiver » classe automatiquement le message dans `Archives/{année}/{mois}` (ex. `Archives/2026/04 - Avril`) en créant les dossiers manquants. Dossier racine et motif des sous-dossiers configurables par l'administrateur.
 - 🖱️ Drag & drop des messages entre dossiers, **y compris entre comptes différents** (Ctrl/Cmd pour copier au lieu de déplacer)
 - 🗂️ **Arborescence de dossiers hiérarchique** : sous-dossiers indentés, imbrication/désimbrication par glisser-déposer (déposer au centre d'un dossier = nest, sur l'en-tête du compte = un-nest)
 - 📋 **Copie de dossier complet entre comptes** via glisser-déposer ou menu contextuel

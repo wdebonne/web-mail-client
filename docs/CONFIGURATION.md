@@ -270,6 +270,32 @@ Depuis **Administration > Système** :
 | Nom de l'application | Affiché dans l'en-tête | `WebMail` |
 | Inscription ouverte | Permettre la création de comptes | `Oui` |
 | Taille max des pièces jointes | En octets | `25 000 000` (25 Mo) |
+| Dossier racine d'archive | Clé `archive_root_folder` — dossier IMAP de base utilisé par le bouton « Archiver » | `Archives` |
+| Motif des sous-dossiers d'archive | Clé `archive_subfolder_pattern` — arborescence construite depuis la date de réception du mail | `{YYYY}/{MM} - {MMMM}` |
+
+#### Motif des sous-dossiers d'archive
+
+Le motif est évalué à partir de la date de réception (`INTERNALDATE` IMAP ou date de l'enveloppe) du message archivé. Les segments sont séparés par `/` ; le délimiteur IMAP réel du serveur (`.` sur Courier, `/` sur Dovecot…) est utilisé lors de la création physique des dossiers.
+
+Jetons disponibles :
+
+| Jeton | Valeur | Exemple (avril 2026) |
+|-------|--------|----------------------|
+| `{YYYY}` | Année sur 4 chiffres | `2026` |
+| `{YY}` | Année sur 2 chiffres | `26` |
+| `{MM}` | Mois sur 2 chiffres | `04` |
+| `{M}` | Mois sans padding | `4` |
+| `{MMMM}` | Nom du mois en français | `Avril` |
+| `{MMM}` | Nom abrégé | `Avr.` |
+
+Exemples de motifs :
+
+- `{YYYY}/{MM} - {MMMM}` → `Archives/2026/04 - Avril` (par défaut)
+- `{YYYY}` → `Archives/2026`
+- `{YYYY}/{MMMM}` → `Archives/2026/Avril`
+- `{YY}/{MM}` → `Archives/26/04`
+
+Les dossiers manquants sont créés automatiquement et souscrits (`SUBSCRIBE`) pour apparaître dans les autres clients IMAP (Thunderbird, Roundcube…).
 
 ### Gestion des utilisateurs
 

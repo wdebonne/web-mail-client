@@ -241,6 +241,19 @@ Supprime un dossier IMAP (`DELETE`).
 
 **Réponse 200 :** `{ "success": true }`
 
+### POST /api/mail/accounts/:accountId/messages/:uid/archive
+
+Archive un message dans une arborescence basée sur la **date de réception** (`INTERNALDATE` IMAP ou date de l'enveloppe). Les dossiers manquants sont créés et souscrits automatiquement avant le `MESSAGE MOVE`. Le dossier racine et le motif des sous-dossiers sont configurés via les paramètres administrateur `archive_root_folder` et `archive_subfolder_pattern` (par défaut : `Archives` et `{YYYY}/{MM} - {MMMM}`).
+
+**Body :**
+```json
+{ "fromFolder": "INBOX" }
+```
+
+**Réponse 200 :** `{ "success": true, "destFolder": "Archives/2026/04 - Avril" }`
+
+Jetons du motif : `{YYYY}`, `{YY}`, `{MM}` (01-12), `{M}` (1-12), `{MMMM}` (Janvier…Décembre), `{MMM}` (abrégé). Le séparateur `/` délimite les segments ; le délimiteur IMAP réel du serveur est utilisé lors de la création (`.`, `/`…).
+
 ### POST /api/mail/messages/transfer
 
 Transfère un message d'un compte/dossier vers un autre compte/dossier. Si source et destination sont sur le même compte, utilise IMAP `MOVE`/`COPY` natif ; sinon `FETCH` + `APPEND`, suivi d'un `DELETE` si mode `move`.

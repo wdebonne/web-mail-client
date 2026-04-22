@@ -9,6 +9,15 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Archivage hiérarchique par date
+- Le bouton **Archiver** (ruban, menu contextuel de la liste, menu « Plus » de la vue mail) déplace désormais le message dans une arborescence basée sur sa **date de réception**, en créant automatiquement les dossiers manquants : par défaut `Archives/{année}/{mois avec nom français}` (ex. `Archives/2026/04 - Avril`).
+- Nouvelle route serveur `POST /api/mail/accounts/:accountId/messages/:uid/archive` et méthode `MailService.archiveMessage()` : détecte le délimiteur IMAP du serveur, lit `internalDate`/`envelope.date`, crée chaque segment de dossier de manière idempotente (et s'y abonne) avant le `MESSAGE MOVE`.
+- Nouveaux paramètres administrateur dans **Administration → Système → Archivage des mails** :
+  - **Dossier racine d'archive** (par défaut : `Archives`).
+  - **Motif des sous-dossiers** (par défaut : `{YYYY}/{MM} - {MMMM}`), avec jetons `{YYYY}`, `{YY}`, `{MM}` (01-12), `{M}` (1-12), `{MMMM}` (Janvier…Décembre), `{MMM}` (abrégé). Le séparateur `/` délimite les segments.
+- Clés `admin_settings` ajoutées : `archive_root_folder`, `archive_subfolder_pattern`.
+- Notification côté client indiquant le dossier de destination effectif, et invalidation du cache des dossiers pour refléter immédiatement les nouveaux dossiers créés.
+
 #### Disposition de la vue mail
 - Nouveau groupe **Disposition** dans l'onglet **Afficher** du ruban (classique et simplifié) regroupant trois menus :
   - **Volet de lecture** : *Afficher à droite* (défaut), *Afficher en bas* ou *Plein écran*. Le choix est persisté (`readingPaneMode`). En mode *Afficher en bas*, la liste des messages est au-dessus et la lecture en dessous, avec une poignée de **redimensionnement vertical** (hauteur persistée dans `listHeight`). En mode *Plein écran*, la liste occupe toute la largeur ; à la sélection d'un mail, celui-ci remplace la liste en pleine largeur avec un bouton **×** pour revenir à la liste.
