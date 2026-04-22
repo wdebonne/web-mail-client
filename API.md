@@ -26,6 +26,7 @@ L'API utilise deux méthodes d'authentification :
 - [O2Switch cPanel](#o2switch-cpanel)
 - [Plugins](#plugins)
 - [Recherche](#recherche)
+- [Notifications push](#notifications-push)
 - [Codes d'erreur](#codes-derreur)
 
 ---
@@ -1219,6 +1220,89 @@ Recherche globale dans les emails, contacts et événements.
 
 ---
 
+## Notifications push
+
+Les endpoints ci-dessous permettent de gérer les abonnements **Web Push** (VAPID) depuis le client. Voir [docs/PWA.md](docs/PWA.md#notifications-push-natives) pour la vue d'ensemble et la configuration serveur.
+
+Toutes les routes sauf `/api/push/public-key` nécessitent une authentification (elles utilisent le middleware global `/api/push`).
+
+### GET /api/push/public-key
+
+Renvoie la clé publique VAPID nécessaire pour créer une souscription côté navigateur.
+
+**Réponse :**
+```json
+{
+  "publicKey": "BMxj...base64url..."
+}
+```
+
+**Erreur `503`** si le service push n'a pas pu s'initialiser au boot (voir logs serveur).
+
+### POST /api/push/subscribe
+
+Enregistre (ou met à jour si l'`endpoint` existe déjà) la souscription d'un appareil pour l'utilisateur authentifié.
+
+**Body :**
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/...",
+  "keys": {
+    "p256dh": "BDxF...",
+    "auth": "u3h..."
+  },
+  "userAgent": "Mozilla/5.0 ...",
+  "platform": "windows"
+}
+```
+
+`platform` : `windows` | `mac` | `android` | `ios` | `linux` | `other` (détecté côté client).
+
+**Réponse :** `{ "ok": true }`
+
+### POST /api/push/unsubscribe
+
+Supprime la souscription identifiée par son `endpoint`.
+
+**Body :**
+```json
+{ "endpoint": "https://fcm.googleapis.com/fcm/send/..." }
+```
+
+**Réponse :** `{ "ok": true }`
+
+### POST /api/push/test
+
+Envoie une notification de test à tous les appareils actuellement enregistrés pour l'utilisateur.
+
+**Réponse :**
+```json
+{ "ok": true, "sent": 2 }
+```
+
+`sent` indique le nombre d'appareils ayant reçu la notification (les abonnements expirés sont purgés silencieusement).
+
+### GET /api/push/subscriptions
+
+Liste les appareils actuellement enregistrés pour l'utilisateur (pour affichage dans les paramètres).
+
+**Réponse :**
+```json
+[
+  {
+    "id": "uuid",
+    "endpoint": "https://...",
+    "user_agent": "Mozilla/5.0 ...",
+    "platform": "android",
+    "enabled": true,
+    "created_at": "2026-04-22T08:00:00Z",
+    "last_used_at": "2026-04-22T09:30:00Z"
+  }
+]
+```
+
+---
+
 ## Codes d'erreur
 
 | Code | Signification |
@@ -1251,25 +1335,28 @@ Connexion WebSocket pour les notifications en temps réel.
 
 **URL :** `ws://localhost:3000/ws?token=<jwt_token>`
 
+> 💡 Pour recevoir les notifications **même lorsque l'application est fermée** (mobile en arrière-plan, onglet inactif, etc.), utilisez en complément les [notifications push natives](#notifications-push). Le serveur les envoie en parallèle via le helper `notifyWithPush()`.
+
 ### Messages reçus
 
 ```json
 {
-  "type": "new_email",
+  "type": "new-mail",
   "data": {
     "accountId": "uuid",
     "folder": "INBOX",
     "uid": 1235,
-    "from": "marie@example.com",
-    "subject": "Nouveau message"
-  }
+    "subject": "Nouveau message",
+    "from": { "address": "marie@example.com", "name": "Marie" }
+  },
+  "timestamp": "2026-04-22T10:00:00Z"
 }
 ```
 
 Types de notifications :
 | Type | Description |
 |------|-------------|
-| `new_email` | Nouvel email reçu |
+| `new-mail` | Nouvel email reçu (émis par le sondeur IMAP périodique) |
 | `email_flags` | Drapeaux modifiés |
 | `calendar_event` | Événement modifié |
 | `plugin_result` | Résultat d'une action plugin |

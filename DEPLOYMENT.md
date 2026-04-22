@@ -62,6 +62,14 @@ NODE_ENV=production
 NEXTCLOUD_URL=https://cloud.example.com
 NEXTCLOUD_USERNAME=admin
 NEXTCLOUD_PASSWORD=votre_mot_de_passe
+
+# OPTIONNEL - Notifications push natives (Web Push)
+# Si omis, une paire VAPID est générée automatiquement au premier démarrage
+# et persistée en base (table admin_settings).
+# VAPID_PUBLIC_KEY=B...
+# VAPID_PRIVATE_KEY=...
+# VAPID_CONTACT=mailto:admin@example.com
+# NEW_MAIL_POLL_INTERVAL_MS=60000
 ```
 
 > ⚠️ **Important** : Générez toujours des clés uniques et fortes pour `SESSION_SECRET` et `ENCRYPTION_KEY` en production.

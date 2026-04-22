@@ -11,6 +11,7 @@ WebMail est une **Progressive Web App** (PWA) complète qui permet :
 - ✏️ Rédaction et mise en file d'attente des emails
 - 🔄 Envoi automatique au retour de la connexion
 - 💾 Cache local des contacts et calendriers
+- 🔔 **Notifications push natives** (Web Push / VAPID) sur Windows, macOS, Android et iOS 16.4+ (PWA installée)
 
 ---
 
@@ -40,19 +41,30 @@ WebMail est une **Progressive Web App** (PWA) complète qui permet :
 
 ### Configuration (`client/src/pwa/register.ts`)
 
-Le Service Worker est enregistré au démarrage de l'application :
+Le Service Worker est enregistré au démarrage de l'application via `vite-plugin-pwa` (stratégie **`injectManifest`**) :
 
 ```typescript
-// Enregistrement avec notification de mise à jour
-registerSW({
+import { registerSW as vitePwaRegister } from 'virtual:pwa-register';
+
+const updateSW = vitePwaRegister({
+  immediate: true,
   onNeedRefresh() {
-    // Propose à l'utilisateur de recharger
+    if (confirm('Une nouvelle version est disponible. Recharger ?')) {
+      updateSW(true);
+    }
   },
   onOfflineReady() {
-    // L'application est prête pour le hors-ligne
-  }
+    console.log('Application prête pour le mode hors-ligne');
+  },
 });
 ```
+
+Le Service Worker lui-même est écrit en TypeScript dans [`client/src/sw.ts`](../client/src/sw.ts) et gère :
+
+- Le **precache Workbox** des assets de build.
+- Les stratégies `NetworkFirst` / `StaleWhileRevalidate` pour `/api/mail`, `/api/contacts`, `/api/calendar`.
+- La fallback SPA (`index.html`) pour toute navigation hors `/api`.
+- Les événements **`push`**, **`notificationclick`** et **`pushsubscriptionchange`** (voir la section [Notifications push natives](#notifications-push-natives) ci-dessous).
 
 ### Stratégies de cache (Workbox)
 
@@ -68,29 +80,152 @@ registerSW({
 
 ```typescript
 VitePWA({
-  registerType: 'prompt',
-  workbox: {
-    globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-    runtimeCaching: [
-      {
-        urlPattern: /^https?:\/\/.*\/api\/.*/,
-        handler: 'NetworkFirst',
-        options: {
-          cacheName: 'api-cache',
-          networkTimeoutSeconds: 5
-        }
-      }
-    ]
+  registerType: 'autoUpdate',
+  strategies: 'injectManifest',
+  srcDir: 'src',
+  filename: 'sw.ts',
+  injectRegister: false,
+  injectManifest: {
+    globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
   },
   manifest: {
-    name: 'WebMail',
+    name: 'WebMail - Client de messagerie',
     short_name: 'WebMail',
-    theme_color: '#0078d4',
-    background_color: '#f3f2f1',
-    display: 'standalone'
-  }
+    theme_color: '#0078D4',
+    background_color: '#ffffff',
+    display: 'standalone',
+    orientation: 'any',
+    start_url: '/',
+    scope: '/',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  },
 })
 ```
+
+> ⚠️ Le passage de la stratégie `generateSW` (par défaut) à `injectManifest` est **indispensable** pour prendre en charge les événements `push` et `notificationclick` dans un Service Worker personnalisé.
+
+---
+
+## Notifications push natives
+
+Les notifications push s'appuient sur l'API **Web Push** (standard W3C) et un jeu de clés **VAPID**. Elles fonctionnent sur :
+
+| Plateforme | Navigateur | Prérequis |
+|-----------|------------|-----------|
+| Windows / macOS / Linux (desktop) | Chrome, Edge, Firefox, Brave | Installation PWA recommandée (pas obligatoire) |
+| Android | Chrome, Edge, Firefox, Samsung Internet | Installation PWA recommandée |
+| **iOS / iPadOS 16.4+** | **Safari uniquement** | **Installation PWA obligatoire** (Partager → Sur l'écran d'accueil) |
+| iOS / iPadOS < 16.4 | — | Non pris en charge (limitation Apple) |
+
+### Architecture
+
+```
+┌────────────────────┐    subscribe         ┌──────────────────┐
+│ Client (navigateur)│ ──────────────────▶ │  /api/push/*     │
+│  Service Worker    │                      │  (Express)       │
+│  (client/src/sw.ts)│ ◀── notification ─── │  web-push lib    │
+└────────────────────┘       (WebPush)      └──────────────────┘
+          ▲                                           │
+          │                                           ▼
+     Navigateur                              PostgreSQL
+     système                              push_subscriptions
+                                          admin_settings (VAPID)
+```
+
+### Clés VAPID
+
+- Générées automatiquement au premier démarrage via `webpush.generateVAPIDKeys()` si `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` ne sont pas définies.
+- Stockées dans la table `admin_settings` (clés `vapid_public_key` / `vapid_private_key`), donc **persistantes** entre redémarrages.
+- Les variables d'environnement, si définies, prennent le pas sur les valeurs en base.
+
+### Base de données
+
+Table `push_subscriptions` :
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | UUID | Clé primaire |
+| `user_id` | UUID FK | Utilisateur propriétaire |
+| `endpoint` | TEXT UNIQUE | URL du service push du navigateur |
+| `p256dh` | TEXT | Clé publique ECDH du client |
+| `auth_key` | TEXT | Secret d'authentification |
+| `user_agent` | TEXT | User-Agent au moment de l'inscription |
+| `platform` | VARCHAR(50) | `windows` / `mac` / `android` / `ios` / `linux` / `other` |
+| `enabled` | BOOLEAN | Souscription active |
+| `created_at` / `last_used_at` | TIMESTAMP | Horodatages |
+
+Les abonnements retournant HTTP 404/410 (navigateur désinstallé, permission révoquée, etc.) sont **purgés automatiquement** à la première tentative d'envoi.
+
+### API côté serveur
+
+Toutes les routes nécessitent une authentification (JWT ou session).
+
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/push/public-key` | Renvoie la clé VAPID publique (nécessaire pour s'abonner côté client) |
+| POST | `/api/push/subscribe` | Enregistre / met à jour une souscription |
+| POST | `/api/push/unsubscribe` | Supprime une souscription (par `endpoint`) |
+| POST | `/api/push/test` | Envoie une notification de test à tous les appareils de l'utilisateur |
+| GET | `/api/push/subscriptions` | Liste les appareils actuellement enregistrés |
+
+### API côté client
+
+```typescript
+import {
+  pushSupported,
+  pushPermission,
+  subscribeToPush,
+  unsubscribeFromPush,
+  sendTestPush,
+  getExistingSubscription,
+  listenForNotificationClicks,
+} from './pwa/push';
+
+// Abonnement (demande la permission automatiquement)
+await subscribeToPush();
+
+// Test
+const deviceCount = await sendTestPush();
+
+// Désabonnement
+await unsubscribeFromPush();
+
+// Navigation suite à un clic sur notification
+listenForNotificationClicks((url) => navigate(url));
+```
+
+### Déclenchement des notifications
+
+Le module [`server/src/services/newMailPoller.ts`](../server/src/services/newMailPoller.ts) sonde l'INBOX IMAP de chaque compte mail **dont l'utilisateur possède au moins un abonnement push actif** :
+
+- Intervalle configurable via `NEW_MAIL_POLL_INTERVAL_MS` (défaut 60 s, minimum 30 s).
+- Détection incrémentale par UID maximal vu (cache mémoire). Lors du **tout premier passage**, la valeur courante est enregistrée comme baseline — aucune notification rétroactive.
+- Pour chaque nouvel UID, une notification contient : **nom de l'expéditeur**, **adresse email du compte**, **objet** et un **aperçu** de 160 caractères.
+- Anti-flood : **max 5 notifications** par compte et par cycle.
+- Envoi via le helper `notifyWithPush(userId, event, data, pushPayload, mode)` qui combine **WebSocket** (onglet ouvert) et **Web Push** (autres appareils).
+
+### Activer les notifications (utilisateur)
+
+1. Ouvrir **Paramètres** → **Notifications**.
+2. Cliquer sur **Activer**.
+3. Accepter la demande de permission affichée par le navigateur / l'OS.
+4. (Facultatif) Cliquer sur **Envoyer une notification de test** pour vérifier.
+
+Pour **iOS / iPadOS** : l'application doit d'abord être installée (Safari → bouton Partager → **Sur l'écran d'accueil**), puis ouverte depuis l'icône installée. Les notifications push n'y fonctionnent **pas** depuis un onglet Safari classique.
+
+### Dépannage push
+
+| Symptôme | Cause probable / solution |
+|----------|---------------------------|
+| Bouton **Activer** désactivé | Navigateur non compatible (Safari hors PWA sur iOS, anciens navigateurs) |
+| Message « Notifications bloquées » | Permission refusée — à ré-autoriser manuellement dans les paramètres du site |
+| Inscription réussie mais aucune notification | Vérifier que `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` sont stables (sinon les souscriptions sont invalidées) ; vérifier les logs serveur |
+| Notifications reçues en double | Plusieurs onglets ouverts ont chacun une souscription — normal, chaque installation PWA est un appareil distinct |
+| `503 Push service non configuré` sur `/public-key` | Le service n'a pas réussi à s'initialiser au boot — consulter les logs pour `Failed to initialize push service` |
 
 ---
 
@@ -266,6 +401,7 @@ Le fichier manifest est généré automatiquement par `vite-plugin-pwa` avec :
 | Gérer les pièces jointes | ✅ | ❌ |
 | Plugins | ✅ | ❌ |
 | Administration | ✅ | ❌ |
+| **Notifications push natives** | ✅ | ✅ *(réception ; requiert connexion au moment de l'envoi serveur)* |
 
 ---
 

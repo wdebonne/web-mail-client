@@ -107,6 +107,7 @@ Vue d'ensemble de l'architecture technique de WebMail.
 | Nodemailer | Client SMTP |
 | Mailparser | Parsing des emails |
 | ws | Serveur WebSocket |
+| web-push | Notifications push natives (VAPID) |
 | jsonwebtoken | Tokens JWT |
 | bcryptjs | Hachage mots de passe |
 | Helmet | Sécurisation HTTP |
@@ -169,6 +170,28 @@ Serveur IMAP ──► MailService (ImapFlow)
                       │
                       ▼
               UI mise à jour
+```
+
+### Notifications push natives (Web Push)
+
+```
+newMailPoller (60 s, IMAP)
+          │
+          ▼
+  Nouveaux UID détectés
+          │
+          ▼
+  notifyWithPush()
+      │         │
+      ▼         ▼
+WebSocket   web-push + VAPID
+(onglet     (Service Worker
+ ouvert)    → OS natif)
+      │         │
+      ▼         ▼
+  UI live    Notification système
+             (Windows, macOS,
+              Android, iOS PWA)
 ```
 
 ### Auto-enregistrement des expéditeurs

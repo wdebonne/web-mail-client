@@ -33,6 +33,25 @@ Toutes les variables sont définies dans le fichier `.env` à la racine du proje
 | `NEXTCLOUD_PASSWORD` | Mot de passe NextCloud | *(non défini)* |
 | `NEXTCLOUD_ENABLED` | Activer l'intégration NextCloud | `false` |
 
+### Variables Notifications push (optionnelles)
+
+Voir [docs/PWA.md](PWA.md#notifications-push-natives) pour le guide complet. Si les clés VAPID ne sont pas fournies, elles sont **générées automatiquement** au premier démarrage et persistées en base (table `admin_settings`).
+
+| Variable | Description | Défaut |
+|----------|-------------|--------|
+| `VAPID_PUBLIC_KEY` | Clé publique VAPID (Web Push) | *(auto-générée)* |
+| `VAPID_PRIVATE_KEY` | Clé privée VAPID (Web Push) | *(auto-générée)* |
+| `VAPID_CONTACT` | Contact d'administrateur (format `mailto:` ou URL) transmis aux services push | `mailto:admin@example.com` |
+| `NEW_MAIL_POLL_INTERVAL_MS` | Intervalle (ms) du sondeur IMAP pour détecter les nouveaux mails. Minimum 30000. | `60000` |
+
+Pour générer manuellement une paire de clés :
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Les valeurs obtenues peuvent être collées telles quelles dans `.env` (formats base64url).
+
 ### Variables client (build-time, préfixe `VITE_`)
 
 Ces variables sont injectées dans le bundle au moment du build du client (`cd client && npm run build`). Elles doivent donc être présentes lors du build Docker.

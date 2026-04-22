@@ -75,6 +75,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 📖 Lecture des mails en mode hors-ligne
 - ✏️ Rédaction hors-ligne avec envoi automatique au retour de connexion
 - 💾 Cache IndexedDB (emails, contacts, calendrier)
+- 🔔 **Notifications push natives** (Web Push / VAPID) sur Windows, macOS, Android et iOS 16.4+ (PWA installée), même application fermée — activation depuis Paramètres → Notifications
 
 ### Système de Plugins
 - 🔌 Architecture extensible
