@@ -348,6 +348,11 @@ export const api = {
       '/admin/calendars/restore',
       { method: 'POST', body: JSON.stringify({ payload, strategy }) }
     ),
+  importAdminCalendarCaldav: (data: { url: string; ownerId: string; username?: string; password?: string; color?: string }) =>
+    request<{ ok: boolean; calendars: number; events: number; needsAuth?: boolean }>(
+      '/admin/calendars/import-caldav',
+      { method: 'POST', body: JSON.stringify(data) }
+    ),
   pushAdminCalendarToCaldav: (id: string, mailAccountId: string) =>
     request<{ ok: boolean; url: string; events: number }>(`/admin/calendars/${id}/push-to-caldav`, {
       method: 'POST',

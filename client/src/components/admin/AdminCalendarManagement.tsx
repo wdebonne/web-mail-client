@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar as CalendarIcon, Trash2, Edit2, UserPlus, X, Download, Upload, Save,
-  Eye, CloudUpload, RefreshCw, Users as UsersIcon, AlertCircle, Check,
+  Eye, CloudUpload, CloudDownload, RefreshCw, Users as UsersIcon, AlertCircle, Check, Link2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../../api';
@@ -60,6 +60,7 @@ export default function AdminCalendarManagement() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [assignDialogFor, setAssignDialogFor] = useState<AdminCalendar | null>(null);
   const [pushDialogFor, setPushDialogFor] = useState<AdminCalendar | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: calendars = [], isLoading } = useQuery<AdminCalendar[]>({
@@ -138,6 +139,12 @@ export default function AdminCalendarManagement() {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold">Gestion des calendriers</h3>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setImportDialogOpen(true)}
+            className="px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover flex items-center gap-1.5"
+          >
+            <CloudDownload size={14} /> Ajouter via CalDAV
+          </button>
           <button
             onClick={handleBackup}
             className="px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover flex items-center gap-1.5"
@@ -241,6 +248,14 @@ export default function AdminCalendarManagement() {
           calendar={pushDialogFor}
           mailAccounts={mailAccounts}
           onClose={() => setPushDialogFor(null)}
+        />
+      )}
+
+      {importDialogOpen && (
+        <ImportCaldavDialog
+          users={users}
+          onClose={() => setImportDialogOpen(false)}
+          onImported={() => qc.invalidateQueries({ queryKey: ['admin-calendars'] })}
         />
       )}
     </div>
@@ -537,6 +552,146 @@ function PushToCalDAVDialog({ calendar, mailAccounts, onClose }: { calendar: Adm
             className="px-3 py-1.5 text-sm bg-outlook-blue text-white rounded hover:bg-outlook-blue-dark disabled:opacity-50 flex items-center gap-1"
           >
             <CloudUpload size={14} /> Pousser
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportCaldavDialog({ users, onClose, onImported }: {
+  users: any[];
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [url, setUrl] = useState('');
+  const [ownerId, setOwnerId] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [needsAuth, setNeedsAuth] = useState(false);
+  const [color, setColor] = useState('#0078D4');
+
+  const importMut = useMutation({
+    mutationFn: () => api.importAdminCalendarCaldav({
+      url: url.trim(),
+      ownerId,
+      username: username.trim() || undefined,
+      password: password || undefined,
+      color,
+    }),
+    onSuccess: (r: any) => {
+      if (r?.needsAuth) {
+        setNeedsAuth(true);
+        toast('Authentification requise — renseignez l\'identifiant et le mot de passe.', { icon: '🔒' });
+        return;
+      }
+      toast.success(`${r.calendars} calendrier(s), ${r.events} événement(s) importés`);
+      onImported();
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message || 'Import impossible'),
+  });
+
+  const disabled = !url.trim() || !ownerId || importMut.isPending;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg bg-white dark:bg-outlook-bg-dark rounded-lg shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-outlook-border">
+          <div className="flex items-center gap-2">
+            <Link2 size={16} className="text-outlook-blue" />
+            <h3 className="font-semibold">Ajouter un calendrier via CalDAV</h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-outlook-bg-hover"><X size={16} /></button>
+        </div>
+
+        <div className="p-5 space-y-3">
+          <p className="text-xs text-outlook-text-secondary">
+            Renseignez l'URL CalDAV complète (ex. <code>https://colorant.o2switch.net:2080/calendars/testmail@villepavilly.fr/calendar</code>). Si le serveur exige des identifiants, ils vous seront demandés automatiquement.
+          </p>
+
+          <div>
+            <label className="block text-xs font-medium mb-1">URL CalDAV</label>
+            <input
+              type="url"
+              autoFocus
+              value={url}
+              placeholder="https://…"
+              onChange={(e) => { setUrl(e.target.value); setNeedsAuth(false); }}
+              className="w-full px-3 py-1.5 text-sm border border-outlook-border rounded bg-white dark:bg-outlook-bg-dark focus:outline-none focus:ring-2 focus:ring-outlook-blue"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium mb-1">Propriétaire</label>
+              <select
+                value={ownerId}
+                onChange={(e) => setOwnerId(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded bg-white dark:bg-outlook-bg-dark"
+              >
+                <option value="">— Sélectionner —</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.email}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Couleur par défaut</label>
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="h-8 w-12 border border-outlook-border rounded cursor-pointer"
+              />
+            </div>
+          </div>
+
+          {needsAuth && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-3 text-xs text-yellow-900 dark:text-yellow-200 flex gap-2">
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>Le serveur CalDAV demande une authentification. Renseignez l'identifiant et le mot de passe, puis relancez l'import.</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium mb-1">
+                Identifiant {needsAuth ? <span className="text-red-600">*</span> : <span className="text-outlook-text-secondary">(si requis)</span>}
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="user@example.com"
+                className="w-full px-3 py-1.5 text-sm border border-outlook-border rounded bg-white dark:bg-outlook-bg-dark focus:outline-none focus:ring-2 focus:ring-outlook-blue"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">
+                Mot de passe {needsAuth ? <span className="text-red-600">*</span> : <span className="text-outlook-text-secondary">(si requis)</span>}
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-1.5 text-sm border border-outlook-border rounded bg-white dark:bg-outlook-bg-dark focus:outline-none focus:ring-2 focus:ring-outlook-blue"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-outlook-border">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover">
+            Annuler
+          </button>
+          <button
+            disabled={disabled}
+            onClick={() => importMut.mutate()}
+            className="px-3 py-1.5 text-sm bg-outlook-blue text-white rounded hover:bg-outlook-blue-dark disabled:opacity-50 flex items-center gap-2"
+          >
+            <CloudDownload size={14} />
+            {importMut.isPending ? 'Import…' : 'Importer'}
           </button>
         </div>
       </div>

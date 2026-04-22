@@ -266,6 +266,8 @@ const mailAccountSchema = z.object({
   signatureHtml: z.string().optional(),
   signatureText: z.string().optional(),
   color: z.string().default('#0078D4'),
+  // When true, or when imapHost ends with .o2switch.net, pre-fill CalDAV + CardDAV collection URLs.
+  o2switchAutoSync: z.boolean().optional(),
 });
 
 // List all mail accounts
@@ -299,6 +301,25 @@ adminRouter.post('/mail-accounts', async (req: AuthRequest, res) => {
        RETURNING id, name, email, imap_host, imap_port, smtp_host, smtp_port, is_shared, color`,
       [data.name, data.email, data.imapHost, data.imapPort, data.imapSecure, data.smtpHost, data.smtpPort, data.smtpSecure, data.username, encryptedPassword, data.isShared, data.signatureHtml, data.signatureText, data.color]
     );
+
+    const accountId: string = result.rows[0].id;
+
+    // O2switch auto-configuration: pre-fill CalDAV + CardDAV URLs so every future assignee
+    // gets CalDAV+CardDAV sync immediately once they are attached to the mailbox.
+    const isO2switch = data.o2switchAutoSync === true || /\.o2switch\.net$/i.test(data.imapHost);
+    if (isO2switch) {
+      const cpanelHost = /o2switch\.net$/i.test(data.imapHost) ? data.imapHost : 'colorant.o2switch.net';
+      const caldavUrl = `https://${cpanelHost}:2080/calendars/${data.email}/calendar`;
+      const carddavUrl = `https://${cpanelHost}:2080/addressbooks/${data.email}/addressbook`;
+      await pool.query(
+        `UPDATE mail_accounts SET
+           caldav_url = $1, caldav_username = $2, caldav_sync_enabled = true,
+           carddav_url = $3, carddav_username = $2, carddav_sync_enabled = true,
+           updated_at = NOW()
+         WHERE id = $4`,
+        [caldavUrl, data.email, carddavUrl, accountId]
+      );
+    }
 
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
@@ -435,6 +456,30 @@ adminRouter.post('/mail-accounts/:id/assignments', async (req: AuthRequest, res)
     );
 
     res.status(201).json(result.rows[0]);
+
+    // If this assignment is on an account configured with CalDAV, do an initial pull in the
+    // background so the user sees remote calendars right away. Fire-and-forget.
+    try {
+      const acc = await pool.query(
+        `SELECT caldav_url, caldav_sync_enabled, password_encrypted, color, email
+         FROM mail_accounts WHERE id = $1`,
+        [req.params.id]
+      );
+      const row = acc.rows[0];
+      if (row && row.caldav_sync_enabled && row.caldav_url && row.password_encrypted) {
+        const { CalDAVService } = await import('../services/caldav');
+        const { decrypt } = await import('../utils/encryption');
+        const svc = new CalDAVService({
+          baseUrl: row.caldav_url,
+          username: row.email,
+          password: decrypt(row.password_encrypted),
+        });
+        svc.syncForMailAccount(userId, req.params.id, row.color || undefined)
+          .catch(err => logger.error(err, 'Initial CalDAV sync after assignment failed'));
+      }
+    } catch (e) {
+      logger.error(e as Error, 'Assignment CalDAV bootstrap failed');
+    }
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1116,6 +1161,121 @@ adminRouter.delete('/calendars/:id', async (req: AuthRequest, res) => {
     await addLog(req.userId, 'calendar.delete', 'calendars', req, { id: req.params.id, name: result.rows[0].name }, 'calendar', req.params.id);
     res.json({ success: true });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Import a calendar collection (or all collections at a given DAV root) via CalDAV URL.
+// - Tries without credentials first; if the server returns 401 the client is expected to
+//   re-submit with `username` and `password`.
+// - Creates one row in `calendars` per remote collection, owned by `ownerId`, and imports
+//   events in a [-1 month, +6 months] window.
+adminRouter.post('/calendars/import-caldav', async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      url: z.string().url(),
+      username: z.string().optional(),
+      password: z.string().optional(),
+      ownerId: z.string().uuid(),
+      color: z.string().optional(),
+    });
+    const { url, username, password, ownerId, color } = schema.parse(req.body);
+
+    // Ensure owner exists
+    const owner = await pool.query('SELECT id FROM users WHERE id = $1', [ownerId]);
+    if (owner.rows.length === 0) return res.status(404).json({ error: 'Utilisateur propriétaire introuvable' });
+
+    const { CalDAVService } = await import('../services/caldav');
+    const svc = new CalDAVService({
+      baseUrl: url,
+      username: username || '',
+      password: password || '',
+    });
+
+    // Probe connection first so we can report "auth required" cleanly.
+    const probe = await svc.testConnection();
+    if (!probe.ok) {
+      if (probe.status === 401 || probe.status === 403) {
+        // Return 200 so the client-side `request` helper doesn't treat this as a global session
+        // expiry; the UI interprets `needsAuth` and re-prompts for credentials.
+        return res.json({ ok: false, needsAuth: true, error: 'Authentification requise' });
+      }
+      return res.status(400).json({ error: probe.error || `Connexion échouée (${probe.status || 'erreur réseau'})` });
+    }
+
+    const remoteCalendars = await svc.getCalendars();
+    if (remoteCalendars.length === 0) {
+      return res.status(400).json({ error: 'Aucune collection de calendrier trouvée à cette URL' });
+    }
+
+    const start = new Date(); start.setMonth(start.getMonth() - 1);
+    const end = new Date(); end.setMonth(end.getMonth() + 6);
+
+    let importedCalendars = 0;
+    let importedEvents = 0;
+
+    for (const cal of remoteCalendars) {
+      // Look up an existing standalone-CalDAV calendar for this user + href to avoid duplicates
+      const existing = await pool.query(
+        `SELECT id FROM calendars
+         WHERE user_id = $1 AND external_id = $2 AND mail_account_id IS NULL
+         LIMIT 1`,
+        [ownerId, cal.href]
+      );
+
+      let calendarId: string;
+      if (existing.rows[0]) {
+        const upd = await pool.query(
+          `UPDATE calendars SET name = $1, color = COALESCE(color, $2), caldav_url = $3, source = 'caldav', updated_at = NOW()
+           WHERE id = $4 RETURNING id`,
+          [cal.name, cal.color || color || '#0078D4', cal.href, existing.rows[0].id]
+        );
+        calendarId = upd.rows[0].id;
+      } else {
+        const ins = await pool.query(
+          `INSERT INTO calendars (user_id, name, color, source, caldav_url, external_id)
+           VALUES ($1, $2, $3, 'caldav', $4, $5)
+           RETURNING id`,
+          [ownerId, cal.name, cal.color || color || '#0078D4', cal.href, cal.href]
+        );
+        calendarId = ins.rows[0].id;
+      }
+      importedCalendars++;
+
+      let events: any[] = [];
+      try {
+        events = await svc.getEvents(cal.href, start, end);
+      } catch (e) {
+        logger.error(e as Error, `CalDAV getEvents failed for ${cal.href}`);
+        continue;
+      }
+
+      for (const ev of events) {
+        if (!ev.startDate || !ev.endDate) continue;
+        await pool.query(
+          `INSERT INTO calendar_events (calendar_id, title, description, location, start_date, end_date, all_day, attendees, ical_uid, ical_data, external_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (calendar_id, ical_uid) WHERE external_id IS NOT NULL DO UPDATE SET
+             title = EXCLUDED.title, description = EXCLUDED.description, location = EXCLUDED.location,
+             start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date,
+             all_day = EXCLUDED.all_day, attendees = EXCLUDED.attendees,
+             ical_data = EXCLUDED.ical_data, updated_at = NOW()`,
+          [calendarId, ev.title, ev.description, ev.location, ev.startDate, ev.endDate, ev.allDay,
+           JSON.stringify(ev.attendees || []), ev.uid, ev.icalData, ev.uid]
+        );
+        importedEvents++;
+      }
+    }
+
+    await addLog(req.userId, 'calendar.import_caldav', 'calendars', req,
+      { url, ownerId, calendars: importedCalendars, events: importedEvents });
+
+    res.json({ ok: true, calendars: importedCalendars, events: importedEvents });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides', details: error.errors });
+    }
+    logger.error(error as Error, 'CalDAV import failed');
     res.status(500).json({ error: error.message });
   }
 });

@@ -796,6 +796,9 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
   const [isShared, setIsShared] = useState(account?.is_shared || false);
   const [color, setColor] = useState(account?.color || '#0078D4');
   const [signatureHtml, setSignatureHtml] = useState(account?.signature_html || '');
+  const [o2switchAutoSync, setO2switchAutoSync] = useState<boolean>(
+    account ? !!account.caldav_sync_enabled : true,
+  );
 
   const mutation = useMutation({
     mutationFn: (data: any) => account ? api.updateAdminMailAccount(account.id, data) : api.createAdminMailAccount(data),
@@ -813,6 +816,7 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
       name, email, imapHost, imapPort, smtpHost, smtpPort,
       username: username || email, password: password || undefined,
       isShared, color, signatureHtml,
+      o2switchAutoSync,
     });
   };
 
@@ -874,6 +878,20 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
               <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-8 h-8 border-0 cursor-pointer" />
             </div>
           </div>
+          <label className="flex items-start gap-2 text-sm p-2 rounded border border-outlook-border bg-outlook-bg-hover/30">
+            <input
+              type="checkbox"
+              checked={o2switchAutoSync}
+              onChange={(e) => setO2switchAutoSync(e.target.checked)}
+              className="rounded mt-0.5"
+            />
+            <span>
+              <span className="font-medium">Synchronisation O2Switch (CalDAV + CardDAV)</span>
+              <span className="block text-xs text-outlook-text-secondary">
+                Pré-remplit les URLs <code>https://&lt;cpanel&gt;:2080/calendars/&lt;email&gt;/calendar</code> et <code>/addressbooks/&lt;email&gt;/addressbook</code> et active la synchro immédiate pour les utilisateurs assignés.
+              </span>
+            </span>
+          </label>
           <div>
             <label className="text-xs text-outlook-text-secondary">Signature (HTML)</label>
             <textarea value={signatureHtml} onChange={(e) => setSignatureHtml(e.target.value)} rows={3} placeholder="<p>Cordialement,<br/>Nom</p>" className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm resize-none font-mono" />
