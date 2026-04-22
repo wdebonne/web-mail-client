@@ -142,6 +142,12 @@ export const api = {
       body: JSON.stringify({ fromFolder, toFolder }),
     }),
 
+  archiveMessage: (accountId: string, uid: number, fromFolder: string) =>
+    request<{ success: boolean; destFolder: string }>(
+      `/mail/accounts/${accountId}/messages/${uid}/archive`,
+      { method: 'POST', body: JSON.stringify({ fromFolder }) }
+    ),
+
   transferMessage: (params: {
     srcAccountId: string;
     srcFolder: string;

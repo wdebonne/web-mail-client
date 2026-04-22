@@ -29,12 +29,14 @@ interface MessageViewProps {
   onDelete: () => void;
   onToggleFlag: () => void;
   onMove: (folder: string) => void;
+  /** Archive the message using the server-side dated folder tree. */
+  onArchive?: () => void;
   attachmentMinVisibleKb?: number;
   attachmentActionMode?: AttachmentActionMode;
 }
 
 export default function MessageView({
-  message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove, attachmentMinVisibleKb = 0, attachmentActionMode = 'preview',
+  message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove, onArchive, attachmentMinVisibleKb = 0, attachmentActionMode = 'preview',
 }: MessageViewProps) {
   const [showMore, setShowMore] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachmentState | null>(null);
@@ -321,7 +323,7 @@ export default function MessageView({
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setShowMore(false)} />
                     <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
-                      <button onClick={() => { onMove('Archive'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                      <button onClick={() => { (onArchive ? onArchive() : onMove('Archive')); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
                         <Archive size={14} /> Archiver
                       </button>
                       <button onClick={() => { onMove('Junk'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">

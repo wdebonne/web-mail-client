@@ -230,6 +230,26 @@ export default function MailPage() {
     },
   });
 
+  // Archive mutation — server-side builds Archives/{year}/{month} tree
+  // (configurable by admin) using the message's reception date.
+  const archiveMutation = useMutation({
+    mutationFn: ({ uid, accountId, fromFolder }: { uid: number; accountId?: string; fromFolder?: string }) => {
+      const accId = accountId || selectedAccount?.id;
+      const src = fromFolder || selectedFolder;
+      if (!accId) return Promise.resolve({ success: false, destFolder: '' });
+      return api.archiveMessage(accId, uid, src);
+    },
+    onSuccess: (data: any, { uid }) => {
+      removeMessage(uid);
+      const where = data?.destFolder ? ` (${data.destFolder})` : '';
+      toast.success(`Message archivé${where}`);
+      queryClient.invalidateQueries({ queryKey: ['folders'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Erreur d\'archivage');
+    },
+  });
+
   // Copy mutation
   const copyMutation = useMutation({
     mutationFn: ({ uid, toFolder, accountId, fromFolder }: { uid: number; toFolder: string; accountId?: string; fromFolder?: string }) => {
@@ -887,7 +907,7 @@ export default function MailPage() {
           onArchive={() => {
             if (!selectedMessage) return;
             const o = originOf(selectedMessage);
-            moveMutation.mutate({ uid: selectedMessage.uid, toFolder: 'Archive', accountId: o.accountId, fromFolder: o.folder });
+            archiveMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, fromFolder: o.folder });
           }}
           onToggleFlag={() => {
             if (!selectedMessage) return;
@@ -1031,6 +1051,7 @@ export default function MailPage() {
             onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
             onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
             onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+            onArchive={(uid) => { const o = originByUid(uid); archiveMutation.mutate({ uid, accountId: o.accountId, fromFolder: o.folder }); }}
             folders={folders}
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
@@ -1083,6 +1104,10 @@ export default function MailPage() {
                       const o = originOf(selectedMessage);
                       moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
                     }}
+                    onArchive={() => {
+                      const o = originOf(selectedMessage);
+                      archiveMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, fromFolder: o.folder });
+                    }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
                   />
@@ -1102,6 +1127,7 @@ export default function MailPage() {
                   onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
                   onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
                   onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+                  onArchive={(uid) => { const o = originByUid(uid); archiveMutation.mutate({ uid, accountId: o.accountId, fromFolder: o.folder }); }}
                   folders={folders}
                   onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
                   showFolderPane={showFolderPane}
@@ -1189,6 +1215,10 @@ export default function MailPage() {
                       const o = originOf(composeAlongsideMessage);
                       moveMutation.mutate({ uid: composeAlongsideMessage.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
                     }}
+                    onArchive={() => {
+                      const o = originOf(composeAlongsideMessage);
+                      archiveMutation.mutate({ uid: composeAlongsideMessage.uid, accountId: o.accountId, fromFolder: o.folder });
+                    }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
                   />
@@ -1256,6 +1286,11 @@ export default function MailPage() {
                       const o = originOf(selectedMessage);
                       moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
                     }}
+                    onArchive={() => {
+                      if (!selectedMessage) return;
+                      const o = originOf(selectedMessage);
+                      archiveMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, fromFolder: o.folder });
+                    }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
                   />
@@ -1286,6 +1321,10 @@ export default function MailPage() {
                       const o = originOf(splitMessage!);
                       moveMutation.mutate({ uid: splitMessage!.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
                     }}
+                    onArchive={() => {
+                      const o = originOf(splitMessage!);
+                      archiveMutation.mutate({ uid: splitMessage!.uid, accountId: o.accountId, fromFolder: o.folder });
+                    }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
                   />
@@ -1311,6 +1350,11 @@ export default function MailPage() {
                   if (!selectedMessage) return;
                   const o = originOf(selectedMessage);
                   moveMutation.mutate({ uid: selectedMessage.uid, toFolder: folder, accountId: o.accountId, fromFolder: o.folder });
+                }}
+                onArchive={() => {
+                  if (!selectedMessage) return;
+                  const o = originOf(selectedMessage);
+                  archiveMutation.mutate({ uid: selectedMessage.uid, accountId: o.accountId, fromFolder: o.folder });
                 }}
                 attachmentMinVisibleKb={attachmentMinVisibleKb}
                 attachmentActionMode={attachmentActionMode}

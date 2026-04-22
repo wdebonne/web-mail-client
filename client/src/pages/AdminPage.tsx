@@ -1161,6 +1161,8 @@ function SystemSettings() {
   const [allowRegistration, setAllowRegistration] = useState(false);
   const [maxAttachmentSize, setMaxAttachmentSize] = useState(25);
   const [attachmentVisibilityMinKb, setAttachmentVisibilityMinKb] = useState(10);
+  const [archiveRootFolder, setArchiveRootFolder] = useState('Archives');
+  const [archiveSubfolderPattern, setArchiveSubfolderPattern] = useState('{YYYY}/{MM} - {MMMM}');
 
   useEffect(() => {
     if (!settings) return;
@@ -1181,6 +1183,10 @@ function SystemSettings() {
     setAllowRegistration(parseBoolean(settings.allow_registration, false));
     setMaxAttachmentSize(parseNumber(settings.max_attachment_size, 25));
     setAttachmentVisibilityMinKb(Math.max(0, parseNumber(settings.attachment_visibility_min_kb, 10)));
+    setArchiveRootFolder(typeof settings.archive_root_folder === 'string' && settings.archive_root_folder.trim()
+      ? settings.archive_root_folder : 'Archives');
+    setArchiveSubfolderPattern(typeof settings.archive_subfolder_pattern === 'string' && settings.archive_subfolder_pattern.trim()
+      ? settings.archive_subfolder_pattern : '{YYYY}/{MM} - {MMMM}');
   }, [settings]);
 
   const handleSave = () => {
@@ -1189,6 +1195,8 @@ function SystemSettings() {
       allow_registration: allowRegistration,
       max_attachment_size: Math.max(1, Math.round(maxAttachmentSize)),
       attachment_visibility_min_kb: Math.max(0, Math.round(attachmentVisibilityMinKb)),
+      archive_root_folder: archiveRootFolder.trim() || 'Archives',
+      archive_subfolder_pattern: archiveSubfolderPattern.trim() || '{YYYY}/{MM} - {MMMM}',
     });
   };
 
@@ -1238,6 +1246,45 @@ function SystemSettings() {
           <p className="text-xs text-outlook-text-disabled mt-1">
             Par défaut: 10 Ko. Les pièces jointes plus petites (souvent des icônes inline) seront masquées dans la vue du mail.
           </p>
+        </div>
+
+        <div className="border-t border-outlook-border pt-4 mt-2">
+          <h4 className="text-sm font-semibold mb-2">Archivage des mails</h4>
+          <p className="text-xs text-outlook-text-disabled mb-3">
+            Lorsqu'un utilisateur clique sur « Archiver », le message est déplacé dans une arborescence
+            basée sur la date de réception. Les dossiers manquants sont créés automatiquement.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm text-outlook-text-secondary">Dossier racine d'archive</label>
+              <input
+                type="text"
+                value={archiveRootFolder}
+                onChange={(e) => setArchiveRootFolder(e.target.value)}
+                placeholder="Archives"
+                className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+              />
+              <p className="text-xs text-outlook-text-disabled mt-1">
+                Par défaut : <code>Archives</code>
+              </p>
+            </div>
+            <div>
+              <label className="text-sm text-outlook-text-secondary">Motif des sous-dossiers</label>
+              <input
+                type="text"
+                value={archiveSubfolderPattern}
+                onChange={(e) => setArchiveSubfolderPattern(e.target.value)}
+                placeholder="{YYYY}/{MM} - {MMMM}"
+                className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1 font-mono"
+              />
+              <p className="text-xs text-outlook-text-disabled mt-1">
+                Séparateur <code>/</code>. Jetons disponibles : <code>{'{YYYY}'}</code> (année),
+                <code>{' {YY}'}</code>, <code>{' {MM}'}</code> (mois 01-12), <code>{' {M}'}</code> (mois 1-12),
+                <code>{' {MMMM}'}</code> (nom complet&nbsp;: Janvier…), <code>{' {MMM}'}</code> (abrégé).
+                Exemple : <code>{'{YYYY}/{MM} - {MMMM}'}</code> → <code>{(archiveRootFolder || 'Archives') + '/2026/04 - Avril'}</code>.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="pt-2">

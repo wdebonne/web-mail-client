@@ -401,6 +401,93 @@ export class MailService {
     }
   }
 
+  /**
+   * Archive a message into a hierarchical folder computed from the message's
+   * reception date (internalDate/envelope date). Creates any missing folder
+   * along the way. Returns the final destination path.
+   *
+   * @param rootFolder     Root archive folder name (e.g. "Archives").
+   * @param subfolderPattern Pattern joined with "/" between segments, using tokens:
+   *                       {YYYY} {YY} {MM} {M} {MMMM} (French month name) {MMM}.
+   *                       Example: "{YYYY}/{MM} - {MMMM}".
+   */
+  async archiveMessage(
+    fromFolder: string,
+    uid: number,
+    rootFolder: string,
+    subfolderPattern: string,
+  ): Promise<{ destFolder: string }> {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+
+      // Determine the server's folder delimiter (fallback to '/').
+      let delimiter = '/';
+      try {
+        const list = await client.list();
+        const rootMatch = list.find(f => f.path === rootFolder || f.name === rootFolder);
+        const first = list[0];
+        delimiter = rootMatch?.delimiter || first?.delimiter || '/';
+      } catch {
+        // keep default
+      }
+
+      // Fetch the message's reception date from the source folder.
+      let receivedAt: Date = new Date();
+      const srcLock = await client.getMailboxLock(fromFolder);
+      try {
+        const msg = await client.fetchOne(`${uid}`, {
+          uid: true,
+          internalDate: true,
+          envelope: true,
+        }, { uid: true }) as any;
+        const d = msg?.internalDate || msg?.envelope?.date;
+        if (d) receivedAt = new Date(d);
+      } catch {
+        // keep default: "now"
+      } finally {
+        srcLock.release();
+      }
+
+      const destFolder = buildArchiveFolderPath(rootFolder, subfolderPattern, receivedAt, delimiter);
+
+      // Create each ancestor folder if missing (mailboxCreate is not guaranteed
+      // to create intermediate paths on every server, so we walk the segments).
+      const segments = destFolder.split(delimiter).filter(Boolean);
+      for (let i = 1; i <= segments.length; i++) {
+        const partial = segments.slice(0, i).join(delimiter);
+        try {
+          await client.mailboxCreate(partial);
+          try { await (client as any).mailboxSubscribe?.(partial); } catch {}
+        } catch (err: any) {
+          // Ignore "already exists" errors; rethrow anything else.
+          const msg = (err?.message || '').toLowerCase();
+          if (!msg.includes('already exists') && !msg.includes('exists')) {
+            // Some servers return an unhelpful message; try listing to decide.
+            try {
+              const list = await client.list();
+              if (!list.some(f => f.path === partial)) throw err;
+            } catch {
+              throw err;
+            }
+          }
+        }
+      }
+
+      // Now move the message into the deepest folder.
+      const moveLock = await client.getMailboxLock(fromFolder);
+      try {
+        await client.messageMove(`${uid}`, destFolder, { uid: true });
+      } finally {
+        moveLock.release();
+      }
+
+      return { destFolder };
+    } finally {
+      await client.logout();
+    }
+  }
+
   async copyMessage(fromFolder: string, uid: number, toFolder: string) {
     const client = this.createImapClient();
     try {
@@ -590,4 +677,49 @@ export class MailService {
       await client.logout();
     }
   }
+}
+
+// French month names used by the archive subfolder pattern.
+const ARCHIVE_MONTH_NAMES_FR = [
+  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+];
+const ARCHIVE_MONTH_SHORT_FR = [
+  'Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin',
+  'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.',
+];
+
+/**
+ * Build the IMAP folder path used to archive a message.
+ * The pattern uses '/' as segment separator (regardless of IMAP delimiter)
+ * and supports tokens: {YYYY} {YY} {MM} {M} {MMMM} {MMM}.
+ */
+export function buildArchiveFolderPath(
+  rootFolder: string,
+  subfolderPattern: string,
+  receivedAt: Date,
+  delimiter: string,
+): string {
+  const year = receivedAt.getFullYear();
+  const monthIdx = receivedAt.getMonth(); // 0..11
+  const tokens: Record<string, string> = {
+    '{YYYY}': String(year),
+    '{YY}': String(year).slice(-2),
+    '{MM}': String(monthIdx + 1).padStart(2, '0'),
+    '{M}': String(monthIdx + 1),
+    '{MMMM}': ARCHIVE_MONTH_NAMES_FR[monthIdx],
+    '{MMM}': ARCHIVE_MONTH_SHORT_FR[monthIdx],
+  };
+
+  let pattern = subfolderPattern || '';
+  for (const [k, v] of Object.entries(tokens)) {
+    pattern = pattern.split(k).join(v);
+  }
+
+  const root = (rootFolder || 'Archives').trim();
+  const segments = [root, ...pattern.split('/')]
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  return segments.join(delimiter);
 }

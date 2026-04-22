@@ -34,6 +34,8 @@ interface MessageListProps {
   onMarkRead?: (uid: number, isRead: boolean) => void;
   onMove?: (uid: number, toFolder: string) => void;
   onCopy?: (uid: number, toFolder: string) => void;
+  /** Archive a message into the configured dated archive folder tree. */
+  onArchive?: (uid: number) => void;
   folders?: MailFolder[];
   onToggleFolderPane?: () => void;
   showFolderPane?: boolean;
@@ -76,7 +78,7 @@ function DropdownMenu({ open, onClose, children, className = '' }: {
 export default function MessageList({
   messages, selectedMessage, loading,
   onSelectMessage, onToggleFlag, onDelete, folder, draggable = true,
-  onReply, onReplyAll, onForward, onMarkRead, onMove, onCopy, folders,
+  onReply, onReplyAll, onForward, onMarkRead, onMove, onCopy, onArchive, folders,
   onToggleFolderPane, showFolderPane, listWidth,
   attachmentMinVisibleKb = 0,
   accountId,
@@ -816,7 +818,13 @@ export default function MessageList({
       });
     }
 
-    if (onMove) {
+    if (onArchive) {
+      items.push({
+        label: 'Archiver',
+        icon: <Archive size={14} />,
+        onClick: () => onArchive(message.uid),
+      });
+    } else if (onMove) {
       const archiveFolder = folders?.find(f => f.specialUse === '\\Archive' || f.name.toLowerCase().includes('archive'));
       if (archiveFolder && archiveFolder.path !== folder) {
         items.push({

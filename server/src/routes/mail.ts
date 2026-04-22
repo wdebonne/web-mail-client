@@ -414,6 +414,54 @@ mailRouter.post('/accounts/:accountId/messages/:uid/copy', async (req: AuthReque
   }
 });
 
+// Archive message into a dated subfolder tree (e.g. Archives/2026/04 - Avril).
+// Uses admin settings for the root folder and subfolder pattern; safe defaults
+// are used when settings are not configured.
+mailRouter.post('/accounts/:accountId/messages/:uid/archive', async (req: AuthRequest, res) => {
+  try {
+    const { accountId, uid } = req.params;
+    const { fromFolder } = z.object({ fromFolder: z.string().min(1) }).parse(req.body || {});
+
+    const account = await getAccountForUser(accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const settingsRes = await pool.query(
+      `SELECT key, value FROM admin_settings
+       WHERE key IN ('archive_root_folder', 'archive_subfolder_pattern')`
+    );
+    const settings: Record<string, any> = {};
+    for (const row of settingsRes.rows) settings[row.key] = row.value;
+
+    const rootFolder = typeof settings.archive_root_folder === 'string' && settings.archive_root_folder.trim()
+      ? settings.archive_root_folder.trim()
+      : 'Archives';
+    const subfolderPattern = typeof settings.archive_subfolder_pattern === 'string' && settings.archive_subfolder_pattern.trim()
+      ? settings.archive_subfolder_pattern.trim()
+      : '{YYYY}/{MM} - {MMMM}';
+
+    const mailService = new MailService(account);
+    const { destFolder } = await mailService.archiveMessage(
+      fromFolder,
+      parseInt(uid),
+      rootFolder,
+      subfolderPattern,
+    );
+
+    await pool.query(
+      'DELETE FROM cached_emails WHERE account_id = $1 AND uid = $2 AND folder = $3',
+      [accountId, parseInt(uid), fromFolder]
+    );
+
+    res.json({ success: true, destFolder });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides' });
+    }
+    console.error('Archive error:', error);
+    res.status(500).json({ error: error.message || 'Erreur d\'archivage' });
+  }
+});
+
 // Delete message
 mailRouter.delete('/accounts/:accountId/messages/:uid', async (req: AuthRequest, res) => {
   try {
