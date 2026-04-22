@@ -7,7 +7,7 @@ import {
   Users, User, UserCheck, UserX, Star, Upload, Download,
   Camera, Globe, Calendar as CalIcon, MapPin, Briefcase, FileText,
   Loader2, ChevronDown, SortAsc, CheckCircle2, AlertCircle, Cloud,
-  Palette, Image as ImageIcon,
+  Palette, Image as ImageIcon, Move, Maximize2, Minimize2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -59,6 +59,29 @@ function bannerGradient(bannerColor: string | undefined, fallbackSeed: string): 
     if (preset && preset.gradient) return preset.gradient;
   }
   return avatarColor(fallbackSeed);
+}
+
+type BannerFit = 'cover' | 'contain' | 'fill';
+
+function bannerImageStyle(
+  image: string | undefined,
+  fit: BannerFit = 'cover',
+  posX: number = 50,
+  posY: number = 50
+): React.CSSProperties | undefined {
+  if (!image) return undefined;
+  const sizeMap: Record<BannerFit, string> = {
+    cover: 'cover',
+    contain: 'contain',
+    fill: '100% 100%',
+  };
+  return {
+    backgroundImage: `url(${image})`,
+    backgroundSize: sizeMap[fit],
+    backgroundPosition: `${posX}% ${posY}%`,
+    backgroundRepeat: 'no-repeat',
+    backgroundColor: '#1f2937',
+  };
 }
 
 function avatarColor(seed: string): string {
@@ -662,6 +685,9 @@ function ContactDetail({
   const seed = contact.email || contact.id || 'x';
   const gradient = bannerGradient(meta.bannerColor, seed);
   const bannerImage: string | undefined = meta.bannerImage;
+  const bannerFit: BannerFit = meta.bannerFit || 'cover';
+  const bannerPosX: number = typeof meta.bannerPosX === 'number' ? meta.bannerPosX : 50;
+  const bannerPosY: number = typeof meta.bannerPosY === 'number' ? meta.bannerPosY : 50;
   const isSender = contact.source === 'sender';
 
   return (
@@ -669,11 +695,7 @@ function ContactDetail({
       {/* Header with gradient banner or custom image */}
       <div
         className={`h-48 relative ${bannerImage ? '' : `bg-gradient-to-br ${gradient}`}`}
-        style={bannerImage ? {
-          backgroundImage: `url(${bannerImage})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        } : undefined}
+        style={bannerImageStyle(bannerImage, bannerFit, bannerPosX, bannerPosY)}
       >
         {bannerImage && <div className="absolute inset-0 bg-black/10" />}
         <div className="absolute top-3 right-3 flex gap-1">
@@ -862,6 +884,9 @@ function ContactForm({
   const [isFavorite, setIsFavorite] = useState(!!contact?.is_favorite);
   const [bannerColor, setBannerColor] = useState<string>(meta.bannerColor || 'auto');
   const [bannerImage, setBannerImage] = useState<string>(meta.bannerImage || '');
+  const [bannerFit, setBannerFit] = useState<BannerFit>(meta.bannerFit || 'cover');
+  const [bannerPosX, setBannerPosX] = useState<number>(typeof meta.bannerPosX === 'number' ? meta.bannerPosX : 50);
+  const [bannerPosY, setBannerPosY] = useState<number>(typeof meta.bannerPosY === 'number' ? meta.bannerPosY : 50);
   const [tab, setTab] = useState<'general' | 'work' | 'more' | 'appearance'>('general');
   const fileRef = useRef<HTMLInputElement>(null);
   const bannerFileRef = useRef<HTMLInputElement>(null);
@@ -908,10 +933,39 @@ function ContactForm({
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0, width, height);
         setBannerImage(canvas.toDataURL('image/jpeg', 0.8));
+        setBannerFit('cover');
+        setBannerPosX(50);
+        setBannerPosY(50);
       };
       img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
+  };
+
+  // Drag-to-reposition for banner (only in 'cover' mode)
+  const previewRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+
+  const onBannerDragStart = (e: React.MouseEvent) => {
+    if (!bannerImage || bannerFit !== 'cover') return;
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: bannerPosX, baseY: bannerPosY };
+    const handleMove = (ev: MouseEvent) => {
+      if (!dragRef.current || !previewRef.current) return;
+      const rect = previewRef.current.getBoundingClientRect();
+      const dx = ((ev.clientX - dragRef.current.startX) / rect.width) * 100;
+      const dy = ((ev.clientY - dragRef.current.startY) / rect.height) * 100;
+      // Invert: dragging right should move the image right (so background-position X decreases)
+      setBannerPosX(Math.max(0, Math.min(100, dragRef.current.baseX - dx)));
+      setBannerPosY(Math.max(0, Math.min(100, dragRef.current.baseY - dy)));
+    };
+    const handleUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -930,6 +984,9 @@ function ContactForm({
         address: address || null,
         bannerColor: bannerColor !== 'auto' ? bannerColor : null,
         bannerImage: bannerImage || null,
+        bannerFit: bannerImage ? bannerFit : null,
+        bannerPosX: bannerImage && bannerFit === 'cover' ? bannerPosX : null,
+        bannerPosY: bannerImage && bannerFit === 'cover' ? bannerPosY : null,
       },
     });
   };
@@ -940,11 +997,7 @@ function ContactForm({
         {/* Header with live preview of banner */}
         <div
           className={`h-28 relative flex-shrink-0 ${bannerImage ? '' : `bg-gradient-to-br ${bannerGradient(bannerColor, email || firstName || 'new')}`}`}
-          style={bannerImage ? {
-            backgroundImage: `url(${bannerImage})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          } : undefined}
+          style={bannerImageStyle(bannerImage, bannerFit, bannerPosX, bannerPosY)}
         >
           {bannerImage && <div className="absolute inset-0 bg-black/20" />}
           <button
@@ -1115,53 +1168,129 @@ function ContactForm({
                   <label className="text-xs text-outlook-text-secondary flex items-center gap-1 mb-2 font-medium">
                     <ImageIcon size={12} /> Image de la bannière
                   </label>
-                  <div
-                    onClick={() => bannerFileRef.current?.click()}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (e.dataTransfer.files[0]) handleBanner(e.dataTransfer.files[0]);
-                    }}
-                    className={`relative h-28 rounded-lg border-2 border-dashed cursor-pointer transition overflow-hidden ${
-                      bannerImage
-                        ? 'border-solid border-outlook-blue'
-                        : 'border-outlook-border hover:border-outlook-blue hover:bg-outlook-bg-hover'
-                    }`}
-                    style={bannerImage ? {
-                      backgroundImage: `url(${bannerImage})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                    } : undefined}
-                  >
-                    {bannerImage ? (
-                      <>
-                        <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100 transition flex items-center justify-center gap-2">
-                          <span className="text-white text-xs font-medium">Remplacer</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setBannerImage(''); }}
-                          className="absolute top-2 right-2 bg-white/90 hover:bg-white text-red-500 p-1 rounded-full shadow"
-                          title="Supprimer l'image"
-                        >
-                          <X size={12} />
-                        </button>
-                      </>
-                    ) : (
+                  {!bannerImage ? (
+                    <div
+                      onClick={() => bannerFileRef.current?.click()}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer.files[0]) handleBanner(e.dataTransfer.files[0]);
+                      }}
+                      className="relative h-28 rounded-lg border-2 border-dashed cursor-pointer transition overflow-hidden border-outlook-border hover:border-outlook-blue hover:bg-outlook-bg-hover"
+                    >
                       <div className="h-full flex flex-col items-center justify-center text-outlook-text-secondary gap-1">
                         <ImageIcon size={20} />
                         <span className="text-xs">Cliquez ou glissez une image</span>
                         <span className="text-[10px] text-outlook-text-disabled">JPG, PNG · 3 Mo max</span>
                       </div>
-                    )}
-                    <input
-                      ref={bannerFileRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => e.target.files?.[0] && handleBanner(e.target.files[0])}
-                    />
-                  </div>
+                      <input
+                        ref={bannerFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => e.target.files?.[0] && handleBanner(e.target.files[0])}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Fit mode selector */}
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        {([
+                          ['cover', 'Remplir', Maximize2, 'Recadré pour remplir (glisser pour déplacer)'],
+                          ['fill', 'Étirer', Move, 'Déformé pour remplir toute la surface'],
+                          ['contain', 'Adapter', Minimize2, 'Image entière visible, bandes possibles'],
+                        ] as const).map(([value, label, Icon, title]) => {
+                          const active = bannerFit === value;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              title={title}
+                              onClick={() => setBannerFit(value)}
+                              className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-md border text-xs font-medium transition ${
+                                active
+                                  ? 'border-outlook-blue bg-outlook-blue/10 text-outlook-blue'
+                                  : 'border-outlook-border text-outlook-text-secondary hover:border-outlook-blue/50 hover:text-outlook-text-primary'
+                              }`}
+                            >
+                              <Icon size={14} />
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Interactive preview (drag to reposition) */}
+                      <div
+                        ref={previewRef}
+                        onMouseDown={onBannerDragStart}
+                        className={`relative h-28 rounded-lg overflow-hidden border-2 border-solid border-outlook-blue ${
+                          bannerFit === 'cover' ? 'cursor-move' : 'cursor-default'
+                        }`}
+                        style={bannerImageStyle(bannerImage, bannerFit, bannerPosX, bannerPosY)}
+                      >
+                        {bannerFit === 'cover' && (
+                          <div className="absolute bottom-1.5 left-1.5 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded flex items-center gap-1 pointer-events-none">
+                            <Move size={10} /> Glissez pour recadrer
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setBannerImage(''); setBannerFit('cover'); setBannerPosX(50); setBannerPosY(50); }}
+                          className="absolute top-2 right-2 bg-white/90 hover:bg-white text-red-500 p-1 rounded-full shadow"
+                          title="Supprimer l'image"
+                        >
+                          <X size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); bannerFileRef.current?.click(); }}
+                          className="absolute top-2 right-10 bg-white/90 hover:bg-white text-outlook-text-secondary p-1 rounded-full shadow"
+                          title="Remplacer l'image"
+                        >
+                          <Upload size={12} />
+                        </button>
+                      </div>
+
+                      {/* Fine-grained position sliders (cover only) */}
+                      {bannerFit === 'cover' && (
+                        <div className="grid grid-cols-2 gap-3 mt-2">
+                          <label className="text-[10px] text-outlook-text-secondary flex items-center gap-2">
+                            <span className="w-3">X</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={bannerPosX}
+                              onChange={(e) => setBannerPosX(Number(e.target.value))}
+                              className="flex-1 accent-outlook-blue"
+                            />
+                            <span className="w-8 text-right tabular-nums">{Math.round(bannerPosX)}%</span>
+                          </label>
+                          <label className="text-[10px] text-outlook-text-secondary flex items-center gap-2">
+                            <span className="w-3">Y</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={bannerPosY}
+                              onChange={(e) => setBannerPosY(Number(e.target.value))}
+                              className="flex-1 accent-outlook-blue"
+                            />
+                            <span className="w-8 text-right tabular-nums">{Math.round(bannerPosY)}%</span>
+                          </label>
+                        </div>
+                      )}
+
+                      <input
+                        ref={bannerFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => e.target.files?.[0] && handleBanner(e.target.files[0])}
+                      />
+                    </>
+                  )}
                   <p className="text-[10px] text-outlook-text-disabled mt-1">
                     Si une image est définie, elle remplace la couleur choisie.
                   </p>
