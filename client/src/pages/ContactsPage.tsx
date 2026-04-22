@@ -608,9 +608,9 @@ function ContactDetail({
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-6 pb-8">
+      <div className="max-w-3xl mx-auto px-6 pb-8 relative z-10">
         <div className="flex items-end gap-4 mb-5 -mt-16">
-          <div className="ring-4 ring-white rounded-full flex-shrink-0">
+          <div className="ring-4 ring-white rounded-full flex-shrink-0 relative z-10">
             <Avatar contact={contact} size="xl" />
           </div>
           <div className="flex-1 pb-2">
@@ -825,7 +825,7 @@ function ContactForm({
         </div>
 
         {/* Avatar row (outside the scrollable form to avoid clipping) */}
-        <div className="px-6 flex items-end gap-4 pb-3 -mt-12 flex-shrink-0">
+        <div className="px-6 flex items-end gap-4 pb-3 -mt-12 flex-shrink-0 relative z-10">
           <div className="relative group flex-shrink-0">
             <div className="w-24 h-24 rounded-full ring-4 ring-white bg-white shadow-lg overflow-hidden flex items-center justify-center">
               {avatarUrl ? (
@@ -862,16 +862,19 @@ function ContactForm({
               onChange={(e) => e.target.files?.[0] && handleAvatar(e.target.files[0])}
             />
           </div>
-          <label className="flex items-center gap-1.5 text-xs text-outlook-text-secondary pb-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={isFavorite}
-              onChange={(e) => setIsFavorite(e.target.checked)}
-              className="rounded"
-            />
-            <Star size={12} className={isFavorite ? 'text-amber-500 fill-amber-500' : ''} />
-            Favori
-          </label>
+          <button
+            type="button"
+            onClick={() => setIsFavorite(v => !v)}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition pb-2 mb-0.5 ${
+              isFavorite
+                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                : 'border-outlook-border text-outlook-text-secondary hover:bg-outlook-bg-hover'
+            }`}
+            title={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          >
+            <Star size={13} className={isFavorite ? 'text-amber-500 fill-amber-500' : ''} />
+            {isFavorite ? 'Favori' : 'Favori'}
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col min-h-0">
