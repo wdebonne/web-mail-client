@@ -512,8 +512,8 @@ export default function MessageView({
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0 text-outlook-text-disabled">
-                      {m.flags?.answered && <Reply size={12} title="Répondu" />}
-                      {m.hasAttachments && <Paperclip size={12} title="Pièce jointe" />}
+                      {m.flags?.answered && <span title="Répondu" className="inline-flex"><Reply size={12} /></span>}
+                      {m.hasAttachments && <span title="Pièce jointe" className="inline-flex"><Paperclip size={12} /></span>}
                       <span className="text-xs">
                         {format(new Date(m.date), isLast ? "EEE dd/MM/yyyy HH:mm" : 'dd/MM HH:mm', { locale: fr })}
                       </span>
