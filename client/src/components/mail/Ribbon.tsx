@@ -10,11 +10,13 @@ import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link as LinkIcon, Image as ImageIcon, Palette, Type, Indent, Outdent,
   Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
-  Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film,
+  Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film, PenTool,
   Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
   Tag, MessagesSquare, ShieldAlert, ShieldOff,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
+import { SignaturesManagerModal } from './SignatureModals';
+import { getSignatures, MailSignature, wrapSignatureHtml } from '../../utils/signatures';
 import type { TabMode } from '../../stores/mailStore';
 import type { MailAccount } from '../../types';
 import {
@@ -1586,6 +1588,23 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
   const [showEmoji, setShowEmoji] = useState(false);
   const [showTableGrid, setShowTableGrid] = useState(false);
 
+  // ── Signatures ───────────────────────────────────────────────────────
+  const signatureBtnRef = useRef<HTMLElement | null>(null);
+  const [showSignatureMenu, setShowSignatureMenu] = useState(false);
+  const [showSignaturesManager, setShowSignaturesManager] = useState(false);
+  const [signatures, setSignatures] = useState<MailSignature[]>(() => getSignatures());
+  useEffect(() => {
+    const handler = () => setSignatures(getSignatures());
+    window.addEventListener('mail.signatures.changed', handler);
+    return () => window.removeEventListener('mail.signatures.changed', handler);
+  }, []);
+
+  const insertSignature = (sig: MailSignature) => {
+    restoreSelection();
+    insertHTML(wrapSignatureHtml(sig.html));
+    setShowSignatureMenu(false);
+  };
+
   const handleEmojiClick = () => {
     if (onToggleEmojiPanel) {
       saveSelection();
@@ -1666,6 +1685,42 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
 
   const portals = (
     <>
+      {showSignatureMenu && (
+        <AnchoredPortal anchorEl={signatureBtnRef.current} onClose={() => setShowSignatureMenu(false)}>
+          <div className="bg-white border border-outlook-border rounded shadow-lg py-1 min-w-[200px] text-sm">
+            {signatures.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-outlook-text-secondary">
+                Aucune signature créée
+              </div>
+            ) : (
+              signatures.map(sig => (
+                <button
+                  key={sig.id}
+                  onMouseDown={(e) => { e.preventDefault(); insertSignature(sig); }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-outlook-bg-hover truncate"
+                  title={sig.name}
+                >
+                  {sig.name}
+                </button>
+              ))
+            )}
+            <div className="border-t border-outlook-border my-1" />
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setShowSignatureMenu(false);
+                setShowSignaturesManager(true);
+              }}
+              className="w-full text-left px-3 py-1.5 hover:bg-outlook-bg-hover"
+            >
+              Signatures…
+            </button>
+          </div>
+        </AnchoredPortal>
+      )}
+      {showSignaturesManager && (
+        <SignaturesManagerModal onClose={() => setShowSignaturesManager(false)} />
+      )}
       {showEmoji && (
         <AnchoredPortal anchorEl={emojiBtnRef.current} onClose={() => setShowEmoji(false)}>
           <div className="bg-white border border-outlook-border rounded shadow-lg p-2 w-64">
@@ -1743,6 +1798,9 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
         </span>
         <SimplifiedButton icon={MinusIcon} label="Ligne" onClick={insertHorizontalRule} />
         <SimplifiedButton icon={Calendar} label="Date" onClick={insertDate} />
+        <span ref={el => { signatureBtnRef.current = el; }} className="inline-flex">
+          <SimplifiedButton icon={PenTool} label="Signature" onClick={() => { saveSelection(); setShowSignatureMenu(v => !v); }} active={showSignatureMenu} />
+        </span>
         {portals}
       </>
     );
@@ -1781,6 +1839,14 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
         )}
         <RibbonButton icon={MinusIcon} label="Ligne horizontale" onClick={insertHorizontalRule} />
         <RibbonButton icon={Calendar} label="Date et heure" onClick={insertDate} />
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Signature */}
+      <RibbonGroup label="Signature">
+        <span ref={el => { signatureBtnRef.current = el; }} className="inline-flex">
+          <RibbonButton icon={PenTool} label="Signature" onClick={() => { saveSelection(); setShowSignatureMenu(s => !s); }} active={showSignatureMenu} />
+        </span>
       </RibbonGroup>
       {portals}
     </>

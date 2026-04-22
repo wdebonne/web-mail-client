@@ -14,6 +14,9 @@ import { offlineDB } from '../../pwa/offlineDB';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useQuery } from '@tanstack/react-query';
 import { prepareSecureSend, SecurityMode } from '../../crypto/composePipeline';
+import {
+  getSignatureById, getDefaultNewId, getDefaultReplyId, wrapSignatureHtml,
+} from '../../utils/signatures';
 import toast from 'react-hot-toast';
 
 interface ComposeModalProps {
@@ -53,7 +56,18 @@ export default function ComposeModal({
   const [securityMode, setSecurityMode] = useState<SecurityMode>('none');
   const [securityMenuOpen, setSecurityMenuOpen] = useState(false);
   const [subject, setSubject] = useState(initialData.subject || '');
-  const [bodyHtml, setBodyHtml] = useState(initialData.bodyHtml || '');
+  const [bodyHtml, setBodyHtml] = useState(() => {
+    // Si du contenu est déjà fourni (brouillon / réponse avec citation), on le conserve tel quel.
+    const base = initialData.bodyHtml || '';
+    // Sélectionne la signature par défaut selon le contexte : nouveau message vs réponse/transfert.
+    const isReplyOrForward = !!initialData.inReplyTo;
+    const sigId = isReplyOrForward ? getDefaultReplyId() : getDefaultNewId();
+    const sig = getSignatureById(sigId);
+    if (!sig) return base;
+    const sigBlock = wrapSignatureHtml(sig.html);
+    // Pour un nouveau message : corps vide + signature ; pour une réponse : signature avant la citation.
+    return isReplyOrForward && base ? `${sigBlock}${base}` : `${base}${sigBlock}`;
+  });
   const [showCc, setShowCc] = useState(initialData.cc?.length > 0);
   const [showBcc, setShowBcc] = useState(initialData.bcc?.length > 0);
   const [isMinimized, setIsMinimized] = useState(false);
