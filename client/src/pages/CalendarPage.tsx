@@ -596,6 +596,7 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
   days: Date[];
   timeScale: number;
   events: CalendarEvent[];
+  onEventContextM
   onSlotClick: (d: Date) => void;ev: Calendaenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
 }) {
