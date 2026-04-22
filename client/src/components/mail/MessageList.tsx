@@ -8,11 +8,16 @@ import {
   Flag, FolderInput, Copy, Archive, ChevronDown, ChevronRight,
   ArrowUpDown, ListFilter, Calendar, CheckSquare, FolderIcon,
   Check, MailCheck, PanelLeftOpen, PanelLeftClose,
+  Tag,
 } from 'lucide-react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
+import {
+  getCategories, getMessageCategories, categoryRowTint,
+  subscribeCategories, MailCategory,
+} from '../../utils/categories';
 
 type SortField = 'date' | 'from' | 'subject' | 'size' | 'importance';
 type SortOrder = 'asc' | 'desc';
@@ -46,6 +51,8 @@ interface MessageListProps {
   density?: 'spacious' | 'comfortable' | 'compact';
   /** Display mode for the message rows. 'auto' uses the list width; 'wide' forces single-line columns; 'compact' forces multi-line cards. */
   listDisplayMode?: 'auto' | 'wide' | 'compact';
+  /** Open the category picker for a given message (context menu entry). */
+  onOpenCategoryPicker?: (message: Email, x: number, y: number) => void;
 }
 
 interface MessageGroup {
@@ -84,6 +91,7 @@ export default function MessageList({
   accountId,
   density = 'comfortable',
   listDisplayMode = 'auto',
+  onOpenCategoryPicker,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -95,6 +103,19 @@ export default function MessageList({
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedUids, setSelectedUids] = useState<Set<number>>(new Set());
   const attachmentMinVisibleBytes = Math.max(0, attachmentMinVisibleKb) * 1024;
+
+  // Categories — subscribe to changes so badges & tint refresh live.
+  const [catsVersion, setCatsVersion] = useState(0);
+  useEffect(() => subscribeCategories(() => setCatsVersion((n) => n + 1)), []);
+  const categoriesMap = useMemo(() => {
+    const map = new Map<string, MailCategory>();
+    for (const c of getCategories()) map.set(c.id, c);
+    return map;
+  }, [catsVersion]);
+  const getMessageCats = (m: Email): MailCategory[] => {
+    const ids = getMessageCategories(m, accountId, folder);
+    return ids.map((id) => categoriesMap.get(id)).filter(Boolean) as MailCategory[];
+  };
 
   const hasVisibleAttachment = (message: Email) => {
     if (!message.hasAttachments) return false;
@@ -530,6 +551,11 @@ export default function MessageList({
                   // Density-driven padding classes for the row
                   const densityWide = density === 'spacious' ? 'py-2.5' : density === 'compact' ? 'py-0.5' : 'py-1.5';
                   const densityCompact = density === 'spacious' ? 'py-3.5 gap-3' : density === 'compact' ? 'py-1 gap-2' : 'py-2.5 gap-3';
+                  const msgCats = getMessageCats(message);
+                  const primaryCatColor = msgCats[0]?.color;
+                  const rowStyle: React.CSSProperties = primaryCatColor && !isSelected && !isChecked
+                    ? { backgroundColor: categoryRowTint(primaryCatColor, 0.18) }
+                    : {};
 
                   return (
                     <motion.div
@@ -559,11 +585,12 @@ export default function MessageList({
                         }
                         e.dataTransfer.effectAllowed = 'copyMove';
                       }}
+                      style={rowStyle}
                       className={`flex items-center gap-2 px-3 cursor-pointer border-b border-outlook-border transition-colors group relative
                         ${isWide ? densityWide : densityCompact}
                         ${isSelected && !selectionMode ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
                         ${isChecked ? 'bg-blue-50' : ''}
-                        ${isUnread ? '' : 'bg-outlook-bg-primary/30'}`}
+                        ${isUnread && !primaryCatColor ? '' : (!primaryCatColor ? 'bg-outlook-bg-primary/30' : '')}`}
                     >
                       {/* Checkbox (selection mode) or Avatar */}
                       {selectionMode ? (
@@ -604,6 +631,19 @@ export default function MessageList({
                             <span className={`text-xs truncate ${isUnread ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
                               {message.subject || '(Sans objet)'}
                             </span>
+                            {msgCats.slice(0, 2).map((c) => (
+                              <span
+                                key={c.id}
+                                className="text-[10px] px-1.5 py-[1px] rounded-full whitespace-nowrap border"
+                                style={{ backgroundColor: categoryRowTint(c.color, 0.35), borderColor: c.color, color: '#2d2d2d' }}
+                                title={c.name}
+                              >
+                                {c.name}
+                              </span>
+                            ))}
+                            {msgCats.length > 2 && (
+                              <span className="text-[10px] text-outlook-text-disabled">+{msgCats.length - 2}</span>
+                            )}
                             <span className="text-xs text-outlook-text-disabled truncate">
                               {message.snippet || ''}
                             </span>
@@ -692,6 +732,24 @@ export default function MessageList({
                           <div className={`text-sm truncate ${isUnread ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
                             {message.subject || '(Sans objet)'}
                           </div>
+
+                          {msgCats.length > 0 && (
+                            <div className="flex items-center flex-wrap gap-1 mt-0.5">
+                              {msgCats.slice(0, 3).map((c) => (
+                                <span
+                                  key={c.id}
+                                  className="text-[10px] px-1.5 py-[1px] rounded-full whitespace-nowrap border"
+                                  style={{ backgroundColor: categoryRowTint(c.color, 0.35), borderColor: c.color, color: '#2d2d2d' }}
+                                  title={c.name}
+                                >
+                                  {c.name}
+                                </span>
+                              ))}
+                              {msgCats.length > 3 && (
+                                <span className="text-[10px] text-outlook-text-disabled">+{msgCats.length - 3}</span>
+                              )}
+                            </div>
+                          )}
 
                           <div className="flex items-center gap-1 mt-0.5">
                             <span className="text-xs text-outlook-text-disabled truncate flex-1">
@@ -783,6 +841,18 @@ export default function MessageList({
       icon: <Flag size={14} />,
       onClick: () => onToggleFlag(message.uid, !message.flags?.flagged),
     });
+
+    if (onOpenCategoryPicker) {
+      items.push({
+        label: 'Catégoriser',
+        icon: <Tag size={14} />,
+        onClick: () => {
+          // Use the current mouse position from the stored context menu, if any.
+          const pos = contextMenu || { x: 0, y: 0 } as any;
+          onOpenCategoryPicker(message, pos.x, pos.y);
+        },
+      });
+    }
 
     items.push({ label: '', separator: true, onClick: () => {} });
 

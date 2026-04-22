@@ -1,13 +1,16 @@
 import {
   Inbox, Send, FileText, Trash2, Archive, Star, AlertTriangle,
   ChevronDown, ChevronRight, Plus, FolderIcon, FolderPlus, Pencil,
-  Trash, Copy, GripVertical, RotateCcw,
+  Trash, Copy, GripVertical, RotateCcw, Tag,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import { api } from '../../api';
 import { MailAccount, MailFolder } from '../../types';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
+import {
+  getCategories, subscribeCategories, MailCategory,
+} from '../../utils/categories';
 import {
   getAccountDisplayName,
   setAccountDisplayOverride,
@@ -138,6 +141,8 @@ export default function FolderPane({
   const queryClient = useQueryClient();
   const virtualFolder = useMailStore((s) => s.virtualFolder);
   const selectVirtualFolder = useMailStore((s) => s.selectVirtualFolder);
+  const categoryFilter = useMailStore((s) => s.categoryFilter);
+  const setCategoryFilter = useMailStore((s) => s.setCategoryFilter);
 
   const [accountContextMenu, setAccountContextMenu] = useState<
     { x: number; y: number; account: MailAccount } | null
@@ -282,6 +287,8 @@ export default function FolderPane({
             if (account) onSelectFolderInAccount(account, fav.path);
           }}
           onFavoriteContextMenu={(fav, x, y) => setFavoriteContextMenu({ x, y, fav })}
+          categoryFilter={categoryFilter}
+          onSelectCategoryFilter={(id) => setCategoryFilter(id)}
           prefsVersion={prefsVersion + (externalPrefsVersion || 0)}
           onChanged={() => {
             triggerRerender();
@@ -841,17 +848,28 @@ interface FavoritesSectionProps {
   onFavoriteContextMenu: (fav: FavoriteFolder, x: number, y: number) => void;
   prefsVersion: number;
   onChanged?: () => void;
+  categoryFilter: string | null;
+  onSelectCategoryFilter: (id: string | null) => void;
 }
 
 function FavoritesSection({
   accounts, expanded, onToggleExpanded, virtualFolder,
   selectedAccountId, selectedFolder,
   onSelectVirtual, onSelectFavorite, onFavoriteContextMenu, prefsVersion, onChanged,
+  categoryFilter, onSelectCategoryFilter,
 }: FavoritesSectionProps) {
   const favorites = useMemo(() => getFavoriteFolders(), [prefsVersion]);
   const unifiedInboxEnabled = useMemo(() => getUnifiedInboxEnabled(), [prefsVersion]);
   const unifiedSentEnabled = useMemo(() => getUnifiedSentEnabled(), [prefsVersion]);
   const unifiedAccountIds = useMemo(() => getUnifiedAccountIds(), [prefsVersion]);
+
+  // Favourite categories — global, shown across every mailbox.
+  const [catVersion, setCatVersion] = useState(0);
+  useEffect(() => subscribeCategories(() => setCatVersion((n) => n + 1)), []);
+  const favoriteCategories = useMemo<MailCategory[]>(
+    () => getCategories().filter((c) => c.isFavorite),
+    [catVersion],
+  );
 
   // Fetch folders for every favourite's account so we can display labels.
   const accountIds = useMemo(() => {
@@ -877,7 +895,7 @@ function FavoritesSection({
   }, [accountIds, foldersQueries.map((q) => q.data).join('|')]);
 
   const hasAnyItem =
-    (unifiedInboxEnabled || unifiedSentEnabled) || favorites.length > 0;
+    (unifiedInboxEnabled || unifiedSentEnabled) || favorites.length > 0 || favoriteCategories.length > 0;
 
   if (!hasAnyItem) return null;
 
@@ -1011,6 +1029,28 @@ function FavoritesSection({
               </div>
             );
           })}
+
+          {favoriteCategories.length > 0 && (
+            <div className="mt-1">
+              {favoriteCategories.map((cat) => {
+                const active = categoryFilter === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => onSelectCategoryFilter(active ? null : cat.id)}
+                    className={`w-full flex items-center gap-2 pl-3 pr-3 py-1 text-sm rounded transition-colors
+                      ${active
+                        ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
+                        : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                    title={`Filtrer par catégorie : ${cat.name}`}
+                  >
+                    <Tag size={14} style={{ color: cat.color }} />
+                    <span className="truncate flex-1 text-left">{cat.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -12,7 +12,9 @@ import {
   Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
   Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film,
   Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
+  Tag,
 } from 'lucide-react';
+import { CategoryPicker } from './CategoryModals';
 import type { TabMode } from '../../stores/mailStore';
 import type { MailAccount } from '../../types';
 import {
@@ -115,6 +117,13 @@ interface RibbonProps {
   // List display mode (Liste mail)
   listDisplayMode?: 'auto' | 'wide' | 'compact';
   onChangeListDisplayMode?: (m: 'auto' | 'wide' | 'compact') => void;
+
+  // Categories
+  onCategorize?: (categoryId: string) => void;
+  onClearCategories?: () => void;
+  onNewCategory?: () => void;
+  onManageCategories?: () => void;
+  messageCategoryIds?: string[];
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -197,6 +206,8 @@ export default function Ribbon({
   readingPaneMode = 'right', onChangeReadingPaneMode,
   listDensity = 'comfortable', onChangeListDensity,
   listDisplayMode = 'auto', onChangeListDisplayMode,
+  onCategorize, onClearCategories, onNewCategory, onManageCategories,
+  messageCategoryIds = [],
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -205,18 +216,21 @@ export default function Ribbon({
   const [showReadingPaneMenu, setShowReadingPaneMenu] = useState(false);
   const [showDensityMenu, setShowDensityMenu] = useState(false);
   const [showListModeMenu, setShowListModeMenu] = useState(false);
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
   const favoritesMenuBtnRef = useRef<HTMLButtonElement>(null);
   const readingPaneMenuBtnRef = useRef<HTMLButtonElement>(null);
   const densityMenuBtnRef = useRef<HTMLButtonElement>(null);
   const listModeMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const categoryMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
   const [readingPaneMenuPos, setReadingPaneMenuPos] = useState({ top: 0, left: 0 });
   const [densityMenuPos, setDensityMenuPos] = useState({ top: 0, left: 0 });
   const [listModeMenuPos, setListModeMenuPos] = useState({ top: 0, left: 0 });
+  const [categoryMenuPos, setCategoryMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -297,6 +311,15 @@ export default function Ribbon({
     setShowListModeMenu(v => !v);
   };
 
+  const openCategoryMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || categoryMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setCategoryMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowCategoryMenu(v => !v);
+  };
+
   // Auto-switch between classic and simplified based on width
   useEffect(() => {
     const el = ribbonRef.current;
@@ -360,6 +383,19 @@ export default function Ribbon({
               <SimplifiedButton icon={Trash2} label="Supprimer" onClick={onDelete} disabled={!hasSelectedMessage} danger />
               <SimplifiedButton icon={Archive} label="Archiver" onClick={onArchive} disabled={!hasSelectedMessage} />
               <SimplifiedButton icon={Flag} label="Indicateur" onClick={onToggleFlag} disabled={!hasSelectedMessage} active={isFlagged} />
+              <button
+                ref={categoryMenuBtnRef}
+                onClick={(e) => openCategoryMenu(e)}
+                disabled={!hasSelectedMessage}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1
+                  ${!hasSelectedMessage ? 'opacity-40 cursor-default' : 'hover:bg-outlook-bg-hover cursor-pointer'}
+                  ${showCategoryMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Catégoriser"
+              >
+                <Tag size={14} />
+                <span className="text-xs whitespace-nowrap">Catégoriser</span>
+                <ChevronDown size={10} />
+              </button>
               <SimplifiedSep />
               <SimplifiedButton
                 icon={isRead ? EyeOff : Eye}
@@ -501,6 +537,22 @@ export default function Ribbon({
                   disabled={!hasSelectedMessage}
                   active={isFlagged}
                 />
+                <div className="relative">
+                  <button
+                    ref={categoryMenuBtnRef}
+                    onClick={(e) => openCategoryMenu(e)}
+                    disabled={!hasSelectedMessage}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px]
+                      ${!hasSelectedMessage ? 'opacity-40 cursor-default' : 'hover:bg-outlook-bg-hover cursor-pointer'}
+                      ${showCategoryMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Catégoriser"
+                  >
+                    <Tag size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Catégoriser <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
               </RibbonGroup>
               <RibbonSeparator />
 
@@ -786,6 +838,20 @@ export default function Ribbon({
             />
           </>,
           document.body
+        )}
+
+        {/* Category picker — Accueil tab */}
+        {showCategoryMenu && (
+          <CategoryPicker
+            top={categoryMenuPos.top}
+            left={categoryMenuPos.left}
+            assigned={messageCategoryIds}
+            onToggle={(id) => onCategorize?.(id)}
+            onClear={() => { onClearCategories?.(); setShowCategoryMenu(false); }}
+            onCreate={() => { setShowCategoryMenu(false); onNewCategory?.(); }}
+            onManage={() => { setShowCategoryMenu(false); onManageCategories?.(); }}
+            onClose={() => setShowCategoryMenu(false)}
+          />
         )}
 
         {/* Reading pane mode menu — rendered globally so it works from both classic & simplified Afficher tab */}

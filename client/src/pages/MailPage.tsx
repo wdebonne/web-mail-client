@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useMailStore, ComposeData } from '../stores/mailStore';
@@ -20,6 +20,11 @@ import {
   getUnifiedAccountIds, getUnifiedInboxEnabled, getUnifiedSentEnabled,
   findInboxFolderPath, findSentFolderPath,
 } from '../utils/mailPreferences';
+import {
+  toggleMessageCategory, clearMessageCategories, getMessageCategories,
+  subscribeCategories,
+} from '../utils/categories';
+import { CategoryEditorModal, CategoryManageModal, CategoryPicker } from '../components/mail/CategoryModals';
 import type { MailFolder } from '../types';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
@@ -36,6 +41,7 @@ export default function MailPage() {
     openTabs, activeTabId, openMessageTab, switchTab, closeTab,
     tabMode, maxTabs, setTabMode, setMaxTabs,
     virtualFolder, selectVirtualFolder,
+    categoryFilter, setCategoryFilter,
   } = useMailStore();
 
   // Bump to re-render when preferences change (favorites etc.)
@@ -890,6 +896,48 @@ export default function MailPage() {
     toast.success('Synchronisation lancée');
   }, [queryClient]);
 
+  // ─── Categories ────────────────────────────────────────────────────────
+  const [categoryCreateOpen, setCategoryCreateOpen] = useState(false);
+  const [categoryEditTarget, setCategoryEditTarget] = useState<any | null>(null);
+  const [categoryManageOpen, setCategoryManageOpen] = useState(false);
+  const [contextCategoryPicker, setContextCategoryPicker] = useState<{ message: any; x: number; y: number } | null>(null);
+  // Bump to force re-render when categories or assignments change.
+  const [, setCatsTick] = useState(0);
+  useEffect(() => subscribeCategories(() => setCatsTick((n) => n + 1)), []);
+
+  const selectedMessageCategoryIds = useMemo(() => {
+    if (!selectedMessage) return [];
+    const o = originOf(selectedMessage);
+    return getMessageCategories(selectedMessage as any, o.accountId, o.folder);
+  }, [selectedMessage, prefsVersion, originOf]);
+
+  const handleCategorize = useCallback((message: any, categoryId: string) => {
+    const o = originOf(message);
+    const next = toggleMessageCategory(message, categoryId, o.accountId, o.folder);
+    // Categorised messages auto-flag → they appear in the "Épinglé" group of the list,
+    // matching the spec ("le mail catégorisé va en mail épinglé / favoris").
+    if (next.length > 0 && !message.flags?.flagged && o.accountId) {
+      flagMutation.mutate({ uid: message.uid, isFlagged: true, accountId: o.accountId, folder: o.folder });
+    }
+    setCatsTick((n) => n + 1);
+  }, [originOf, flagMutation]);
+
+  const handleClearCategories = useCallback((message: any) => {
+    const o = originOf(message);
+    clearMessageCategories(message, o.accountId, o.folder);
+    setCatsTick((n) => n + 1);
+  }, [originOf]);
+
+  // Apply category filter on top of whatever messages are currently loaded.
+  const visibleMessages = useMemo(() => {
+    if (!categoryFilter) return messages;
+    return messages.filter((m) => {
+      const o = originOf(m);
+      const ids = getMessageCategories(m as any, o.accountId, o.folder);
+      return ids.includes(categoryFilter);
+    });
+  }, [messages, categoryFilter, originOf]);
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-outlook-bg-tertiary">
       {/* Ribbon toolbar block */}
@@ -974,6 +1022,11 @@ export default function MailPage() {
           onChangeListDensity={(d) => setListDensity(d)}
           listDisplayMode={listDisplayMode}
           onChangeListDisplayMode={(m) => setListDisplayMode(m)}
+          onCategorize={(catId) => selectedMessage && handleCategorize(selectedMessage, catId)}
+          onClearCategories={() => selectedMessage && handleClearCategories(selectedMessage)}
+          onNewCategory={() => setCategoryCreateOpen(true)}
+          onManageCategories={() => setCategoryManageOpen(true)}
+          messageCategoryIds={selectedMessageCategoryIds}
         />
       </div>
 
@@ -1038,10 +1091,11 @@ export default function MailPage() {
             </span>
           </div>
           <MessageList
-            messages={messages}
+            messages={visibleMessages}
             selectedMessage={selectedMessage}
             loading={loadingMessages}
             onSelectMessage={handleSelectMessageMobile}
+            onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
             onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
             onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
             folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
@@ -1114,10 +1168,11 @@ export default function MailPage() {
                 </>
               ) : (
                 <MessageList
-                  messages={messages}
+                  messages={visibleMessages}
                   selectedMessage={selectedMessage}
                   loading={loadingMessages}
                   onSelectMessage={handleSelectMessageMobile}
+                  onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
                   onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
                   onDelete={(uid) => { const o = originByUid(uid); deleteMutation.mutate({ uid, accountId: o.accountId, folder: o.folder }); }}
                   folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
@@ -1453,6 +1508,50 @@ export default function MailPage() {
             y={tabContextMenu.y}
             items={items}
             onClose={() => setTabContextMenu(null)}
+          />
+        );
+      })()}
+
+      {/* Category create modal */}
+      {categoryCreateOpen && (
+        <CategoryEditorModal
+          mode="create"
+          onClose={() => setCategoryCreateOpen(false)}
+        />
+      )}
+
+      {/* Category edit modal */}
+      {categoryEditTarget && (
+        <CategoryEditorModal
+          mode="edit"
+          initial={categoryEditTarget}
+          onClose={() => setCategoryEditTarget(null)}
+        />
+      )}
+
+      {/* Category management modal */}
+      {categoryManageOpen && (
+        <CategoryManageModal
+          onClose={() => setCategoryManageOpen(false)}
+          onCreate={() => setCategoryCreateOpen(true)}
+          onEdit={(cat) => setCategoryEditTarget(cat)}
+        />
+      )}
+
+      {/* Category picker triggered from a message context menu */}
+      {contextCategoryPicker && (() => {
+        const o = originOf(contextCategoryPicker.message);
+        const assigned = getMessageCategories(contextCategoryPicker.message, o.accountId, o.folder);
+        return (
+          <CategoryPicker
+            top={contextCategoryPicker.y}
+            left={contextCategoryPicker.x}
+            assigned={assigned}
+            onToggle={(id) => handleCategorize(contextCategoryPicker.message, id)}
+            onClear={() => { handleClearCategories(contextCategoryPicker.message); setContextCategoryPicker(null); }}
+            onCreate={() => { setContextCategoryPicker(null); setCategoryCreateOpen(true); }}
+            onManage={() => { setContextCategoryPicker(null); setCategoryManageOpen(true); }}
+            onClose={() => setContextCategoryPicker(null)}
           />
         );
       })()}

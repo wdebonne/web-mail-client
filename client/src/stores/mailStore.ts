@@ -20,6 +20,9 @@ interface MailState {
   selectedFolder: string;
   /** When set, the message list shows a virtual/unified view instead of a single folder. */
   virtualFolder: VirtualFolder;
+  /** When set, messages are further filtered to those bearing the given category id
+   *  (works in combination with the unified inbox aggregation). */
+  categoryFilter: string | null;
   messages: Email[];
   selectedMessage: Email | null;
   isComposing: boolean;
@@ -38,6 +41,7 @@ interface MailState {
   setFolders: (folders: MailFolder[]) => void;
   selectFolder: (folder: string) => void;
   selectVirtualFolder: (v: VirtualFolder) => void;
+  setCategoryFilter: (id: string | null) => void;
   setMessages: (messages: Email[], total: number, page: number) => void;
   selectMessage: (message: Email | null) => void;
   openCompose: (data?: Partial<ComposeData>) => void;
@@ -72,6 +76,7 @@ export const useMailStore = create<MailState>((set, get) => ({
   folders: [],
   selectedFolder: 'INBOX',
   virtualFolder: null,
+  categoryFilter: null,
   messages: [],
   selectedMessage: null,
   isComposing: false,
@@ -92,17 +97,28 @@ export const useMailStore = create<MailState>((set, get) => ({
   },
 
   selectAccount: (account) => {
-    set({ selectedAccount: account, selectedFolder: 'INBOX', virtualFolder: null, messages: [], selectedMessage: null, currentPage: 1 });
+    set({ selectedAccount: account, selectedFolder: 'INBOX', virtualFolder: null, categoryFilter: null, messages: [], selectedMessage: null, currentPage: 1 });
   },
 
   setFolders: (folders) => set({ folders }),
 
   selectFolder: (folder) => {
-    set({ selectedFolder: folder, virtualFolder: null, messages: [], selectedMessage: null, currentPage: 1 });
+    set({ selectedFolder: folder, virtualFolder: null, categoryFilter: null, messages: [], selectedMessage: null, currentPage: 1 });
   },
 
   selectVirtualFolder: (v) => {
-    set({ virtualFolder: v, messages: [], selectedMessage: null, currentPage: 1 });
+    set({ virtualFolder: v, categoryFilter: null, messages: [], selectedMessage: null, currentPage: 1 });
+  },
+
+  setCategoryFilter: (id) => {
+    // Clearing → return to whatever folder is currently selected.
+    // Setting → switch into the unified inbox so we aggregate across mailboxes,
+    // then filter by category id at render time.
+    if (id) {
+      set({ categoryFilter: id, virtualFolder: 'unified-inbox', messages: [], selectedMessage: null, currentPage: 1 });
+    } else {
+      set({ categoryFilter: null });
+    }
   },
 
   setMessages: (messages, total, page) => set({ messages, totalMessages: total, currentPage: page }),
