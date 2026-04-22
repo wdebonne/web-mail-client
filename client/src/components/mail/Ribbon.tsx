@@ -103,6 +103,10 @@ interface RibbonProps {
   onToggleSplitKeepMessageList?: () => void;
   splitComposeReply?: boolean;
   onToggleSplitComposeReply?: () => void;
+
+  // Reading pane mode (Volet de lecture)
+  readingPaneMode?: 'right' | 'bottom' | 'hidden';
+  onChangeReadingPaneMode?: (mode: 'right' | 'bottom' | 'hidden') => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -182,17 +186,21 @@ export default function Ribbon({
   splitKeepFolderPane = false, onToggleSplitKeepFolderPane,
   splitKeepMessageList = false, onToggleSplitKeepMessageList,
   splitComposeReply = false, onToggleSplitComposeReply,
+  readingPaneMode = 'right', onChangeReadingPaneMode,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [showFavoritesMenu, setShowFavoritesMenu] = useState(false);
+  const [showReadingPaneMenu, setShowReadingPaneMenu] = useState(false);
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
   const favoritesMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const readingPaneMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
+  const [readingPaneMenuPos, setReadingPaneMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -244,6 +252,15 @@ export default function Ribbon({
       setFavoritesMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowFavoritesMenu(v => !v);
+  };
+
+  const openReadingPaneMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || readingPaneMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setReadingPaneMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowReadingPaneMenu(v => !v);
   };
 
   // Auto-switch between classic and simplified based on width
@@ -335,6 +352,16 @@ export default function Ribbon({
                 onClick={onToggleFolderPane}
                 active={showFolderPane}
               />
+              <button
+                ref={readingPaneMenuBtnRef}
+                onClick={(e) => openReadingPaneMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showReadingPaneMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Volet de lecture"
+              >
+                {readingPaneMode === 'bottom' ? <Rows2 size={14} /> : readingPaneMode === 'hidden' ? <EyeOff size={14} /> : <Columns2 size={14} />}
+                <span className="text-xs whitespace-nowrap">Volet de lecture</span>
+                <ChevronDown size={10} />
+              </button>
               <SimplifiedSep />
               <SimplifiedButton
                 icon={PanelLeftOpen}
@@ -467,6 +494,19 @@ export default function Ribbon({
                   onClick={onToggleFolderPane}
                   active={showFolderPane}
                 />
+                <div className="relative">
+                  <button
+                    ref={readingPaneMenuBtnRef}
+                    onClick={(e) => openReadingPaneMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showReadingPaneMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Volet de lecture"
+                  >
+                    {readingPaneMode === 'bottom' ? <Rows2 size={18} /> : readingPaneMode === 'hidden' ? <EyeOff size={18} /> : <Columns2 size={18} />}
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Volet de lecture <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
               </RibbonGroup>
               <RibbonSeparator />
 
@@ -664,6 +704,43 @@ export default function Ribbon({
               onChanged={bumpFavPrefs}
               onClose={() => setShowFavoritesMenu(false)}
             />
+          </>,
+          document.body
+        )}
+
+        {/* Reading pane mode menu — rendered globally so it works from both classic & simplified Afficher tab */}
+        {showReadingPaneMenu && createPortal(
+          <>
+            <div className="fixed inset-0 z-[9998]" onClick={() => setShowReadingPaneMenu(false)} />
+            <div
+              className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-64"
+              style={{ top: readingPaneMenuPos.top, left: readingPaneMenuPos.left }}
+            >
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+                Volet de lecture
+              </div>
+              {[
+                { id: 'right' as const, label: 'Afficher à droite', icon: Columns2 },
+                { id: 'bottom' as const, label: 'Afficher en bas', icon: Rows2 },
+                { id: 'hidden' as const, label: 'Masqué (menu contextuel uniquement)', icon: EyeOff },
+              ].map((opt) => {
+                const Icon = opt.icon;
+                const active = readingPaneMode === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => { onChangeReadingPaneMode && onChangeReadingPaneMode(opt.id); setShowReadingPaneMenu(false); }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                  >
+                    <span className="w-4 flex items-center justify-center text-outlook-blue">
+                      {active ? '✓' : ''}
+                    </span>
+                    <Icon size={14} className="text-outlook-text-secondary" />
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </>,
           document.body
         )}

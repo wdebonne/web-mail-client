@@ -434,6 +434,42 @@ export default function MailPage() {
   // Mobile view state: 'folders' | 'list' | 'message'
   const [mobileView, setMobileView] = useState<'folders' | 'list' | 'message'>('list');
   const [showFolderPane, setShowFolderPane] = useState(true);
+  // Reading pane mode — matches Outlook's "Volet de lecture" setting.
+  // 'right'  : list on the left, reading pane on the right (default)
+  // 'bottom' : list on top, reading pane below (stacked vertically)
+  // 'hidden' : no reading pane (messages open in the full right area only when selected in context)
+  type ReadingPaneMode = 'right' | 'bottom' | 'hidden';
+  const [readingPaneMode, setReadingPaneMode] = useState<ReadingPaneMode>(() => {
+    const v = localStorage.getItem('readingPaneMode');
+    return (v === 'bottom' || v === 'hidden' || v === 'right') ? v : 'right';
+  });
+  useEffect(() => { localStorage.setItem('readingPaneMode', readingPaneMode); }, [readingPaneMode]);
+  // Height (in px) of the message list when the reading pane is docked at the bottom.
+  const [listHeight, setListHeight] = useState<number>(() => {
+    const n = parseInt(localStorage.getItem('listHeight') || '320', 10);
+    return Number.isFinite(n) && n >= 120 && n <= 900 ? n : 320;
+  });
+  useEffect(() => { localStorage.setItem('listHeight', String(listHeight)); }, [listHeight]);
+  const isListResizingHeight = useRef(false);
+  const handleListHeightResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isListResizingHeight.current = true;
+    const startY = e.clientY;
+    const startH = listHeight;
+    const onMove = (ev: MouseEvent) => {
+      if (!isListResizingHeight.current) return;
+      const delta = ev.clientY - startY;
+      const next = Math.min(900, Math.max(120, startH + delta));
+      setListHeight(next);
+    };
+    const onUp = () => {
+      isListResizingHeight.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
   // When true, the inline compose pane takes the full width (folder pane + message list hidden).
   const [composeExpanded, setComposeExpanded] = useState(false);
   // Split view: show the active tab + another tab side-by-side.
@@ -895,6 +931,8 @@ export default function MailPage() {
           onToggleSplitKeepMessageList={() => setSplitKeepMessageList(v => !v)}
           splitComposeReply={splitComposeReply}
           onToggleSplitComposeReply={() => setSplitComposeReply(v => !v)}
+          readingPaneMode={readingPaneMode}
+          onChangeReadingPaneMode={(m) => setReadingPaneMode(m)}
         />
       </div>
 
@@ -981,11 +1019,19 @@ export default function MailPage() {
         </div>
 
         {/* Desktop message list block — uses pixel width from resize handle */}
+        {/* Wrapper: on mobile uses display:contents so children behave as direct flex children of containerRef (mobile layout unchanged). On desktop it becomes a flex container whose direction depends on readingPaneMode (right → row, bottom → column). */}
+        <div className={`contents md:flex md:flex-1 md:min-w-0 md:min-h-0 md:gap-1 ${readingPaneMode === 'bottom' ? 'md:flex-col' : 'md:flex-row'}`}>
         {!composeExpanded && (!splitActive || splitKeepMessageList) && (!splitComposeActive || splitKeepMessageList) && (
           <>
             <div
-              className="hidden md:flex flex-col flex-shrink-0 h-full bg-white rounded-md shadow-sm overflow-hidden"
-              style={{ width: listWidth }}
+              className={`hidden md:flex flex-col flex-shrink-0 bg-white rounded-md shadow-sm overflow-hidden ${readingPaneMode === 'bottom' ? 'w-full h-auto' : 'h-full'} ${readingPaneMode === 'hidden' ? 'md:flex-1' : ''}`}
+              style={
+                readingPaneMode === 'bottom'
+                  ? { height: listHeight, width: '100%' }
+                  : readingPaneMode === 'hidden'
+                    ? undefined
+                    : { width: listWidth }
+              }
             >
               <MessageList
                 messages={messages}
@@ -1010,19 +1056,31 @@ export default function MailPage() {
               />
             </div>
 
-            {/* Message list resize handle — desktop only */}
-            <div
-              className="hidden md:flex w-1 flex-shrink-0 cursor-col-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors group relative"
-              onMouseDown={handleResizeStart}
-            >
-              <div className="absolute inset-y-0 -left-1 -right-1" />
-            </div>
+            {/* Message list resize handle — desktop only; orientation depends on reading pane mode */}
+            {readingPaneMode !== 'hidden' && (
+              readingPaneMode === 'bottom' ? (
+                <div
+                  className="hidden md:flex h-1 flex-shrink-0 cursor-row-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors group relative"
+                  onMouseDown={handleListHeightResizeStart}
+                >
+                  <div className="absolute inset-x-0 -top-1 -bottom-1" />
+                </div>
+              ) : (
+                <div
+                  className="hidden md:flex w-1 flex-shrink-0 cursor-col-resize hover:bg-outlook-blue/30 active:bg-outlook-blue/50 transition-colors group relative"
+                  onMouseDown={handleResizeStart}
+                >
+                  <div className="absolute inset-y-0 -left-1 -right-1" />
+                </div>
+              )
+            )}
           </>
         )}
 
         {/* Right pane: message view + tab bar stacked vertically */}
         <div className={`
-          ${mobileView === 'message' ? 'flex' : 'hidden'} md:flex
+          ${mobileView === 'message' ? 'flex' : 'hidden'}
+          ${readingPaneMode === 'hidden' ? 'md:hidden' : 'md:flex'}
           flex-col flex-1 min-w-0 overflow-hidden
         `}>
           {/* Compose + optional side panels (emoji, etc.) laid out horizontally */}
@@ -1255,6 +1313,7 @@ export default function MailPage() {
               ))}
             </div>
           )}
+        </div>
         </div>
       </div>
 
