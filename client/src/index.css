@@ -135,6 +135,36 @@ html, body, #root {
   text-decoration: underline;
 }
 
+/* ---------------------------------------------------------------
+   Dark-mode readability for incoming HTML emails.
+
+   Emails often embed hard-coded colors (black text, white/transparent
+   backgrounds, dark quote borders…) via inline styles that override any
+   theme we set. To guarantee legibility without rewriting user content,
+   we render the email body on a neutral light surface when the app is
+   in dark mode. This mirrors what Gmail/Outlook Web do.
+   --------------------------------------------------------------- */
+html.dark .email-body {
+  background-color: #ffffff;
+  color: #1f1f1f;
+  padding: 16px;
+  border-radius: 6px;
+  color-scheme: light;
+}
+
+/* Ensure descendants also use the light color scheme (form controls,
+   scrollbars inside the body, etc.) and stay readable even when their
+   inline styles assume a white background. */
+html.dark .email-body,
+html.dark .email-body * {
+  color-scheme: light;
+}
+
+/* Re-apply the app accent on links inside the rendered email. */
+html.dark .email-body a {
+  color: #0078D4;
+}
+
 /* Quill editor overrides */
 .ql-toolbar.ql-snow {
   border: 1px solid var(--outlook-border-hex) !important;
