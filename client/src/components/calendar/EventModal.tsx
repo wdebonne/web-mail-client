@@ -57,6 +57,10 @@ interface EventModalProps {
   onClose: () => void;
   isSubmitting: boolean;
   defaultOrganizerEmail?: string;
+  /** Tab to activate when the modal opens. Defaults to `summary`. */
+  initialTab?: Tab;
+  /** Default duration in minutes for new events (fallback when no editingEvent). Defaults to 60. */
+  defaultDurationMinutes?: number;
 }
 
 /* ============================================================
@@ -199,11 +203,14 @@ function defaultRecurrence(): Recurrence {
 
 export default function EventModal({
   calendars, initialDate, editingEvent, onSubmit, onClose, isSubmitting, defaultOrganizerEmail,
+  initialTab = 'summary', defaultDurationMinutes = 60,
 }: EventModalProps) {
   const seedStart = editingEvent ? parseISO(editingEvent.start_date) : initialDate;
-  const seedEnd = editingEvent ? parseISO(editingEvent.end_date) : new Date(initialDate.getTime() + 3600_000);
+  const seedEnd = editingEvent
+    ? parseISO(editingEvent.end_date)
+    : new Date(initialDate.getTime() + Math.max(5, defaultDurationMinutes) * 60_000);
 
-  const [tab, setTab] = useState<Tab>('summary');
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   // ── Summary ──
   const [title, setTitle] = useState(editingEvent?.title || '');

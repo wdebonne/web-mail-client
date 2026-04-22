@@ -4,7 +4,7 @@ import { api } from '../api';
 import { CalendarEvent, Calendar } from '../types';
 import {
   ChevronLeft, ChevronRight, Plus, X, Clock, MapPin, Users,
-  Briefcase, Pencil, Trash2,
+  Briefcase, Pencil, Trash2, Repeat, Copy, FolderOpen,
 } from 'lucide-react';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -20,6 +20,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { SyncCalendarsDialog } from '../components/calendar/SyncCalendarsDialog';
 import { AddCalendarUrlDialog } from '../components/calendar/AddCalendarUrlDialog';
 import EventModal from '../components/calendar/EventModal';
+import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import {
   getCalendarView, setCalendarView,
   getRibbonMode, setRibbonMode,
@@ -44,8 +45,10 @@ export default function CalendarPage() {
 
   const [showEventForm, setShowEventForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [editInitialTab, setEditInitialTab] = useState<'summary' | 'recurrence' | 'attendees' | 'attachments'>('summary');
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [selectedRange, setSelectedRange] = useState<{ start: Date; end: Date } | null>(null);
+  const [eventContextMenu, setEventContextMenu] = useState<{ event: CalendarEvent; x: number; y: number } | null>(null);
 
   const [ribbonCollapsed, setRibbonCollapsedState] = useState(() => getRibbonCollapsed());
   const [ribbonMode, setRibbonModeState] = useState<'classic' | 'simplified'>(() => getRibbonMode());
@@ -212,13 +215,53 @@ export default function CalendarPage() {
 
   const openCreateEvent = (date?: Date) => {
     setEditingEvent(null);
+    setEditInitialTab('summary');
     if (date) setSelectedRange({ start: date, end: date });
     setShowEventForm(true);
   };
-  const openEditEvent = (ev: CalendarEvent) => {
+  const openEditEvent = (ev: CalendarEvent, tab: 'summary' | 'recurrence' | 'attendees' | 'attachments' = 'summary') => {
     setEditingEvent(ev);
+    setEditInitialTab(tab);
     setShowEventForm(true);
   };
+
+  const handleEventContextMenu = (e: React.MouseEvent, ev: CalendarEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEventContextMenu({ event: ev, x: e.clientX, y: e.clientY });
+  };
+
+  const duplicateEvent = (ev: CalendarEvent) => {
+    createEventMutation.mutate({
+      calendarId: ev.calendar_id,
+      title: `${ev.title} (copie)`,
+      description: ev.description,
+      location: ev.location,
+      startDate: ev.start_date,
+      endDate: ev.end_date,
+      allDay: ev.all_day,
+      recurrenceRule: ev.recurrence_rule,
+      rdates: ev.rdates,
+      reminderMinutes: ev.reminder_minutes ?? null,
+      attendees: ev.attendees,
+      status: ev.status || 'confirmed',
+      priority: ev.priority ?? null,
+      url: ev.url,
+      categories: ev.categories,
+      transparency: ev.transparency,
+    } as any);
+  };
+
+  const eventMenuItems = (ev: CalendarEvent): ContextMenuItem[] => [
+    { label: 'Ouvrir', icon: <FolderOpen size={14} />, onClick: () => openEditEvent(ev, 'summary') },
+    { label: 'Modifier', icon: <Pencil size={14} />, onClick: () => openEditEvent(ev, 'summary') },
+    { label: ev.recurrence_rule || ev.rdates?.length ? 'Modifier la récurrence' : 'Répéter', icon: <Repeat size={14} />, onClick: () => openEditEvent(ev, 'recurrence') },
+    { label: 'Participants', icon: <Users size={14} />, onClick: () => openEditEvent(ev, 'attendees') },
+    { label: '', separator: true, onClick: () => {} },
+    { label: "Dupliquer l'événement", icon: <Copy size={14} />, onClick: () => duplicateEvent(ev) },
+    { label: '', separator: true, onClick: () => {} },
+    { label: 'Supprimer', icon: <Trash2 size={14} />, danger: true, onClick: () => deleteEventMutation.mutate(ev.id) },
+  ];
 
   const handleToggleVisibility = (id: string, visible: boolean) => {
     updateCalendarMutation.mutate({ id, data: { isVisible: visible } });
@@ -318,6 +361,7 @@ export default function CalendarPage() {
                 getEventsForDay={getEventsForDay}
                 onDayClick={(d) => openCreateEvent(d)}
                 onEventClick={(ev) => setSelectedEvent(ev)}
+                onEventContextMenu={handleEventContextMenu}
                 eventColor={eventColor}
               />
             )}
@@ -329,6 +373,7 @@ export default function CalendarPage() {
                 events={filteredEvents}
                 onSlotClick={(d) => openCreateEvent(d)}
                 onEventClick={(ev) => setSelectedEvent(ev)}
+                onEventContextMenu={handleEventContextMenu}
                 eventColor={eventColor}
               />
             )}
@@ -340,6 +385,7 @@ export default function CalendarPage() {
                 events={filteredEvents}
                 onSlotClick={(d) => openCreateEvent(d)}
                 onEventClick={(ev) => setSelectedEvent(ev)}
+                onEventContextMenu={handleEventContextMenu}
                 eventColor={eventColor}
               />
             )}
@@ -398,6 +444,8 @@ export default function CalendarPage() {
           calendars={calendars}
           initialDate={selectedRange?.start || currentDate}
           editingEvent={editingEvent}
+          initialTab={editInitialTab}
+          defaultDurationMinutes={timeScale}
           onSubmit={(data) => {
             if (editingEvent) {
               updateEventMutation.mutate({ id: editingEvent.id, data });
@@ -405,8 +453,17 @@ export default function CalendarPage() {
               createEventMutation.mutate(data);
             }
           }}
-          onClose={() => { setShowEventForm(false); setEditingEvent(null); setSelectedRange(null); }}
+          onClose={() => { setShowEventForm(false); setEditingEvent(null); setSelectedRange(null); setEditInitialTab('summary'); }}
           isSubmitting={createEventMutation.isPending || updateEventMutation.isPending}
+        />
+      )}
+
+      {eventContextMenu && (
+        <ContextMenu
+          x={eventContextMenu.x}
+          y={eventContextMenu.y}
+          items={eventMenuItems(eventContextMenu.event)}
+          onClose={() => setEventContextMenu(null)}
         />
       )}
 
@@ -437,11 +494,12 @@ export default function CalendarPage() {
   );
 }
 
-function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, eventColor }: {
+function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, onEventContextMenu, eventColor }: {
   currentDate: Date;
   getEventsForDay: (d: Date) => CalendarEvent[];
   onDayClick: (d: Date) => void;
   onEventClick: (ev: CalendarEvent) => void;
+  onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
 }) {
   const monthStart = startOfMonth(currentDate);
@@ -476,6 +534,7 @@ function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, eve
               {dayEvents.slice(0, 3).map((event) => (
                 <button
                   key={event.id}
+                  onContextMenu={(e) => onEventContextMenu(e, event)}
                   onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
                   className="w-full text-left text-[10px] px-1 py-0.5 rounded mb-0.5 truncate transition-opacity hover:opacity-80"
                   style={{ backgroundColor: `${eventColor(event)}20`, color: eventColor(event), borderLeft: `2px solid ${eventColor(event)}` }}
@@ -497,44 +556,47 @@ function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, eve
   );
 }
 
-function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, eventColor }: {
+function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor }: {
   currentDate: Date;
   workWeek: boolean;
   timeScale: number;
   events: CalendarEvent[];
   onSlotClick: (d: Date) => void;
   onEventClick: (ev: CalendarEvent) => void;
+  onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
 }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekDays = workWeek ? [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4, 5, 6];
   const days = weekDays.map(i => addDays(weekStart, i));
   return (
-    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} eventColor={eventColor} />
+    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} />
   );
 }
 
-function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEventClick, eventColor }: {
+function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor }: {
   currentDate: Date;
   dayCount: number;
   timeScale: number;
   events: CalendarEvent[];
   onSlotClick: (d: Date) => void;
   onEventClick: (ev: CalendarEvent) => void;
+  onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
 }) {
   const days = Array.from({ length: dayCount }, (_, i) => addDays(startOfDay(currentDate), i));
   return (
-    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} eventColor={eventColor} />
+    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} />
   );
 }
 
-function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, eventColor }: {
+function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor }: {
   days: Date[];
   timeScale: number;
   events: CalendarEvent[];
   onSlotClick: (d: Date) => void;
   onEventClick: (ev: CalendarEvent) => void;
+  onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
 }) {
   const HOUR_HEIGHT = 48;
