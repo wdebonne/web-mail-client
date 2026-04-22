@@ -27,17 +27,24 @@ interface AccountRow {
 
 function suggestCaldavUrl(account: AccountRow): string {
   const host = account.imap_host || '';
-  const u = account.username || account.email;
-  // Heuristics for common providers
+  const email = account.email;
+  const u = account.username || email;
+  // o2switch cPanel Horde/Sabre CalDAV (used by RoundCube) - the default path
+  if (/o2switch/i.test(host)) {
+    // Extract the cPanel host like "colorant.o2switch.net" from "imap.villepavilly.fr" won't work;
+    // fall back to the imap_host itself when it already is a cPanel host.
+    const cpanelHost = /o2switch\.net$/i.test(host) ? host : 'colorant.o2switch.net';
+    return `https://${cpanelHost}:2080/calendars/${email}/calendar`;
+  }
   if (/\bnextcloud\b/i.test(host) || /\bnc\./i.test(host)) {
     const base = host.replace(/^imap\./i, '').replace(/^mail\./i, '');
     return `https://${base}/remote.php/dav/calendars/${u}/`;
   }
-  if (/o2switch|sogo/i.test(host)) {
+  if (/sogo/i.test(host)) {
     const base = host.replace(/^imap\./i, 'mail.');
     return `https://${base}/SOGo/dav/${u}/Calendar/`;
   }
-  // Generic SOGo pattern
+  // Generic SOGo / Sabre pattern
   const base = host.replace(/^imap\./i, 'mail.');
   return `https://${base}/SOGo/dav/${u}/`;
 }

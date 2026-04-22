@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { CalDAVService } from '../services/caldav';
 import { decrypt } from '../utils/encryption';
 import { logger } from '../utils/logger';
+import { buildIcs } from '../utils/ical';
+import crypto from 'crypto';
 
 export const calendarRouter = Router();
 
@@ -183,12 +185,16 @@ calendarRouter.post('/events', async (req: AuthRequest, res) => {
     );
     if (check.rows.length === 0) return res.status(404).json({ error: 'Calendrier non trouvé' });
 
+    const icalUid = `${crypto.randomUUID()}@webmail.local`;
     const result = await pool.query(
-      `INSERT INTO calendar_events (calendar_id, title, description, location, start_date, end_date, all_day, recurrence_rule, reminder_minutes, attendees, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO calendar_events (calendar_id, title, description, location, start_date, end_date, all_day, recurrence_rule, reminder_minutes, attendees, status, ical_uid)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
-      [data.calendarId, data.title, data.description, data.location, data.startDate, data.endDate, data.allDay, data.recurrenceRule, data.reminderMinutes, JSON.stringify(data.attendees || []), data.status]
+      [data.calendarId, data.title, data.description, data.location, data.startDate, data.endDate, data.allDay, data.recurrenceRule, data.reminderMinutes, JSON.stringify(data.attendees || []), data.status, icalUid]
     );
+
+    // Fire-and-forget: push to remote CalDAV if the calendar is linked to a mail account
+    pushEventToCalDAV(result.rows[0].id).catch(err => logger.error(err, 'CalDAV push (create) failed'));
 
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
@@ -231,6 +237,8 @@ calendarRouter.put('/events/:id', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Événement non trouvé' });
     }
 
+    pushEventToCalDAV(result.rows[0].id).catch(err => logger.error(err, 'CalDAV push (update) failed'));
+
     res.json(result.rows[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -240,6 +248,17 @@ calendarRouter.put('/events/:id', async (req: AuthRequest, res) => {
 // Delete event
 calendarRouter.delete('/events/:id', async (req: AuthRequest, res) => {
   try {
+    // Grab ical_uid + calendar link info BEFORE deleting so we can also delete remotely.
+    const snapshot = await pool.query(
+      `SELECT ce.id, ce.ical_uid, c.caldav_url, c.mail_account_id
+       FROM calendar_events ce
+       JOIN calendars c ON c.id = ce.calendar_id
+       WHERE ce.id = $1 AND (c.user_id = $2 OR c.id IN (
+         SELECT calendar_id FROM shared_calendar_access WHERE user_id = $2 AND permission = 'write'
+       ))`,
+      [req.params.id, req.userId]
+    );
+
     const result = await pool.query(
       `DELETE FROM calendar_events WHERE id = $1 AND calendar_id IN (
         SELECT c.id FROM calendars c
@@ -253,11 +272,71 @@ calendarRouter.delete('/events/:id', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Événement non trouvé' });
     }
 
+    const snap = snapshot.rows[0];
+    if (snap?.caldav_url && snap?.mail_account_id && snap?.ical_uid) {
+      deleteEventFromCalDAV(snap.mail_account_id, snap.caldav_url, snap.ical_uid)
+        .catch(err => logger.error(err, 'CalDAV push (delete) failed'));
+    }
+
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ---- CalDAV push helpers (fire-and-forget) ----
+
+async function buildCalDAVServiceForAccount(mailAccountId: string): Promise<{ service: CalDAVService; calendarUrlFallback?: string } | null> {
+  const acc = await pool.query(
+    'SELECT caldav_url, caldav_username, username, password_encrypted FROM mail_accounts WHERE id = $1',
+    [mailAccountId]
+  );
+  if (acc.rows.length === 0 || !acc.rows[0].caldav_url) return null;
+  const row = acc.rows[0];
+  try {
+    const password = decrypt(row.password_encrypted);
+    const service = new CalDAVService({
+      baseUrl: row.caldav_url,
+      username: row.caldav_username || row.username,
+      password,
+    });
+    return { service, calendarUrlFallback: row.caldav_url };
+  } catch {
+    return null;
+  }
+}
+
+/** Build a minimal ICS for one event row and PUT it to remote CalDAV. */
+async function pushEventToCalDAV(eventId: string): Promise<void> {
+  const row = await pool.query(
+    `SELECT ce.id, ce.title, ce.description, ce.location, ce.start_date, ce.end_date,
+            ce.all_day, ce.recurrence_rule, ce.ical_uid, ce.ical_data, ce.status,
+            ce.attendees, ce.organizer,
+            c.id AS calendar_id, c.name AS calendar_name, c.caldav_url, c.mail_account_id
+     FROM calendar_events ce
+     JOIN calendars c ON c.id = ce.calendar_id
+     WHERE ce.id = $1`,
+    [eventId]
+  );
+  if (row.rows.length === 0) return;
+  const ev = row.rows[0];
+  if (!ev.caldav_url || !ev.mail_account_id || !ev.ical_uid) return;
+
+  const built = await buildCalDAVServiceForAccount(ev.mail_account_id);
+  if (!built) return;
+
+  const ics = buildIcs(ev.calendar_name || 'Calendar', [ev]);
+  const result = await built.service.putEvent(ev.caldav_url, ev.ical_uid, ics);
+  if (!result.ok) {
+    logger.error(new Error(`PUT ${result.url} -> ${result.status}: ${result.error || ''}`), 'CalDAV push failed');
+  }
+}
+
+async function deleteEventFromCalDAV(mailAccountId: string, calendarUrl: string, icalUid: string): Promise<void> {
+  const built = await buildCalDAVServiceForAccount(mailAccountId);
+  if (!built) return;
+  await built.service.deleteEvent(calendarUrl, icalUid);
+}
 
 // ---- CalDAV sync linked to mail accounts ----
 

@@ -260,6 +260,7 @@ export default function CalendarPage() {
             onChangeCurrentDate={setCurrentDate}
             selectedRange={selectedRange}
             onNewCalendar={() => setNewCalendarOpen(true)}
+            onSubscribeCalendar={() => setSyncDialogOpen(true)}
             onToggleCalendarVisibility={handleToggleVisibility}
             onRenameCalendar={handleRenameCalendar}
             onChangeColor={handleChangeColor}

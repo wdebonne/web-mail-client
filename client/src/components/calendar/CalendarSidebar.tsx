@@ -9,7 +9,7 @@ import { fr } from 'date-fns/locale';
 import {
   ChevronRight, ChevronDown, ChevronUp, Plus, CalendarPlus, FolderPlus,
   Pencil, Palette, Trash2, Share2, Copy, Eye, EyeOff, FolderOpen,
-  GripVertical, MoreHorizontal,
+  GripVertical, MoreHorizontal, CloudDownload,
 } from 'lucide-react';
 import type { Calendar } from '../../types';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
@@ -26,6 +26,7 @@ interface CalendarSidebarProps {
   onChangeCurrentDate: (d: Date) => void;
   selectedRange?: { start: Date; end: Date } | null;
   onNewCalendar: () => void;
+  onSubscribeCalendar?: () => void;
   onToggleCalendarVisibility: (id: string, visible: boolean) => void;
   onRenameCalendar: (id: string, name: string) => void;
   onChangeColor: (id: string, color: string) => void;
@@ -38,7 +39,7 @@ interface CalendarSidebarProps {
 
 export default function CalendarSidebar({
   calendars, currentDate, onChangeCurrentDate, selectedRange,
-  onNewCalendar, onToggleCalendarVisibility, onRenameCalendar,
+  onNewCalendar, onSubscribeCalendar, onToggleCalendarVisibility, onRenameCalendar,
   onChangeColor, onDeleteCalendar, onShareCalendar,
   refreshKey = 0, onChangeRefreshKey,
 }: CalendarSidebarProps) {
@@ -294,6 +295,15 @@ export default function CalendarSidebar({
       <div className="flex items-center justify-between px-2 py-1 border-b border-outlook-border flex-shrink-0">
         <span className="text-[11px] font-semibold text-outlook-text-secondary uppercase tracking-wide">Calendriers</span>
         <div className="flex items-center gap-0.5">
+          {onSubscribeCalendar && (
+            <button
+              onClick={onSubscribeCalendar}
+              className="p-1 hover:bg-outlook-bg-hover rounded text-outlook-text-secondary"
+              title="Ajouter un calendrier (CalDAV)"
+            >
+              <CloudDownload size={14} />
+            </button>
+          )}
           <button
             onClick={onNewCalendar}
             className="p-1 hover:bg-outlook-bg-hover rounded text-outlook-text-secondary"

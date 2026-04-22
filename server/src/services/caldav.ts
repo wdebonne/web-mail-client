@@ -138,16 +138,51 @@ export class CalDAVService {
     const end = new Date();
     end.setMonth(end.getMonth() + 6);
 
+    // Find user's local default calendar to promote (link) it to the mail account's default remote calendar.
+    const defaultLocal = await pool.query(
+      `SELECT id FROM calendars
+       WHERE user_id = $1 AND is_default = true
+         AND (source = 'local' OR source IS NULL)
+         AND (mail_account_id IS NULL OR mail_account_id = $2)
+       ORDER BY created_at ASC LIMIT 1`,
+      [userId, mailAccountId]
+    );
+    const localDefaultId: string | null = defaultLocal.rows[0]?.id || null;
+
+    // Pick the "default" remote calendar: first one returned, OR one named /calendar|default/i
+    const preferred =
+      calendars.find(c => /^(calendar|default|agenda)$/i.test(c.name)) ||
+      calendars[0];
+
     for (const cal of calendars) {
-      const calResult = await pool.query(
-        `INSERT INTO calendars (user_id, mail_account_id, name, color, source, caldav_url, external_id)
-         VALUES ($1, $2, $3, $4, 'caldav', $5, $6)
-         ON CONFLICT (mail_account_id, external_id) WHERE mail_account_id IS NOT NULL AND external_id IS NOT NULL
-         DO UPDATE SET name = EXCLUDED.name, color = EXCLUDED.color, caldav_url = EXCLUDED.caldav_url, updated_at = NOW()
-         RETURNING id`,
-        [userId, mailAccountId, cal.name, cal.color || accountColor || '#0078D4', cal.href, cal.href]
-      );
-      const calendarId = calResult.rows[0].id;
+      let calendarId: string;
+
+      if (localDefaultId && cal === preferred) {
+        // Promote local default → linked CalDAV calendar (events will sync back/forth)
+        const upd = await pool.query(
+          `UPDATE calendars
+             SET mail_account_id = $1,
+                 source = 'caldav',
+                 caldav_url = $2,
+                 external_id = $3,
+                 color = COALESCE(color, $4),
+                 updated_at = NOW()
+           WHERE id = $5
+           RETURNING id`,
+          [mailAccountId, cal.href, cal.href, cal.color || accountColor || '#0078D4', localDefaultId]
+        );
+        calendarId = upd.rows[0].id;
+      } else {
+        const calResult = await pool.query(
+          `INSERT INTO calendars (user_id, mail_account_id, name, color, source, caldav_url, external_id)
+           VALUES ($1, $2, $3, $4, 'caldav', $5, $6)
+           ON CONFLICT (mail_account_id, external_id) WHERE mail_account_id IS NOT NULL AND external_id IS NOT NULL
+           DO UPDATE SET name = EXCLUDED.name, color = EXCLUDED.color, caldav_url = EXCLUDED.caldav_url, updated_at = NOW()
+           RETURNING id`,
+          [userId, mailAccountId, cal.name, cal.color || accountColor || '#0078D4', cal.href, cal.href]
+        );
+        calendarId = calResult.rows[0].id;
+      }
 
       let events: ParsedEvent[] = [];
       try {
@@ -177,6 +212,48 @@ export class CalDAVService {
     await pool.query('UPDATE mail_accounts SET caldav_last_sync = NOW() WHERE id = $1', [mailAccountId]);
 
     return { calendars: calendars.length, events: eventCount };
+  }
+
+  /** PUT a single VEVENT as its own resource inside a CalDAV collection. */
+  async putEvent(calendarHref: string, icalUid: string, icsBody: string): Promise<{ ok: boolean; status: number; url: string; error?: string }> {
+    const baseUrl = this.absolute(calendarHref);
+    const base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+    const safeUid = encodeURIComponent(icalUid);
+    const url = `${base}${safeUid}.ics`;
+    try {
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Authorization: this.authHeader(),
+          'Content-Type': 'text/calendar; charset=utf-8',
+        },
+        body: icsBody,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return { ok: false, status: res.status, url, error: text.slice(0, 300) };
+      }
+      return { ok: true, status: res.status, url };
+    } catch (e: any) {
+      return { ok: false, status: 0, url, error: e?.message || 'network error' };
+    }
+  }
+
+  /** DELETE a single VEVENT resource. */
+  async deleteEvent(calendarHref: string, icalUid: string): Promise<{ ok: boolean; status: number }> {
+    const baseUrl = this.absolute(calendarHref);
+    const base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+    const url = `${base}${encodeURIComponent(icalUid)}.ics`;
+    try {
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: { Authorization: this.authHeader() },
+      });
+      // 404 means already gone - treat as OK
+      return { ok: res.ok || res.status === 404, status: res.status };
+    } catch {
+      return { ok: false, status: 0 };
+    }
   }
 
   // ----- Parsing -----
