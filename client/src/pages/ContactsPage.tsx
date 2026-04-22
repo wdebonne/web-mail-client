@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { Contact, ContactGroup } from '../types';
@@ -63,6 +63,34 @@ export default function ContactsPage() {
   const [showImport, setShowImport] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>('name');
+
+  // Resizable sidebar
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const stored = parseInt(localStorage.getItem('contacts-sidebar-width') || '0', 10);
+    return stored >= 240 && stored <= 600 ? stored : 320;
+  });
+  const resizing = useRef(false);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizing.current) return;
+      const w = Math.min(600, Math.max(240, e.clientX));
+      setSidebarWidth(w);
+    };
+    const onUp = () => {
+      if (resizing.current) {
+        resizing.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem('contacts-sidebar-width', String(sidebarWidth));
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [sidebarWidth]);
 
   const isSenderView = selectedGroup === SENDER_GROUP_ID;
   const isFavView = selectedGroup === FAV_GROUP_ID;
@@ -227,8 +255,11 @@ export default function ContactsPage() {
 
   return (
     <div className="h-full flex bg-outlook-bg">
-      {/* Left sidebar */}
-      <div className="w-80 border-r border-outlook-border flex flex-col flex-shrink-0 bg-white">
+      {/* Left sidebar (resizable) */}
+      <div
+        style={{ width: sidebarWidth }}
+        className="border-r border-outlook-border flex flex-col flex-shrink-0 bg-outlook-bg-primary"
+      >
         <div className="p-3 border-b border-outlook-border space-y-2">
           <button
             onClick={() => { setEditingContact(null); setShowForm(true); }}
@@ -385,7 +416,7 @@ export default function ContactsPage() {
           ) : grouped ? (
             grouped.map(([letter, list]) => (
               <div key={letter}>
-                <div className="sticky top-0 bg-gray-50 text-[10px] font-semibold text-outlook-text-secondary px-3 py-1 border-b border-outlook-border uppercase">
+                <div className="sticky top-0 bg-outlook-bg-tertiary text-[10px] font-semibold text-outlook-text-secondary px-3 py-1 border-b border-outlook-border uppercase z-10">
                   {letter}
                 </div>
                 {list.map(c => (
@@ -411,6 +442,24 @@ export default function ContactsPage() {
             ))
           )}
         </div>
+      </div>
+
+      {/* Resize handle */}
+      <div
+        onMouseDown={(e) => {
+          e.preventDefault();
+          resizing.current = true;
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+        }}
+        onDoubleClick={() => {
+          setSidebarWidth(320);
+          localStorage.setItem('contacts-sidebar-width', '320');
+        }}
+        title="Glisser pour redimensionner — double-clic pour réinitialiser"
+        className="w-1 cursor-col-resize hover:bg-outlook-blue/50 active:bg-outlook-blue transition-colors flex-shrink-0 group relative"
+      >
+        <div className="absolute inset-y-0 -left-1 -right-1" />
       </div>
 
       {/* Right panel: detail */}
@@ -512,7 +561,9 @@ function ContactRow({
     <div
       onClick={onClick}
       className={`group flex items-center gap-3 px-3 py-2.5 border-b border-outlook-border cursor-pointer transition-colors
-        ${selected ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'hover:bg-outlook-bg-hover'}`}
+        ${selected
+          ? 'bg-outlook-bg-selected border-l-2 border-l-outlook-blue text-outlook-text-primary'
+          : 'hover:bg-outlook-bg-hover'}`}
     >
       <Avatar contact={contact} size="md" />
       <div className="min-w-0 flex-1">
