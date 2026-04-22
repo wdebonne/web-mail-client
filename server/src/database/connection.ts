@@ -64,6 +64,11 @@ export async function initDatabase() {
         ON calendars(mail_account_id, external_id)
         WHERE mail_account_id IS NOT NULL AND external_id IS NOT NULL;
 
+      -- Unique index required by CalDAV sync ON CONFLICT on calendar_events
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_events_caldav_unique
+        ON calendar_events(calendar_id, ical_uid)
+        WHERE external_id IS NOT NULL;
+
       -- Link contacts back to the mail account + CardDAV item identifiers (for push-back)
       ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE SET NULL;
       ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_url TEXT;

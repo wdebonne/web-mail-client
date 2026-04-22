@@ -455,8 +455,8 @@ calendarRouter.post('/accounts/:accountId/sync', async (req: AuthRequest, res) =
     logger.info(`CalDAV synced for account ${account.email}: ${result.calendars} calendars, ${result.events} events`);
     res.json({ ok: true, ...result });
   } catch (error: any) {
-    logger.error(error, 'CalDAV sync failed');
-    res.status(500).json({ error: error.message });
+    logger.error(error, `CalDAV sync failed for account ${req.params.accountId}`);
+    res.status(500).json({ error: error?.message || 'Erreur de synchronisation CalDAV', code: error?.code });
   }
 });
 
