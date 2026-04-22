@@ -55,7 +55,7 @@ export function saveSignatures(signatures: MailSignature[]) {
   try { window.dispatchEvent(new Event('mail.signatures.changed')); } catch {}
 }
 
-export function upsertSignature(sig: Omit<MailSignature, 'updatedAt'> & { id?: string }): MailSignature {
+export function upsertSignature(sig: { id?: string; name: string; html: string }): MailSignature {
   const list = readJSON<MailSignature[]>(KEY_LIST, []);
   const now = Date.now();
   if (sig.id) {
