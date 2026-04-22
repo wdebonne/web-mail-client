@@ -7,6 +7,13 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Corrigé
+
+- **Ruban simplifié — menus non fonctionnels** : en mode simplifié, les boutons *Catégoriser*, *Volet de lecture*, *Liste mail*, *Densité*, *Conversations* et *Boîtes favoris* mettaient bien à jour leur état d'ouverture mais n'affichaient aucun popup. Les menus (`createPortal`) étaient rendus exclusivement dans le JSX du ruban classique, qui n'est jamais évalué quand le mode simplifié fait un `return` anticipé. Les 6 menus ont été extraits dans un fragment `sharedPopups` commun rendu dans les deux modes (`client/src/components/mail/Ribbon.tsx`).
+- **Crash de la vue conversation — `TypeError: Me.trim is not a function`** : lorsqu'un serveur IMAP renvoyait plusieurs Message-IDs dans `References` / `In-Reply-To`, `mailparser` transmettait un `string[]` au lieu d'une `string`. Le `useMemo` calculant le `threadKey` appelait alors `.trim()` directement sur le tableau et faisait planter l'arbre React au premier rendu de `MessageList`. Correctif double :
+  - Côté serveur, normalisation en `string` (`Array.isArray ? arr.join(' ') : ...`) avant envoi au client (`server/src/services/mail.ts`).
+  - Côté client, `threadKeyOf` devient défensif et gère `string | string[] | undefined` pour protéger également les messages déjà en cache IndexedDB (`client/src/components/mail/MessageList.tsx`).
+
 ### Ajouté
 
 #### Chiffrement et signature — OpenPGP & S/MIME
