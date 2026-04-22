@@ -1,5 +1,6 @@
 import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer';
 import { simpleParser } from 'mailparser';
 import { logger } from '../utils/logger';
 
@@ -332,26 +333,41 @@ export class MailService {
       const sentPath = await this.resolveSentMailboxPath(client);
       if (!sentPath) return;
 
-      const toHeader = options.to.map((a) => this.formatAddress(a)).join(', ');
-      const ccHeader = options.cc?.length ? options.cc.map((a) => this.formatAddress(a)).join(', ') : '';
-      const body = options.text || this.plainTextFromHtml(options.html) || '';
+      // Build a full RFC822 MIME representation (HTML + text alternative, attachments, threading
+      // headers) using nodemailer's MailComposer so the copy in Sent matches what the recipient
+      // actually got. This also preserves `In-Reply-To` and `References` which are required for
+      // conversation threading.
+      const composer = new MailComposer({
+        from: this.formatAddress(options.from),
+        sender: options.sender ? this.formatAddress(options.sender) : undefined,
+        replyTo: options.replyTo?.email
+          ? (options.replyTo.name ? `"${options.replyTo.name}" <${options.replyTo.email}>` : options.replyTo.email)
+          : undefined,
+        to: options.to.map(a => this.formatAddress(a)),
+        cc: options.cc?.length ? options.cc.map(a => this.formatAddress(a)) : undefined,
+        // Intentionally omit Bcc in the stored copy (matches most MUAs).
+        subject: options.subject,
+        text: options.text || this.plainTextFromHtml(options.html) || undefined,
+        html: options.html || undefined,
+        inReplyTo: options.inReplyTo,
+        references: options.references,
+        messageId: messageId || `<${Date.now()}@${this.account.smtp_host}>`,
+        date: new Date(),
+        attachments: options.attachments?.length
+          ? options.attachments.map((att: any) => ({
+              filename: att.filename,
+              content: Buffer.from(att.content, 'base64'),
+              contentType: att.contentType,
+            }))
+          : undefined,
+      });
 
-      const lines = [
-        `From: ${this.formatAddress(options.from)}`,
-        options.sender ? `Sender: ${this.formatAddress(options.sender)}` : '',
-        `To: ${toHeader}`,
-        ccHeader ? `Cc: ${ccHeader}` : '',
-        `Subject: ${options.subject}`,
-        `Date: ${new Date().toUTCString()}`,
-        `Message-ID: ${messageId || `<${Date.now()}@${this.account.smtp_host}>`}`,
-        'MIME-Version: 1.0',
-        'Content-Type: text/plain; charset=utf-8',
-        'Content-Transfer-Encoding: 8bit',
-        '',
-        body,
-      ].filter(Boolean);
+      const rawMessage: Buffer = await new Promise((resolve, reject) => {
+        composer.compile().build((err, message) => {
+          if (err) reject(err); else resolve(message);
+        });
+      });
 
-      const rawMessage = Buffer.from(lines.join('\r\n'), 'utf8');
       await client.append(sentPath, rawMessage, ['\\Seen']);
     } finally {
       await client.logout();
