@@ -565,6 +565,33 @@ Section rendue en tête du volet par `FavoritesSection` (dans `FolderPane.tsx`).
   - Ajout/retrait via le menu contextuel d'un dossier (« Ajouter/Retirer des favoris »).
   - Ordre persisté dans `mail.favoriteFolders` (tableau `FavoriteFolder[] = { accountId, path }[]`).
   - Réactivité croisée entre `FolderPane` (section Favoris, menu contextuel) et `Ribbon` (menu « Boîtes favoris » de l'onglet Afficher) via une prop `externalPrefsVersion` propagée depuis `MailPage` (`bumpPrefs`).
+- **Catégories favorites** (non réordonnables, sous les dossiers épinglés) :
+  - Toute catégorie marquée `isFavorite` apparaît automatiquement dans la section Favoris.
+  - Clic = active un **filtre unifié multi‑boîtes** : `setCategoryFilter(id)` du `mailStore` bascule `virtualFolder` sur `'unified-inbox'` puis `MailPage` filtre `messages` par catégorie assignée. Re-clic désactive le filtre.
+
+### Catégories de messages
+
+Module : `client/src/utils/categories.ts` + `client/src/components/mail/CategoryModals.tsx`. Modèle 100 % côté client, indépendant des comptes IMAP.
+
+| Clé `localStorage` | Type | Rôle |
+|---|---|---|
+| `mail.categories` | `MailCategory[]` | Définition des catégories (`{id, name, color, isFavorite}`) |
+| `mail.messageCategories` | `Record<messageKey, string[]>` | Liste d'IDs de catégories assignées à chaque message |
+
+**Clé d'assignation (`messageKey`)** :
+- Privilégie `mid:${messageId}` (Message-ID RFC 822) — stable entre déplacements et resynchronisations.
+- Repli `uid:${accountId}:${folder}:${uid}` quand le Message-ID est absent.
+
+**API du module** : `getCategories`, `setCategories`, `createCategory`, `updateCategory`, `deleteCategory` (cascade nettoyage des assignations), `toggleCategoryFavorite`, `getCategoryById`, `getMessageCategories`, `setMessageCategories`, `toggleMessageCategory`, `clearMessageCategories`, `messageHasAnyCategory`, `subscribeCategories(cb)` (évènement custom + `storage` cross-tab), `categoryRowTint(hex, alpha)`.
+
+**Points d'intégration UI** :
+- **Ruban** (`Ribbon.tsx`) — onglet Accueil, modes classique et simplifié : bouton « Catégoriser » (icône `Tag` + chevron) qui ouvre un `CategoryPicker` ancré, ainsi que les actions « Nouvelle catégorie » / « Gérer les catégories ».
+- **Liste de mails** (`MessageList.tsx`) : badges « pill » à côté de l'objet (2 visibles + `+N` en wide, 3 en compact), teinte de fond de la ligne via `categoryRowTint(color, 0.18)` (désactivée si la ligne est sélectionnée ou cochée), entrée « Catégoriser » dans le menu contextuel.
+- **Page mail** (`MailPage.tsx`) : `handleCategorize(message, id)` appelle `toggleMessageCategory` puis, si la nouvelle assignation n'est pas vide et que le message n'est pas déjà flaggé, déclenche `flagMutation` → le mail catégorisé apparaît dans le groupe **Épinglé** de la liste. `visibleMessages = messages.filter(...)` applique le `categoryFilter` du store.
+- **Volet Favoris** : voir section précédente.
+- **Modals** : `CategoryEditorModal` (modes `create` / `edit`, layout identique avec étoile favori + palette 24 couleurs), `CategoryManageModal` (liste des catégories avec actions favori / éditer / supprimer + bouton « + Créer »), `CategoryPicker` (popup style Outlook avec recherche, cases à cocher et actions « Nouvelle catégorie » / « Effacer » / « Gérer »).
+
+6 catégories par défaut (`Orange`, `Blue`, `Green`, `Purple`, `Red`, `Yellow`) sont seedées au premier accès.
 
 ### État des onglets (Zustand `mailStore`)
 
@@ -575,11 +602,13 @@ mailStore
 ├── tabMode: TabMode            # Mode d'ouverture
 ├── maxTabs: number             # Limite d'onglets
 ├── virtualFolder: VirtualFolder # null | 'unified-inbox' | 'unified-sent'
+├── categoryFilter: string|null # Filtre par catégorie (actif uniquement en vue unifiée)
 ├── openMessageTab(message)     # Ouvre/active un onglet message
 ├── openComposeTab(data?)       # Ouvre un onglet brouillon
 ├── switchTab(tabId)            # Change d'onglet actif
 ├── closeTab(tabId)             # Ferme un onglet
 ├── setTabMode(mode)            # Change le mode
 ├── setMaxTabs(max)             # Change la limite
-└── selectVirtualFolder(v)      # Active une vue unifiée
+├── selectVirtualFolder(v)      # Active une vue unifiée
+└── setCategoryFilter(id)       # Filtre par catégorie + bascule en vue unifiée
 ```

@@ -9,6 +9,20 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Catégories de messages (style Outlook)
+- Nouveau bouton **Catégoriser** dans l'onglet **Accueil** du ruban (modes classique et simplifié) ainsi qu'une entrée **Catégoriser** dans le menu contextuel de la liste de mails.
+- Sélecteur (popup) avec champ de recherche, cases à cocher, et raccourcis « Nouvelle catégorie », « Effacer les catégories » et « Gérer les catégories ».
+- **Modal de création** d'une catégorie : nom, étoile favori, palette de 24 couleurs.
+- **Modal de modification** quasi-identique à celle de création (mêmes contrôles, valeurs pré-remplies).
+- **Modal de gestion** : liste de toutes les catégories avec actions favori (étoile), modifier (crayon) et supprimer (corbeille). Suppression d'une catégorie nettoie automatiquement toutes les assignations.
+- **Affichage dans la liste de mails** :
+  - Badges « pill » (nom + couleur) à côté de l'objet (modes wide & compact).
+  - **Teinte de fond** de la ligne basée sur la couleur de la première catégorie assignée.
+- **Catégorisation = épinglage automatique** : un mail catégorisé est aussi `flagged`, donc rangé dans le groupe **Épinglé** en tête de liste.
+- **Catégories favorites** affichées dans la section **Favoris** du volet dossiers, sous les vues unifiées. Un clic active un **filtre unifié multi‑boîtes** (agrège l'inbox de tous les comptes inclus puis filtre par catégorie). Re-clic désactive le filtre.
+- **Stockage unifié** : catégories et assignations persistées dans `localStorage` (clés `mail.categories` et `mail.messageCategories`), partagées entre toutes les boîtes mail. Les assignations utilisent `messageId` (RFC 822) en clé primaire pour suivre le mail entre déplacements et resynchronisations.
+- 6 catégories par défaut (Orange / Blue / Green / Purple / Red / Yellow) seedées au premier lancement.
+
 #### Archivage hiérarchique par date
 - Le bouton **Archiver** (ruban, menu contextuel de la liste, menu « Plus » de la vue mail) déplace désormais le message dans une arborescence basée sur sa **date de réception**, en créant automatiquement les dossiers manquants : par défaut `Archives/{année}/{mois avec nom français}` (ex. `Archives/2026/04 - Avril`).
 - Nouvelle route serveur `POST /api/mail/accounts/:accountId/messages/:uid/archive` et méthode `MailService.archiveMessage()` : détecte le délimiteur IMAP du serveur, lit `internalDate`/`envelope.date`, crée chaque segment de dossier de manière idempotente (et s'y abonne) avant le `MESSAGE MOVE`.
