@@ -626,7 +626,6 @@ function ContactRow({
           <div className="text-sm font-medium truncate text-outlook-text-primary">
             {getFullName(contact)}
           </div>
-          {contact.is_favorite && <Star size={11} className="text-amber-500 fill-amber-500 flex-shrink-0" />}
           {isSender && (
             <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded flex-shrink-0">Non enr.</span>
           )}
