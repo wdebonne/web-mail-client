@@ -766,6 +766,60 @@ Met à jour les paramètres globaux.
 }
 ```
 
+### GET /api/branding
+
+> 🌐 Public (aucune authentification requise)
+
+Renvoie le nom de l'application et les URLs des icônes (favicon, icônes PWA) avec cache-busting.
+Utilisé par le client pour initialiser `document.title` et `<link rel="icon">` dynamiquement sans rebuild.
+
+**Réponse :**
+```json
+{
+  "app_name": "WebMail",
+  "icons": {
+    "favicon": "/favicon.ico?v=abc123",
+    "icon192": "/icon-192.png?v=abc123",
+    "icon512": "/icon-512.png?v=abc123",
+    "apple": "/apple-touch-icon.png?v=abc123"
+  },
+  "custom": {
+    "favicon": false,
+    "icon192": true,
+    "icon512": true,
+    "apple": false
+  }
+}
+```
+
+Le champ `custom.<type>` indique si un fichier personnalisé a été téléversé (`true`) ou si l'icône par défaut du bundle est servie (`false`). Le suffixe `?v=...` dans les URLs est un hash du `mtime` du fichier côté serveur pour forcer le rafraîchissement lorsqu'un admin remplace l'image.
+
+### POST /api/admin/branding/:type
+
+> 🔒 Admin requis — `multipart/form-data`
+
+Téléverse une icône personnalisée. `:type` ∈ `favicon` | `icon192` | `icon512` | `apple`.
+
+**Champ form-data :** `file` — image (max 5 Mo, MIME `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/svg+xml`, `image/x-icon`).
+
+**Réponse :**
+```json
+{ "success": true, "filename": "icon-192.png", "size": 4821 }
+```
+
+Le fichier est stocké dans `server/uploads/branding/` avec un nom canonique et remplace le bundle à la volée (middleware Express).
+
+### DELETE /api/admin/branding/:type
+
+> 🔒 Admin requis
+
+Supprime l'icône personnalisée et rétablit l'icône par défaut fournie par le bundle client.
+
+**Réponse :**
+```json
+{ "success": true }
+```
+
 ### GET /api/admin/users
 
 Liste tous les utilisateurs.

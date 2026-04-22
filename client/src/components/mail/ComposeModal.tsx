@@ -1022,8 +1022,29 @@ function RichTextToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElem
   };
 
   const insertImage = () => {
-    const url = prompt('URL de l\'image :');
-    if (url) exec('insertImage', url);
+    imageInputRef.current?.click();
+  };
+
+  // Hidden file input used for inline image insertion (reads the file as a data URI).
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error("Ce fichier n'est pas une image");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image trop volumineuse (max 5 Mo). Utilisez plutôt une pièce jointe.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) return;
+      editorRef.current?.focus();
+      exec('insertImage', dataUrl);
+    };
+    reader.readAsDataURL(file);
   };
 
   const closeAllDropdowns = () => {
@@ -1198,6 +1219,17 @@ function RichTextToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElem
         <button onClick={insertImage} className={btnClass} title="Insérer une image">
           <Image size={13} />
         </button>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleImageFile(f);
+            e.target.value = '';
+          }}
+        />
 
         {divider}
 

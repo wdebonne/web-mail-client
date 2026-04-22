@@ -9,7 +9,33 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
-#### Signatures multiples — gestion complète style Outlook Web
+#### Branding personnalisable — favicon et icônes PWA
+- **Upload d'icônes depuis l'admin** (`client/src/pages/AdminPage.tsx` → `BrandingSettings`, sous l'onglet **Système**) : un administrateur peut désormais téléverser le favicon (`favicon.ico`), les icônes PWA 192×192 et 512×512 ainsi que l'Apple Touch Icon (180×180) directement via l'interface, sans rebuild ni accès serveur. Aperçu en miniature, bouton **Réinitialiser** pour revenir à l'asset bundle par défaut, badge *Image personnalisée active* si un upload a été fait.
+- **Nouveau routeur serveur** `server/src/routes/branding.ts` avec :
+  - `GET /api/branding` (public, non authentifié) → renvoie `app_name` + URLs des icônes (avec cache-busting basé sur `mtime`) + flags `custom.*` indiquant si chaque icône est personnalisée ;
+  - `POST /api/admin/branding/:type` (admin, `multer` mémoire, limite 5 Mo, filtre MIME sur `image/*`) → écrit le fichier dans `server/uploads/branding/` avec un nom canonique ;
+  - `DELETE /api/admin/branding/:type` (admin) → supprime l'upload pour revenir au bundle.
+- **Interception transparente** (`server/src/index.ts`) : un middleware Express intercepte `/favicon.ico`, `/icon-192.png`, `/icon-512.png` et `/apple-touch-icon.png` avant `express.static` — si un fichier personnalisé existe dans `uploads/branding/`, il est servi avec `Cache-Control: no-cache`, sinon la requête retombe sur le bundle statique du client.
+- **API cliente** (`client/src/api/index.ts`) : nouvelles méthodes `api.getBranding()`, `api.uploadBrandingIcon(type, file)` (multipart `FormData`) et `api.resetBrandingIcon(type)`.
+- **Application dynamique dans l'UI** (`client/src/App.tsx`) : au chargement, l'app récupère `/api/branding` et met à jour le `<link rel="icon">` ainsi que `document.title` en temps réel — les modifications faites dans l'admin sont visibles au prochain rafraîchissement sans toucher au code ni au build.
+
+#### Titre d'onglet dynamique — style Outlook
+- **Titre contextuel dans l'onglet du navigateur** (`client/src/pages/MailPage.tsx`, `client/src/App.tsx`) : l'onglet du navigateur affiche désormais `<Nom du dossier> — <Nom de l'application>` (par exemple *Boîte de réception — WebMail*, *Éléments supprimés — WebMail*), comme Outlook Web. Hors de la section mail, seul le nom de l'application est affiché.
+- **Résolution intelligente des noms de dossier** : la fonction `resolveFolderDisplayName` (`client/src/components/mail/MessageList.tsx`) est désormais exportée pour être réutilisée par `MailPage`. Elle mappe les chemins IMAP techniques (`INBOX`, `Sent`, `Trash`, `INBOX.Archives`…) vers leurs libellés francisés (*Boîte de réception*, *Éléments envoyés*, *Éléments supprimés*…) et gère les dossiers imbriqués en n'affichant que le segment feuille.
+- **Prise en charge des vues unifiées** : la boîte de réception unifiée et les éléments envoyés unifiés affichent `Boîte de réception (unifiée) — <App>` / `Éléments envoyés (unifiés) — <App>`.
+
+#### Insertion d'images locales — compose et signatures
+- **Sélecteur de fichier natif** au lieu d'un `prompt()` pour la saisie d'URL : dans le ruban de rédaction (`client/src/components/mail/Ribbon.tsx`, onglet **Insérer → Image**), dans la barre d'outils inline du compose (`client/src/components/mail/ComposeModal.tsx`) et dans l'éditeur de signature (`client/src/components/mail/SignatureModals.tsx`), un clic sur le bouton **Image** ouvre désormais l'explorateur de fichiers OS.
+- **Intégration inline en data URI** : l'image choisie est lue via `FileReader.readAsDataURL()` et insérée directement dans le corps du message / de la signature via `document.execCommand('insertImage', dataUrl)`. Aucune URL externe n'est requise, l'image est embarquée dans le HTML du message.
+- **Garde-fous** : vérification du type MIME (`file.type.startsWith('image/')`), limite de taille à **5 Mo** pour les mails et **2 Mo** pour les signatures, toasts d'erreur explicites sinon. `accept="image/*"` sur les inputs pour filtrer la boîte de dialogue OS.
+
+### Modifié
+
+- Le panneau **Système** de l'administration expose maintenant une nouvelle section *Branding & icônes* en-dessous des paramètres système existants (inscription, tailles de pièces jointes, pattern d'archive).
+
+---
+
+
 - **Signatures multiples par utilisateur** : création, édition, suppression et nommage de plusieurs signatures HTML depuis l'onglet **Insérer → Signature** du ruban de rédaction (`client/src/components/mail/Ribbon.tsx`). Un menu déroulant liste toutes les signatures enregistrées pour les insérer d'un clic dans le corps du message, et un lien **Signatures…** ouvre la gestion complète.
 - **Modale de gestion** (`client/src/components/mail/SignatureModals.tsx` → `SignaturesManagerModal`) : liste des signatures existantes avec actions *Modifier*, *Supprimer* et menu **…** pour définir rapidement la signature par défaut ; deux sélecteurs pour la **valeur par défaut des nouveaux messages** et pour la **valeur par défaut des réponses et transferts** ; bouton **+ Ajouter une signature**.
 - **Éditeur WYSIWYG dédié** (`SignatureEditorModal`) avec deux onglets *Mettre le texte en forme* / *Insérer* : gras, italique, souligné, barré, palette de couleurs, listes à puces et numérotées, alignements, insertion de liens et d'images. Cases à cocher *Définir les valeurs par défaut des nouveaux messages* et *Définir la valeur par défaut des réponses et des transferts* pour basculer les défauts directement depuis l'édition.

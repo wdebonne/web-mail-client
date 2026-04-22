@@ -291,6 +291,31 @@ export const api = {
   testNextcloud: (url: string, username: string, password: string) =>
     request<any>('/admin/nextcloud/test', { method: 'POST', body: JSON.stringify({ url, username, password }) }),
 
+  // Branding
+  getBranding: () => request<{
+    app_name: string;
+    icons: { favicon: string; icon192: string; icon512: string; apple: string };
+    custom: { favicon: boolean; icon192: boolean; icon512: boolean; apple: boolean };
+  }>('/branding'),
+  uploadBrandingIcon: async (type: 'favicon' | 'icon192' | 'icon512' | 'apple', file: File) => {
+    const token = localStorage.getItem('auth_token');
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/admin/branding/${type}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(err.error || `Erreur ${res.status}`);
+    }
+    return res.json();
+  },
+  resetBrandingIcon: (type: 'favicon' | 'icon192' | 'icon512' | 'apple') =>
+    request(`/admin/branding/${type}`, { method: 'DELETE' }),
+
   // Admin Mail Accounts
   getAdminMailAccounts: () => request<any[]>('/admin/mail-accounts'),
   createAdminMailAccount: (data: any) =>

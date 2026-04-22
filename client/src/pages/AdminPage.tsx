@@ -1297,6 +1297,118 @@ function SystemSettings() {
           </button>
         </div>
       </div>
+
+      <div className="border-t border-outlook-border mt-8 pt-6">
+        <BrandingSettings />
+      </div>
+    </div>
+  );
+}
+
+// ─── Branding (favicon / PWA icons) ─────────────────────────────────────────────
+//
+// Admins can upload custom images for the PWA manifest and browser tab favicon.
+// Files are stored on the server and served at the canonical paths
+// (/favicon.ico, /icon-192.png, etc.) — uploaded versions automatically replace
+// the static bundled assets without a rebuild.
+function BrandingSettings() {
+  const queryClient = useQueryClient();
+  const { data: branding, refetch } = useQuery({
+    queryKey: ['branding'],
+    queryFn: api.getBranding,
+  });
+
+  const [uploading, setUploading] = useState<string | null>(null);
+
+  type IconType = 'favicon' | 'icon192' | 'icon512' | 'apple';
+
+  const iconMeta: Array<{ type: IconType; label: string; hint: string }> = [
+    { type: 'favicon', label: 'Favicon (onglet navigateur)', hint: 'Format .ico recommandé (32×32 ou 48×48)' },
+    { type: 'icon192', label: 'Icône PWA 192×192', hint: 'PNG 192×192 — utilisée sur Android' },
+    { type: 'icon512', label: 'Icône PWA 512×512', hint: 'PNG 512×512 — utilisée pour l\'écran de démarrage et les magasins' },
+    { type: 'apple', label: 'Icône Apple Touch 180×180', hint: 'PNG 180×180 — utilisée sur iOS' },
+  ];
+
+  const handleUpload = async (type: IconType, file: File) => {
+    try {
+      setUploading(type);
+      await api.uploadBrandingIcon(type, file);
+      toast.success('Icône mise à jour');
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ['branding'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Échec du téléversement');
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const handleReset = async (type: IconType) => {
+    try {
+      await api.resetBrandingIcon(type);
+      toast.success('Icône réinitialisée');
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ['branding'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Échec de la réinitialisation');
+    }
+  };
+
+  return (
+    <div>
+      <h3 className="text-base font-semibold mb-1">Branding & icônes</h3>
+      <p className="text-xs text-outlook-text-disabled mb-4">
+        Personnalisez le favicon du navigateur et les icônes de l'application web progressive (PWA).
+        Les modifications sont appliquées immédiatement après un rafraîchissement du navigateur
+        (supprimez le cache si besoin).
+      </p>
+      <div className="space-y-4">
+        {iconMeta.map(({ type, label, hint }) => {
+          const url = branding?.icons?.[type];
+          const custom = branding?.custom?.[type];
+          return (
+            <div key={type} className="flex items-center gap-4 border border-outlook-border rounded-md p-3">
+              <div className="w-14 h-14 flex-shrink-0 flex items-center justify-center bg-outlook-bg-hover rounded border border-outlook-border overflow-hidden">
+                {url ? (
+                  <img src={url} alt={label} className="max-w-full max-h-full object-contain" />
+                ) : (
+                  <span className="text-xs text-outlook-text-disabled">—</span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">{label}</div>
+                <div className="text-xs text-outlook-text-disabled">{hint}</div>
+                {custom && (
+                  <div className="text-xs text-green-600 mt-0.5">✓ Image personnalisée active</div>
+                )}
+              </div>
+              <label className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-xs cursor-pointer disabled:opacity-50">
+                {uploading === type ? 'Envoi…' : 'Téléverser'}
+                <input
+                  type="file"
+                  accept={type === 'favicon' ? 'image/x-icon,image/vnd.microsoft.icon,image/png,image/jpeg' : 'image/png,image/jpeg,image/webp'}
+                  className="hidden"
+                  disabled={uploading === type}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUpload(type, f);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {custom && (
+                <button
+                  onClick={() => handleReset(type)}
+                  className="text-xs text-outlook-text-secondary hover:text-red-600 px-2 py-1"
+                  title="Revenir à l'icône par défaut"
+                >
+                  Réinitialiser
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

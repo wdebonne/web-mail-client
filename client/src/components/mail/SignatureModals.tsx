@@ -280,8 +280,29 @@ export function SignatureEditorModal({ onClose, signature, accountEmail }: Signa
   };
 
   const insertImage = () => {
-    const url = prompt("URL de l'image :");
-    if (url) exec('insertImage', url);
+    imageInputRef.current?.click();
+  };
+
+  // Hidden file input — reads the picked image as a data URI and inserts it inline.
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error("Ce fichier n'est pas une image");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image trop volumineuse (max 2 Mo pour une signature)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) return;
+      editorRef.current?.focus();
+      exec('insertImage', dataUrl);
+    };
+    reader.readAsDataURL(file);
   };
 
   const save = () => {
@@ -395,6 +416,17 @@ export function SignatureEditorModal({ onClose, signature, accountEmail }: Signa
             <>
               <ToolBtn icon={LinkIcon} title="Lien" onClick={insertLink} />
               <ToolBtn icon={ImageIcon} title="Image" onClick={insertImage} />
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleImageFile(f);
+                  e.target.value = '';
+                }}
+              />
             </>
           )}
         </div>

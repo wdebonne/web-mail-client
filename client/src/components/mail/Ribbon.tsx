@@ -17,6 +17,7 @@ import {
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
 import { getSignatures, MailSignature, wrapSignatureHtml } from '../../utils/signatures';
+import toast from 'react-hot-toast';
 import type { TabMode } from '../../stores/mailStore';
 import type { MailAccount } from '../../types';
 import {
@@ -1579,6 +1580,7 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
 }) {
   const { exec, saveSelection, restoreSelection, insertHTML } = useEditorControl(editorRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const linkBtnRef = useRef<HTMLElement | null>(null);
   const emojiBtnRef = useRef<HTMLElement | null>(null);
   const tableBtnRef = useRef<HTMLElement | null>(null);
@@ -1646,8 +1648,27 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
   };
 
   const insertImage = () => {
-    const url = prompt("URL de l'image :");
-    if (url) exec('insertImage', url);
+    imageInputRef.current?.click();
+  };
+
+  // Convert a picked image file to a data URI and insert it inline in the editor.
+  const handleImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error("Ce fichier n'est pas une image");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image trop volumineuse (max 5 Mo). Utilisez plutôt une pièce jointe.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) return;
+      editorRef.current?.focus();
+      exec('insertImage', dataUrl);
+    };
+    reader.readAsDataURL(file);
   };
 
   const insertEmoji = (emoji: string) => {
@@ -1782,6 +1803,17 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
     return (
       <>
         <input type="file" ref={fileInputRef} onChange={handleFiles} multiple className="hidden" />
+        <input
+          type="file"
+          ref={imageInputRef}
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleImageFile(f);
+            e.target.value = '';
+          }}
+        />
         <SimplifiedButton icon={Paperclip} label="Joindre" onClick={triggerAttach} />
         <span ref={el => { linkBtnRef.current = el; }} className="inline-flex">
           <SimplifiedButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(v => !v); }} />
@@ -1810,6 +1842,17 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
   return (
     <>
       <input type="file" ref={fileInputRef} onChange={handleFiles} multiple className="hidden" />
+      <input
+        type="file"
+        ref={imageInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleImageFile(f);
+          e.target.value = '';
+        }}
+      />
 
       {/* Inclure */}
       <RibbonGroup label="Inclure">

@@ -20,6 +20,8 @@ import { adminRouter } from './routes/admin';
 import { pluginRouter } from './routes/plugins';
 import { searchRouter } from './routes/search';
 import { pushRouter } from './routes/push';
+import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES } from './routes/branding';
+import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { setupWebSocket } from './services/websocket';
 import { PluginManager } from './plugins/manager';
@@ -90,12 +92,28 @@ app.use('/api/calendar', authMiddleware, calendarRouter);
 app.use('/api/settings', authMiddleware, settingsRouter);
 app.use('/api/accounts', authMiddleware, accountRouter);
 app.use('/api/admin', authMiddleware, adminRouter);
+app.use('/api/admin/branding', authMiddleware, brandingAdminRouter);
+app.use('/api/branding', brandingPublicRouter);
 app.use('/api/plugins', authMiddleware, pluginRouter);
 app.use('/api/search', authMiddleware, searchRouter);
 app.use('/api/push', authMiddleware, pushRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// Override icon files with custom admin-uploaded branding (served before static).
+// If a custom file exists in uploads/branding/, serve it; otherwise fall through
+// to the static frontend bundle.
+for (const filename of Object.values(BRANDING_FILES)) {
+  app.get(`/${filename}`, (_req, res, next) => {
+    const full = path.join(BRANDING_DIR, filename);
+    if (fs.existsSync(full)) {
+      res.setHeader('Cache-Control', 'no-cache');
+      return res.sendFile(full);
+    }
+    next();
+  });
+}
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

@@ -28,6 +28,7 @@ import {
   subscribeCategories,
 } from '../utils/categories';
 import { CategoryEditorModal, CategoryManageModal, CategoryPicker } from '../components/mail/CategoryModals';
+import { resolveFolderDisplayName } from '../components/mail/MessageList';
 import type { MailFolder } from '../types';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
@@ -104,6 +105,24 @@ export default function MailPage() {
       setAccounts(accountsData);
     }
   }, [accountsData]);
+
+  // Dynamic browser tab title: "<folder> — <app name>" (Outlook-like).
+  // Falls back to just the app name when no folder is selected.
+  const { data: branding } = useQuery({
+    queryKey: ['branding'],
+    queryFn: api.getBranding,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  useEffect(() => {
+    const appName = branding?.app_name || 'WebMail';
+    let folderLabel = '';
+    if (virtualFolder === 'unified-inbox') folderLabel = 'Boîte de réception (unifiée)';
+    else if (virtualFolder === 'unified-sent') folderLabel = 'Éléments envoyés (unifiés)';
+    else if (selectedFolder) folderLabel = resolveFolderDisplayName(selectedFolder);
+
+    document.title = folderLabel ? `${folderLabel} — ${appName}` : appName;
+  }, [branding?.app_name, selectedFolder, virtualFolder]);
 
   // Load folders
   const { data: foldersData } = useQuery({

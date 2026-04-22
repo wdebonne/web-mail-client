@@ -1101,6 +1101,10 @@ function getOrderedGroupKeys(now: Date): { key: string; label: string }[] {
 }
 
 function getFolderDisplayName(folder: string): string {
+  return resolveFolderDisplayName(folder);
+}
+
+export function resolveFolderDisplayName(folder: string): string {
   const names: Record<string, string> = {
     'INBOX': 'Boîte de réception',
     'Sent': 'Éléments envoyés',

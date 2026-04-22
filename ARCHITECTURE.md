@@ -618,6 +618,37 @@ Module : `client/src/utils/signatures.ts` + `client/src/components/mail/Signatur
 
 Les signatures et leurs défauts ne sont jamais envoyés au serveur ; ils restent purement locaux à l'appareil.
 
+**Insertion d'images locales** : dans `SignatureEditorModal` comme dans `ComposeModal` / `Ribbon`, le bouton **Image** déclenche un `<input type="file" accept="image/*">` caché plutôt qu'une saisie d'URL. Le fichier choisi est lu via `FileReader.readAsDataURL()` puis inséré inline dans le HTML via `document.execCommand('insertImage', dataUrl)`. Limites : **2 Mo** pour une signature, **5 Mo** pour un message (sinon privilégier une pièce jointe).
+
+### Branding & personnalisation (favicon, icônes PWA, titre d'onglet)
+
+Module serveur : `server/src/routes/branding.ts`. Module client : `client/src/pages/AdminPage.tsx` (`BrandingSettings`) + `client/src/App.tsx` + `client/src/pages/MailPage.tsx`.
+
+Les icônes de l'application (favicon + PWA) peuvent être remplacées à chaud par un administrateur **sans rebuild ni redéploiement** :
+
+| Type | Chemin canonique servi | Taille recommandée |
+|---|---|---|
+| `favicon` | `/favicon.ico` | 32×32 ou 48×48 |
+| `icon192` | `/icon-192.png` | 192×192 (PWA Android) |
+| `icon512` | `/icon-512.png` | 512×512 (PWA splash / stores) |
+| `apple` | `/apple-touch-icon.png` | 180×180 (iOS) |
+
+**Flux** :
+1. L'admin téléverse un fichier via `POST /api/admin/branding/:type` (multer, 5 Mo max, filtre MIME sur `image/*`). Le fichier est écrit dans `server/uploads/branding/<filename>`.
+2. Un middleware Express (défini dans `server/src/index.ts`) intercepte chaque requête sur `/favicon.ico`, `/icon-192.png`, etc., **avant** `express.static` : si un fichier personnalisé existe dans `uploads/branding/`, il est renvoyé avec `Cache-Control: no-cache`. Sinon la requête retombe sur le bundle frontend (`client/public/*.png`).
+3. `DELETE /api/admin/branding/:type` supprime l'upload → l'icône par défaut redevient active.
+
+**Endpoint public `GET /api/branding`** : renvoie `{ app_name, icons, custom }`. Les URLs d'icônes sont suffixées par `?v=<mtime-hash>` pour contourner le cache navigateur lorsqu'un admin remplace l'image. `custom.<type>` indique si un upload personnalisé est actif.
+
+**Mise à jour dynamique du client** :
+- `App.tsx` récupère `/api/branding` au montage et met à jour `<link rel="icon">` + `document.title` au vol.
+- `MailPage.tsx` définit un titre contextuel **`<NomDossier> — <AppName>`** (style Outlook) via `resolveFolderDisplayName` (exporté par `MessageList.tsx`). Les vues unifiées ajoutent le suffixe *(unifiée)* / *(unifiés)*.
+
+**Clé `admin_settings`** :
+- `app_name` — nom de l'application (affiché dans le titre de l'onglet et comme `name` dans le manifeste PWA).
+
+Les icônes par défaut sont bundlées dans `client/public/` (`favicon.ico`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`).
+
 ### État des onglets (Zustand `mailStore`)
 
 ```

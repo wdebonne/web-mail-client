@@ -3,6 +3,8 @@ import { useAuthStore } from './stores/authStore';
 import { useThemeStore } from './stores/themeStore';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { api } from './api';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { motion, AnimatePresence } from 'motion/react';
 import Layout from './components/Layout';
@@ -21,6 +23,26 @@ function App() {
   const isOnline = useNetworkStatus();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Fetch branding globally (app name + icon urls). Cached forever across the app,
+  // other pages (MailPage) read from the same query to compute the dynamic tab title.
+  const { data: branding } = useQuery({
+    queryKey: ['branding'],
+    queryFn: api.getBranding,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // Default document title = app name (overridden by MailPage when a folder is selected).
+  useEffect(() => {
+    if (!branding) return;
+    // Only set the base title if we're not on a page that manages its own title.
+    if (!location.pathname.startsWith('/mail')) {
+      document.title = branding.app_name;
+    }
+    // Update favicon <link> hrefs live so admin changes take effect without reload.
+    const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (favicon && branding.icons.icon192) favicon.href = branding.icons.icon192;
+  }, [branding, location.pathname]);
 
   useEffect(() => {
     initTheme();
