@@ -1,14 +1,55 @@
-import { useState } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { Contact, ContactGroup } from '../types';
 import {
-  Search, Plus, X, Mail, Phone, Building, Star, Edit2, Trash2,
-  Users, User, ChevronRight, UserCheck, UserX
+  Search, Plus, X, Mail, Phone, Building, Edit2, Trash2,
+  Users, User, UserCheck, UserX, Star, Upload, Download,
+  Camera, Globe, Calendar as CalIcon, MapPin, Briefcase, FileText,
+  Loader2, ChevronDown, SortAsc, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import {
+  parseContactsFile, generateVCard, generateContactsCSV,
+  downloadFile, ImportedContact, CsvFormat,
+} from '../utils/contactImportExport';
 
 const SENDER_GROUP_ID = '__senders__';
+const FAV_GROUP_ID = '__favorites__';
+
+// Palette de couleurs déterministes pour les avatars
+const AVATAR_COLORS = [
+  'from-blue-400 to-blue-600',
+  'from-emerald-400 to-emerald-600',
+  'from-purple-400 to-purple-600',
+  'from-pink-400 to-pink-600',
+  'from-amber-400 to-amber-600',
+  'from-cyan-400 to-cyan-600',
+  'from-rose-400 to-rose-600',
+  'from-indigo-400 to-indigo-600',
+  'from-teal-400 to-teal-600',
+  'from-orange-400 to-orange-600',
+];
+
+function avatarColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+
+function getInitials(c: Contact): string {
+  if (c.first_name && c.last_name) return (c.first_name[0] + c.last_name[0]).toUpperCase();
+  const base = c.display_name || c.email || '?';
+  const parts = base.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return base.substring(0, 2).toUpperCase();
+}
+
+function getFullName(c: Contact): string {
+  return c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.email || '';
+}
+
+type SortBy = 'name' | 'recent' | 'company';
 
 export default function ContactsPage() {
   const queryClient = useQueryClient();
@@ -17,15 +58,20 @@ export default function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<SortBy>('name');
 
   const isSenderView = selectedGroup === SENDER_GROUP_ID;
+  const isFavView = selectedGroup === FAV_GROUP_ID;
 
   const { data: contactsData, isLoading } = useQuery({
     queryKey: ['contacts', searchQuery, selectedGroup],
     queryFn: () => api.getContacts({
       search: searchQuery || undefined,
-      groupId: isSenderView ? undefined : selectedGroup,
+      groupId: isSenderView || isFavView ? undefined : selectedGroup,
       source: isSenderView ? 'sender' : undefined,
+      limit: 500,
     }),
   });
 
@@ -35,14 +81,15 @@ export default function ContactsPage() {
     staleTime: 60000,
   });
 
+  const { data: allContactsForStats } = useQuery({
+    queryKey: ['contacts-all-stats'],
+    queryFn: () => api.getContacts({ limit: 500 }),
+    staleTime: 60000,
+  });
+
   const { data: groups = [] } = useQuery({
     queryKey: ['contactGroups'],
     queryFn: api.getContactGroups,
-  });
-
-  const { data: distributionLists = [] } = useQuery({
-    queryKey: ['distributionLists'],
-    queryFn: api.getDistributionLists,
   });
 
   const deleteMutation = useMutation({
@@ -62,6 +109,7 @@ export default function ContactsPage() {
       setEditingContact(null);
       toast.success(editingContact ? 'Contact mis à jour' : 'Contact créé');
     },
+    onError: (e: any) => toast.error(e.message || 'Erreur lors de l\'enregistrement'),
   });
 
   const promoteMutation = useMutation({
@@ -69,32 +117,151 @@ export default function ContactsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       queryClient.invalidateQueries({ queryKey: ['contacts-senders-count'] });
-      setSelectedContact(null);
       toast.success('Contact enregistré comme permanent');
     },
   });
 
-  const contacts = contactsData?.contacts || [];
+  const favoriteMutation = useMutation({
+    mutationFn: ({ id, isFavorite }: { id: string; isFavorite: boolean }) =>
+      api.updateContact(id, { isFavorite }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['contacts'] }),
+  });
 
-  const getInitials = (contact: Contact) => {
-    if (contact.first_name && contact.last_name) {
-      return (contact.first_name[0] + contact.last_name[0]).toUpperCase();
+  const importMutation = useMutation({
+    mutationFn: ({ contacts, mode }: { contacts: ImportedContact[]; mode: 'merge' | 'skip' | 'replace' }) =>
+      api.importContacts(contacts, mode),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts-senders-count'] });
+      toast.success(`Import terminé : ${r.imported} créés, ${r.updated} mis à jour, ${r.skipped} ignorés`);
+      setShowImport(false);
+    },
+    onError: (e: any) => toast.error(e.message || 'Erreur d\'import'),
+  });
+
+  const rawContacts = contactsData?.contacts || [];
+
+  // Filter locally for favorites + sort
+  const contacts = useMemo(() => {
+    let list = [...rawContacts];
+    if (isFavView) list = list.filter((c: Contact) => c.is_favorite);
+    switch (sortBy) {
+      case 'recent':
+        list.sort((a: any, b: any) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
+        break;
+      case 'company':
+        list.sort((a: Contact, b: Contact) => (a.company || 'zzz').localeCompare(b.company || 'zzz'));
+        break;
+      default:
+        list.sort((a: Contact, b: Contact) => {
+          if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
+          return getFullName(a).localeCompare(getFullName(b));
+        });
     }
-    return (contact.display_name || contact.email || '?')[0].toUpperCase();
+    return list;
+  }, [rawContacts, isFavView, sortBy]);
+
+  // Group contacts alphabetically
+  const grouped = useMemo(() => {
+    if (sortBy !== 'name') return null;
+    const map = new Map<string, Contact[]>();
+    for (const c of contacts) {
+      const letter = (getFullName(c)[0] || '#').toUpperCase();
+      const key = /[A-Z]/.test(letter) ? letter : '#';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(c);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [contacts, sortBy]);
+
+  const totalContacts = contactsData?.total ?? 0;
+  const favCount = (allContactsForStats?.contacts || []).filter((c: Contact) => c.is_favorite).length;
+
+  const handleExport = async (format: 'vcf' | 'csv-google' | 'csv-outlook' | 'csv-generic') => {
+    setExportMenuOpen(false);
+    try {
+      const all = await api.getContacts({ limit: 500 });
+      const list = (all.contacts || []).filter((c: Contact) => c.source !== 'sender').map((c: Contact) => ({
+        firstName: c.first_name,
+        lastName: c.last_name,
+        displayName: c.display_name,
+        email: c.email,
+        phone: c.phone,
+        mobile: c.mobile,
+        company: c.company,
+        jobTitle: c.job_title,
+        department: c.department,
+        notes: c.notes,
+        avatarUrl: c.avatar_url,
+        website: (c.metadata as any)?.website,
+        birthday: (c.metadata as any)?.birthday,
+        address: (c.metadata as any)?.address,
+      }));
+      if (!list.length) { toast.error('Aucun contact à exporter'); return; }
+      const date = new Date().toISOString().slice(0, 10);
+      if (format === 'vcf') {
+        downloadFile(`contacts-${date}.vcf`, generateVCard(list), 'text/vcard;charset=utf-8');
+      } else {
+        const fmt: CsvFormat = format === 'csv-google' ? 'google' : format === 'csv-outlook' ? 'outlook' : 'generic';
+        downloadFile(`contacts-${date}-${fmt}.csv`, generateContactsCSV(list, fmt), 'text/csv;charset=utf-8');
+      }
+      toast.success(`${list.length} contact${list.length > 1 ? 's' : ''} exporté${list.length > 1 ? 's' : ''}`);
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur à l\'export');
+    }
   };
 
   return (
-    <div className="h-full flex">
-      {/* Left panel: groups & list */}
-      <div className="w-80 border-r border-outlook-border flex flex-col flex-shrink-0">
-        {/* Search & add */}
-        <div className="p-3 border-b border-outlook-border">
+    <div className="h-full flex bg-outlook-bg">
+      {/* Left sidebar */}
+      <div className="w-80 border-r border-outlook-border flex flex-col flex-shrink-0 bg-white">
+        <div className="p-3 border-b border-outlook-border space-y-2">
           <button
             onClick={() => { setEditingContact(null); setShowForm(true); }}
-            className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md py-2 px-4 text-sm font-medium flex items-center justify-center gap-2 mb-3"
+            className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md py-2 px-4 text-sm font-medium flex items-center justify-center gap-2 shadow-sm"
           >
             <Plus size={14} /> Nouveau contact
           </button>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex-1 border border-outlook-border hover:bg-outlook-bg-hover rounded-md py-1.5 text-xs font-medium flex items-center justify-center gap-1.5"
+              title="Importer depuis Gmail, Outlook, vCard..."
+            >
+              <Upload size={12} /> Importer
+            </button>
+            <div className="relative flex-1">
+              <button
+                onClick={() => setExportMenuOpen(v => !v)}
+                className="w-full border border-outlook-border hover:bg-outlook-bg-hover rounded-md py-1.5 text-xs font-medium flex items-center justify-center gap-1.5"
+              >
+                <Download size={12} /> Exporter <ChevronDown size={10} />
+              </button>
+              {exportMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 w-52 z-50">
+                    <button onClick={() => handleExport('vcf')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover">
+                      <span className="font-medium">vCard (.vcf)</span>
+                      <div className="text-outlook-text-disabled text-[10px]">Apple, Android, iOS</div>
+                    </button>
+                    <button onClick={() => handleExport('csv-google')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover">
+                      <span className="font-medium">CSV Google</span>
+                      <div className="text-outlook-text-disabled text-[10px]">Gmail / Google Contacts</div>
+                    </button>
+                    <button onClick={() => handleExport('csv-outlook')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover">
+                      <span className="font-medium">CSV Outlook</span>
+                      <div className="text-outlook-text-disabled text-[10px]">Outlook / Microsoft 365</div>
+                    </button>
+                    <button onClick={() => handleExport('csv-generic')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover">
+                      <span className="font-medium">CSV générique</span>
+                      <div className="text-outlook-text-disabled text-[10px]">Compatible tableur</div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
             <input
@@ -107,50 +274,70 @@ export default function ContactsPage() {
           </div>
         </div>
 
-        {/* Groups */}
-        <div className="px-3 py-2 border-b border-outlook-border">
-          <button
+        {/* Categories */}
+        <div className="px-2 py-2 border-b border-outlook-border overflow-y-auto max-h-[40%]">
+          <NavItem
+            label="Tous les contacts"
+            icon={<Users size={14} />}
+            count={totalContacts}
+            active={!selectedGroup}
             onClick={() => setSelectedGroup(undefined)}
-            className={`w-full text-left px-2 py-1 text-sm rounded flex items-center gap-2
-              ${!selectedGroup ? 'bg-outlook-bg-selected font-medium' : 'hover:bg-outlook-bg-hover'}`}
-          >
-            <Users size={14} className={!selectedGroup ? 'text-outlook-blue' : ''} />
-            Tous les contacts
-            <span className="ml-auto text-xs text-outlook-text-disabled">{contactsData?.total || 0}</span>
-          </button>
-
-          {/* Unregistered senders */}
-          <button
+          />
+          <NavItem
+            label="Favoris"
+            icon={<Star size={14} />}
+            count={favCount}
+            active={isFavView}
+            onClick={() => { setSelectedGroup(FAV_GROUP_ID); setSelectedContact(null); }}
+            color="amber"
+          />
+          <NavItem
+            label="Expéditeurs non enregistrés"
+            icon={<UserX size={14} />}
+            count={sendersCount?.total ?? 0}
+            active={isSenderView}
             onClick={() => { setSelectedGroup(SENDER_GROUP_ID); setSelectedContact(null); }}
-            className={`w-full text-left px-2 py-1 text-sm rounded flex items-center gap-2
-              ${selectedGroup === SENDER_GROUP_ID ? 'bg-orange-50 font-medium text-orange-700' : 'hover:bg-outlook-bg-hover'}`}
-          >
-            <UserX size={14} className={selectedGroup === SENDER_GROUP_ID ? 'text-orange-500' : 'text-outlook-text-disabled'} />
-            Expéditeurs non enregistrés
-            {(sendersCount?.total ?? 0) > 0 && (
-              <span className="ml-auto text-xs bg-orange-100 text-orange-600 px-1.5 rounded-full">{sendersCount?.total}</span>
-            )}
-          </button>
+            color="orange"
+          />
+          {groups.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-outlook-border">
+              <div className="px-2 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wider mb-1">Groupes</div>
+              {groups.map((g: ContactGroup) => (
+                <NavItem
+                  key={g.id}
+                  label={g.name}
+                  icon={<Users size={14} />}
+                  count={g.member_count}
+                  active={selectedGroup === g.id}
+                  onClick={() => setSelectedGroup(g.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
-          {groups.map((group: ContactGroup) => (
-            <button
-              key={group.id}
-              onClick={() => setSelectedGroup(group.id)}
-              className={`w-full text-left px-2 py-1 text-sm rounded flex items-center gap-2
-                ${selectedGroup === group.id ? 'bg-outlook-bg-selected font-medium' : 'hover:bg-outlook-bg-hover'}`}
+        {/* List header with sort */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-outlook-border text-xs text-outlook-text-secondary">
+          <span>{contacts.length} {contacts.length > 1 ? 'contacts' : 'contact'}</span>
+          <div className="flex items-center gap-1">
+            <SortAsc size={12} />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortBy)}
+              className="bg-transparent border-0 text-xs focus:outline-none cursor-pointer"
             >
-              <Users size={14} className={selectedGroup === group.id ? 'text-outlook-blue' : ''} />
-              {group.name}
-              <span className="ml-auto text-xs text-outlook-text-disabled">{group.member_count}</span>
-            </button>
-          ))}
+              <option value="name">Nom</option>
+              <option value="recent">Récent</option>
+              <option value="company">Entreprise</option>
+            </select>
+          </div>
         </div>
 
         {/* Contact list */}
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-2 border-b border-outlook-border">
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2.5 border-b border-outlook-border">
                 <div className="skeleton w-10 h-10 rounded-full" />
                 <div className="flex-1">
                   <div className="skeleton h-4 w-32 rounded mb-1" />
@@ -159,178 +346,373 @@ export default function ContactsPage() {
               </div>
             ))
           ) : contacts.length === 0 ? (
-            <div className="text-center py-8 text-outlook-text-disabled text-sm">Aucun contact trouvé</div>
+            <div className="text-center py-12 text-outlook-text-disabled text-sm">
+              <Users size={32} className="mx-auto mb-2 opacity-30" />
+              {searchQuery ? 'Aucun résultat' : isSenderView ? 'Aucun expéditeur à enregistrer' : 'Aucun contact'}
+            </div>
+          ) : grouped ? (
+            grouped.map(([letter, list]) => (
+              <div key={letter}>
+                <div className="sticky top-0 bg-gray-50 text-[10px] font-semibold text-outlook-text-secondary px-3 py-1 border-b border-outlook-border uppercase">
+                  {letter}
+                </div>
+                {list.map(c => (
+                  <ContactRow
+                    key={c.id}
+                    contact={c}
+                    selected={selectedContact?.id === c.id}
+                    onClick={() => setSelectedContact(c)}
+                    onFav={(val) => favoriteMutation.mutate({ id: c.id, isFavorite: val })}
+                  />
+                ))}
+              </div>
+            ))
           ) : (
-            contacts.map((contact: Contact) => (
-              <button
-                key={contact.id}
-                onClick={() => setSelectedContact(contact)}
-                className={`w-full flex items-center gap-3 px-3 py-2 border-b border-outlook-border text-left transition-colors
-                  ${selectedContact?.id === contact.id ? 'bg-blue-50' : 'hover:bg-outlook-bg-hover'}`}
-              >
-                <div className="w-10 h-10 rounded-full bg-outlook-blue/10 text-outlook-blue flex items-center justify-center text-sm font-semibold flex-shrink-0">
-                  {contact.avatar_url ? (
-                    <img src={contact.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-                  ) : getInitials(contact)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate text-outlook-text-primary">
-                    {contact.display_name || `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email}
-                  </div>
-                  <div className="text-xs text-outlook-text-secondary truncate">{contact.email}</div>
-                  {contact.company && (
-                    <div className="text-xs text-outlook-text-disabled truncate">{contact.company}</div>
-                  )}
-                </div>
-                <ChevronRight size={14} className="text-outlook-text-disabled" />
-              </button>
+            contacts.map(c => (
+              <ContactRow
+                key={c.id}
+                contact={c}
+                selected={selectedContact?.id === c.id}
+                onClick={() => setSelectedContact(c)}
+                onFav={(val) => favoriteMutation.mutate({ id: c.id, isFavorite: val })}
+              />
             ))
           )}
         </div>
       </div>
 
       {/* Right panel: detail */}
-      <div className="flex-1 overflow-y-auto bg-white">
+      <div className="flex-1 overflow-y-auto">
         {selectedContact ? (
-          <div className="max-w-2xl mx-auto py-8 px-6">
-            {/* Header */}
-            <div className="flex items-start gap-4 mb-6">
-              <div className="w-20 h-20 rounded-full bg-outlook-blue/10 text-outlook-blue flex items-center justify-center text-2xl font-semibold flex-shrink-0">
-                {selectedContact.avatar_url ? (
-                  <img src={selectedContact.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-                ) : getInitialsLarge(selectedContact)}
-              </div>
-              <div className="flex-1">
-                <h1 className="text-xl font-semibold text-outlook-text-primary">
-                  {selectedContact.display_name || `${selectedContact.first_name || ''} ${selectedContact.last_name || ''}`.trim()}
-                </h1>
-                {selectedContact.job_title && (
-                  <p className="text-sm text-outlook-text-secondary">{selectedContact.job_title}</p>
-                )}
-                {selectedContact.company && (
-                  <p className="text-sm text-outlook-text-secondary flex items-center gap-1">
-                    <Building size={12} /> {selectedContact.company}
-                    {selectedContact.department && ` - ${selectedContact.department}`}
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-1">
-                {selectedContact.source === 'sender' && (
-                  <button
-                    onClick={() => {
-                      if (confirm(`Enregistrer "${selectedContact.display_name || selectedContact.email}" comme contact permanent ?`)) {
-                        promoteMutation.mutate(selectedContact.id);
-                      }
-                    }}
-                    disabled={promoteMutation.isPending}
-                    className="p-2 hover:bg-green-50 rounded text-outlook-text-secondary hover:text-green-600 flex items-center gap-1 text-xs font-medium"
-                    title="Enregistrer comme contact permanent"
-                  >
-                    <UserCheck size={16} />
-                    <span className="hidden sm:inline">Enregistrer</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => { setEditingContact(selectedContact); setShowForm(true); }}
-                  className="p-2 hover:bg-outlook-bg-hover rounded text-outlook-text-secondary"
-                  title="Modifier"
-                >
-                  <Edit2 size={16} />
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm('Supprimer ce contact ?')) {
-                      deleteMutation.mutate(selectedContact.id);
-                    }
-                  }}
-                  className="p-2 hover:bg-red-50 rounded text-outlook-text-secondary hover:text-outlook-danger"
-                  title="Supprimer"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Contact info */}
-            <div className="space-y-4">
-              {selectedContact.email && (
-                <InfoRow icon={Mail} label="E-mail" value={selectedContact.email} isLink />
-              )}
-              {selectedContact.phone && (
-                <InfoRow icon={Phone} label="Téléphone" value={selectedContact.phone} />
-              )}
-              {selectedContact.mobile && (
-                <InfoRow icon={Phone} label="Mobile" value={selectedContact.mobile} />
-              )}
-              {selectedContact.notes && (
-                <div className="mt-4 pt-4 border-t border-outlook-border">
-                  <h3 className="text-sm font-medium text-outlook-text-primary mb-1">Notes</h3>
-                  <p className="text-sm text-outlook-text-secondary whitespace-pre-wrap">{selectedContact.notes}</p>
-                </div>
-              )}
-              {selectedContact.source && (
-                <div className="text-xs text-outlook-text-disabled mt-4 flex items-center gap-1.5">
-                  Source :&nbsp;
-                  {selectedContact.source === 'nextcloud' ? 'NextCloud'
-                    : selectedContact.source === 'sender'
-                      ? <span className="bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Expéditeur non enregistré</span>
-                      : 'Locale'}
-                </div>
-              )}
-            </div>
-          </div>
+          <ContactDetail
+            contact={selectedContact}
+            onEdit={() => { setEditingContact(selectedContact); setShowForm(true); }}
+            onDelete={() => {
+              if (confirm('Supprimer ce contact ?')) deleteMutation.mutate(selectedContact.id);
+            }}
+            onPromote={() => promoteMutation.mutate(selectedContact.id)}
+            onToggleFav={() => favoriteMutation.mutate({
+              id: selectedContact.id,
+              isFavorite: !selectedContact.is_favorite,
+            })}
+            promoting={promoteMutation.isPending}
+          />
         ) : (
           <div className="h-full flex items-center justify-center text-outlook-text-disabled">
             <div className="text-center">
-              <User size={48} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Sélectionnez un contact</p>
+              <User size={64} className="mx-auto mb-3 opacity-20" />
+              <p className="text-sm">Sélectionnez un contact pour afficher ses détails</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Contact form modal */}
       {showForm && (
         <ContactForm
           contact={editingContact}
-          groups={groups}
           onSubmit={(data) => createMutation.mutate(data)}
           onClose={() => { setShowForm(false); setEditingContact(null); }}
           isSubmitting={createMutation.isPending}
+        />
+      )}
+
+      {showImport && (
+        <ImportModal
+          onClose={() => setShowImport(false)}
+          onImport={(contacts, mode) => importMutation.mutate({ contacts, mode })}
+          isImporting={importMutation.isPending}
         />
       )}
     </div>
   );
 }
 
-function InfoRow({ icon: Icon, label, value, isLink }: { icon: any; label: string; value: string; isLink?: boolean }) {
+// ---------- Components ----------
+
+function NavItem({
+  label, icon, count, active, onClick, color,
+}: {
+  label: string; icon: React.ReactNode; count?: number; active: boolean; onClick: () => void;
+  color?: 'orange' | 'amber';
+}) {
+  const activeColor = color === 'orange'
+    ? 'bg-orange-50 text-orange-700 font-medium'
+    : color === 'amber'
+      ? 'bg-amber-50 text-amber-700 font-medium'
+      : 'bg-outlook-bg-selected font-medium text-outlook-blue';
+  const badgeColor = color === 'orange'
+    ? 'bg-orange-100 text-orange-600'
+    : color === 'amber'
+      ? 'bg-amber-100 text-amber-700'
+      : 'bg-gray-100 text-outlook-text-secondary';
   return (
-    <div className="flex items-center gap-3">
-      <Icon size={16} className="text-outlook-text-disabled flex-shrink-0" />
-      <div>
-        <div className="text-xs text-outlook-text-disabled">{label}</div>
-        {isLink ? (
-          <a href={`mailto:${value}`} className="text-sm text-outlook-blue hover:underline">{value}</a>
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-2 py-1.5 text-sm rounded flex items-center gap-2 transition-colors
+        ${active ? activeColor : 'hover:bg-outlook-bg-hover text-outlook-text-primary'}`}
+    >
+      <span className={active ? '' : 'text-outlook-text-disabled'}>{icon}</span>
+      <span className="flex-1 truncate">{label}</span>
+      {count !== undefined && count > 0 && (
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${active ? badgeColor : 'bg-gray-100 text-outlook-text-secondary'}`}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function ContactRow({
+  contact, selected, onClick, onFav,
+}: {
+  contact: Contact; selected: boolean; onClick: () => void; onFav: (v: boolean) => void;
+}) {
+  const isSender = contact.source === 'sender';
+  return (
+    <div
+      onClick={onClick}
+      className={`group flex items-center gap-3 px-3 py-2.5 border-b border-outlook-border cursor-pointer transition-colors
+        ${selected ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'hover:bg-outlook-bg-hover'}`}
+    >
+      <Avatar contact={contact} size="md" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <div className="text-sm font-medium truncate text-outlook-text-primary">
+            {getFullName(contact)}
+          </div>
+          {contact.is_favorite && <Star size={11} className="text-amber-500 fill-amber-500 flex-shrink-0" />}
+          {isSender && (
+            <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded flex-shrink-0">Non enr.</span>
+          )}
+        </div>
+        <div className="text-xs text-outlook-text-secondary truncate">{contact.email}</div>
+        {contact.company && (
+          <div className="text-[11px] text-outlook-text-disabled truncate flex items-center gap-1">
+            <Building size={9} /> {contact.company}
+          </div>
+        )}
+      </div>
+      <button
+        onClick={(e) => { e.stopPropagation(); onFav(!contact.is_favorite); }}
+        className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-amber-100 ${contact.is_favorite ? '!opacity-100' : ''}`}
+        title={contact.is_favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+      >
+        <Star size={14} className={contact.is_favorite ? 'text-amber-500 fill-amber-500' : 'text-outlook-text-disabled'} />
+      </button>
+    </div>
+  );
+}
+
+function Avatar({ contact, size }: { contact: Contact; size: 'sm' | 'md' | 'lg' | 'xl' }) {
+  const sizes = {
+    sm: 'w-8 h-8 text-xs',
+    md: 'w-10 h-10 text-sm',
+    lg: 'w-16 h-16 text-lg',
+    xl: 'w-24 h-24 text-2xl',
+  };
+  const color = avatarColor(contact.email || contact.id || 'x');
+  if (contact.avatar_url) {
+    return (
+      <div className={`${sizes[size]} rounded-full overflow-hidden flex-shrink-0 ring-2 ring-white shadow-sm`}>
+        <img src={contact.avatar_url} alt="" className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div className={`${sizes[size]} rounded-full bg-gradient-to-br ${color} text-white flex items-center justify-center font-semibold flex-shrink-0 ring-2 ring-white shadow-sm`}>
+      {getInitials(contact)}
+    </div>
+  );
+}
+
+function ContactDetail({
+  contact, onEdit, onDelete, onPromote, onToggleFav, promoting,
+}: {
+  contact: Contact;
+  onEdit: () => void;
+  onDelete: () => void;
+  onPromote: () => void;
+  onToggleFav: () => void;
+  promoting: boolean;
+}) {
+  const meta = (contact.metadata as any) || {};
+  const color = avatarColor(contact.email || contact.id || 'x');
+  const isSender = contact.source === 'sender';
+
+  return (
+    <div>
+      {/* Header with gradient banner */}
+      <div className={`h-32 bg-gradient-to-br ${color} relative`}>
+        <div className="absolute top-3 right-3 flex gap-1">
+          <button
+            onClick={onToggleFav}
+            className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full text-white transition"
+            title={contact.is_favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          >
+            <Star size={16} className={contact.is_favorite ? 'fill-amber-300 text-amber-300' : ''} />
+          </button>
+          <button
+            onClick={onEdit}
+            className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full text-white transition"
+            title="Modifier"
+          >
+            <Edit2 size={16} />
+          </button>
+          <button
+            onClick={onDelete}
+            className="p-2 bg-white/20 hover:bg-red-500/60 backdrop-blur-sm rounded-full text-white transition"
+            title="Supprimer"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto px-6 -mt-12 pb-8">
+        <div className="flex items-end gap-4 mb-5">
+          <div className="ring-4 ring-white rounded-full">
+            <Avatar contact={contact} size="xl" />
+          </div>
+          <div className="flex-1 pb-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-semibold text-outlook-text-primary">{getFullName(contact)}</h1>
+              {contact.is_favorite && <Star size={18} className="text-amber-500 fill-amber-500" />}
+              {isSender && (
+                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
+                  Non enregistré
+                </span>
+              )}
+            </div>
+            {contact.job_title && (
+              <p className="text-sm text-outlook-text-secondary flex items-center gap-1 mt-0.5">
+                <Briefcase size={12} /> {contact.job_title}
+                {contact.company && <span className="text-outlook-text-disabled"> · {contact.company}</span>}
+              </p>
+            )}
+          </div>
+          {isSender && (
+            <button
+              onClick={onPromote}
+              disabled={promoting}
+              className="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded-md font-medium flex items-center gap-2 disabled:opacity-50 shadow-sm"
+            >
+              {promoting ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />}
+              Enregistrer
+            </button>
+          )}
+        </div>
+
+        {/* Quick actions */}
+        {contact.email && (
+          <div className="flex gap-2 mb-5">
+            <a
+              href={`mailto:${contact.email}`}
+              className="flex-1 bg-outlook-blue hover:bg-outlook-blue-hover text-white text-sm px-4 py-2 rounded-md flex items-center justify-center gap-2 shadow-sm"
+            >
+              <Mail size={14} /> Envoyer un e-mail
+            </a>
+            {contact.phone && (
+              <a
+                href={`tel:${contact.phone}`}
+                className="px-4 py-2 border border-outlook-border hover:bg-outlook-bg-hover text-sm rounded-md flex items-center gap-2"
+              >
+                <Phone size={14} /> Appeler
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* Sections */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Section title="Coordonnées" icon={<Mail size={14} />}>
+            {contact.email && <InfoRow icon={Mail} label="E-mail" value={contact.email} link={`mailto:${contact.email}`} />}
+            {contact.phone && <InfoRow icon={Phone} label="Téléphone" value={contact.phone} link={`tel:${contact.phone}`} />}
+            {contact.mobile && <InfoRow icon={Phone} label="Mobile" value={contact.mobile} link={`tel:${contact.mobile}`} />}
+            {meta.website && <InfoRow icon={Globe} label="Site web" value={meta.website} link={meta.website.startsWith('http') ? meta.website : `https://${meta.website}`} external />}
+          </Section>
+
+          {(contact.company || contact.job_title || contact.department) && (
+            <Section title="Professionnel" icon={<Briefcase size={14} />}>
+              {contact.company && <InfoRow icon={Building} label="Entreprise" value={contact.company} />}
+              {contact.job_title && <InfoRow icon={Briefcase} label="Fonction" value={contact.job_title} />}
+              {contact.department && <InfoRow icon={Users} label="Service" value={contact.department} />}
+            </Section>
+          )}
+
+          {(meta.address || meta.birthday) && (
+            <Section title="Informations" icon={<CalIcon size={14} />}>
+              {meta.birthday && <InfoRow icon={CalIcon} label="Anniversaire" value={meta.birthday} />}
+              {meta.address && <InfoRow icon={MapPin} label="Adresse" value={meta.address} />}
+            </Section>
+          )}
+
+          {contact.notes && (
+            <Section title="Notes" icon={<FileText size={14} />} className="md:col-span-2">
+              <p className="text-sm text-outlook-text-primary whitespace-pre-wrap">{contact.notes}</p>
+            </Section>
+          )}
+        </div>
+
+        <div className="mt-4 text-[11px] text-outlook-text-disabled">
+          Source :{' '}
+          {contact.source === 'nextcloud' ? 'NextCloud'
+            : contact.source === 'sender' ? 'Expéditeur non enregistré'
+              : 'Locale'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  title, icon, children, className = '',
+}: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`bg-white border border-outlook-border rounded-lg p-4 ${className}`}>
+      <h3 className="text-xs font-semibold text-outlook-text-secondary uppercase tracking-wider flex items-center gap-1.5 mb-3">
+        {icon} {title}
+      </h3>
+      <div className="space-y-2.5">{children}</div>
+    </div>
+  );
+}
+
+function InfoRow({
+  icon: Icon, label, value, link, external,
+}: { icon: any; label: string; value: string; link?: string; external?: boolean }) {
+  return (
+    <div className="flex items-start gap-3">
+      <Icon size={14} className="text-outlook-text-disabled flex-shrink-0 mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] text-outlook-text-disabled">{label}</div>
+        {link ? (
+          <a
+            href={link}
+            target={external ? '_blank' : undefined}
+            rel={external ? 'noopener noreferrer' : undefined}
+            className="text-sm text-outlook-blue hover:underline break-all"
+          >
+            {value}
+          </a>
         ) : (
-          <div className="text-sm text-outlook-text-primary">{value}</div>
+          <div className="text-sm text-outlook-text-primary break-words">{value}</div>
         )}
       </div>
     </div>
   );
 }
 
-function getInitialsLarge(c: Contact) {
-  if (c.first_name && c.last_name) return (c.first_name[0] + c.last_name[0]).toUpperCase();
-  return (c.display_name || c.email || '?')[0].toUpperCase();
-}
+// ---------- Contact Form Modal ----------
 
-function ContactForm({ contact, groups, onSubmit, onClose, isSubmitting }: {
+function ContactForm({
+  contact, onSubmit, onClose, isSubmitting,
+}: {
   contact: Contact | null;
-  groups: ContactGroup[];
   onSubmit: (data: any) => void;
   onClose: () => void;
   isSubmitting: boolean;
 }) {
+  const meta = (contact?.metadata as any) || {};
   const [firstName, setFirstName] = useState(contact?.first_name || '');
   const [lastName, setLastName] = useState(contact?.last_name || '');
   const [email, setEmail] = useState(contact?.email || '');
@@ -339,51 +721,193 @@ function ContactForm({ contact, groups, onSubmit, onClose, isSubmitting }: {
   const [company, setCompany] = useState(contact?.company || '');
   const [jobTitle, setJobTitle] = useState(contact?.job_title || '');
   const [department, setDepartment] = useState(contact?.department || '');
+  const [website, setWebsite] = useState(meta.website || '');
+  const [birthday, setBirthday] = useState(meta.birthday || '');
+  const [address, setAddress] = useState(meta.address || '');
   const [notes, setNotes] = useState(contact?.notes || '');
+  const [avatarUrl, setAvatarUrl] = useState(contact?.avatar_url || '');
+  const [isFavorite, setIsFavorite] = useState(!!contact?.is_favorite);
+  const [tab, setTab] = useState<'general' | 'work' | 'more'>('general');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatar = (file: File) => {
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('L\'image doit faire moins de 2 Mo');
+      return;
+    }
+    // Resize to 256px max, JPEG
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const max = 256;
+        let { width, height } = img;
+        if (width > height) { height = (height / width) * max; width = max; }
+        else { width = (width / height) * max; height = max; }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        setAvatarUrl(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const displayName = [firstName, lastName].filter(Boolean).join(' ').trim() || email;
     onSubmit({
       firstName, lastName, email, phone, mobile,
       company, jobTitle, department, notes,
-      displayName: `${firstName} ${lastName}`.trim() || email,
+      displayName,
+      avatarUrl: avatarUrl || undefined,
+      isFavorite,
+      metadata: { ...meta, website: website || undefined, birthday: birthday || undefined, address: address || undefined },
     });
   };
 
   return (
-    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[500px] max-h-[80vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">{contact ? 'Modifier le contact' : 'Nouveau contact'}</h2>
-          <button onClick={onClose}><X size={18} /></button>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header with avatar */}
+        <div className={`bg-gradient-to-br ${avatarColor(email || firstName || 'new')} h-24 relative flex-shrink-0`}>
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1"
+          >
+            <X size={18} />
+          </button>
+          <h2 className="absolute bottom-3 left-4 text-white font-semibold text-lg">
+            {contact ? 'Modifier le contact' : 'Nouveau contact'}
+          </h2>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Prénom" value={firstName} onChange={setFirstName} />
-            <FormField label="Nom" value={lastName} onChange={setLastName} />
-          </div>
-          <FormField label="E-mail" value={email} onChange={setEmail} type="email" />
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Téléphone" value={phone} onChange={setPhone} type="tel" />
-            <FormField label="Mobile" value={mobile} onChange={setMobile} type="tel" />
-          </div>
-          <FormField label="Entreprise" value={company} onChange={setCompany} />
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Fonction" value={jobTitle} onChange={setJobTitle} />
-            <FormField label="Service" value={department} onChange={setDepartment} />
-          </div>
-          <div>
-            <label className="text-xs text-outlook-text-secondary">Notes</label>
-            <textarea
-              value={notes} onChange={(e) => setNotes(e.target.value)}
-              rows={3} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:border-outlook-blue"
-            />
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+          {/* Avatar row */}
+          <div className="px-6 -mt-10 flex items-end gap-4 mb-4">
+            <div className="relative group">
+              <div className="w-20 h-20 rounded-full ring-4 ring-white bg-white shadow-lg overflow-hidden flex items-center justify-center">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className={`w-full h-full bg-gradient-to-br ${avatarColor(email || 'new')} text-white flex items-center justify-center text-xl font-semibold`}>
+                    {(firstName[0] || '') + (lastName[0] || '') || '?'}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="absolute bottom-0 right-0 bg-outlook-blue hover:bg-outlook-blue-hover text-white p-1.5 rounded-full shadow-md"
+                title="Changer la photo"
+              >
+                <Camera size={12} />
+              </button>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() => setAvatarUrl('')}
+                  className="absolute top-0 right-0 bg-white hover:bg-red-50 text-red-500 p-1 rounded-full shadow-md border border-outlook-border"
+                  title="Supprimer la photo"
+                >
+                  <X size={10} />
+                </button>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleAvatar(e.target.files[0])}
+              />
+            </div>
+            <label className="flex items-center gap-1.5 text-xs text-outlook-text-secondary pb-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isFavorite}
+                onChange={(e) => setIsFavorite(e.target.checked)}
+                className="rounded"
+              />
+              <Star size={12} className={isFavorite ? 'text-amber-500 fill-amber-500' : ''} />
+              Favori
+            </label>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Annuler</button>
-            <button type="submit" disabled={isSubmitting} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50">
+          {/* Tabs */}
+          <div className="px-6 border-b border-outlook-border flex gap-4">
+            {([
+              ['general', 'Général'],
+              ['work', 'Professionnel'],
+              ['more', 'Plus'],
+            ] as const).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setTab(k)}
+                className={`py-2 text-sm font-medium border-b-2 transition ${
+                  tab === k ? 'border-outlook-blue text-outlook-blue' : 'border-transparent text-outlook-text-secondary hover:text-outlook-text-primary'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="px-6 py-4 space-y-3">
+            {tab === 'general' && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Prénom" value={firstName} onChange={setFirstName} autoFocus />
+                  <FormField label="Nom" value={lastName} onChange={setLastName} />
+                </div>
+                <FormField label="E-mail" value={email} onChange={setEmail} type="email" icon={<Mail size={12} />} />
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Téléphone" value={phone} onChange={setPhone} type="tel" icon={<Phone size={12} />} />
+                  <FormField label="Mobile" value={mobile} onChange={setMobile} type="tel" icon={<Phone size={12} />} />
+                </div>
+              </>
+            )}
+            {tab === 'work' && (
+              <>
+                <FormField label="Entreprise" value={company} onChange={setCompany} icon={<Building size={12} />} />
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Fonction" value={jobTitle} onChange={setJobTitle} icon={<Briefcase size={12} />} />
+                  <FormField label="Service" value={department} onChange={setDepartment} />
+                </div>
+                <FormField label="Site web" value={website} onChange={setWebsite} icon={<Globe size={12} />} placeholder="https://" />
+              </>
+            )}
+            {tab === 'more' && (
+              <>
+                <FormField label="Anniversaire" value={birthday} onChange={setBirthday} type="date" icon={<CalIcon size={12} />} />
+                <FormField label="Adresse" value={address} onChange={setAddress} icon={<MapPin size={12} />} placeholder="Rue, code postal, ville..." />
+                <div>
+                  <label className="text-xs text-outlook-text-secondary flex items-center gap-1 mb-1">
+                    <FileText size={12} /> Notes
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={4}
+                    className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="px-6 py-3 border-t border-outlook-border flex justify-end gap-2 bg-gray-50">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 text-sm rounded-md disabled:opacity-50 flex items-center gap-2 font-medium shadow-sm"
+            >
+              {isSubmitting && <Loader2 size={14} className="animate-spin" />}
               {isSubmitting ? 'Enregistrement...' : 'Enregistrer'}
             </button>
           </div>
@@ -393,16 +917,199 @@ function ContactForm({ contact, groups, onSubmit, onClose, isSubmitting }: {
   );
 }
 
-function FormField({ label, value, onChange, type = 'text' }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string;
+function FormField({
+  label, value, onChange, type = 'text', icon, placeholder, autoFocus,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  type?: string; icon?: React.ReactNode; placeholder?: string; autoFocus?: boolean;
 }) {
   return (
     <div>
-      <label className="text-xs text-outlook-text-secondary">{label}</label>
+      <label className="text-xs text-outlook-text-secondary flex items-center gap-1 mb-1">
+        {icon} {label}
+      </label>
       <input
-        type={type} value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-outlook-blue"
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
       />
+    </div>
+  );
+}
+
+// ---------- Import Modal ----------
+
+function ImportModal({
+  onClose, onImport, isImporting,
+}: {
+  onClose: () => void;
+  onImport: (contacts: ImportedContact[], mode: 'merge' | 'skip' | 'replace') => void;
+  isImporting: boolean;
+}) {
+  const [parsed, setParsed] = useState<ImportedContact[] | null>(null);
+  const [filename, setFilename] = useState('');
+  const [mode, setMode] = useState<'merge' | 'skip' | 'replace'>('merge');
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    setError(null);
+    try {
+      const text = await file.text();
+      const items = parseContactsFile(file.name, text);
+      if (!items.length) {
+        setError('Aucun contact détecté dans ce fichier.');
+        return;
+      }
+      setParsed(items);
+      setFilename(file.name);
+    } catch (e: any) {
+      setError(e.message || 'Impossible de lire le fichier');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-outlook-border flex items-center justify-between">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Upload size={18} /> Importer des contacts
+          </h2>
+          <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {!parsed ? (
+            <>
+              <div
+                onClick={() => fileRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+                }}
+                className="border-2 border-dashed border-outlook-border hover:border-outlook-blue hover:bg-blue-50/30 rounded-xl p-8 text-center cursor-pointer transition"
+              >
+                <Upload size={36} className="mx-auto text-outlook-text-disabled mb-3" />
+                <p className="text-sm font-medium text-outlook-text-primary mb-1">
+                  Cliquez ou glissez un fichier ici
+                </p>
+                <p className="text-xs text-outlook-text-secondary">
+                  Formats acceptés : .vcf (vCard), .csv (Google, Outlook)
+                </p>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".vcf,.vcard,.csv,text/vcard,text/csv"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+                />
+              </div>
+
+              <div className="text-xs text-outlook-text-secondary space-y-1.5 bg-gray-50 p-3 rounded-md">
+                <p className="font-medium text-outlook-text-primary">Logiciels compatibles :</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li><strong>Gmail / Google Contacts</strong> : exportez en "Google CSV" ou vCard</li>
+                  <li><strong>Outlook / Microsoft 365</strong> : exportez en CSV</li>
+                  <li><strong>Apple Contacts (iOS/macOS)</strong> : exportez en vCard</li>
+                  <li><strong>Thunderbird, Android, Yahoo...</strong> : CSV ou vCard</li>
+                </ul>
+              </div>
+
+              {error && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3 flex items-start gap-2">
+                  <AlertCircle size={16} className="flex-shrink-0 mt-0.5" /> {error}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-sm bg-green-50 border border-green-200 text-green-700 rounded-md p-3">
+                <CheckCircle2 size={18} />
+                <div>
+                  <div className="font-medium">{parsed.length} contact{parsed.length > 1 ? 's' : ''} détecté{parsed.length > 1 ? 's' : ''}</div>
+                  <div className="text-xs text-green-600">depuis {filename}</div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-outlook-text-secondary uppercase tracking-wider mb-2 block">
+                  En cas de doublon (même e-mail)
+                </label>
+                <div className="space-y-1">
+                  {([
+                    ['merge', 'Fusionner', 'Compléter les contacts existants avec les nouvelles données'],
+                    ['skip', 'Ignorer', 'Ne pas modifier les contacts déjà présents'],
+                    ['replace', 'Remplacer', 'Écraser les champs des contacts existants'],
+                  ] as const).map(([val, title, desc]) => (
+                    <label key={val} className={`flex items-start gap-2 p-2.5 border rounded-md cursor-pointer transition ${mode === val ? 'border-outlook-blue bg-blue-50' : 'border-outlook-border hover:bg-outlook-bg-hover'}`}>
+                      <input type="radio" name="mode" value={val} checked={mode === val} onChange={() => setMode(val)} className="mt-0.5" />
+                      <div>
+                        <div className="text-sm font-medium">{title}</div>
+                        <div className="text-xs text-outlook-text-secondary">{desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto border border-outlook-border rounded-md">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 text-outlook-text-secondary">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium">Nom</th>
+                      <th className="text-left px-3 py-2 font-medium">E-mail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsed.slice(0, 50).map((c, i) => (
+                      <tr key={i} className="border-t border-outlook-border">
+                        <td className="px-3 py-1.5">{c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ')}</td>
+                        <td className="px-3 py-1.5 text-outlook-text-secondary">{c.email}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {parsed.length > 50 && (
+                  <div className="text-center text-xs text-outlook-text-disabled py-2 bg-gray-50">
+                    + {parsed.length - 50} autre{parsed.length - 50 > 1 ? 's' : ''}...
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="px-6 py-3 border-t border-outlook-border flex justify-between gap-2 bg-gray-50">
+          {parsed ? (
+            <>
+              <button
+                type="button"
+                onClick={() => { setParsed(null); setFilename(''); }}
+                className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover"
+              >
+                Changer de fichier
+              </button>
+              <button
+                type="button"
+                disabled={isImporting}
+                onClick={() => onImport(parsed, mode)}
+                className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 text-sm rounded-md disabled:opacity-50 flex items-center gap-2 font-medium shadow-sm"
+              >
+                {isImporting && <Loader2 size={14} className="animate-spin" />}
+                {isImporting ? 'Import en cours...' : `Importer ${parsed.length} contact${parsed.length > 1 ? 's' : ''}`}
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={onClose} className="ml-auto px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">
+              Annuler
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

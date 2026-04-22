@@ -211,6 +211,12 @@ export const api = {
   promoteContact: (id: string) =>
     request(`/contacts/${id}/promote`, { method: 'POST' }),
 
+  importContacts: (contacts: any[], mode: 'merge' | 'skip' | 'replace' = 'merge') =>
+    request<{ imported: number; updated: number; skipped: number; errors: string[]; total: number }>(
+      '/contacts/import',
+      { method: 'POST', body: JSON.stringify({ contacts, mode }) }
+    ),
+
   searchContacts: (q: string) =>
     request<{ contacts: any[]; distributionLists: any[] }>(`/contacts/search/autocomplete?q=${encodeURIComponent(q)}`),
 

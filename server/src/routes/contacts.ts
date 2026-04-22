@@ -315,6 +315,107 @@ contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
   }
 });
 
+// ---- Bulk Import ----
+contactRouter.post('/import', async (req: AuthRequest, res) => {
+  try {
+    const items = Array.isArray(req.body?.contacts) ? req.body.contacts : [];
+    const mode = (req.body?.mode as 'merge' | 'skip' | 'replace') || 'merge';
+
+    if (!items.length) {
+      return res.status(400).json({ error: 'Aucun contact à importer' });
+    }
+
+    let imported = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const raw of items) {
+      try {
+        const email: string | undefined = raw.email ? String(raw.email).toLowerCase().trim() : undefined;
+        const firstName = raw.firstName || raw.first_name || null;
+        const lastName = raw.lastName || raw.last_name || null;
+        const displayName = raw.displayName || raw.display_name
+          || [firstName, lastName].filter(Boolean).join(' ')
+          || email
+          || null;
+
+        if (!email && !displayName) { skipped++; continue; }
+
+        const metadata: Record<string, any> = { ...(raw.metadata || {}) };
+        if (raw.website) metadata.website = raw.website;
+        if (raw.birthday) metadata.birthday = raw.birthday;
+        if (raw.address) metadata.address = raw.address;
+
+        // Dedup by email
+        let existing = null;
+        if (email) {
+          const r = await pool.query(
+            `SELECT id, source FROM contacts WHERE user_id = $1 AND LOWER(email) = $2 LIMIT 1`,
+            [req.userId, email]
+          );
+          existing = r.rows[0] || null;
+        }
+
+        if (existing) {
+          if (mode === 'skip') { skipped++; continue; }
+          // merge or replace: update fields, promote sender -> local
+          await pool.query(
+            `UPDATE contacts SET
+               first_name = COALESCE($1, first_name),
+               last_name = COALESCE($2, last_name),
+               display_name = COALESCE($3, display_name),
+               phone = COALESCE($4, phone),
+               mobile = COALESCE($5, mobile),
+               company = COALESCE($6, company),
+               job_title = COALESCE($7, job_title),
+               department = COALESCE($8, department),
+               avatar_url = COALESCE($9, avatar_url),
+               notes = COALESCE($10, notes),
+               metadata = COALESCE(metadata, '{}'::jsonb) || $11::jsonb,
+               source = CASE WHEN source = 'sender' THEN 'local' ELSE source END,
+               updated_at = NOW()
+             WHERE id = $12`,
+            [
+              firstName, lastName, displayName,
+              raw.phone || null, raw.mobile || null,
+              raw.company || null, raw.jobTitle || raw.job_title || null, raw.department || null,
+              raw.avatarUrl || raw.avatar_url || null,
+              raw.notes || null,
+              JSON.stringify(metadata),
+              existing.id,
+            ]
+          );
+          updated++;
+        } else {
+          await pool.query(
+            `INSERT INTO contacts (
+               user_id, email, first_name, last_name, display_name,
+               phone, mobile, company, job_title, department,
+               avatar_url, notes, metadata, source, is_favorite
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'local',false)`,
+            [
+              req.userId, email || null, firstName, lastName, displayName,
+              raw.phone || null, raw.mobile || null,
+              raw.company || null, raw.jobTitle || raw.job_title || null, raw.department || null,
+              raw.avatarUrl || raw.avatar_url || null,
+              raw.notes || null,
+              JSON.stringify(metadata),
+            ]
+          );
+          imported++;
+        }
+      } catch (e: any) {
+        errors.push(e.message || 'erreur inconnue');
+      }
+    }
+
+    res.json({ imported, updated, skipped, errors, total: items.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ---- Contact Groups ----
 contactRouter.get('/groups/list', async (req: AuthRequest, res) => {
   try {
