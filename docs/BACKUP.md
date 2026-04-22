@@ -45,24 +45,43 @@ définies dans la whitelist `BACKUP_KEYS` de
 | Vue côte à côte | `splitRatio`, `splitKeepFolderPane`, `splitKeepMessageList`, `splitComposeReply` |
 | Ruban | `ribbonCollapsed`, `ribbonMode` |
 | Onglets | `tabMode`, `maxTabs` |
-| Confirmations | `mail.deleteConfirm` |
+| Confirmations | `mail.deleteConfirmEnabled` |
 | Notifications (préférences locales) | `notifications.sound`, `notifications.calendar` |
-| Divers | `emoji.recent` |
+| GIFs | `giphyApiKey` (clé API GIPHY personnelle, si saisie) |
+| Divers | `emoji-panel-recent` (emojis récemment utilisés) |
 
 ## Ce qui n'est PAS sauvegardé
 
 - **Les e-mails** eux-mêmes : ils restent sur le serveur IMAP et sont toujours
   resynchronisés. Une sauvegarde IMAP complète est à faire via un outil
   externe (Thunderbird, `imapsync`, Duplicati + rclone sur maildir, etc.).
+- **Les contacts, calendriers, listes de distribution** : ils sont **stockés
+  côté serveur** (PostgreSQL + optionnellement synchronisés avec NextCloud via
+  CardDAV/CalDAV). Ils sont donc couverts par la sauvegarde serveur (dump
+  PostgreSQL) et ne font pas partie du `.json`. Le cache IndexedDB offline
+  (`webmail-offline`) est juste une copie locale qui se reconstruit
+  automatiquement à la prochaine connexion.
+- **Les images insérées dans les signatures** : bonne nouvelle — elles **sont**
+  dans la sauvegarde ! Le ruban et l'éditeur de signature embarquent les
+  images en **data URI** (base64) directement dans le HTML, lui-même stocké
+  dans `mail.signatures.v1`. Elles sont donc incluses tel quel dans le
+  fichier, sans fichier binaire externe à gérer.
 - **Les identifiants de connexion** : le token JWT (`auth_token`) et la session
   serveur sont volontairement exclus.
-- **Les clés privées S/MIME / PGP** : elles sont stockées chiffrées en
-  IndexedDB et ont leur propre mécanisme d'import/export depuis la page
-  **Sécurité**.
-- **Les abonnements push et le handle du dossier de sauvegarde** : stockés en
-  IndexedDB, spécifiques à l'appareil.
-- **Les réglages administrateur serveur** (`admin_settings`) : ils sont gérés
-  côté base de données et sauvegardés avec le dump PostgreSQL.
+- **Les clés privées S/MIME / PGP** : stockées chiffrées (AES-GCM + PBKDF2)
+  dans l'IndexedDB `webmail-security/keys`. Elles ne sont **pas** incluses
+  dans le `.json` de sauvegarde pour éviter qu'un fichier mal rangé ne
+  contienne du matériel cryptographique sensible, même chiffré. Elles
+  disposent de leur **propre mécanisme d'import/export** depuis la page
+  **Sécurité** (onglets *Exporter la clé publique* / *Exporter la clé privée*
+  protégés par la passphrase).
+- **Les abonnements Web Push, les brouillons hors-ligne non envoyés et le
+  handle du dossier de sauvegarde** : stockés en IndexedDB, spécifiques à
+  l'appareil et reconstructibles. Les brouillons validés côté serveur, eux,
+  sont dans votre dossier IMAP *Brouillons* et ne se perdent pas.
+- **Les réglages administrateur serveur** (`admin_settings`, branding
+  personnalisé, clés VAPID, etc.) : gérés en base PostgreSQL et sauvegardés
+  avec le dump serveur.
 
 ## Sauvegarde manuelle
 

@@ -41,7 +41,7 @@ const BACKUP_KEYS: string[] = [
   'mail.unifiedAccounts',
   'mail.unifiedInboxEnabled',
   'mail.unifiedSentEnabled',
-  'mail.deleteConfirm',
+  'mail.deleteConfirmEnabled',
   // Vues / mise en page
   'readingPaneMode',
   'listDensity',
@@ -63,8 +63,10 @@ const BACKUP_KEYS: string[] = [
   // Notifications (préférences locales)
   'notifications.sound',
   'notifications.calendar',
+  // GIFs (clé API GIPHY perso si l'utilisateur en a saisi une)
+  'giphyApiKey',
   // Divers
-  'emoji.recent',
+  'emoji-panel-recent',
 ];
 
 /** Préfixes sauvegardés (toutes les clés débutant par ceux-ci). */

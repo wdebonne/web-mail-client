@@ -552,6 +552,15 @@ Module : `client/src/components/mail/FolderPane.tsx` + utilitaires `client/src/u
 
 Le handle du dossier sélectionné via `showDirectoryPicker()` est persisté dans une base **IndexedDB** dédiée (`web-mail-client-backup` → store `handles` → clé `dir-handle`) car un handle n'est pas sérialisable en `localStorage`. Voir [docs/BACKUP.md](../docs/BACKUP.md) pour le format complet du fichier exporté et la liste exhaustive des clés incluses.
 
+**Périmètre de la sauvegarde locale** :
+
+- ✅ **Inclus** : toutes les clés `localStorage` de la whitelist `BACKUP_KEYS` (signatures avec images en data URI, catégories, ordre/renommage, vues, thème, préférences, `giphyApiKey`, `emoji-panel-recent`…).
+- ❌ **Exclu volontairement** :
+  - **Contacts, listes de distribution, calendriers** → stockés côté serveur PostgreSQL (+ synchro NextCloud CardDAV/CalDAV), couverts par le dump serveur. Le cache IndexedDB `webmail-offline` est juste une copie reconstructible.
+  - **E-mails et brouillons validés** → IMAP.
+  - **Clés privées PGP / S/MIME** → IndexedDB `webmail-security` (chiffrement AES-GCM + PBKDF2 310 000 itérations). Export / import dédié depuis la page **Sécurité**, jamais mélangé au `.json` de sauvegarde pour éviter qu'un fichier mal rangé ne contienne du matériel cryptographique sensible.
+  - **Token JWT, abonnements Web Push, outbox hors-ligne, `admin_settings`** → spécifiques à l'appareil / à la base serveur.
+
 **Types MIME custom utilisés pour le drag-and-drop :**
 - `application/x-mail-message` — déplacement/copie d'un message (`{uid, srcAccountId, srcFolder}`)
 - `application/x-mail-folder` — copie cross-compte d'un dossier (`{accountId, path, name}`)
