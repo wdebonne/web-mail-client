@@ -1,14 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useAuthStore } from '../stores/authStore';
 import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
-  Eye, EyeOff, Save, Paperclip
+  Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
+  FolderOpen, CheckCircle2, AlertCircle, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import {
+  collectBackup, downloadBackup, parseBackupFile, applyBackup,
+  isAutoBackupEnabled, setAutoBackupEnabled,
+  getAutoBackupFilename, setAutoBackupFilename, sanitizeFilename,
+  isFileSystemAccessSupported, pickBackupDirectory, hasBackupDirectory,
+  clearBackupDirectory, getBackupDirLabel,
+  getLastBackupAt, getLastBackupError, runAutoBackup, subscribeBackupStatus,
+} from '../utils/backup';
 
-type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications';
+type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup';
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
@@ -19,6 +28,7 @@ export default function SettingsPage() {
     { id: 'mail' as const, icon: Paperclip, label: 'Messagerie' },
     { id: 'appearance' as const, icon: Palette, label: 'Apparence' },
     { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
+    { id: 'backup' as const, icon: HardDrive, label: 'Sauvegarde' },
   ];
 
   return (
@@ -49,6 +59,7 @@ export default function SettingsPage() {
           {tab === 'mail' && <MailBehaviorSettings />}
           {tab === 'appearance' && <AppearanceSettings />}
           {tab === 'notifications' && <NotificationSettings />}
+          {tab === 'backup' && <BackupSettings />}
         </div>
       </div>
     </div>
@@ -438,3 +449,299 @@ function NotificationSettings() {
     </div>
   );
 }
+
+function BackupSettings() {
+  const [autoEnabled, setAutoEnabled] = useState<boolean>(() => isAutoBackupEnabled());
+  const [filename, setFilename] = useState<string>(() => getAutoBackupFilename());
+  const [dirLabel, setDirLabel] = useState<string | null>(() => getBackupDirLabel());
+  const [hasDir, setHasDir] = useState<boolean>(false);
+  const [lastAt, setLastAt] = useState<Date | null>(() => getLastBackupAt());
+  const [lastError, setLastError] = useState<string | null>(() => getLastBackupError());
+  const [stats, setStats] = useState<{ keys: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fsaSupported = isFileSystemAccessSupported();
+
+  const refreshStatus = () => {
+    setLastAt(getLastBackupAt());
+    setLastError(getLastBackupError());
+    setDirLabel(getBackupDirLabel());
+  };
+
+  useEffect(() => {
+    void hasBackupDirectory().then(setHasDir);
+    const unsub = subscribeBackupStatus(() => {
+      refreshStatus();
+      void hasBackupDirectory().then(setHasDir);
+    });
+    try {
+      const payload = collectBackup();
+      setStats({ keys: Object.keys(payload.data).length });
+    } catch { /* noop */ }
+    return unsub;
+  }, []);
+
+  const handlePickDir = async () => {
+    try {
+      setBusy(true);
+      const res = await pickBackupDirectory();
+      if (res) {
+        setDirLabel(res.label);
+        setHasDir(true);
+        toast.success(`Dossier sélectionné : ${res.label}`);
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Impossible de choisir le dossier');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClearDir = async () => {
+    await clearBackupDirectory();
+    setDirLabel(null);
+    setHasDir(false);
+    toast.success('Dossier de sauvegarde oublié');
+  };
+
+  const handleSaveFilename = () => {
+    const clean = sanitizeFilename(filename);
+    setAutoBackupFilename(clean);
+    setFilename(clean);
+    toast.success('Nom de fichier enregistré');
+  };
+
+  const handleToggleAuto = (next: boolean) => {
+    setAutoEnabled(next);
+    setAutoBackupEnabled(next);
+    if (next) {
+      toast.success('Sauvegarde automatique activée');
+      void runAutoBackup(false);
+    } else {
+      toast.success('Sauvegarde automatique désactivée');
+    }
+  };
+
+  const handleExport = () => {
+    try {
+      const name = autoEnabled ? sanitizeFilename(filename) : undefined;
+      downloadBackup(name);
+      toast.success('Export téléchargé');
+    } catch (e: any) {
+      toast.error(e.message || 'Export impossible');
+    }
+  };
+
+  const handleBackupNow = async () => {
+    setBusy(true);
+    const res = await runAutoBackup(true);
+    setBusy(false);
+    if (res.ok) {
+      toast.success(
+        res.mode === 'directory'
+          ? `Sauvegarde écrite dans ${dirLabel || 'le dossier configuré'} (${res.filename})`
+          : `Sauvegarde téléchargée (${res.filename})`
+      );
+    } else {
+      toast.error(res.error || 'Échec de la sauvegarde');
+    }
+  };
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const payload = await parseBackupFile(file);
+      const confirmed = window.confirm(
+        `Restaurer la sauvegarde du ${new Date(payload.createdAt).toLocaleString('fr-FR')} ?\n` +
+        `${Object.keys(payload.data).length} paramètres seront remplacés.\n\n` +
+        `Un rechargement de la page est nécessaire après restauration.`
+      );
+      if (!confirmed) {
+        e.target.value = '';
+        return;
+      }
+      const count = applyBackup(payload, { replace: true });
+      toast.success(`${count} paramètres restaurés — rechargement…`);
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err: any) {
+      toast.error(err.message || 'Import impossible');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <h3 className="text-base font-semibold mb-1">Sauvegarde et restauration</h3>
+        <p className="text-sm text-outlook-text-secondary">
+          Sauvegardez la configuration <strong>locale</strong> à cet appareil : signatures, catégories, ordre et
+          renommage des boîtes mail/dossiers, préférences d'affichage, thème, vues… Les courriels eux-mêmes
+          restent sur votre serveur IMAP ; cette sauvegarde ne les contient pas.
+        </p>
+        {stats && (
+          <p className="text-xs text-outlook-text-disabled mt-1">
+            {stats.keys} paramètre{stats.keys > 1 ? 's' : ''} local{stats.keys > 1 ? 'aux' : ''} détecté{stats.keys > 1 ? 's' : ''}.
+          </p>
+        )}
+      </section>
+
+      <section className="border-t border-outlook-border pt-4">
+        <h4 className="text-sm font-semibold mb-2">Sauvegarde manuelle</h4>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleExport}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm flex items-center gap-2"
+          >
+            <Download size={14} /> Exporter (.json)
+          </button>
+          <button
+            onClick={handleImportClick}
+            className="border border-outlook-border hover:bg-outlook-bg-hover px-3 py-1.5 rounded-md text-sm flex items-center gap-2"
+          >
+            <Upload size={14} /> Restaurer depuis un fichier…
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+        </div>
+      </section>
+
+      <section className="border-t border-outlook-border pt-4">
+        <h4 className="text-sm font-semibold mb-2">Sauvegarde automatique</h4>
+
+        {!fsaSupported && (
+          <div className="mb-3 p-3 rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+            Votre navigateur ne permet pas l'écriture directe dans un dossier du PC.<br />
+            Utilisez <strong>Chrome, Edge, Opera ou Vivaldi</strong> sur Windows ou Linux pour activer cette fonction.
+            La sauvegarde automatique fonctionnera en « téléchargement » uniquement.
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm text-outlook-text-secondary">Nom du fichier de sauvegarde</label>
+            <div className="flex gap-2 mt-1">
+              <input
+                type="text"
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+                placeholder="web-mail-client-backup.json"
+                className="flex-1 border border-outlook-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-outlook-blue"
+              />
+              <button
+                onClick={handleSaveFilename}
+                className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm flex items-center gap-2"
+              >
+                <Save size={14} /> Enregistrer
+              </button>
+            </div>
+            <p className="text-xs text-outlook-text-disabled mt-1">
+              Donnez-lui un nom explicite (ex : <code>Web-Mail-Client-NE-PAS-SUPPRIMER.json</code>) pour éviter les
+              suppressions accidentelles. L'extension <code>.json</code> est ajoutée automatiquement.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-sm text-outlook-text-secondary">Dossier de destination sur ce PC</label>
+            <div className="mt-1 p-3 rounded border border-outlook-border bg-outlook-bg-primary flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                {hasDir && dirLabel ? (
+                  <>
+                    <div className="text-sm flex items-center gap-2">
+                      <CheckCircle2 size={14} className="text-green-600" />
+                      <span className="font-medium truncate">{dirLabel}</span>
+                    </div>
+                    <div className="text-xs text-outlook-text-disabled mt-0.5">
+                      Recommandé : <em>Documents</em>, <em>Documents/Backups</em> ou tout dossier repris
+                      par Duplicati / votre outil de sauvegarde.
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-outlook-text-secondary">
+                    Aucun dossier configuré — l'auto-backup retombera sur un téléchargement.
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  onClick={handlePickDir}
+                  disabled={!fsaSupported || busy}
+                  className="border border-outlook-border hover:bg-outlook-bg-hover px-3 py-1.5 rounded-md text-sm flex items-center gap-2 disabled:opacity-50"
+                >
+                  <FolderOpen size={14} /> {hasDir ? 'Changer…' : 'Choisir…'}
+                </button>
+                {hasDir && (
+                  <button
+                    onClick={handleClearDir}
+                    className="border border-outlook-border hover:bg-outlook-bg-hover px-3 py-1.5 rounded-md text-sm text-red-600"
+                  >
+                    Oublier
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded border border-outlook-border bg-outlook-bg-primary">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Activer la sauvegarde automatique</div>
+              <div className="text-xs text-outlook-text-secondary mt-0.5">
+                Le fichier est réécrit (<strong>un seul fichier unique</strong>) à chaque modification locale :
+                création/renommage de signature, catégorie, dossier ou boîte mail, changement d'affichage, etc.
+                Les écritures sont regroupées pour éviter les accès trop fréquents.
+              </div>
+            </div>
+            <button
+              onClick={() => handleToggleAuto(!autoEnabled)}
+              className={`ml-4 px-3 py-1.5 text-sm rounded font-medium transition-colors ${
+                autoEnabled
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : 'bg-outlook-blue hover:brightness-110 text-white'
+              }`}
+            >
+              {autoEnabled ? 'Désactiver' : 'Activer'}
+            </button>
+          </div>
+
+          <div>
+            <button
+              onClick={handleBackupNow}
+              disabled={busy}
+              className="border border-outlook-border hover:bg-outlook-bg-hover px-3 py-1.5 rounded-md text-sm flex items-center gap-2 disabled:opacity-50"
+            >
+              <RefreshCw size={14} /> Sauvegarder maintenant
+            </button>
+          </div>
+
+          <div className="text-xs text-outlook-text-secondary space-y-1">
+            {lastAt && (
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={12} className="text-green-600" />
+                Dernière sauvegarde : {lastAt.toLocaleString('fr-FR')}
+              </div>
+            )}
+            {lastError && (
+              <div className="flex items-center gap-2 text-red-700">
+                <AlertCircle size={12} />
+                Dernière erreur : {lastError}
+              </div>
+            )}
+            {!lastAt && !lastError && (
+              <div className="text-outlook-text-disabled">Aucune sauvegarde effectuée pour l'instant.</div>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+

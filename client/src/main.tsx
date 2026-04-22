@@ -6,6 +6,9 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import './index.css';
 import { registerSW } from './pwa/register';
+import { startAutoBackupWatcher } from './utils/backup';
+
+startAutoBackupWatcher();
 
 const queryClient = new QueryClient({
   defaultOptions: {
