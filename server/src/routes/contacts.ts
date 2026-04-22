@@ -177,10 +177,11 @@ contactRouter.put('/:id', async (req: AuthRequest, res) => {
         avatar_url = COALESCE($10, avatar_url),
         notes = COALESCE($11, notes),
         is_favorite = COALESCE($12, is_favorite),
+        metadata = CASE WHEN $13::jsonb IS NULL THEN metadata ELSE COALESCE(metadata, '{}'::jsonb) || $13::jsonb END,
         updated_at = NOW()
-       WHERE id = $13 AND user_id = $14
+       WHERE id = $14 AND user_id = $15
        RETURNING *`,
-      [data.email, data.firstName, data.lastName, data.displayName, data.phone, data.mobile, data.company, data.jobTitle, data.department, data.avatarUrl, data.notes, data.isFavorite, id, req.userId]
+      [data.email, data.firstName, data.lastName, data.displayName, data.phone, data.mobile, data.company, data.jobTitle, data.department, data.avatarUrl, data.notes, data.isFavorite, data.metadata ? JSON.stringify(data.metadata) : null, id, req.userId]
     );
 
     // Update groups

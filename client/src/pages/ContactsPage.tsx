@@ -925,11 +925,11 @@ function ContactForm({
       isFavorite,
       metadata: {
         ...meta,
-        website: website || undefined,
-        birthday: birthday || undefined,
-        address: address || undefined,
-        bannerColor: bannerColor !== 'auto' ? bannerColor : undefined,
-        bannerImage: bannerImage || undefined,
+        website: website || null,
+        birthday: birthday || null,
+        address: address || null,
+        bannerColor: bannerColor !== 'auto' ? bannerColor : null,
+        bannerImage: bannerImage || null,
       },
     });
   };
