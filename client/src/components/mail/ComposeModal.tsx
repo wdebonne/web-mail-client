@@ -234,6 +234,8 @@ export default function ComposeModal({
       attachments,
       inReplyTo: initialData.inReplyTo,
       references: initialData.references,
+      inReplyToUid: initialData.inReplyToUid,
+      inReplyToFolder: initialData.inReplyToFolder,
     };
 
     onSend(data);

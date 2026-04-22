@@ -68,6 +68,11 @@ export interface ComposeData {
   inReplyTo?: string;
   references?: string;
   accountId?: string;
+  /** UID of the original message being replied to (same account). Used so the server can set the
+   *  IMAP `\\Answered` flag after a successful send. */
+  inReplyToUid?: number;
+  /** Folder of the original message being replied to. Pair with `inReplyToUid`. */
+  inReplyToFolder?: string;
 }
 
 export const useMailStore = create<MailState>((set, get) => ({
@@ -143,6 +148,8 @@ export const useMailStore = create<MailState>((set, get) => ({
       inReplyTo: data?.inReplyTo,
       references: data?.references,
       accountId: data?.accountId || account?.id,
+      inReplyToUid: data?.inReplyToUid,
+      inReplyToFolder: data?.inReplyToFolder,
     };
     set({ isComposing: true, composeData });
     // Also open as tab
@@ -246,6 +253,8 @@ export const useMailStore = create<MailState>((set, get) => ({
       inReplyTo: data?.inReplyTo,
       references: data?.references,
       accountId: data?.accountId || account?.id,
+      inReplyToUid: data?.inReplyToUid,
+      inReplyToFolder: data?.inReplyToFolder,
     };
     const tabId = `compose-${Date.now()}`;
     set({

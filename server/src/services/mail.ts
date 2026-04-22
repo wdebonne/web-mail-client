@@ -358,7 +358,7 @@ export class MailService {
     }
   }
 
-  async setFlags(folder: string, uid: number, flags: { seen?: boolean; flagged?: boolean }) {
+  async setFlags(folder: string, uid: number, flags: { seen?: boolean; flagged?: boolean; answered?: boolean }) {
     const client = this.createImapClient();
     try {
       await client.connect();
@@ -371,6 +371,8 @@ export class MailService {
         if (flags.seen === false) flagsToRemove.push('\\Seen');
         if (flags.flagged === true) flagsToAdd.push('\\Flagged');
         if (flags.flagged === false) flagsToRemove.push('\\Flagged');
+        if (flags.answered === true) flagsToAdd.push('\\Answered');
+        if (flags.answered === false) flagsToRemove.push('\\Answered');
 
         if (flagsToAdd.length) {
           await client.messageFlagsAdd(`${uid}`, flagsToAdd, { uid: true });

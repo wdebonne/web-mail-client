@@ -5,6 +5,7 @@ import { pool } from '../database/connection';
 import { encrypt, decrypt } from '../utils/encryption';
 import sanitizeHtml from 'sanitize-html';
 import { z } from 'zod';
+import { logger } from '../utils/logger';
 
 export const mailRouter = Router();
 
@@ -161,6 +162,10 @@ mailRouter.post('/send', async (req: AuthRequest, res) => {
       attachments: z.array(z.any()).optional(),
       inReplyTo: z.string().optional(),
       references: z.string().optional(),
+      /** UID of the original message (same account) that this reply answers. When provided together
+       *  with `inReplyToFolder`, the server will flag it as `\Answered` via IMAP after a successful send. */
+      inReplyToUid: z.number().int().optional(),
+      inReplyToFolder: z.string().optional(),
     });
 
     const data = sendSchema.parse(req.body);
@@ -228,6 +233,17 @@ mailRouter.post('/send', async (req: AuthRequest, res) => {
       inReplyTo: data.inReplyTo,
       references: data.references,
     });
+
+    // If this was a reply, flag the original message as \Answered on the IMAP server so the
+    // « répondu » indicator appears immediately in the list. Silent on failure — the mail
+    // itself was sent successfully.
+    if (data.inReplyToUid && data.inReplyToFolder) {
+      try {
+        await mailService.setFlags(data.inReplyToFolder, data.inReplyToUid, { answered: true });
+      } catch (err: any) {
+        logger.warn(`Unable to flag original message as answered (uid=${data.inReplyToUid}, folder=${data.inReplyToFolder}): ${err?.message || err}`);
+      }
+    }
 
     res.json({ success: true, messageId: result.messageId });
   } catch (error: any) {

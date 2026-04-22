@@ -355,12 +355,20 @@ export default function MailPage() {
         return { success: true, offline: true };
       }
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result: any, variables: any) => {
       closeCompose();
       if (result?.offline) {
         toast.success('Message enregistré dans la boîte d\'envoi (envoi au retour de la connexion)');
       } else {
         toast.success('Message envoyé');
+        // Optimistic update: if this was a reply, reflect the \Answered flag locally so the
+        // « répondu » indicator appears immediately in the list without waiting for a refetch.
+        if (variables?.inReplyToUid) {
+          updateMessageFlags(variables.inReplyToUid, { answered: true });
+        }
+        // Refresh the message list to pick up the server-side flag change.
+        queryClient.invalidateQueries({ queryKey: ['messages'] });
+        queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
       }
     },
     onError: (error: any) => {
@@ -411,7 +419,7 @@ export default function MailPage() {
   const handleReply = (message: any, replyAll: boolean = false) => {
     const replyTo = message.from ? [message.from] : [];
     const replyCC = replyAll && message.cc ? message.cc : [];
-    const { accountId } = originOf(message);
+    const { accountId, folder } = originOf(message);
 
     if (splitComposeReply) setComposeAlongsideMessage(message);
     openCompose({
@@ -432,6 +440,8 @@ export default function MailPage() {
       inReplyTo: message.messageId,
       references: message.headers?.references,
       accountId: accountId || selectedAccount?.id,
+      inReplyToUid: message.uid,
+      inReplyToFolder: folder,
     });
   };
 
