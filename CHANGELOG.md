@@ -33,8 +33,17 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 - Le panneau **Système** de l'administration expose maintenant une nouvelle section *Branding & icônes* en-dessous des paramètres système existants (inscription, tailles de pièces jointes, pattern d'archive).
 
+### Corrigé
+
+#### Build Docker — compilation TypeScript client & serveur
+- **Client** (`client/src/components/mail/Ribbon.tsx`) : `editorRef.current?.focus()` dans la nouvelle fonction `handleImageFile` faisait échouer `tsc -b` avec `TS18048: 'editorRef' is possibly 'undefined'`. La prop `editorRef` du ruban est typée optionnelle (`React.RefObject<HTMLDivElement> | undefined`), il manquait donc le chaînage optionnel sur `editorRef` lui-même. Corrigé en `editorRef?.current?.focus()`.
+- **Serveur** (`server/src/routes/branding.ts`) : le callback `fileFilter` de `multer` attend la signature stricte `cb(null, boolean)` ou `cb(error)`. L'appel `cb(ok ? null : new Error(...), ok)` produisait `TS2345: Argument of type 'Error | null' is not assignable to parameter of type 'null'`. Corrigé en branchant explicitement selon le résultat du test MIME (`cb(null, true)` si ok, `cb(new Error(...) as any, false)` sinon).
+
 ---
 
+### Ajouté (précédemment)
+
+#### Signatures multiples — gestion complète style Outlook Web
 
 - **Signatures multiples par utilisateur** : création, édition, suppression et nommage de plusieurs signatures HTML depuis l'onglet **Insérer → Signature** du ruban de rédaction (`client/src/components/mail/Ribbon.tsx`). Un menu déroulant liste toutes les signatures enregistrées pour les insérer d'un clic dans le corps du message, et un lien **Signatures…** ouvre la gestion complète.
 - **Modale de gestion** (`client/src/components/mail/SignatureModals.tsx` → `SignaturesManagerModal`) : liste des signatures existantes avec actions *Modifier*, *Supprimer* et menu **…** pour définir rapidement la signature par défaut ; deux sélecteurs pour la **valeur par défaut des nouveaux messages** et pour la **valeur par défaut des réponses et transferts** ; bouton **+ Ajouter une signature**.
