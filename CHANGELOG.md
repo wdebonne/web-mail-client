@@ -58,6 +58,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - Nouvelles variables optionnelles : `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT` (par défaut `mailto:admin@example.com`), `NEW_MAIL_POLL_INTERVAL_MS`. Si les clés VAPID ne sont pas fournies, elles sont générées automatiquement au premier démarrage et persistées en base.
 
 ### Corrigé
+- **Catégories favorites** : passer d'une catégorie favorite à une autre vidait la liste des messages (la clé React Query `virtual-messages` ne changeant pas, aucun refetch n'était déclenché). `setCategoryFilter` conserve maintenant les messages déjà chargés quand la vue unifiée est déjà active et n'échange que le filtre côté client.
 - Liste des messages : stabilisation de la hauteur des lignes en mode étroit pour supprimer la légère variation de taille lors du survol ou de la sélection (réservation de la hauteur des boutons d'action).
 - Volet Dossiers : correction d'un crash (React #300 « Rendered fewer hooks than expected ») déclenché par le bouton « Masquer les dossiers » — le hook `useMailStore` était appelé conditionnellement dans le JSX.
 
