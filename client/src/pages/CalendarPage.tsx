@@ -257,6 +257,20 @@ export default function CalendarPage() {
     setEventContextMenu({ event: ev, x: e.clientX, y: e.clientY });
   };
 
+  const handleEventMove = (ev: CalendarEvent, newStart: Date) => {
+    const oldStart = parseISO(ev.start_date);
+    const oldEnd = parseISO(ev.end_date);
+    const duration = Math.max(0, oldEnd.getTime() - oldStart.getTime());
+    const newEnd = new Date(newStart.getTime() + duration);
+    updateEventMutation.mutate({
+      id: ev.id,
+      data: {
+        startDate: newStart.toISOString(),
+        endDate: newEnd.toISOString(),
+      },
+    });
+  };
+
   const duplicateEvent = (ev: CalendarEvent) => {
     createEventMutation.mutate({
       calendarId: ev.calendar_id,
@@ -400,6 +414,7 @@ export default function CalendarPage() {
                 onEventClick={(ev) => setSelectedEvent(ev)}
                 onEventContextMenu={handleEventContextMenu}
                 eventColor={eventColor}
+                onEventMove={handleEventMove}
               />
             )}
             {view === 'day' && (
@@ -412,6 +427,7 @@ export default function CalendarPage() {
                 onEventClick={(ev) => setSelectedEvent(ev)}
                 onEventContextMenu={handleEventContextMenu}
                 eventColor={eventColor}
+                onEventMove={handleEventMove}
               />
             )}
           </div>
@@ -599,7 +615,7 @@ function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, onE
   );
 }
 
-function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor }: {
+function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove }: {
   currentDate: Date;
   workWeek: boolean;
   timeScale: number;
@@ -608,16 +624,17 @@ function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEve
   onEventClick: (ev: CalendarEvent) => void;
   onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
+  onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
 }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekDays = workWeek ? [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4, 5, 6];
   const days = weekDays.map(i => addDays(weekStart, i));
   return (
-    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} />
+    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} />
   );
 }
 
-function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor }: {
+function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove }: {
   currentDate: Date;
   dayCount: number;
   timeScale: number;
@@ -626,14 +643,15 @@ function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEven
   onEventClick: (ev: CalendarEvent) => void;
   onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
+  onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
 }) {
   const days = Array.from({ length: dayCount }, (_, i) => addDays(startOfDay(currentDate), i));
   return (
-    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} />
+    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} />
   );
 }
 
-function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor }: {
+function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove }: {
   days: Date[];
   timeScale: number;
   events: CalendarEvent[];
@@ -641,10 +659,13 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
   onEventClick: (ev: CalendarEvent) => void;
   onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
+  onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
 }) {
   const HOUR_HEIGHT = 48;
   const slotsPerHour = Math.max(1, Math.round(60 / timeScale));
   const slotHeight = HOUR_HEIGHT / slotsPerHour;
+
+  const [dragHover, setDragHover] = useState<string | null>(null);
 
   const getEventsForDay = (day: Date) => events.filter((ev) => {
     const s = parseISO(ev.start_date);
@@ -661,9 +682,15 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
     return (
       <button
         key={ev.id}
+        draggable={!!onEventMove}
+        onDragStart={(dragEvt) => {
+          if (!onEventMove) return;
+          dragEvt.dataTransfer.effectAllowed = 'move';
+          dragEvt.dataTransfer.setData('text/event-id', ev.id);
+        }}
         onClick={(clickEvt) => { clickEvt.stopPropagation(); onEventClick(ev); }}
         onContextMenu={(clickEvt) => onEventContextMenu(clickEvt, ev)}
-        className="absolute left-0.5 right-0.5 rounded px-1.5 py-0.5 text-[11px] text-left truncate hover:opacity-90 transition-opacity shadow-sm"
+        className="absolute left-0.5 right-0.5 rounded px-1.5 py-0.5 text-[11px] text-left truncate hover:opacity-90 transition-opacity shadow-sm cursor-grab active:cursor-grabbing"
         style={{ top, height, backgroundColor: `${eventColor(ev)}20`, color: eventColor(ev), borderLeft: `3px solid ${eventColor(ev)}` }}
         title={ev.title}
       >
@@ -711,12 +738,31 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
                   const m = (idx % slotsPerHour) * timeScale;
                   const slotDate = setMinutes(setHours(day, h), m);
                   const isHour = m === 0;
+                  const slotKey = `${day.toISOString()}-${idx}`;
                   return (
                     <div
                       key={idx}
                       onClick={() => onSlotClick(slotDate)}
+                      onDragOver={(e) => {
+                        if (!onEventMove) return;
+                        if (!e.dataTransfer.types.includes('text/event-id')) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        setDragHover(slotKey);
+                      }}
+                      onDragLeave={() => { if (dragHover === slotKey) setDragHover(null); }}
+                      onDrop={(e) => {
+                        if (!onEventMove) return;
+                        const id = e.dataTransfer.getData('text/event-id');
+                        if (!id) return;
+                        e.preventDefault();
+                        const ev = events.find(x => x.id === id);
+                        if (!ev) return;
+                        onEventMove(ev, slotDate);
+                        setDragHover(null);
+                      }}
                       style={{ height: slotHeight }}
-                      className={`hover:bg-outlook-bg-hover/40 cursor-pointer ${isHour ? 'border-b border-outlook-border' : 'border-b border-outlook-border/30'}`}
+                      className={`hover:bg-outlook-bg-hover/40 cursor-pointer ${dragHover === slotKey ? 'bg-outlook-blue/15 ring-1 ring-inset ring-outlook-blue' : ''} ${isHour ? 'border-b border-outlook-border' : 'border-b border-outlook-border/30'}`}
                     />
                   );
                 })}
