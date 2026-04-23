@@ -273,9 +273,21 @@ adminRouter.post('/nextcloud/test', async (req: AuthRequest, res) => {
     if (url && username && password) {
       admin = new NextCloudAdminService({ url, adminUsername: username, adminPassword: password });
     } else {
-      const { getAdminClient } = await import('../services/nextcloudHelper');
-      admin = await getAdminClient();
-      if (!admin) return res.json({ success: false, error: 'Configuration NextCloud incomplète' });
+      // Read the saved config directly (don't require cfg.enabled — we want
+      // to allow testing credentials BEFORE activating the integration).
+      const { getNextCloudConfig } = await import('../services/nextcloudHelper');
+      const cfg = await getNextCloudConfig(true);
+      if (!cfg || !cfg.url || !cfg.adminUsername || !cfg.adminPassword) {
+        return res.json({
+          success: false,
+          error: 'Configuration NextCloud incomplète : URL, identifiant et mot de passe requis (enregistrez d\'abord la configuration).',
+        });
+      }
+      admin = new NextCloudAdminService({
+        url: cfg.url,
+        adminUsername: cfg.adminUsername,
+        adminPassword: cfg.adminPassword,
+      });
     }
     const info = await admin.testConnection();
     res.json({ success: true, version: info.version });
