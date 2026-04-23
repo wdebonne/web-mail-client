@@ -16,6 +16,7 @@ import { formatInTimeZone, toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { fr } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../stores/authStore';
+import { useUIStore } from '../stores/uiStore';
 import CalendarRibbon, { CalendarViewMode, CalendarFilters } from '../components/calendar/CalendarRibbon';
 import CalendarSidebar from '../components/calendar/CalendarSidebar';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
@@ -107,6 +108,15 @@ export default function CalendarPage() {
   useEffect(() => setRibbonMode(ribbonMode), [ribbonMode]);
   useEffect(() => setRibbonCollapsed(ribbonCollapsed), [ribbonCollapsed]);
   useEffect(() => setShowSidebar(showSidebar), [showSidebar]);
+
+  // Mobile/tablet hamburger: toggle the calendar sidebar visibility.
+  const mobileSidebarSignal = useUIStore((s) => s.mobileSidebarSignal);
+  const lastSidebarSignalRef = useRef(mobileSidebarSignal);
+  useEffect(() => {
+    if (lastSidebarSignalRef.current === mobileSidebarSignal) return;
+    lastSidebarSignalRef.current = mobileSidebarSignal;
+    setShowSidebarState((v) => !v);
+  }, [mobileSidebarSignal]);
 
   const { rangeStart, rangeEnd } = useMemo(() => {
     let s: Date; let e: Date;

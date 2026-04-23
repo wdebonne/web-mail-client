@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useMailStore, ComposeData } from '../stores/mailStore';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { useUIStore } from '../stores/uiStore';
 import { offlineDB } from '../pwa/offlineDB';
 import FolderPane from '../components/mail/FolderPane';
 import MessageList from '../components/mail/MessageList';
@@ -580,6 +581,17 @@ export default function MailPage() {
   // Mobile view state: 'folders' | 'list' | 'message'
   const [mobileView, setMobileView] = useState<'folders' | 'list' | 'message'>('list');
   const [showFolderPane, setShowFolderPane] = useState(true);
+
+  // Mobile/tablet: the top-bar hamburger emits a signal via the UI store. When
+  // it fires, toggle between the folder list and the message list.
+  const mobileSidebarSignal = useUIStore((s) => s.mobileSidebarSignal);
+  const lastSidebarSignalRef = useRef(mobileSidebarSignal);
+  useEffect(() => {
+    if (lastSidebarSignalRef.current === mobileSidebarSignal) return;
+    lastSidebarSignalRef.current = mobileSidebarSignal;
+    setMobileView((v) => (v === 'folders' ? 'list' : 'folders'));
+  }, [mobileSidebarSignal]);
+
   // Reading pane mode — matches Outlook's "Volet de lecture" setting.
   // 'right'  : list on the left, reading pane on the right (default)
   // 'bottom' : list on top, reading pane below (stacked vertically)
