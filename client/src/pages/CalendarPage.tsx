@@ -718,6 +718,8 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
   // Auto-détection : si au moins un compte mail a CalDAV actif et synchronisé (Nextcloud/autre),
   // on crée directement le calendrier dessus. Sinon, on tombe sur un calendrier local.
   const caldavAccount = accounts.find((a: any) => a.caldav_url && a.caldav_sync_enabled);
+  const isNextcloud = !!caldavAccount && /remote\.php\/dav|nextcloud/i.test(String(caldavAccount.caldav_url || ''));
+  const targetLabel = isNextcloud ? 'Nextcloud' : 'Boîte mail · CalDAV';
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -762,9 +764,11 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
             <div className="p-3 rounded-md border border-outlook-border bg-outlook-bg-hover/30 text-sm">
               {caldavAccount ? (
                 <>
-                  <div className="font-medium">Boîte mail · CalDAV</div>
+                  <div className="font-medium">{targetLabel}</div>
                   <div className="text-xs text-outlook-text-secondary">
-                    Créé sur {caldavAccount.email} et synchronisé automatiquement.
+                    {isNextcloud
+                      ? `Créé sur Nextcloud (${caldavAccount.email}) et synchronisé automatiquement.`
+                      : `Créé sur ${caldavAccount.email} et synchronisé automatiquement.`}
                   </div>
                 </>
               ) : (
