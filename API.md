@@ -790,7 +790,9 @@ Si le calendrier cible est lié à un compte mail (`caldav_url` + `mail_account_
 
 ### PUT /api/calendar/events/:id
 
-Met à jour un événement (mêmes champs que `POST`). Re-pousse la vCalendar distante si le calendrier est lié à un compte CalDAV. Le champ `ical_data` est réinitialisé à `NULL` afin que la prochaine exportation reconstruise l'ICS à partir de l'état DB (pour intégrer les nouveaux champs ci-dessus).
+Met à jour un événement (mêmes champs que `POST`). Re-pousse la vCalendar distante si le calendrier est lié à un compte CalDAV **ou** un calendrier NextCloud (`nc_managed=true`). Le champ `ical_data` est réinitialisé à `NULL` afin que la prochaine exportation reconstruise l'ICS à partir de l'état DB (pour intégrer les nouveaux champs ci-dessus).
+
+Pour un simple déplacement (drag & drop dans l'agenda), il suffit d'envoyer `{ "startDate": "...", "endDate": "..." }` — les autres champs sont préservés via `COALESCE`.
 
 ### DELETE /api/calendar/events/:id
 
@@ -806,7 +808,26 @@ Lors de la première synchronisation, le calendrier local `is_default = true` de
 
 ### POST /api/calendar/sync
 
-Synchronise tous les comptes mail CalDAV-activés de l'utilisateur.
+Synchronise tous les comptes mail CalDAV-activés de l'utilisateur, **et** déclenche également la synchronisation NextCloud (`syncCalendars` + `syncContacts`) quand l'utilisateur est lié à un compte NC. Met à jour `nextcloud_users.last_sync_at` / `last_sync_error`.
+
+**Réponse 200 :**
+```json
+{
+  "synced": 2,
+  "results": [ { "accountId": "...", "calendars": 3, "events": 42 } ],
+  "nextcloud": { "ok": true }
+}
+```
+
+### POST /api/calendar/:id/migrate
+
+Migre un calendrier entre stockage local et NextCloud.
+
+**Body :**
+- `{ "target": "nextcloud" }` : crée le calendrier sur NC via `MKCALENDAR`, PUT tous les événements existants, bascule `source='nextcloud'` et `nc_managed=true`.
+- `{ "target": "local", "deleteRemote"?: true }` : détache le calendrier de NC et, si `deleteRemote=true`, supprime également le calendrier côté serveur NextCloud.
+
+**Réponse 200 :** `{ "ok": true, "calendar": { ... } }`
 
 ### POST /api/calendar/calendars/:id/share
 

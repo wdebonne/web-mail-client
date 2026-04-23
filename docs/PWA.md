@@ -74,6 +74,7 @@ Le Service Worker lui-même est écrit en TypeScript dans [`client/src/sw.ts`](.
 | Images | **Cache First** | Cache 7 jours, fallback réseau |
 | Polices | **Cache First** | Cache 30 jours |
 | API GET | **Network First** | Réseau d'abord, fallback cache |
+| **`/api/calendar/events*`** | **Network First, sans stockage** | Route dédiée avec `cacheWillUpdate: () => null` — les réponses ne sont jamais persistées afin d'éviter qu'un refetch ne serve une version périmée après une mutation (drag & drop, édition). |
 | API POST/PUT/DELETE | **Network Only** | Réseau uniquement (ou queue offline) |
 
 ### Configuration Vite PWA (`vite.config.ts`)

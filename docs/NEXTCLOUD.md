@@ -124,6 +124,22 @@ La vue « NextCloud » dans la page Contacts filtre sur `nc_managed = true`.
 - Sync **périodique** : service `nextcloudSyncPoller` lancé au démarrage du serveur,
   intervalle configurable (min. 5 min, défaut 15 min)
 - Sync **à la demande** : bouton *Sync* depuis l'admin, endpoint `POST /admin/nextcloud/users/:userId/sync`
+- Sync **depuis l'agenda** : bouton *Synchroniser* de la page Agenda → `POST /calendar/sync` effectue la sync CalDAV des comptes mail **puis** appelle `nc.syncCalendars()` + `nc.syncContacts()` pour l'utilisateur courant. `last_sync_at` / `last_sync_error` sont mis à jour dans `nextcloud_users`. Réponse : `{ synced, results, nextcloud: { ok, error? } }`.
+- Sync **immédiate au déplacement** : lorsqu'un événement d'un calendrier `nc_managed` est déplacé (drag & drop) ou modifié via l'UI, `PUT /events/:id` déclenche `pushEventToCalDAV()` qui pousse directement l'ICS mis à jour vers NextCloud via `PUT` + `If-Match` sur `nc_etag`.
+
+### Migration d'un calendrier Local ↔ NextCloud
+
+Depuis la sidebar de l'agenda, le menu contextuel d'un calendrier propose :
+
+- **Migrer vers NextCloud** (calendriers locaux, quand l'utilisateur est lié à NC) → `POST /calendar/:id/migrate` avec `{ target: 'nextcloud' }` :
+  1. Crée le calendrier sur NC (`MKCALENDAR`)
+  2. PUT de tous les événements existants (réutilise `ical_data` ou reconstruit l'ICS)
+  3. Bascule `source='nextcloud'`, `nc_managed=true`, renseigne `caldav_url` et `external_id`
+- **Migrer en local** (calendriers `source='nextcloud'`) → `POST /calendar/:id/migrate` avec `{ target: 'local', deleteRemote?: boolean }` :
+  1. Si `deleteRemote=true`, supprime le calendrier côté NC
+  2. Efface `nc_managed`, `caldav_url`, `external_id` — le calendrier devient strictement local
+
+Une modale de confirmation liste les gains et pertes de chaque direction (partage, iMIP, accès mobile, etc.).
 
 ---
 

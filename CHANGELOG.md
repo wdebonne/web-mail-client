@@ -9,6 +9,43 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Agenda — Glisser-déposer d'événements
+
+- **Déplacement d'événement par drag & drop** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : dans les vues *Jour*, *Semaine* et *Semaine de travail*, les événements peuvent être glissés vers n'importe quel créneau pour changer leur date/heure de début. La durée est préservée. Le créneau cible est mis en surbrillance pendant le drag.
+  - **Calcul de position** : les handlers `dragover`/`drop` sont posés sur la colonne-jour entière (pas sur chaque slot) pour ne pas être bloqués par les événements existants ou les overlays. La position Y de la souris (moins l'offset de saisie mémorisé au `dragstart`) est divisée par `slotHeight` pour obtenir l'index exact du créneau.
+  - **Drop = surbrillance** : la dernière cible calculée pendant le `dragover` est mémorisée dans un `ref`, et le `drop` utilise cette valeur — garantit que l'événement atterrit exactement où l'utilisateur voit la surbrillance.
+  - **Mise à jour optimiste** : TanStack Query applique immédiatement la nouvelle position dans le cache (`onMutate`), avec rollback automatique en cas d'erreur serveur. Au retour du `PUT`, le cache est patché avec la réponse du serveur au lieu d'invalider la query (évite qu'un `GET` servi depuis le cache du Service Worker n'écrase la mise à jour).
+- **Synchronisation NextCloud automatique au déplacement** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts)) : `PUT /events/:id` déclenche `pushEventToCalDAV()` qui, pour un agenda `nc_managed`, utilise `getUserClient(userId).putEvent(caldav_url, ical_uid, ics, nc_etag)` — la modification est immédiatement propagée sur NextCloud (avec envoi iMIP pour les invités), et `nc_etag`/`nc_uri` sont mis à jour en base.
+
+#### Agenda — Migration de calendriers Local ↔ NextCloud
+
+- **Nouveau endpoint `POST /calendar/:id/migrate`** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts)) corps `{ target: 'nextcloud' | 'local', deleteRemote?: boolean }` :
+  - `target=nextcloud` : crée le calendrier sur NC (`nc.createCalendar`), pousse tous les événements existants via `nc.putEvent()` (réutilise `ical_data` ou reconstruit l'ICS), bascule `source='nextcloud'` et `nc_managed=true`.
+  - `target=local` : détache le calendrier de NC et optionnellement supprime le calendrier côté NextCloud.
+- **UI de migration** ([client/src/components/calendar/CalendarSidebar.tsx](client/src/components/calendar/CalendarSidebar.tsx), [client/src/components/calendar/MigrateCalendarDialog.tsx](client/src/components/calendar/MigrateCalendarDialog.tsx)) : nouvelle entrée *Migrer vers NextCloud* / *Migrer en local* dans le menu contextuel de la sidebar calendrier, avec une modale listant les gains et pertes de la migration et une case à cocher optionnelle *Supprimer sur NextCloud* pour la migration inverse.
+
+#### Bouton « Synchroniser » — synchronisation NextCloud incluse
+
+- **Extension de `POST /calendar/sync`** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts)) : après la boucle CalDAV par compte mail, le endpoint appelle désormais `nc.syncCalendars(userId)` puis `nc.syncContacts(userId)` pour tirer les changements NextCloud. `last_sync_at` / `last_sync_error` de `nextcloud_users` sont mis à jour. Réponse enrichie : `{ synced, results, nextcloud: { ok, error? } }`.
+
+### Corrigé
+
+#### Service Worker — réponses périmées après mutation d'événement
+
+- **Exclusion du cache pour `/api/calendar/events*`** ([client/src/sw.ts](client/src/sw.ts)) : la route reste en `NetworkFirst` mais avec un plugin `cacheWillUpdate: () => null` qui empêche le stockage. Sinon, après un `PUT` d'événement, un refetch déclenché par TanStack Query pouvait renvoyer l'ancienne réponse depuis le cache Workbox et écraser la mise à jour optimiste.
+
+#### Synchronisation NextCloud — création d'un doublon « autres » lors du premier sync
+
+- **`POST /calendar` avec création NC** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts)) : quand NC auto-créait le calendrier, l'INSERT en base ne positionnait ni `source='nextcloud'` ni `external_id=ncUrl`. Au sync suivant, `NextCloudService.syncCalendars()` ne trouvait donc pas de correspondance et créait une seconde ligne. Corrigé : l'INSERT local stocke directement les métadonnées NC.
+
+#### Base de données — échec d'initialisation sur base vierge
+
+- **Ordre des migrations** ([server/src/database/connection.ts](server/src/database/connection.ts)) : les `ALTER TABLE calendars/calendar_events/contacts ADD COLUMN ...` et les `CREATE INDEX` associés s'exécutaient avant les `CREATE TABLE` correspondants → erreur `42P01 relation "calendars" does not exist`. Réordonné : colonnes et index sont maintenant ajoutés après la création des tables.
+
+#### Déploiement — paramétrage DB ignoré
+
+- **`docker-compose.yml`** : `DATABASE_URL` n'était plus paramétrable (hardcodé), ce qui faisait échouer l'authentification (`28P01`) quand on modifiait `DB_PASSWORD` via l'interface Coolify/Dokploy. Passée en variable avec fallback : `${DATABASE_URL:-postgresql://webmail:${DB_PASSWORD:-webmail_secure_pwd}@db:5432/webmail}`. Ajout également de `NODE_ENV`, `PORT`, `DEFAULT_IMAP_PORT`, `DEFAULT_SMTP_PORT`.
+
 #### Modale « Nouveau calendrier » — choix automatique Local / Nextcloud
 
 - **Choix Local / Boîte mail supprimé** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : la modale ne demande plus où créer le calendrier. Un bandeau *Emplacement* affiche la destination réelle :
