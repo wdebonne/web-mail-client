@@ -708,9 +708,6 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
 }) {
   const [name, setName] = useState('');
   const [color, setColor] = useState('#0078D4');
-  const [target, setTarget] = useState<'local' | 'mail'>('local');
-  const [mailAccountId, setMailAccountId] = useState<string>('');
-  const [createOnCaldav, setCreateOnCaldav] = useState(true);
   const palette = ['#0078D4', '#107C10', '#B4009E', '#E3008C', '#E74856', '#CA5010', '#FFB900', '#5C2E91'];
 
   const { data: accounts = [] } = useQuery<any[]>({
@@ -718,22 +715,22 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
     queryFn: () => api.getCalendarAccounts(),
   });
 
-  const selectedAccount = accounts.find((a: any) => a.id === mailAccountId);
-  const canCreateOnCaldav = !!selectedAccount?.caldav_url && !!selectedAccount?.caldav_sync_enabled;
+  // Auto-détection : si au moins un compte mail a CalDAV actif et synchronisé (Nextcloud/autre),
+  // on crée directement le calendrier dessus. Sinon, on tombe sur un calendrier local.
+  const caldavAccount = accounts.find((a: any) => a.caldav_url && a.caldav_sync_enabled);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    if (target === 'local') {
-      onCreate({ name: name.trim(), color });
-    } else {
-      if (!mailAccountId) return;
+    if (caldavAccount) {
       onCreate({
         name: name.trim(),
         color,
-        mailAccountId,
-        createOnCaldav: canCreateOnCaldav && createOnCaldav,
+        mailAccountId: caldavAccount.id,
+        createOnCaldav: true,
       });
+    } else {
+      onCreate({ name: name.trim(), color });
     }
   };
 
@@ -762,76 +759,24 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
 
           <div>
             <label className="text-xs text-outlook-text-secondary mb-1 block">Emplacement</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setTarget('local')}
-                className={`p-3 text-left rounded-md border text-sm ${
-                  target === 'local'
-                    ? 'border-outlook-blue bg-outlook-blue/5 ring-1 ring-outlook-blue'
-                    : 'border-outlook-border hover:bg-outlook-bg-hover'
-                }`}
-              >
-                <div className="font-medium">Local</div>
-                <div className="text-xs text-outlook-text-secondary">Visible uniquement ici.</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setTarget('mail')}
-                className={`p-3 text-left rounded-md border text-sm ${
-                  target === 'mail'
-                    ? 'border-outlook-blue bg-outlook-blue/5 ring-1 ring-outlook-blue'
-                    : 'border-outlook-border hover:bg-outlook-bg-hover'
-                }`}
-              >
-                <div className="font-medium">Boîte mail</div>
-                <div className="text-xs text-outlook-text-secondary">Rattaché à une boîte (CalDAV possible).</div>
-              </button>
-            </div>
-          </div>
-
-          {target === 'mail' && (
-            <div className="space-y-2">
-              <div>
-                <label className="text-xs text-outlook-text-secondary mb-1 block">Compte mail</label>
-                <select
-                  value={mailAccountId}
-                  onChange={(e) => setMailAccountId(e.target.value)}
-                  required
-                  className="w-full border border-outlook-border rounded-md px-2 py-2 text-sm focus:outline-none focus:border-outlook-blue bg-white"
-                >
-                  <option value="">— Sélectionner —</option>
-                  {accounts.map((a: any) => (
-                    <option key={a.id} value={a.id}>
-                      {a.email}
-                      {a.caldav_url ? ` · CalDAV ${a.caldav_sync_enabled ? 'actif' : 'désactivé'}` : ' · sans CalDAV'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {mailAccountId && (
-                <label className={`flex items-start gap-2 text-sm p-2 rounded border ${
-                  canCreateOnCaldav ? 'border-outlook-border bg-outlook-bg-hover/30' : 'border-outlook-border/40 bg-gray-50 opacity-75'
-                }`}>
-                  <input
-                    type="checkbox"
-                    checked={canCreateOnCaldav && createOnCaldav}
-                    disabled={!canCreateOnCaldav}
-                    onChange={(e) => setCreateOnCaldav(e.target.checked)}
-                    className="rounded mt-0.5"
-                  />
-                  <span>
-                    <span className="font-medium">Créer et synchroniser via CalDAV</span>
-                    <span className="block text-xs text-outlook-text-secondary">
-                      {canCreateOnCaldav
-                        ? 'Le calendrier est créé sur le serveur (MKCALENDAR) et sera synchronisé automatiquement.'
-                        : 'Indisponible : cette boîte mail n\'a pas de CalDAV actif. Activez-le dans « Paramètres du calendrier ».'}
-                    </span>
-                  </span>
-                </label>
+            <div className="p-3 rounded-md border border-outlook-border bg-outlook-bg-hover/30 text-sm">
+              {caldavAccount ? (
+                <>
+                  <div className="font-medium">Boîte mail · CalDAV</div>
+                  <div className="text-xs text-outlook-text-secondary">
+                    Créé sur {caldavAccount.email} et synchronisé automatiquement.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="font-medium">Local</div>
+                  <div className="text-xs text-outlook-text-secondary">
+                    Aucun compte CalDAV/Nextcloud actif : visible uniquement ici.
+                  </div>
+                </>
               )}
             </div>
-          )}
+          </div>
 
           <div>
             <label className="text-xs text-outlook-text-secondary mb-1 block">Couleur</label>
@@ -851,7 +796,7 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Annuler</button>
             <button
               type="submit"
-              disabled={isSubmitting || !name.trim() || (target === 'mail' && !mailAccountId)}
+              disabled={isSubmitting || !name.trim()}
               className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50"
             >
               {isSubmitting ? 'Création...' : 'Créer'}
