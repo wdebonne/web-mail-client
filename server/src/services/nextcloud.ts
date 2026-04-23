@@ -211,25 +211,89 @@ export class NextCloudService {
       const principal = `${this.config.url}/remote.php/dav/principals/users/${this.config.username}/`;
 
       for (const cal of calendars) {
-        // Upsert calendar — mark it as NC-managed so pushEventToCalDAV()
-        // routes updates through this.putEvent() (with iMIP invitations).
-        const calResult = await pool.query(
-          `INSERT INTO calendars (user_id, name, color, source, caldav_url, external_id,
-                                  nc_managed, nc_principal_url, last_sync_at)
-           VALUES ($1, $2, $3, 'nextcloud', $4, $5, TRUE, $6, NOW())
-           ON CONFLICT (user_id, external_id) WHERE source = 'nextcloud' DO UPDATE SET
-             name = EXCLUDED.name,
-             color = EXCLUDED.color,
-             caldav_url = EXCLUDED.caldav_url,
-             nc_managed = TRUE,
-             nc_principal_url = EXCLUDED.nc_principal_url,
-             last_sync_at = NOW(),
-             updated_at = NOW()
-           RETURNING id`,
-          [userId, cal.name, cal.color || '#0078D4', cal.href, cal.href, principal]
+        // Deduplicate with any pre-existing calendar row for this user that
+        // points to the same CalDAV URL. Without this, a user whose mail
+        // account already syncs via CalDAV to the same NextCloud server ends
+        // up with two rows (source='caldav' and source='nextcloud') for the
+        // same remote calendar, and every event is imported twice.
+        const existing = await pool.query(
+          `SELECT id, mail_account_id, source
+             FROM calendars
+            WHERE user_id = $1
+              AND (caldav_url = $2 OR external_id = $2)
+            ORDER BY (source = 'nextcloud') DESC, created_at ASC`,
+          [userId, cal.href]
         );
 
-        const calendarId = calResult.rows[0].id;
+        let calendarId: string;
+
+        if (existing.rows.length > 0) {
+          const keep = existing.rows[0];
+          calendarId = keep.id;
+
+          // Promote the kept row to NC-managed, but preserve any mail_account_id
+          // link so the companion CalDAV sync keeps targeting the same row.
+          await pool.query(
+            `UPDATE calendars
+                SET name = $1,
+                    color = $2,
+                    source = 'nextcloud',
+                    caldav_url = $3,
+                    external_id = $3,
+                    nc_managed = TRUE,
+                    nc_principal_url = $4,
+                    last_sync_at = NOW(),
+                    updated_at = NOW()
+              WHERE id = $5`,
+            [cal.name, cal.color || '#0078D4', cal.href, principal, calendarId]
+          );
+
+          // Merge siblings: move their events over (skipping duplicates by ical_uid),
+          // then delete the now-empty duplicate calendar rows.
+          for (const dup of existing.rows.slice(1)) {
+            await pool.query(
+              `UPDATE calendar_events ce
+                  SET calendar_id = $1
+                WHERE ce.calendar_id = $2
+                  AND NOT EXISTS (
+                    SELECT 1 FROM calendar_events ex
+                     WHERE ex.calendar_id = $1
+                       AND ex.ical_uid IS NOT NULL
+                       AND ex.ical_uid = ce.ical_uid
+                  )`,
+              [calendarId, dup.id]
+            );
+            // If the kept row was missing a mail_account_id but the duplicate had one,
+            // inherit it so CalDAV sync keeps working against the merged row.
+            if (!keep.mail_account_id && dup.mail_account_id) {
+              await pool.query(
+                `UPDATE calendars SET mail_account_id = $1 WHERE id = $2 AND mail_account_id IS NULL`,
+                [dup.mail_account_id, calendarId]
+              );
+              keep.mail_account_id = dup.mail_account_id;
+            }
+            await pool.query(`DELETE FROM calendars WHERE id = $1`, [dup.id]);
+          }
+        } else {
+          // Upsert calendar — mark it as NC-managed so pushEventToCalDAV()
+          // routes updates through this.putEvent() (with iMIP invitations).
+          const calResult = await pool.query(
+            `INSERT INTO calendars (user_id, name, color, source, caldav_url, external_id,
+                                    nc_managed, nc_principal_url, last_sync_at)
+             VALUES ($1, $2, $3, 'nextcloud', $4, $5, TRUE, $6, NOW())
+             ON CONFLICT (user_id, external_id) WHERE source = 'nextcloud' DO UPDATE SET
+               name = EXCLUDED.name,
+               color = EXCLUDED.color,
+               caldav_url = EXCLUDED.caldav_url,
+               nc_managed = TRUE,
+               nc_principal_url = EXCLUDED.nc_principal_url,
+               last_sync_at = NOW(),
+               updated_at = NOW()
+             RETURNING id`,
+            [userId, cal.name, cal.color || '#0078D4', cal.href, cal.href, principal]
+          );
+          calendarId = calResult.rows[0].id;
+        }
         
         // Sync events (last 6 months to next 6 months)
         const start = new Date();

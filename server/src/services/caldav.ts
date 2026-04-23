@@ -157,7 +157,52 @@ export class CalDAVService {
     for (const cal of calendars) {
       let calendarId: string;
 
-      if (localDefaultId && cal === preferred) {
+      // Adopt any pre-existing calendar for this user pointing to the same
+      // CalDAV URL (including one created earlier by the NextCloud sync).
+      // Without this, syncing the mail account and NextCloud against the
+      // same server creates two rows for each remote calendar and every
+      // event is imported twice.
+      const existing = await pool.query(
+        `SELECT id, source, mail_account_id
+           FROM calendars
+          WHERE user_id = $1
+            AND (caldav_url = $2 OR external_id = $2)
+            AND (mail_account_id IS NULL OR mail_account_id = $3)
+          ORDER BY (mail_account_id = $3) DESC, created_at ASC`,
+        [userId, cal.href, mailAccountId]
+      );
+
+      if (existing.rows.length > 0) {
+        const keep = existing.rows[0];
+        calendarId = keep.id;
+        await pool.query(
+          `UPDATE calendars
+              SET mail_account_id = $1,
+                  caldav_url = $2,
+                  external_id = $3,
+                  name = COALESCE(NULLIF($4,''), name),
+                  color = COALESCE(color, $5),
+                  updated_at = NOW()
+            WHERE id = $6`,
+          [mailAccountId, cal.href, cal.href, cal.name, cal.color || accountColor || '#0078D4', calendarId]
+        );
+        // Merge siblings pointing to the same href.
+        for (const dup of existing.rows.slice(1)) {
+          await pool.query(
+            `UPDATE calendar_events ce
+                SET calendar_id = $1
+              WHERE ce.calendar_id = $2
+                AND NOT EXISTS (
+                  SELECT 1 FROM calendar_events ex
+                   WHERE ex.calendar_id = $1
+                     AND ex.ical_uid IS NOT NULL
+                     AND ex.ical_uid = ce.ical_uid
+                )`,
+            [calendarId, dup.id]
+          );
+          await pool.query(`DELETE FROM calendars WHERE id = $1`, [dup.id]);
+        }
+      } else if (localDefaultId && cal === preferred) {
         // Promote local default → linked CalDAV calendar (events will sync back/forth)
         const upd = await pool.query(
           `UPDATE calendars
