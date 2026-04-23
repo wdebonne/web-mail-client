@@ -118,23 +118,39 @@ export default function CalendarPage() {
     setShowSidebarState((v) => !v);
   }, [mobileSidebarSignal]);
 
+  // On mobile / tablet (< lg = 1024px), the week / month grids are unreadable,
+  // so we force the day view with a single column regardless of the stored
+  // user preference (which is preserved for desktop).
+  const [isCompact, setIsCompact] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 1023px)').matches : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const onChange = (e: MediaQueryListEvent) => setIsCompact(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const effView: CalendarViewMode = isCompact ? 'day' : view;
+  const effDayCount = isCompact ? 1 : dayCount;
+
   const { rangeStart, rangeEnd } = useMemo(() => {
     let s: Date; let e: Date;
-    if (view === 'month') {
+    if (effView === 'month') {
       s = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
       e = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
-    } else if (view === 'week') {
+    } else if (effView === 'week') {
       s = startOfWeek(currentDate, { weekStartsOn: 1 });
       e = endOfWeek(currentDate, { weekStartsOn: 1 });
-    } else if (view === 'workweek') {
+    } else if (effView === 'workweek') {
       s = startOfWeek(currentDate, { weekStartsOn: 1 });
       e = addDays(s, 4);
     } else {
       s = startOfDay(currentDate);
-      e = addDays(s, Math.max(1, dayCount) - 1);
+      e = addDays(s, Math.max(1, effDayCount) - 1);
     }
     return { rangeStart: s, rangeEnd: e };
-  }, [view, currentDate, dayCount]);
+  }, [effView, currentDate, effDayCount]);
 
   const apiStart = format(rangeStart, 'yyyy-MM-dd');
   const apiEnd = format(rangeEnd, 'yyyy-MM-dd');
@@ -257,31 +273,31 @@ export default function CalendarPage() {
     colorOverrides[ev.calendar_id] || ev.calendar_color || '#0078D4';
 
   const goPrev = () => {
-    if (view === 'month') setCurrentDate(subMonths(currentDate, 1));
-    else if (view === 'day') setCurrentDate(subDays(currentDate, Math.max(1, dayCount)));
+    if (effView === 'month') setCurrentDate(subMonths(currentDate, 1));
+    else if (effView === 'day') setCurrentDate(subDays(currentDate, Math.max(1, effDayCount)));
     else setCurrentDate(subDays(currentDate, 7));
   };
   const goNext = () => {
-    if (view === 'month') setCurrentDate(addMonths(currentDate, 1));
-    else if (view === 'day') setCurrentDate(addDays(currentDate, Math.max(1, dayCount)));
+    if (effView === 'month') setCurrentDate(addMonths(currentDate, 1));
+    else if (effView === 'day') setCurrentDate(addDays(currentDate, Math.max(1, effDayCount)));
     else setCurrentDate(addDays(currentDate, 7));
   };
   const goToday = () => setCurrentDate(new Date());
 
   const periodLabel = useMemo(() => {
-    if (view === 'month') return format(currentDate, 'MMMM yyyy', { locale: fr });
-    if (view === 'week' || view === 'workweek') {
+    if (effView === 'month') return format(currentDate, 'MMMM yyyy', { locale: fr });
+    if (effView === 'week' || effView === 'workweek') {
       const s = startOfWeek(currentDate, { weekStartsOn: 1 });
-      const e = view === 'workweek' ? addDays(s, 4) : addDays(s, 6);
+      const e = effView === 'workweek' ? addDays(s, 4) : addDays(s, 6);
       const weekNum = getWeek(s, { weekStartsOn: 1 });
       return `${format(s, 'yyyy, MMM d', { locale: fr })}-${format(e, 'd', { locale: fr })} (semaine ${weekNum})`;
     }
-    if (view === 'day' && dayCount > 1) {
-      const e = addDays(currentDate, dayCount - 1);
+    if (effView === 'day' && effDayCount > 1) {
+      const e = addDays(currentDate, effDayCount - 1);
       return `${format(currentDate, 'd MMM', { locale: fr })} – ${format(e, 'd MMM yyyy', { locale: fr })}`;
     }
     return format(currentDate, 'EEEE d MMMM yyyy', { locale: fr });
-  }, [view, currentDate, dayCount]);
+  }, [effView, currentDate, effDayCount]);
 
   const getEventsForDay = useCallback((day: Date) => filteredEvents.filter((event: CalendarEvent) => {
     const s = parseISO(event.start_date);
@@ -383,10 +399,10 @@ export default function CalendarPage() {
           onShareCalendar={() => { if (calendars[0]) handleShareCalendar(calendars[0].id); }}
           onPrint={() => window.print()}
           onSync={() => syncAllMutation.mutate()}
-          view={view}
-          onChangeView={setView}
-          dayCount={dayCount}
-          onChangeDayCount={setDayCount}
+          view={effView}
+          onChangeView={(v) => { if (!isCompact) setView(v); }}
+          dayCount={effDayCount}
+          onChangeDayCount={(n) => { if (!isCompact) setDayCount(n); }}
           splitView={splitView}
           onToggleSplitView={() => setSplitView(v => !v)}
           showSidebar={showSidebar}
@@ -450,7 +466,7 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex-1 overflow-auto">
-            {view === 'month' && (
+            {effView === 'month' && (
               <MonthView
                 currentDate={currentDate}
                 getEventsForDay={getEventsForDay}
@@ -461,10 +477,10 @@ export default function CalendarPage() {
                 userTz={userTz}
               />
             )}
-            {(view === 'week' || view === 'workweek') && (
+            {(effView === 'week' || effView === 'workweek') && (
               <WeekView
                 currentDate={currentDate}
-                workWeek={view === 'workweek'}
+                workWeek={effView === 'workweek'}
                 timeScale={timeScale}
                 events={filteredEvents}
                 onSlotClick={(d) => openCreateEvent(d)}
@@ -476,10 +492,10 @@ export default function CalendarPage() {
                 columnSizing={columnSizing}
               />
             )}
-            {view === 'day' && (
+            {effView === 'day' && (
               <DayView
                 currentDate={currentDate}
-                dayCount={Math.max(1, dayCount)}
+                dayCount={Math.max(1, effDayCount)}
                 timeScale={timeScale}
                 events={filteredEvents}
                 onSlotClick={(d) => openCreateEvent(d)}
