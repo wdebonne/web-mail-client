@@ -307,6 +307,41 @@ calendarRouter.post('/:id/migrate', async (req: AuthRequest, res) => {
         }
       }
 
+      // If the NC collection adopted by createCalendar() was already known to
+      // the app (e.g. the NextCloud auto-sync had previously imported a
+      // "Personnel" row pointing at the same URL), merge the two DB rows into
+      // one. We keep the calendar the user just migrated (cal.id) and move any
+      // NC-imported events over, skipping duplicates by ical_uid, then delete
+      // the now-redundant row so it disappears from the sidebar.
+      //
+      // IMPORTANT: do this BEFORE flipping cal to source='nextcloud' +
+      // external_id=ncUrl, otherwise the unique partial index
+      // (user_id, external_id) WHERE source='nextcloud' is violated.
+      const siblings = await pool.query(
+        `SELECT id, name FROM calendars
+          WHERE user_id = $1
+            AND id <> $2
+            AND (caldav_url = $3 OR external_id = $3)`,
+        [req.userId, cal.id, ncUrl]
+      );
+      const mergedIds: string[] = [];
+      for (const dup of siblings.rows) {
+        await pool.query(
+          `UPDATE calendar_events ce
+              SET calendar_id = $1
+            WHERE ce.calendar_id = $2
+              AND NOT EXISTS (
+                SELECT 1 FROM calendar_events ex
+                 WHERE ex.calendar_id = $1
+                   AND ex.ical_uid IS NOT NULL
+                   AND ex.ical_uid = ce.ical_uid
+              )`,
+          [cal.id, dup.id]
+        );
+        await pool.query(`DELETE FROM calendars WHERE id = $1`, [dup.id]);
+        mergedIds.push(dup.id);
+      }
+
       await pool.query(
         `UPDATE calendars
             SET source = 'nextcloud', caldav_url = $1, nc_managed = true, nc_principal_url = $1,
@@ -315,7 +350,14 @@ calendarRouter.post('/:id/migrate', async (req: AuthRequest, res) => {
         [ncUrl, cal.id]
       );
 
-      return res.json({ ok: true, target: 'nextcloud', pushed, failed, total: events.rows.length });
+      return res.json({
+        ok: true,
+        target: 'nextcloud',
+        pushed,
+        failed,
+        total: events.rows.length,
+        mergedCalendars: mergedIds.length,
+      });
     }
 
     // target === 'local'
@@ -652,6 +694,51 @@ calendarRouter.put('/events/:id', async (req: AuthRequest, res) => {
     const { id } = req.params;
     const data = req.body;
 
+    // Optional move to another calendar. Validated separately so the regular
+    // update path stays unchanged when the field is absent.
+    let movedFrom: { calendar_id: string; nc_managed: boolean; caldav_url: string | null; nc_uri: string | null; nc_etag: string | null; mail_account_id: string | null; ical_uid: string | null; owner_id: string } | null = null;
+    if (data.calendarId && typeof data.calendarId === 'string') {
+      // Resolve current location + remote info BEFORE moving.
+      const cur = await pool.query(
+        `SELECT ce.calendar_id, ce.ical_uid, ce.nc_uri, ce.nc_etag,
+                c.nc_managed, c.caldav_url, c.mail_account_id, c.user_id AS owner_id
+           FROM calendar_events ce
+           JOIN calendars c ON c.id = ce.calendar_id
+          WHERE ce.id = $1
+            AND (c.user_id = $2 OR c.id IN (
+                  SELECT calendar_id FROM shared_calendar_access WHERE user_id = $2 AND permission = 'write'
+                ))`,
+        [id, req.userId]
+      );
+      if (cur.rows.length === 0) return res.status(404).json({ error: 'Événement non trouvé' });
+      const curRow = cur.rows[0];
+      // Only when the calendar actually changes.
+      if (curRow.calendar_id !== data.calendarId) {
+        // Verify destination access.
+        const dst = await pool.query(
+          `SELECT id FROM calendars
+            WHERE id = $1
+              AND (user_id = $2 OR id IN (
+                SELECT calendar_id FROM shared_calendar_access WHERE user_id = $2 AND permission = 'write'
+              ))`,
+          [data.calendarId, req.userId]
+        );
+        if (dst.rows.length === 0) return res.status(404).json({ error: 'Calendrier de destination introuvable' });
+
+        movedFrom = curRow;
+        // Switch the row to the new calendar; clear remote refs so the
+        // CalDAV push helper re-creates the event on the destination
+        // collection. The actual remote DELETE on the source happens
+        // below, after the SQL update succeeds.
+        await pool.query(
+          `UPDATE calendar_events
+              SET calendar_id = $1, nc_uri = NULL, nc_etag = NULL, ical_data = NULL, updated_at = NOW()
+            WHERE id = $2`,
+          [data.calendarId, id]
+        );
+      }
+    }
+
     const result = await pool.query(
       `UPDATE calendar_events SET
         title = COALESCE($1, title),
@@ -698,6 +785,23 @@ calendarRouter.put('/events/:id', async (req: AuthRequest, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Événement non trouvé' });
+    }
+
+    // If we just moved across calendars, also delete the remote copy on the
+    // source collection so the event doesn't appear twice on NextCloud.
+    if (movedFrom) {
+      if (movedFrom.nc_managed && movedFrom.nc_uri) {
+        (async () => {
+          try {
+            const { getUserClient } = await import('../services/nextcloudHelper');
+            const nc = await getUserClient(movedFrom!.owner_id);
+            if (nc) await nc.deleteEvent(movedFrom!.nc_uri!, movedFrom!.nc_etag || undefined);
+          } catch (e) { logger.error(e as Error, 'NC source delete after move failed'); }
+        })();
+      } else if (movedFrom.mail_account_id && movedFrom.caldav_url && movedFrom.ical_uid) {
+        deleteEventFromCalDAV(movedFrom.mail_account_id, movedFrom.caldav_url, movedFrom.ical_uid)
+          .catch(err => logger.error(err, 'CalDAV source delete after move failed'));
+      }
     }
 
     pushEventToCalDAV(result.rows[0].id).catch(err => logger.error(err, 'CalDAV push (update) failed'));

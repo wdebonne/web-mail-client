@@ -4,7 +4,7 @@ import { api } from '../api';
 import { CalendarEvent, Calendar } from '../types';
 import {
   ChevronLeft, ChevronRight, Plus, X, Clock, MapPin, Users,
-  Briefcase, Pencil, Trash2, Repeat, Copy, FolderOpen,
+  Briefcase, Pencil, Trash2, Repeat, Copy, FolderOpen, FolderInput,
 } from 'lucide-react';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -362,16 +362,40 @@ export default function CalendarPage() {
     } as any);
   };
 
-  const eventMenuItems = (ev: CalendarEvent): ContextMenuItem[] => [
-    { label: 'Ouvrir', icon: <FolderOpen size={14} />, onClick: () => openEditEvent(ev, 'summary') },
-    { label: 'Modifier', icon: <Pencil size={14} />, onClick: () => openEditEvent(ev, 'summary') },
-    { label: ev.recurrence_rule || ev.rdates?.length ? 'Modifier la récurrence' : 'Répéter', icon: <Repeat size={14} />, onClick: () => openEditEvent(ev, 'recurrence') },
-    { label: 'Participants', icon: <Users size={14} />, onClick: () => openEditEvent(ev, 'attendees') },
-    { label: '', separator: true, onClick: () => {} },
-    { label: "Dupliquer l'événement", icon: <Copy size={14} />, onClick: () => duplicateEvent(ev) },
-    { label: '', separator: true, onClick: () => {} },
-    { label: 'Supprimer', icon: <Trash2 size={14} />, danger: true, onClick: () => deleteEventMutation.mutate(ev.id) },
-  ];
+  const eventMenuItems = (ev: CalendarEvent): ContextMenuItem[] => {
+    const moveTargets: ContextMenuItem[] = calendars
+      .filter((c: Calendar) => c.id !== ev.calendar_id)
+      .map((c: Calendar) => ({
+        label: c.name,
+        icon: (
+          <span
+            className="inline-block w-3 h-3 rounded-full"
+            style={{ backgroundColor: colorOverrides[c.id] || c.color || '#0078D4' }}
+          />
+        ),
+        onClick: () => updateEventMutation.mutate({ id: ev.id, data: { calendarId: c.id } }),
+      }));
+    if (moveTargets.length === 0) {
+      moveTargets.push({ label: 'Aucun autre calendrier disponible', disabled: true, onClick: () => {} });
+    }
+    return [
+      { label: 'Ouvrir', icon: <FolderOpen size={14} />, onClick: () => openEditEvent(ev, 'summary') },
+      { label: 'Modifier', icon: <Pencil size={14} />, onClick: () => openEditEvent(ev, 'summary') },
+      { label: ev.recurrence_rule || ev.rdates?.length ? 'Modifier la récurrence' : 'Répéter', icon: <Repeat size={14} />, onClick: () => openEditEvent(ev, 'recurrence') },
+      { label: 'Participants', icon: <Users size={14} />, onClick: () => openEditEvent(ev, 'attendees') },
+      { label: '', separator: true, onClick: () => {} },
+      {
+        label: 'Déplacer vers…',
+        icon: <FolderInput size={14} />,
+        onClick: () => {},
+        submenu: moveTargets,
+        submenuSearchable: calendars.length > 6,
+      },
+      { label: "Dupliquer l'événement", icon: <Copy size={14} />, onClick: () => duplicateEvent(ev) },
+      { label: '', separator: true, onClick: () => {} },
+      { label: 'Supprimer', icon: <Trash2 size={14} />, danger: true, onClick: () => deleteEventMutation.mutate(ev.id) },
+    ];
+  };
 
   const handleToggleVisibility = (id: string, visible: boolean) => {
     updateCalendarMutation.mutate({ id, data: { isVisible: visible } });

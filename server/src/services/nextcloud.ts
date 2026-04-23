@@ -328,6 +328,46 @@ export class NextCloudService {
         }
       }
 
+      // ── Final sweep: collapse any leftover duplicate calendar rows.
+      // Rows are grouped by (caldav_url) and (ical_uid)-based dedup is
+      // performed when merging events, so this is safe to run repeatedly.
+      const groups = await pool.query(
+        `SELECT caldav_url, array_agg(id ORDER BY (source = 'nextcloud') DESC, created_at ASC) AS ids
+           FROM calendars
+          WHERE user_id = $1 AND caldav_url IS NOT NULL
+          GROUP BY caldav_url
+         HAVING COUNT(*) > 1`,
+        [userId]
+      );
+      for (const grp of groups.rows) {
+        const [keepId, ...dupIds] = grp.ids as string[];
+        for (const dupId of dupIds) {
+          await pool.query(
+            `UPDATE calendar_events ce
+                SET calendar_id = $1
+              WHERE ce.calendar_id = $2
+                AND NOT EXISTS (
+                  SELECT 1 FROM calendar_events ex
+                   WHERE ex.calendar_id = $1
+                     AND ex.ical_uid IS NOT NULL
+                     AND ex.ical_uid = ce.ical_uid
+                )`,
+            [keepId, dupId]
+          );
+          // Inherit a mail_account_id link if the kept row had none.
+          await pool.query(
+            `UPDATE calendars k
+                SET mail_account_id = d.mail_account_id
+               FROM calendars d
+              WHERE k.id = $1 AND d.id = $2
+                AND k.mail_account_id IS NULL
+                AND d.mail_account_id IS NOT NULL`,
+            [keepId, dupId]
+          );
+          await pool.query(`DELETE FROM calendars WHERE id = $1`, [dupId]);
+        }
+      }
+
       logger.info(`NextCloud calendars synced for user ${userId}`);
     } catch (error) {
       logger.error(error as Error, 'NextCloud calendar sync error');
@@ -516,7 +556,14 @@ export class NextCloudService {
 
   /**
    * Create a calendar collection on NextCloud using MKCALENDAR (RFC 4791).
-   * Returns the absolute URL of the created collection.
+   * Returns the absolute URL of the collection.
+   *
+   * Behaviour: the slug is derived from `slug` or `displayName`. If a collection
+   * already exists at that slug (Sabre returns HTTP 405
+   * "MethodNotAllowedOnCollection — The resource you tried to create already
+   * exists"), the method *adopts* it instead of creating a new one and
+   * returns the existing URL. Callers that need a freshly-created collection
+   * should pass a unique `slug`.
    */
   async createCalendar(displayName: string, color: string = '#0078D4', slug?: string): Promise<string> {
     const safeSlug = (slug || this.slugify(displayName)) || `cal-${Date.now()}`;
@@ -537,11 +584,20 @@ export class NextCloudService {
       headers: { Authorization: this.getAuthHeader(), 'Content-Type': 'application/xml; charset=utf-8' },
       body,
     });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      throw new Error(`MKCALENDAR failed (${res.status}): ${txt.slice(0, 300)}`);
+    if (res.ok) return url;
+
+    // Adopt an existing collection sharing the same slug (typically the
+    // user's default "personal" calendar when migrating a local one named
+    // "Mon calendrier" → slug "mon-calendrier" on a server that already has
+    // a matching collection).
+    const txt = await res.text().catch(() => '');
+    if (res.status === 405 && /already\s*exists|MethodNotAllowedOnCollection/i.test(txt)) {
+      // Best effort: refresh displayname + color on the adopted collection so
+      // the user's chosen labelling is reflected on NextCloud too.
+      try { await this.renameCalendar(url, displayName, color); } catch { /* non-fatal */ }
+      return url;
     }
-    return url;
+    throw new Error(`MKCALENDAR failed (${res.status}): ${txt.slice(0, 300)}`);
   }
 
   async deleteCalendar(calendarUrl: string): Promise<void> {

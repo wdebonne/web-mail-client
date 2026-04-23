@@ -3,7 +3,6 @@ import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
 import { encrypt } from '../utils/encryption';
 import { z } from 'zod';
-import { CalDAVService } from '../services/caldav';
 import { logger } from '../utils/logger';
 
 export const accountRouter = Router();
@@ -85,27 +84,25 @@ accountRouter.post('/', async (req: AuthRequest, res) => {
 
     const accountId: string = result.rows[0].id;
 
-    // O2switch auto-configuration: pre-fill CalDAV + CardDAV URLs and enable sync.
+    // O2switch auto-configuration: pre-fill CalDAV + CardDAV URLs.
+    // CalDAV sync is intentionally LEFT DISABLED here: when the user is
+    // also provisioned on NextCloud (which is the recommended setup, and
+    // the case for o2switch tenants), the NextCloud sync already imports
+    // the same collections. Enabling both creates duplicate calendar rows
+    // (one source='caldav', one source='nextcloud') for the same href and
+    // duplicates every event. The user can re-enable CalDAV sync from the
+    // sync dialog if they don't use NextCloud.
     const isO2switch = data.o2switchAutoSync === true || /\.o2switch\.net$/i.test(data.imapHost);
     if (isO2switch) {
       const urls = o2switchUrls(data.email, data.imapHost);
       await pool.query(
         `UPDATE mail_accounts SET
-           caldav_url = $1, caldav_username = $2, caldav_sync_enabled = true,
+           caldav_url = $1, caldav_username = $2, caldav_sync_enabled = false,
            carddav_url = $3, carddav_username = $2,  carddav_sync_enabled = true,
            updated_at = NOW()
          WHERE id = $4`,
         [urls.caldav, data.email, urls.carddav, accountId]
       );
-
-      // Kick off an initial CalDAV pull (fire-and-forget).
-      try {
-        const svc = new CalDAVService({ baseUrl: urls.caldav, username: data.email, password: data.password });
-        svc.syncForMailAccount(req.userId!, accountId, data.color)
-          .catch(err => logger.error(err, 'Initial o2switch CalDAV sync failed'));
-      } catch (e) {
-        logger.error(e as Error, 'Initial CalDAV sync bootstrap failed');
-      }
     }
 
     res.status(201).json(result.rows[0]);
