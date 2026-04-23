@@ -1122,26 +1122,56 @@ function PluginManagement() {
 }
 
 function NextCloudSettings() {
+  const queryClient = useQueryClient();
+  const [section, setSection] = useState<'config' | 'users'>('config');
+
+  // Config state
+  const { data: status } = useQuery({
+    queryKey: ['admin-nextcloud-status'],
+    queryFn: api.getNextcloudStatus,
+  });
+
+  const [enabled, setEnabled] = useState(false);
   const [url, setUrl] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [adminUsername, setAdminUsername] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [autoProvision, setAutoProvision] = useState(false);
+  const [autoCreateCalendars, setAutoCreateCalendars] = useState(true);
+  const [syncIntervalMinutes, setSyncIntervalMinutes] = useState(15);
 
-  const { data: settings } = useQuery({
-    queryKey: ['admin-settings'],
-    queryFn: api.getAdminSettings,
-  });
+  useEffect(() => {
+    if (!status) return;
+    setEnabled(!!status.enabled);
+    setUrl(status.url || '');
+    setAdminUsername(status.adminUsername || '');
+    setAutoProvision(!!status.autoProvision);
+    setAutoCreateCalendars(status.autoCreateCalendars !== false);
+    setSyncIntervalMinutes(Math.max(5, Number(status.syncIntervalMinutes) || 15));
+  }, [status]);
 
-  const updateMutation = useMutation({
-    mutationFn: api.updateAdminSettings,
-    onSuccess: () => toast.success('Paramètres NextCloud sauvegardés'),
-  });
-
-  const testMutation = useMutation({
-    mutationFn: () => api.testNextcloud(url || settings?.nextcloud_url, username || settings?.nextcloud_username, password),
-    onSuccess: (result: any) => {
-      if (result.success) toast.success('Connexion NextCloud réussie');
-      else toast.error(`Erreur: ${result.error}`);
+  const saveMutation = useMutation({
+    mutationFn: () => api.saveNextcloudConfig({
+      enabled, url, adminUsername,
+      adminPassword: adminPassword || undefined, // only send if changed
+      autoProvision, autoCreateCalendars, syncIntervalMinutes,
+    }),
+    onSuccess: () => {
+      toast.success('Configuration NextCloud enregistrée');
+      setAdminPassword('');
+      queryClient.invalidateQueries({ queryKey: ['admin-nextcloud-status'] });
     },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const testSavedMutation = useMutation({
+    mutationFn: api.testSavedNextcloud,
+    onSuccess: (r: any) => r?.success ? toast.success(`Connexion OK (NC ${r.version})`) : toast.error(r?.error || 'Connexion échouée'),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const testLiveMutation = useMutation({
+    mutationFn: () => api.testNextcloud(url, adminUsername, adminPassword),
+    onSuccess: (r: any) => r?.success ? toast.success(`Connexion OK (NC ${r.version})`) : toast.error(r?.error || 'Connexion échouée'),
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -1151,38 +1181,204 @@ function NextCloudSettings() {
         <Cloud size={20} className="text-outlook-blue" /> Intégration NextCloud
       </h3>
       <p className="text-sm text-outlook-text-secondary mb-4">
-        Connectez une instance NextCloud pour synchroniser les calendriers, contacts et images de profil.
+        Connectez une instance NextCloud pour provisionner automatiquement les utilisateurs, créer leurs calendriers/contacts,
+        activer le partage interne/externe, les liens publics et les invitations iMIP.
       </p>
 
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs text-outlook-text-secondary">URL NextCloud</label>
-          <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder={settings?.nextcloud_url || 'https://cloud.example.com'}
-            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
-        </div>
-        <div>
-          <label className="text-xs text-outlook-text-secondary">Identifiant</label>
-          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder={settings?.nextcloud_username || 'admin'}
-            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
-        </div>
-        <div>
-          <label className="text-xs text-outlook-text-secondary">Mot de passe / Token</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••"
-            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
-        </div>
-
-        <div className="flex gap-2 pt-2">
-          <button onClick={() => testMutation.mutate()} className="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-md text-sm flex items-center gap-2">
-            <RefreshCw size={14} /> Tester la connexion
-          </button>
-          <button
-            onClick={() => updateMutation.mutate({ nextcloud_url: url, nextcloud_username: username, nextcloud_password: password })}
-            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 rounded-md text-sm"
-          >
-            Enregistrer
-          </button>
-        </div>
+      <div className="flex gap-2 mb-4 border-b border-outlook-border">
+        <button
+          onClick={() => setSection('config')}
+          className={`px-3 py-2 text-sm font-medium ${section === 'config' ? 'text-outlook-blue border-b-2 border-outlook-blue' : 'text-outlook-text-secondary'}`}
+        >Configuration</button>
+        <button
+          onClick={() => setSection('users')}
+          className={`px-3 py-2 text-sm font-medium ${section === 'users' ? 'text-outlook-blue border-b-2 border-outlook-blue' : 'text-outlook-text-secondary'}`}
+        >Utilisateurs provisionnés</button>
       </div>
+
+      {section === 'config' && (
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            Activer l'intégration NextCloud
+          </label>
+
+          <div>
+            <label className="text-xs text-outlook-text-secondary">URL NextCloud</label>
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://cloud.example.com"
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Identifiant admin</label>
+            <input type="text" value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} placeholder="admin"
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Mot de passe admin / App password</label>
+            <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder={status?.configured ? '•••••••• (laisser vide pour conserver)' : '••••••••'}
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
+            <p className="text-[11px] text-outlook-text-secondary mt-1">
+              Utilisez un <strong>App Password</strong> dédié depuis Paramètres NextCloud → Sécurité.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-outlook-border">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={autoProvision} onChange={(e) => setAutoProvision(e.target.checked)} />
+              Provisionner automatiquement les nouveaux utilisateurs
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={autoCreateCalendars} onChange={(e) => setAutoCreateCalendars(e.target.checked)} />
+              Créer les nouveaux calendriers sur NextCloud
+            </label>
+            <div>
+              <label className="text-xs text-outlook-text-secondary">Intervalle de synchronisation (minutes)</label>
+              <input type="number" min={5} value={syncIntervalMinutes}
+                onChange={(e) => setSyncIntervalMinutes(Math.max(5, Number(e.target.value) || 15))}
+                className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button onClick={() => (adminPassword ? testLiveMutation.mutate() : testSavedMutation.mutate())}
+              className="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-md text-sm flex items-center gap-2">
+              <RefreshCw size={14} /> Tester la connexion
+            </button>
+            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 rounded-md text-sm">
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      )}
+
+      {section === 'users' && <NextCloudUsersPanel />}
+    </div>
+  );
+}
+
+function NextCloudUsersPanel() {
+  const queryClient = useQueryClient();
+  const { data: ncUsers = [] } = useQuery({ queryKey: ['admin-nextcloud-users'], queryFn: api.getNextcloudUsers });
+  const { data: appUsers = [] } = useQuery({ queryKey: ['admin-users'], queryFn: api.getAdminUsers });
+
+  const provisionMutation = useMutation({
+    mutationFn: (userId: string) => api.provisionNextcloudUser(userId),
+    onSuccess: () => { toast.success('Utilisateur provisionné'); queryClient.invalidateQueries({ queryKey: ['admin-nextcloud-users'] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const unlinkMutation = useMutation({
+    mutationFn: (userId: string) => api.unlinkNextcloudUser(userId),
+    onSuccess: () => { toast.success('Lien NC supprimé'); queryClient.invalidateQueries({ queryKey: ['admin-nextcloud-users'] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const syncMutation = useMutation({
+    mutationFn: (userId: string) => api.syncNextcloudUser(userId),
+    onSuccess: () => { toast.success('Synchronisation terminée'); queryClient.invalidateQueries({ queryKey: ['admin-nextcloud-users'] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const [linkForUser, setLinkForUser] = useState<string | null>(null);
+  const [linkUsername, setLinkUsername] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
+  const linkMutation = useMutation({
+    mutationFn: () => api.linkNextcloudUser(linkForUser!, linkUsername, linkPassword),
+    onSuccess: () => {
+      toast.success('Compte NC lié');
+      setLinkForUser(null); setLinkUsername(''); setLinkPassword('');
+      queryClient.invalidateQueries({ queryKey: ['admin-nextcloud-users'] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const mapped = new Map<string, any>();
+  for (const nu of ncUsers as any[]) mapped.set(nu.user_id, nu);
+
+  return (
+    <div>
+      <p className="text-xs text-outlook-text-secondary mb-2">
+        Provisionnez ou liez les comptes NextCloud pour permettre la création automatique de calendriers, le partage et la synchronisation.
+      </p>
+      <div className="border border-outlook-border rounded-md divide-y">
+        {(appUsers as any[]).map((u: any) => {
+          const nc = mapped.get(u.id);
+          return (
+            <div key={u.id} className="p-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{u.display_name || u.email}</div>
+                <div className="text-xs text-outlook-text-secondary truncate">{u.email}</div>
+                {nc ? (
+                  <div className="text-[11px] text-green-700 mt-1">
+                    Lié NC : <strong>{nc.nc_username}</strong>
+                    {nc.last_sync_at && <> · Dernière sync {new Date(nc.last_sync_at).toLocaleString()}</>}
+                    {nc.last_sync_error && <div className="text-red-600">Erreur : {nc.last_sync_error}</div>}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-outlook-text-secondary mt-1">Non provisionné</div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                {!nc && (
+                  <>
+                    <button onClick={() => provisionMutation.mutate(u.id)}
+                      className="text-xs px-3 py-1 rounded bg-outlook-blue text-white hover:bg-outlook-blue-hover">
+                      Provisionner
+                    </button>
+                    <button onClick={() => setLinkForUser(u.id)}
+                      className="text-xs px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
+                      Lier existant
+                    </button>
+                  </>
+                )}
+                {nc && (
+                  <>
+                    <button onClick={() => syncMutation.mutate(u.id)}
+                      className="text-xs px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 flex items-center gap-1">
+                      <RefreshCw size={12} /> Sync
+                    </button>
+                    <button onClick={() => confirm('Supprimer le lien NextCloud ? Le compte NC est conservé.') && unlinkMutation.mutate(u.id)}
+                      className="text-xs px-3 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700">
+                      Délier
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {appUsers.length === 0 && (
+          <div className="p-4 text-center text-sm text-outlook-text-secondary">Aucun utilisateur</div>
+        )}
+      </div>
+
+      {linkForUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setLinkForUser(null)}>
+          <div className="bg-white rounded-lg shadow-xl p-5 w-[420px]" onClick={(e) => e.stopPropagation()}>
+            <h4 className="font-semibold mb-3">Lier un compte NextCloud existant</h4>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs">Nom d'utilisateur NC</label>
+                <input value={linkUsername} onChange={(e) => setLinkUsername(e.target.value)}
+                  className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
+              </div>
+              <div>
+                <label className="text-xs">App password NC</label>
+                <input type="password" value={linkPassword} onChange={(e) => setLinkPassword(e.target.value)}
+                  className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <button onClick={() => setLinkForUser(null)} className="px-3 py-1 text-sm rounded hover:bg-gray-100">Annuler</button>
+              <button onClick={() => linkMutation.mutate()}
+                disabled={!linkUsername || !linkPassword || linkMutation.isPending}
+                className="px-3 py-1 text-sm rounded bg-outlook-blue text-white hover:bg-outlook-blue-hover disabled:opacity-50">
+                Lier
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

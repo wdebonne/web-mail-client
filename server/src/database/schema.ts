@@ -251,3 +251,44 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
   createdAt: timestamp('created_at').defaultNow(),
   lastUsedAt: timestamp('last_used_at').defaultNow(),
 });
+
+// NextCloud per-user provisioning
+export const nextcloudUsers = pgTable('nextcloud_users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  ncUsername: varchar('nc_username', { length: 255 }).notNull(),
+  ncPasswordEncrypted: text('nc_password_encrypted').notNull(),
+  ncDisplayName: varchar('nc_display_name', { length: 255 }),
+  ncEmail: varchar('nc_email', { length: 255 }),
+  provisionedAt: timestamp('provisioned_at').defaultNow(),
+  lastSyncAt: timestamp('last_sync_at'),
+  lastSyncError: text('last_sync_error'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Shared calendar access (internal)
+export const sharedCalendarAccess = pgTable('shared_calendar_access', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  calendarId: uuid('calendar_id').references(() => calendars.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  permission: varchar('permission', { length: 20 }).default('read'),
+  nextcloudShareId: varchar('nextcloud_share_id', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// External calendar shares (public links, invitees by email)
+export const externalCalendarShares = pgTable('external_calendar_shares', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  calendarId: uuid('calendar_id').references(() => calendars.id, { onDelete: 'cascade' }),
+  shareType: varchar('share_type', { length: 20 }).notNull(),
+  recipientEmail: varchar('recipient_email', { length: 255 }),
+  publicToken: varchar('public_token', { length: 128 }),
+  publicUrl: text('public_url'),
+  permission: varchar('permission', { length: 20 }).default('read'),
+  nextcloudShareId: varchar('nextcloud_share_id', { length: 255 }),
+  expiresAt: timestamp('expires_at'),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow(),
+});

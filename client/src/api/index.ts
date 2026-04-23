@@ -251,9 +251,6 @@ export const api = {
   deleteCalendar: (id: string) =>
     request(`/calendar/${id}`, { method: 'DELETE' }),
 
-  shareCalendar: (id: string, userId: string, permission: string) =>
-    request(`/calendar/${id}/share`, { method: 'POST', body: JSON.stringify({ userId, permission }) }),
-
   getEvents: (start: string, end: string, calendarIds?: string) => {
     const query = new URLSearchParams({ start, end });
     if (calendarIds) query.set('calendarIds', calendarIds);
@@ -314,6 +311,36 @@ export const api = {
     request(`/admin/groups/${id}`, { method: 'DELETE' }),
   testNextcloud: (url: string, username: string, password: string) =>
     request<any>('/admin/nextcloud/test', { method: 'POST', body: JSON.stringify({ url, username, password }) }),
+  getNextcloudStatus: () => request<any>('/admin/nextcloud/status'),
+  saveNextcloudConfig: (data: {
+    enabled?: boolean; url?: string; adminUsername?: string; adminPassword?: string;
+    autoProvision?: boolean; autoCreateCalendars?: boolean; syncIntervalMinutes?: number;
+  }) => request('/admin/nextcloud/config', { method: 'PUT', body: JSON.stringify(data) }),
+  testSavedNextcloud: () => request<any>('/admin/nextcloud/test', { method: 'POST', body: JSON.stringify({}) }),
+  getNextcloudUsers: () => request<any[]>('/admin/nextcloud/users'),
+  provisionNextcloudUser: (userId: string) =>
+    request<any>(`/admin/nextcloud/users/${userId}/provision`, { method: 'POST' }),
+  linkNextcloudUser: (userId: string, ncUsername: string, ncPassword: string) =>
+    request(`/admin/nextcloud/users/${userId}/link`, {
+      method: 'POST',
+      body: JSON.stringify({ ncUsername, ncPassword }),
+    }),
+  unlinkNextcloudUser: (userId: string) =>
+    request(`/admin/nextcloud/users/${userId}`, { method: 'DELETE' }),
+  syncNextcloudUser: (userId: string) =>
+    request<any>(`/admin/nextcloud/users/${userId}/sync`, { method: 'POST' }),
+
+  // Calendar sharing / publishing
+  shareCalendar: (calendarId: string, payload: { userId?: string; email?: string; permission?: 'read' | 'write' }) =>
+    request<any>(`/calendar/${calendarId}/share`, { method: 'POST', body: JSON.stringify(payload) }),
+  revokeShareCalendar: (calendarId: string, payload: { userId?: string; email?: string }) =>
+    request<any>(`/calendar/${calendarId}/share`, { method: 'DELETE', body: JSON.stringify(payload) }),
+  listCalendarShares: (calendarId: string) =>
+    request<{ internal: any[]; external: any[] }>(`/calendar/${calendarId}/shares`),
+  publishCalendar: (calendarId: string) =>
+    request<{ success: boolean; publicUrl: string }>(`/calendar/${calendarId}/publish`, { method: 'POST' }),
+  unpublishCalendar: (calendarId: string) =>
+    request(`/calendar/${calendarId}/publish`, { method: 'DELETE' }),
 
   // Admin calendars
   getAdminCalendars: () => request<any[]>('/admin/calendars'),

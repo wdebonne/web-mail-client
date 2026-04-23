@@ -271,7 +271,7 @@ export default function ContactsPage() {
   const allStats = allContactsForStats?.contacts || [];
   const favCount = allStats.filter((c: Contact) => c.is_favorite).length;
   const localCount = allStats.filter((c: Contact) => c.source === 'local' || !c.source).length;
-  const nextcloudCount = allStats.filter((c: Contact) => c.source === 'nextcloud').length;
+  const nextcloudCount = allStats.filter((c: Contact) => (c as any).nc_managed === true || c.source === 'nextcloud').length;
   const hasNextcloud = nextcloudCount > 0;
 
   const handleExport = async (format: 'vcf' | 'csv-google' | 'csv-outlook' | 'csv-generic') => {

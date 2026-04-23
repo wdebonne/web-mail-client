@@ -20,6 +20,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { SyncCalendarsDialog } from '../components/calendar/SyncCalendarsDialog';
 import { AddCalendarUrlDialog } from '../components/calendar/AddCalendarUrlDialog';
 import EventModal from '../components/calendar/EventModal';
+import ShareCalendarDialog from '../components/calendar/ShareCalendarDialog';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import {
   getCalendarView, setCalendarView,
@@ -57,6 +58,7 @@ export default function CalendarPage() {
   const bumpPrefs = useCallback(() => setPrefsVersion(n => n + 1), []);
 
   const [confirmDelete, setConfirmDelete] = useState<Calendar | null>(null);
+  const [shareCalendarTarget, setShareCalendarTarget] = useState<Calendar | null>(null);
   const [newCalendarOpen, setNewCalendarOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [addCalendarUrlOpen, setAddCalendarUrlOpen] = useState(false);
@@ -277,11 +279,8 @@ export default function CalendarPage() {
     if (cal) setConfirmDelete(cal);
   };
   const handleShareCalendar = (id: string) => {
-    const email = window.prompt("Email de l'utilisateur avec qui partager (lecture) :");
-    if (!email) return;
-    api.shareCalendar(id, email, 'read')
-      .then(() => toast.success('Calendrier partagé'))
-      .catch((err) => toast.error(err.message || 'Partage impossible'));
+    const cal = calendars.find((c: Calendar) => c.id === id);
+    if (cal) setShareCalendarTarget(cal);
   };
 
   return (
@@ -490,6 +489,13 @@ export default function CalendarPage() {
         onCancel={() => setConfirmDelete(null)}
         onConfirm={() => confirmDelete && deleteCalendarMutation.mutate(confirmDelete.id)}
       />
+
+      {shareCalendarTarget && (
+        <ShareCalendarDialog
+          calendar={shareCalendarTarget}
+          onClose={() => setShareCalendarTarget(null)}
+        />
+      )}
     </div>
   );
 }

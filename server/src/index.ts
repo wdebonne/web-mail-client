@@ -27,6 +27,7 @@ import { setupWebSocket } from './services/websocket';
 import { PluginManager } from './plugins/manager';
 import { initPushService } from './services/push';
 import { startNewMailPoller } from './services/newMailPoller';
+import { startNextCloudSyncPoller } from './services/nextcloudSyncPoller';
 
 const app = express();
 const server = createServer(app);
@@ -145,6 +146,9 @@ async function start() {
 
     // Start periodic new-mail poller (only polls accounts whose owner subscribed to push)
     startNewMailPoller();
+
+    // Start periodic NextCloud sync (pulls calendars + contacts for provisioned users)
+    startNextCloudSyncPoller().catch((err) => logger.error(err, 'Failed to start NextCloud sync poller'));
 
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);

@@ -93,6 +93,15 @@ adminRouter.post('/users', async (req: AuthRequest, res) => {
       [userId, 'Mon calendrier']
     );
 
+    // Auto-provision NextCloud account if enabled
+    try {
+      const { getNextCloudConfig, provisionUserIfNeeded } = await import('../services/nextcloudHelper');
+      const cfg = await getNextCloudConfig(false);
+      if (cfg?.enabled && cfg?.autoProvision) {
+        provisionUserIfNeeded(userId).catch((e) => logger.error(e, 'NC auto-provision failed'));
+      }
+    } catch { /* best-effort */ }
+
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -136,7 +145,13 @@ adminRouter.delete('/users/:id', async (req: AuthRequest, res) => {
     if (req.params.id === req.userId) {
       return res.status(400).json({ error: 'Impossible de supprimer votre propre compte' });
     }
-    
+
+    // Best-effort NC unlink (does NOT delete the NC account itself)
+    try {
+      const { unlinkNcUser } = await import('../services/nextcloudHelper');
+      await unlinkNcUser(req.params.id);
+    } catch { /* ignore */ }
+
     const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });
     res.json({ success: true });
@@ -214,14 +229,35 @@ adminRouter.delete('/groups/:id', async (req: AuthRequest, res) => {
 // ---- NextCloud Settings ----
 adminRouter.get('/nextcloud/status', async (req: AuthRequest, res) => {
   try {
-    const result = await pool.query(
-      "SELECT key, value FROM admin_settings WHERE key LIKE 'nextcloud_%'"
-    );
-    const settings: Record<string, any> = {};
-    for (const row of result.rows) {
-      settings[row.key] = row.value;
-    }
-    res.json(settings);
+    const { getNextCloudConfig } = await import('../services/nextcloudHelper');
+    const cfg = await getNextCloudConfig(false);
+    if (!cfg) return res.json({ enabled: false, configured: false });
+    res.json({
+      enabled: cfg.enabled,
+      configured: !!cfg.url && !!cfg.adminUsername,
+      url: cfg.url,
+      adminUsername: cfg.adminUsername,
+      autoProvision: cfg.autoProvision,
+      autoCreateCalendars: cfg.autoCreateCalendars,
+      syncIntervalMinutes: cfg.syncIntervalMinutes,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.put('/nextcloud/config', async (req: AuthRequest, res) => {
+  try {
+    const { saveNextCloudConfig } = await import('../services/nextcloudHelper');
+    const {
+      enabled, url, adminUsername, adminPassword,
+      autoProvision, autoCreateCalendars, syncIntervalMinutes,
+    } = req.body || {};
+    await saveNextCloudConfig({
+      enabled, url, adminUsername, adminPassword,
+      autoProvision, autoCreateCalendars, syncIntervalMinutes,
+    });
+    res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -229,23 +265,95 @@ adminRouter.get('/nextcloud/status', async (req: AuthRequest, res) => {
 
 adminRouter.post('/nextcloud/test', async (req: AuthRequest, res) => {
   try {
-    const { url, username, password } = req.body;
-    // Test NextCloud connection
-    const response = await fetch(`${url}/ocs/v2.php/cloud/capabilities?format=json`, {
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64'),
-        'OCS-APIRequest': 'true',
-      },
-    });
+    const { url, username, password } = req.body || {};
+    const { NextCloudAdminService } = await import('../services/nextcloud');
 
-    if (response.ok) {
-      const data: any = await response.json();
-      res.json({ success: true, version: data?.ocs?.data?.version });
+    // If credentials provided: test them; otherwise test the saved config.
+    let admin: any;
+    if (url && username && password) {
+      admin = new NextCloudAdminService({ url, adminUsername: username, adminPassword: password });
     } else {
-      res.json({ success: false, error: 'Impossible de se connecter à NextCloud' });
+      const { getAdminClient } = await import('../services/nextcloudHelper');
+      admin = await getAdminClient();
+      if (!admin) return res.json({ success: false, error: 'Configuration NextCloud incomplète' });
     }
+    const info = await admin.testConnection();
+    res.json({ success: true, version: info.version });
   } catch (error: any) {
-    res.json({ success: false, error: error.message });
+    res.json({ success: false, error: error?.message || 'Connexion échouée' });
+  }
+});
+
+// List all NC user mappings
+adminRouter.get('/nextcloud/users', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT nu.id, nu.user_id, u.email, u.display_name as app_display_name,
+             nu.nc_username, nu.nc_display_name, nu.nc_email,
+             nu.provisioned_at, nu.last_sync_at, nu.last_sync_error, nu.is_active
+        FROM nextcloud_users nu
+        JOIN users u ON u.id = nu.user_id
+       ORDER BY nu.provisioned_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manually provision a user
+adminRouter.post('/nextcloud/users/:userId/provision', async (req: AuthRequest, res) => {
+  try {
+    const { provisionUserIfNeeded } = await import('../services/nextcloudHelper');
+    const result = await provisionUserIfNeeded(req.params.userId);
+    if (!result) {
+      return res.status(409).json({ error: 'Provisioning impossible (déjà mappé, NC user existant ou config incomplète)' });
+    }
+    res.json({ success: true, ncUsername: result.userId });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manually link an existing NC user
+adminRouter.post('/nextcloud/users/:userId/link', async (req: AuthRequest, res) => {
+  try {
+    const { ncUsername, ncPassword } = req.body || {};
+    if (!ncUsername || !ncPassword) {
+      return res.status(400).json({ error: 'ncUsername et ncPassword requis' });
+    }
+    const { linkExistingNcUser } = await import('../services/nextcloudHelper');
+    await linkExistingNcUser(req.params.userId, ncUsername, ncPassword);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unlink (does NOT delete NC account)
+adminRouter.delete('/nextcloud/users/:userId', async (req: AuthRequest, res) => {
+  try {
+    const { unlinkNcUser } = await import('../services/nextcloudHelper');
+    await unlinkNcUser(req.params.userId);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sync all (calendars + contacts) for a single user — on-demand
+adminRouter.post('/nextcloud/users/:userId/sync', async (req: AuthRequest, res) => {
+  try {
+    const { getUserClient } = await import('../services/nextcloudHelper');
+    const client = await getUserClient(req.params.userId);
+    if (!client) return res.status(404).json({ error: 'Utilisateur non provisionné sur NextCloud' });
+    await client.syncCalendars(req.params.userId);
+    await client.syncContacts(req.params.userId);
+    await pool.query(`UPDATE nextcloud_users SET last_sync_at = NOW(), last_sync_error = NULL WHERE user_id = $1`, [req.params.userId]);
+    res.json({ success: true });
+  } catch (error: any) {
+    await pool.query(`UPDATE nextcloud_users SET last_sync_error = $1 WHERE user_id = $2`, [error.message?.slice(0, 500), req.params.userId]);
+    res.status(500).json({ error: error.message });
   }
 });
 

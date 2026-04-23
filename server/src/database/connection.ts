@@ -292,14 +292,66 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_events_calendar ON calendar_events(calendar_id);
       CREATE INDEX IF NOT EXISTS idx_events_dates ON calendar_events(start_date, end_date);
 
-      -- Shared calendar access
+      -- Shared calendar access (internal sharing between app users)
       CREATE TABLE IF NOT EXISTS shared_calendar_access (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         calendar_id UUID REFERENCES calendars(id) ON DELETE CASCADE,
         user_id UUID REFERENCES users(id) ON DELETE CASCADE,
         permission VARCHAR(20) DEFAULT 'read',
+        nextcloud_share_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW(),
         UNIQUE(calendar_id, user_id)
       );
+      ALTER TABLE IF EXISTS shared_calendar_access ADD COLUMN IF NOT EXISTS nextcloud_share_id VARCHAR(255);
+      ALTER TABLE IF EXISTS shared_calendar_access ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+
+      -- External calendar shares (public links, guest invitees by email)
+      CREATE TABLE IF NOT EXISTS external_calendar_shares (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        calendar_id UUID REFERENCES calendars(id) ON DELETE CASCADE,
+        share_type VARCHAR(20) NOT NULL, -- 'public_link' | 'email'
+        recipient_email VARCHAR(255),
+        public_token VARCHAR(128),
+        public_url TEXT,
+        permission VARCHAR(20) DEFAULT 'read',
+        nextcloud_share_id VARCHAR(255),
+        expires_at TIMESTAMP,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_ext_cal_shares_calendar ON external_calendar_shares(calendar_id);
+
+      -- NextCloud per-user provisioning (mapping app user <-> NC account)
+      CREATE TABLE IF NOT EXISTS nextcloud_users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        nc_username VARCHAR(255) NOT NULL,
+        nc_password_encrypted TEXT NOT NULL, -- app-password or initial password (encrypted)
+        nc_display_name VARCHAR(255),
+        nc_email VARCHAR(255),
+        provisioned_at TIMESTAMP DEFAULT NOW(),
+        last_sync_at TIMESTAMP,
+        last_sync_error TEXT,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_nc_users_username ON nextcloud_users(nc_username);
+
+      -- NextCloud-managed calendar metadata
+      ALTER TABLE IF EXISTS calendars ADD COLUMN IF NOT EXISTS nc_managed BOOLEAN DEFAULT false;
+      ALTER TABLE IF EXISTS calendars ADD COLUMN IF NOT EXISTS nc_principal_url TEXT;
+      ALTER TABLE IF EXISTS calendars ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMP;
+
+      -- NextCloud-managed contact metadata
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS nc_managed BOOLEAN DEFAULT false;
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS nc_addressbook_url TEXT;
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS nc_etag VARCHAR(255);
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS nc_uri VARCHAR(512);
+
+      -- Same for calendar events (for CalDAV sync consistency)
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS nc_etag VARCHAR(255);
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS nc_uri VARCHAR(512);
 
       -- Plugins
       CREATE TABLE IF NOT EXISTS plugins (
@@ -385,6 +437,10 @@ export async function initDatabase() {
       INSERT INTO admin_settings (key, value, description) VALUES
         ('nextcloud_enabled', 'false', 'Enable NextCloud integration'),
         ('nextcloud_url', '""', 'NextCloud server URL'),
+        ('nextcloud_admin_username', '""', 'NextCloud admin username (for provisioning)'),
+        ('nextcloud_admin_password_encrypted', '""', 'Encrypted NextCloud admin password / app-token'),
+        ('nextcloud_auto_provision', 'false', 'Automatically provision NC account on user creation'),
+        ('nextcloud_auto_create_calendars', 'true', 'Create calendars on NextCloud when created in the app'),
         ('nextcloud_sync_interval', '15', 'Sync interval in minutes'),
         ('max_attachment_size', '25', 'Max attachment size in MB'),
         ('attachment_visibility_min_kb', '10', 'Hide attachments smaller than this size in KB'),

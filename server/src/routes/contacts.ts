@@ -45,7 +45,9 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
     const params: any[] = [req.userId];
     let paramIdx = 2;
 
-    if (source) {
+    if (source === 'nextcloud') {
+      query += ` AND c.nc_managed = true`;
+    } else if (source) {
       query += ` AND c.source = $${paramIdx}`;
       params.push(source);
       paramIdx++;
@@ -139,18 +141,36 @@ contactRouter.post('/', async (req: AuthRequest, res) => {
     // Pick a CardDAV-enabled mail account (default one first) to anchor this contact.
     const davAccount = await findCardDAVAccount(req.userId!);
 
+    // If no CardDAV mail account, try NextCloud default address book
+    let ncAddressBookUrl: string | null = null;
+    let ncManaged = false;
+    if (!davAccount) {
+      try {
+        const { getUserClient, getNextCloudConfig } = await import('../services/nextcloudHelper');
+        const cfg = await getNextCloudConfig(false);
+        if (cfg?.enabled) {
+          const nc = await getUserClient(req.userId!);
+          if (nc) {
+            ncAddressBookUrl = nc.getDefaultAddressBookUrl();
+            ncManaged = true;
+          }
+        }
+      } catch { /* best-effort */ }
+    }
+
     const result = await pool.query(
       `INSERT INTO contacts (
          user_id, email, first_name, last_name, display_name, phone, mobile, company,
          job_title, department, avatar_url, notes, is_favorite,
-         external_id, mail_account_id, carddav_url
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         external_id, mail_account_id, carddav_url, nc_managed, nc_addressbook_url
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING *`,
       [
         req.userId, data.email, data.firstName, data.lastName, displayName,
         data.phone, data.mobile, data.company, data.jobTitle, data.department,
         data.avatarUrl, data.notes, data.isFavorite || false,
         uid, davAccount?.id || null, davAccount?.carddav_url || null,
+        ncManaged, ncAddressBookUrl,
       ]
     );
 
@@ -230,7 +250,8 @@ contactRouter.delete('/:id', async (req: AuthRequest, res) => {
   try {
     // Capture CardDAV info before deletion so we can also remove it remotely.
     const snap = await pool.query(
-      `SELECT id, mail_account_id, carddav_url, carddav_href, external_id
+      `SELECT id, user_id, mail_account_id, carddav_url, carddav_href, external_id,
+              nc_managed, nc_uri, nc_etag
        FROM contacts WHERE id = $1 AND user_id = $2`,
       [req.params.id, req.userId]
     );
@@ -245,7 +266,15 @@ contactRouter.delete('/:id', async (req: AuthRequest, res) => {
     }
 
     const row = snap.rows[0];
-    if (row?.mail_account_id && row?.carddav_url && (row?.carddav_href || row?.external_id)) {
+    if (row?.nc_managed && row?.nc_uri) {
+      (async () => {
+        try {
+          const { getUserClient } = await import('../services/nextcloudHelper');
+          const nc = await getUserClient(row.user_id);
+          if (nc) await nc.deleteContact(row.nc_uri, row.nc_etag || undefined);
+        } catch (e) { logger.error(e as Error, 'NC contact delete failed'); }
+      })();
+    } else if (row?.mail_account_id && row?.carddav_url && (row?.carddav_href || row?.external_id)) {
       deleteContactFromCardDAV(row.mail_account_id, row.carddav_url, row.carddav_href || `${row.external_id}.vcf`)
         .catch(err => logger.error(err, 'CardDAV push (delete) failed'));
     }
@@ -582,17 +611,15 @@ async function buildCardDAVServiceForAccount(mailAccountId: string, collectionUr
 
 async function pushContactToCardDAV(contactId: string): Promise<void> {
   const r = await pool.query(
-    `SELECT id, email, first_name, last_name, display_name, phone, mobile, company,
-            job_title, department, notes, external_id, mail_account_id, carddav_url, carddav_etag
+    `SELECT id, user_id, email, first_name, last_name, display_name, phone, mobile, company,
+            job_title, department, notes, external_id, mail_account_id, carddav_url, carddav_etag,
+            nc_managed, nc_addressbook_url, nc_etag, nc_uri
      FROM contacts WHERE id = $1`,
     [contactId]
   );
   if (r.rows.length === 0) return;
   const c = r.rows[0];
-  if (!c.mail_account_id || !c.carddav_url || !c.external_id) return;
-
-  const svc = await buildCardDAVServiceForAccount(c.mail_account_id, c.carddav_url);
-  if (!svc) return;
+  if (!c.external_id) return;
 
   const vcard = buildVCard({
     uid: c.external_id,
@@ -607,6 +634,29 @@ async function pushContactToCardDAV(contactId: string): Promise<void> {
     department: c.department,
     notes: c.notes,
   });
+
+  // NextCloud-managed → push via NC
+  if (c.nc_managed && c.nc_addressbook_url) {
+    try {
+      const { getUserClient } = await import('../services/nextcloudHelper');
+      const nc = await getUserClient(c.user_id);
+      if (nc) {
+        const out = await nc.putContact(c.nc_addressbook_url, c.external_id, vcard, c.nc_etag || undefined);
+        await pool.query(
+          'UPDATE contacts SET nc_uri = $1, nc_etag = $2, updated_at = NOW() WHERE id = $3',
+          [out.href, out.etag || null, contactId]
+        );
+      }
+    } catch (e) {
+      logger.error(e as Error, 'NextCloud contact push failed');
+    }
+    return;
+  }
+
+  if (!c.mail_account_id || !c.carddav_url) return;
+
+  const svc = await buildCardDAVServiceForAccount(c.mail_account_id, c.carddav_url);
+  if (!svc) return;
 
   const out = await svc.putContact(c.external_id, vcard, c.carddav_etag || undefined);
   if (!out.ok) {

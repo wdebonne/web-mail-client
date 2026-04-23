@@ -2,225 +2,154 @@
 
 Guide de configuration et d'utilisation de l'intégration NextCloud dans WebMail.
 
+> **Version 2** — Provisioning automatique, création de calendriers/contacts côté NextCloud,
+> partage interne/externe, lien public, invitations iMIP, synchronisation bidirectionnelle.
+
 ## Vue d'ensemble
 
-L'intégration NextCloud est **optionnelle** et permet de :
+L'intégration NextCloud est **optionnelle**. Quand elle est activée, elle permet à WebMail de :
 
-- 📇 Synchroniser les contacts via **CardDAV**
-- 📅 Synchroniser les calendriers via **CalDAV**
-- 🖼️ Récupérer les photos de profil des utilisateurs
-- 📋 Importer les listes de distribution
-
-### Note sur l'aperçu DOCX/XLSX
-
-Actuellement, WebMail fournit un aperçu local **simplifié** pour les fichiers DOCX/XLSX.
-Ce mode privilégie la lisibilité du contenu, mais ne garantit pas une fidélité parfaite de la mise en page.
-
-Une intégration bureautique plus fidèle est prévue via l'écosystème Office de NextCloud
-(selon les applications activées sur votre instance, par exemple Collabora/OnlyOffice).
+- **Provisionner** automatiquement un compte NextCloud pour chaque utilisateur créé
+- **Créer automatiquement** les calendriers et contacts directement sur NextCloud
+- **Partager** les calendriers (interne NC, invitation email, lien public lecture seule)
+- Envoyer automatiquement les **invitations iMIP** aux participants (via NextCloud)
+- Synchroniser **bidirectionnellement** calendriers et contacts (polling + à la demande)
+- Récupérer les photos de profil NextCloud
 
 ---
 
 ## Prérequis
 
-- Instance NextCloud fonctionnelle (v20+)
-- Compte utilisateur avec accès aux contacts et calendriers
-- Accès réseau entre le serveur WebMail et NextCloud
+- Instance NextCloud fonctionnelle (v24+ recommandé pour le partage calendrier)
+- Compte **admin** NextCloud dédié avec un **App Password** (Paramètres → Sécurité → Mots de passe d'application)
+- Accès réseau entre le serveur WebMail et l'URL NextCloud (HTTPS recommandé)
 
 ---
 
-## Configuration
+## Configuration (interface admin)
 
-### 1. Variables d'environnement
+Toute la configuration se fait désormais dans l'espace admin de WebMail :
+**Paramètres administrateur → NextCloud**.
 
-Ajoutez dans votre fichier `.env` :
+### Onglet « Configuration »
 
-```env
-NEXTCLOUD_URL=https://cloud.example.com
-NEXTCLOUD_USERNAME=admin
-NEXTCLOUD_PASSWORD=votre_mot_de_passe
-NEXTCLOUD_ENABLED=true
-```
+| Champ | Description |
+|-------|-------------|
+| Activer l'intégration | Active globalement l'intégration |
+| URL NextCloud | URL publique de l'instance (sans `/index.php`, ex: `https://cloud.example.com`) |
+| Identifiant admin | Compte avec droits d'administration NC |
+| Mot de passe admin / App password | **Chiffré au repos** avec `ENCRYPTION_KEY`. Utiliser un App Password dédié. |
+| Provisionner automatiquement | À la création d'un utilisateur WebMail, crée aussi un compte NC |
+| Créer les calendriers sur NextCloud | Les nouveaux calendriers sont MKCALENDAR'és sur NC |
+| Intervalle de synchronisation | Minimum 5 min. Sync périodique côté serveur |
 
-### 2. Configuration via l'interface d'administration
+Le mot de passe saisi n'est jamais renvoyé au navigateur. Pour le conserver sans le modifier,
+laissez le champ vide lors d'un enregistrement ultérieur.
 
-1. Connectez-vous en tant qu'administrateur
-2. Allez dans **Administration > NextCloud**
-3. Renseignez :
-   - URL de l'instance NextCloud
-   - Nom d'utilisateur
-   - Mot de passe
-4. Cliquez sur **Tester la connexion**
-5. Sauvegardez si le test est réussi
+### Onglet « Utilisateurs provisionnés »
 
----
+Liste tous les utilisateurs WebMail avec leur statut NC :
 
-## Synchronisation des contacts (CardDAV)
-
-### Fonctionnement
-
-WebMail interroge le service CardDAV de NextCloud pour récupérer les contacts :
-
-```
-NextCloud → CardDAV → vCard parsing → Base locale (contacts)
-```
-
-### Données récupérées
-
-| Champ NextCloud | Champ WebMail |
-|-----------------|---------------|
-| FN | `displayName` |
-| N | `firstName`, `lastName` |
-| EMAIL | `email` |
-| TEL | `phone` |
-| ORG | `company` |
-| TITLE | `jobTitle` |
-| ROLE | `role` |
-| DEPARTMENT | `department` |
-| NOTE | `notes` |
-| PHOTO | `photoUrl` |
-
-### Photos de profil
-
-Les photos de profil NextCloud sont automatiquement récupérées et utilisées :
-- Dans la liste des contacts
-- Dans le composeur d'email (autocomplétion)
-- Dans la vue des messages (avatar de l'expéditeur)
-
-Si un contact n'a pas de photo NextCloud, un avatar coloré est généré automatiquement à partir de ses initiales.
+- **Non provisionné** → boutons *Provisionner* (crée un compte NC avec mot de passe généré aléatoirement) ou *Lier existant* (utiliser un App Password NC existant)
+- **Lié** → *Sync* (déclenche une synchro immédiate), *Délier* (supprime le mapping, conserve le compte NC)
+- Les erreurs de synchronisation sont affichées sous chaque utilisateur
 
 ---
 
-## Synchronisation des calendriers (CalDAV)
+## Comment ça marche
 
-### Fonctionnement
+### Provisionning
 
-```
-NextCloud → CalDAV → iCal parsing → Base locale (calendars, calendar_events)
-```
+Deux modes sont disponibles :
 
-### Données synchronisées
+1. **Automatique** : à l'activation de *Provisionner automatiquement*, chaque `POST /admin/users` déclenche
+   l'appel OCS `POST /ocs/v2.php/cloud/users`. Un mot de passe aléatoire (`crypto.randomBytes(24).base64url`) est généré,
+   stocké chiffré dans la table `nextcloud_users` (`nc_password_encrypted`).
+2. **Manuel** : l'admin provisionne ou lie les comptes NC depuis l'interface. Utile pour des comptes NC préexistants.
 
-| Champ iCal | Champ WebMail |
-|------------|---------------|
-| SUMMARY | `title` |
-| DESCRIPTION | `description` |
-| DTSTART | `start` |
-| DTEND | `end` |
-| LOCATION | `location` |
-| ATTENDEE | `attendees` |
-| RRULE | `recurrence` |
+> Le nom d'utilisateur NC est dérivé de la partie locale de l'email (alphanumérique + `._-`, tronqué à 64 car.).
+> Si ce nom est déjà pris côté NC, l'auto-provisionning s'arrête proprement et laisse l'admin lier manuellement.
 
-### Calendriers partagés
+### Création de calendriers
 
-Les calendriers partagés dans NextCloud sont également importés. Les permissions sont respectées :
-- **Lecture seule** : visualisation uniquement dans WebMail
-- **Lecture/écriture** : modification possible depuis WebMail
+À la création d'un calendrier via `POST /calendar` (sans `mailAccountId`) :
+
+1. Si l'utilisateur est provisionné **et** l'option *Créer les calendriers sur NextCloud* est active :
+   - Un `MKCALENDAR` est exécuté sur `/remote.php/dav/calendars/<ncUsername>/<slug>/`
+   - Le calendrier est enregistré en DB avec `nc_managed = true` et `caldav_url` pointant sur NC
+2. Sinon : calendrier purement local
+
+### Événements et iMIP
+
+Tous les événements créés/modifiés sur un calendrier `nc_managed` sont pushés via PUT vers NextCloud.
+Si l'ICS contient des `ATTENDEE`, **NextCloud envoie automatiquement les invitations iMIP** aux participants
+(y compris les adresses externes au domaine NC). Aucune configuration supplémentaire n'est requise.
+
+### Partage de calendrier
+
+Un nouvel endpoint `POST /calendar/:id/share` accepte trois modes :
+
+| Payload | Résultat |
+|---------|----------|
+| `{ userId: "<app-user>", permission: "read"\|"write" }` | Partage interne. Si le destinataire est aussi provisionné NC, un partage NC-natif est fait via `<CS:share>` entre principals |
+| `{ email: "user@ext.com", permission: ... }` | Invitation NC par email (NC envoie automatiquement le mail d'invitation) |
+| `POST /calendar/:id/publish` | Lien public en lecture seule (via `<CS:publish-calendar>` + PROPFIND de `<CS:publish-url>`) |
+
+Endpoints de gestion :
+- `GET /calendar/:id/shares` → liste les partages (internes + externes)
+- `DELETE /calendar/:id/share` → révoque un partage (body `{ userId }` ou `{ email }`)
+- `DELETE /calendar/:id/publish` → supprime le lien public
+
+L'interface est disponible via le dialog « Partager » depuis la sidebar du calendrier.
+
+### Contacts
+
+Quand un utilisateur est provisionné et qu'il n'a **pas** de compte CardDAV attaché à une boîte mail,
+les nouveaux contacts sont automatiquement stockés dans le carnet d'adresses NC par défaut
+(`/remote.php/dav/addressbooks/users/<ncUsername>/contacts/`).
+
+La vue « NextCloud » dans la page Contacts filtre sur `nc_managed = true`.
+
+### Synchronisation
+
+- Sync **périodique** : service `nextcloudSyncPoller` lancé au démarrage du serveur,
+  intervalle configurable (min. 5 min, défaut 15 min)
+- Sync **à la demande** : bouton *Sync* depuis l'admin, endpoint `POST /admin/nextcloud/users/:userId/sync`
 
 ---
 
-## Listes de distribution
+## Sécurité
 
-Les listes de distribution NextCloud (groupes de contacts) sont importées et disponibles :
-- Dans l'autocomplétion du composeur d'email
-- Dans la gestion des contacts (section Groupes)
+- Tous les mots de passe NC (admin **et** par utilisateur) sont chiffrés avec `encrypt()` (AES-256-GCM)
+  via la clé `ENCRYPTION_KEY` définie dans l'environnement serveur.
+- Les mots de passe ne sont **jamais** renvoyés au navigateur (`GET /admin/nextcloud/status` omet volontairement le champ).
+- Préférez toujours un **App Password** plutôt que le vrai mot de passe admin.
+- En cas de rotation de la clé `ENCRYPTION_KEY`, toutes les credentials NC stockées deviendront illisibles
+  et devront être re-saisies.
 
 ---
 
-## URLs CalDAV / CardDAV
+## Schéma de base de données
 
-### Format des URLs
+Tables ajoutées :
 
-```
-# CardDAV
-https://cloud.example.com/remote.php/dav/addressbooks/users/{username}/contacts/
-
-# CalDAV
-https://cloud.example.com/remote.php/dav/calendars/{username}/{calendar-name}/
-```
-
-### Vérification manuelle
-
-Pour tester la connexion CardDAV :
-
-```bash
-curl -u "username:password" \
-  -X PROPFIND \
-  -H "Depth: 1" \
-  "https://cloud.example.com/remote.php/dav/addressbooks/users/username/contacts/"
-```
-
-Pour tester la connexion CalDAV :
-
-```bash
-curl -u "username:password" \
-  -X PROPFIND \
-  -H "Depth: 1" \
-  "https://cloud.example.com/remote.php/dav/calendars/username/"
-```
+- `nextcloud_users` — mapping `user_id` ↔ `nc_username` + mot de passe chiffré + statut de sync
+- `external_calendar_shares` — invitations par email + liens publics
+- Colonnes ajoutées à `calendars` : `nc_managed`, `nc_principal_url`, `last_sync_at`
+- Colonnes ajoutées à `contacts` : `nc_managed`, `nc_addressbook_url`, `nc_etag`, `nc_uri`
+- Colonnes ajoutées à `calendar_events` : `nc_etag`, `nc_uri`
+- Colonnes ajoutées à `shared_calendar_access` : `nextcloud_share_id`, `created_at`
 
 ---
 
 ## Dépannage
 
-### Erreur de connexion
+| Symptôme | Cause probable |
+|----------|----------------|
+| « Configuration NextCloud incomplète » | URL, username ou app password manquant / incorrect |
+| « NC user already exists; skipping auto-provision » | Le compte NC existe déjà → utiliser *Lier existant* |
+| Sync en erreur « 401 » | App Password révoqué ou changé → re-saisir le mot de passe de l'utilisateur |
+| Aucune invitation iMIP reçue | Vérifier que l'app NextCloud « DAV » est active et que le SMTP NC est configuré |
+| Lien public vide | L'app « calendar » NextCloud doit être activée pour que `<CS:publish-calendar>` fonctionne |
 
-| Symptôme | Cause probable | Solution |
-|----------|---------------|----------|
-| `401 Unauthorized` | Identifiants incorrects | Vérifiez username/password |
-| `404 Not Found` | URL incorrecte | Vérifiez l'URL NextCloud |
-| `Connection refused` | Réseau bloqué | Vérifiez le firewall / réseau Docker |
-| `SSL certificate error` | Certificat auto-signé | Ajoutez `NODE_TLS_REJECT_UNAUTHORIZED=0` (dev uniquement) |
-
-### Contacts non synchronisés
-
-1. Vérifiez que le carnet d'adresses par défaut existe dans NextCloud
-2. Vérifiez les permissions de l'utilisateur sur le carnet
-3. Consultez les logs : `docker-compose logs app | grep nextcloud`
-
-### Calendriers non visibles
-
-1. Vérifiez que le calendrier existe dans NextCloud
-2. Vérifiez que le calendrier n'est pas masqué dans NextCloud
-3. Vérifiez les permissions de partage
-
-### Performances
-
-Pour les instances NextCloud avec beaucoup de contacts (>1000) :
-- La synchronisation initiale peut prendre quelques minutes
-- Les synchronisations suivantes sont incrémentales
-- Un cache local est maintenu dans PostgreSQL pour éviter les appels répétés
-
----
-
-## Architecture technique
-
-### Service NextCloud (`server/src/services/nextcloud.ts`)
-
-Le service gère toutes les interactions avec NextCloud :
-
-```
-NextCloudService
-├── testConnection()       → Test de connectivité
-├── getContacts()          → Récupération CardDAV
-├── getCalendars()         → Liste des calendriers CalDAV
-├── getEvents(calendar)    → Événements d'un calendrier
-├── getUserAvatar(email)   → Photo de profil
-└── getDistributionLists() → Listes de distribution
-```
-
-### Protocoles
-
-| Protocole | Standard | Usage |
-|-----------|----------|-------|
-| CardDAV | RFC 6352 | Contacts |
-| CalDAV | RFC 4791 | Calendriers |
-| vCard | RFC 6350 | Format de contact |
-| iCalendar | RFC 5545 | Format d'événement |
-
-### Authentification
-
-L'authentification utilise **HTTP Basic Auth** sur HTTPS. Les identifiants sont :
-- Stockés dans les variables d'environnement (configuration globale)
-- Ou configurés par l'administrateur via l'interface web
-- Jamais exposés côté client
+Logs utiles côté serveur : `grep -i "NC" logs/*.log` (tags : `NextCloud`, `nextcloud`, `NC sync`).

@@ -1,5 +1,6 @@
 import { pool } from '../database/connection';
 import { logger } from '../utils/logger';
+import crypto from 'crypto';
 
 interface NextCloudConfig {
   url: string;
@@ -7,15 +8,49 @@ interface NextCloudConfig {
   password: string;
 }
 
+/**
+ * Strip trailing slash from a base URL.
+ */
+function trimUrl(u: string): string {
+  return u.replace(/\/+$/, '');
+}
+
 export class NextCloudService {
   private config: NextCloudConfig;
 
   constructor(config: NextCloudConfig) {
-    this.config = config;
+    this.config = { ...config, url: trimUrl(config.url) };
   }
 
   private getAuthHeader(): string {
     return 'Basic ' + Buffer.from(`${this.config.username}:${this.config.password}`).toString('base64');
+  }
+
+  private ocsHeaders(extra: Record<string, string> = {}): Record<string, string> {
+    return {
+      Authorization: this.getAuthHeader(),
+      'OCS-APIRequest': 'true',
+      Accept: 'application/json',
+      ...extra,
+    };
+  }
+
+  private davBase(): string {
+    return `${this.config.url}/remote.php/dav`;
+  }
+
+  private calendarsBase(): string {
+    return `${this.davBase()}/calendars/${encodeURIComponent(this.config.username)}`;
+  }
+
+  private addressBooksBase(): string {
+    return `${this.davBase()}/addressbooks/users/${encodeURIComponent(this.config.username)}`;
+  }
+
+  /** Absolute URL from a server-relative href returned by NextCloud. */
+  private absolute(href: string): string {
+    if (/^https?:\/\//i.test(href)) return href;
+    return `${this.config.url}${href.startsWith('/') ? '' : '/'}${href}`;
   }
 
   // ---- CardDAV (Contacts) ----
@@ -378,4 +413,402 @@ export class NextCloudService {
     const match = xml.match(regex);
     return match ? match[1].trim() : undefined;
   }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Calendar CRUD (MKCALENDAR / PROPPATCH / DELETE)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Create a calendar collection on NextCloud using MKCALENDAR (RFC 4791).
+   * Returns the absolute URL of the created collection.
+   */
+  async createCalendar(displayName: string, color: string = '#0078D4', slug?: string): Promise<string> {
+    const safeSlug = (slug || this.slugify(displayName)) || `cal-${Date.now()}`;
+    const url = `${this.calendarsBase()}/${encodeURIComponent(safeSlug)}/`;
+    const nameXml = this.escapeXml(displayName);
+    const body = `<?xml version="1.0" encoding="utf-8" ?>
+<C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">
+  <D:set>
+    <D:prop>
+      <D:displayname>${nameXml}</D:displayname>
+      <A:calendar-color>${this.escapeXml(color)}</A:calendar-color>
+      <C:supported-calendar-component-set><C:comp name="VEVENT"/></C:supported-calendar-component-set>
+    </D:prop>
+  </D:set>
+</C:mkcalendar>`;
+    const res = await fetch(url, {
+      method: 'MKCALENDAR',
+      headers: { Authorization: this.getAuthHeader(), 'Content-Type': 'application/xml; charset=utf-8' },
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`MKCALENDAR failed (${res.status}): ${txt.slice(0, 300)}`);
+    }
+    return url;
+  }
+
+  async deleteCalendar(calendarUrl: string): Promise<void> {
+    const res = await fetch(this.absolute(calendarUrl), {
+      method: 'DELETE',
+      headers: { Authorization: this.getAuthHeader() },
+    });
+    if (!res.ok && res.status !== 404) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`DELETE calendar failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+  }
+
+  async renameCalendar(calendarUrl: string, newName: string, newColor?: string): Promise<void> {
+    const nameXml = this.escapeXml(newName);
+    const colorXml = newColor ? `<A:calendar-color>${this.escapeXml(newColor)}</A:calendar-color>` : '';
+    const body = `<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:" xmlns:A="http://apple.com/ns/ical/">
+  <D:set><D:prop><D:displayname>${nameXml}</D:displayname>${colorXml}</D:prop></D:set>
+</D:propertyupdate>`;
+    const res = await fetch(this.absolute(calendarUrl), {
+      method: 'PROPPATCH',
+      headers: { Authorization: this.getAuthHeader(), 'Content-Type': 'application/xml; charset=utf-8' },
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`PROPPATCH failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Event CRUD (PUT/DELETE .ics)
+  // Includes ATTENDEE entries so NextCloud sends iMIP invitations.
+  // ═══════════════════════════════════════════════════════════════════
+
+  async putEvent(calendarUrl: string, uid: string, icalData: string, etag?: string): Promise<{ etag: string | null; href: string }> {
+    const base = this.absolute(calendarUrl).replace(/\/+$/, '/');
+    const href = `${base}${encodeURIComponent(uid)}.ics`;
+    const headers: Record<string, string> = {
+      Authorization: this.getAuthHeader(),
+      'Content-Type': 'text/calendar; charset=utf-8',
+    };
+    if (etag) headers['If-Match'] = etag;
+    const res = await fetch(href, { method: 'PUT', headers, body: icalData });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`PUT event failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+    return { etag: res.headers.get('etag'), href };
+  }
+
+  async deleteEvent(eventUrl: string, etag?: string): Promise<void> {
+    const headers: Record<string, string> = { Authorization: this.getAuthHeader() };
+    if (etag) headers['If-Match'] = etag;
+    const res = await fetch(this.absolute(eventUrl), { method: 'DELETE', headers });
+    if (!res.ok && res.status !== 404) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`DELETE event failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Contact CRUD (PUT/DELETE .vcf)
+  // ═══════════════════════════════════════════════════════════════════
+
+  async putContact(addressBookUrl: string, uid: string, vcard: string, etag?: string): Promise<{ etag: string | null; href: string }> {
+    const base = this.absolute(addressBookUrl).replace(/\/+$/, '/');
+    const href = `${base}${encodeURIComponent(uid)}.vcf`;
+    const headers: Record<string, string> = {
+      Authorization: this.getAuthHeader(),
+      'Content-Type': 'text/vcard; charset=utf-8',
+    };
+    if (etag) headers['If-Match'] = etag;
+    const res = await fetch(href, { method: 'PUT', headers, body: vcard });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`PUT contact failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+    return { etag: res.headers.get('etag'), href };
+  }
+
+  async deleteContact(contactUrl: string, etag?: string): Promise<void> {
+    const headers: Record<string, string> = { Authorization: this.getAuthHeader() };
+    if (etag) headers['If-Match'] = etag;
+    const res = await fetch(this.absolute(contactUrl), { method: 'DELETE', headers });
+    if (!res.ok && res.status !== 404) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`DELETE contact failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+  }
+
+  /** Get the default address book URL (creates "contacts" default if present). */
+  getDefaultAddressBookUrl(): string {
+    return `${this.addressBooksBase()}/contacts/`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Calendar sharing (calendarserver-sharing extension)
+  // NextCloud / SabreDAV supports the Apple sharing extension via POST.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Share a calendar with an invitee (internal user or external email).
+   * `invitee` can be:
+   *   - "principal:principals/users/<nc-username>" for an NC user
+   *   - "mailto:user@example.com" for an email invitee (NC will send the invite)
+   */
+  async shareCalendar(
+    calendarUrl: string,
+    invitee: string,
+    permission: 'read' | 'read-write' = 'read-write',
+    summary?: string,
+  ): Promise<void> {
+    const permXml = permission === 'read-write' ? '<CS:read-write/>' : '<CS:read/>';
+    const summaryXml = summary ? `<CS:summary>${this.escapeXml(summary)}</CS:summary>` : '';
+    const body = `<?xml version="1.0" encoding="utf-8" ?>
+<CS:share xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/">
+  <CS:set>
+    <D:href>${this.escapeXml(invitee)}</D:href>
+    ${summaryXml}
+    ${permXml}
+  </CS:set>
+</CS:share>`;
+    const res = await fetch(this.absolute(calendarUrl), {
+      method: 'POST',
+      headers: { Authorization: this.getAuthHeader(), 'Content-Type': 'application/xml; charset=utf-8' },
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Share calendar failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+  }
+
+  /** Revoke a calendar share. Pass the same invitee string used in `shareCalendar`. */
+  async unshareCalendar(calendarUrl: string, invitee: string): Promise<void> {
+    const body = `<?xml version="1.0" encoding="utf-8" ?>
+<CS:share xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/">
+  <CS:remove>
+    <D:href>${this.escapeXml(invitee)}</D:href>
+  </CS:remove>
+</CS:share>`;
+    const res = await fetch(this.absolute(calendarUrl), {
+      method: 'POST',
+      headers: { Authorization: this.getAuthHeader(), 'Content-Type': 'application/xml; charset=utf-8' },
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Unshare failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+  }
+
+  /**
+   * Publish a calendar as a public read-only link.
+   * Returns the public URL that guests can subscribe to (webcal).
+   */
+  async publishCalendar(calendarUrl: string): Promise<string | null> {
+    const body = `<?xml version="1.0" encoding="utf-8" ?>
+<CS:publish-calendar xmlns:CS="http://calendarserver.org/ns/"/>`;
+    const res = await fetch(this.absolute(calendarUrl), {
+      method: 'POST',
+      headers: { Authorization: this.getAuthHeader(), 'Content-Type': 'application/xml; charset=utf-8' },
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Publish failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+    // Retrieve the publish-url property
+    const propRes = await fetch(this.absolute(calendarUrl), {
+      method: 'PROPFIND',
+      headers: {
+        Authorization: this.getAuthHeader(),
+        Depth: '0',
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: `<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/">
+  <D:prop><CS:publish-url/></D:prop>
+</D:propfind>`,
+    });
+    if (!propRes.ok) return null;
+    const xml = await propRes.text();
+    const match = xml.match(/<CS:publish-url[^>]*>\s*<D:href[^>]*>([^<]+)<\/D:href>/i)
+      || xml.match(/<publish-url[^>]*>\s*<href[^>]*>([^<]+)<\/href>/i);
+    return match ? match[1].trim() : null;
+  }
+
+  async unpublishCalendar(calendarUrl: string): Promise<void> {
+    const body = `<?xml version="1.0" encoding="utf-8" ?>
+<CS:unpublish-calendar xmlns:CS="http://calendarserver.org/ns/"/>`;
+    const res = await fetch(this.absolute(calendarUrl), {
+      method: 'POST',
+      headers: { Authorization: this.getAuthHeader(), 'Content-Type': 'application/xml; charset=utf-8' },
+      body,
+    });
+    if (!res.ok && res.status !== 404) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Unpublish failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Utilities
+  // ═══════════════════════════════════════════════════════════════════
+
+  private escapeXml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  }
+
+  private slugify(s: string): string {
+    const ascii = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return ascii.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+  }
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// NextCloudAdminService — provisioning via OCS (admin credentials).
+// ═════════════════════════════════════════════════════════════════════
+
+interface NextCloudAdminConfig {
+  url: string;
+  adminUsername: string;
+  adminPassword: string; // admin app-password or password
+}
+
+export interface ProvisionedUser {
+  userId: string;
+  displayName?: string;
+  email?: string;
+  initialPassword?: string; // only returned on creation
+}
+
+export class NextCloudAdminService {
+  private config: NextCloudAdminConfig;
+
+  constructor(config: NextCloudAdminConfig) {
+    this.config = { ...config, url: trimUrl(config.url) };
+  }
+
+  private authHeader(): string {
+    return 'Basic ' + Buffer.from(`${this.config.adminUsername}:${this.config.adminPassword}`).toString('base64');
+  }
+
+  private ocsUrl(path: string): string {
+    return `${this.config.url}/ocs/v2.php${path.startsWith('/') ? '' : '/'}${path}`;
+  }
+
+  private async ocsCall(path: string, init: RequestInit = {}): Promise<any> {
+    const res = await fetch(this.ocsUrl(path), {
+      ...init,
+      headers: {
+        Authorization: this.authHeader(),
+        'OCS-APIRequest': 'true',
+        Accept: 'application/json',
+        ...(init.headers || {}),
+      } as any,
+    });
+    const text = await res.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON */ }
+    const ocsStatus = data?.ocs?.meta?.statuscode;
+    if (!res.ok || (ocsStatus && ocsStatus >= 300)) {
+      const msg = data?.ocs?.meta?.message || text.slice(0, 200) || `HTTP ${res.status}`;
+      throw new Error(`OCS ${path} failed: ${msg}`);
+    }
+    return data?.ocs?.data ?? data;
+  }
+
+  /** Test the admin connection. Returns server version info. */
+  async testConnection(): Promise<{ version: string }> {
+    const data = await this.ocsCall('/cloud/capabilities?format=json');
+    return { version: data?.version?.string || 'unknown' };
+  }
+
+  /**
+   * Create a NextCloud user via OCS Provisioning API.
+   * If `password` is omitted, a random one is generated.
+   */
+  async createUser(params: {
+    userId: string;
+    password?: string;
+    displayName?: string;
+    email?: string;
+    groups?: string[];
+    quota?: string;
+  }): Promise<ProvisionedUser> {
+    const password = params.password || this.generatePassword();
+    const body = new URLSearchParams();
+    body.set('userid', params.userId);
+    body.set('password', password);
+    if (params.displayName) body.set('displayName', params.displayName);
+    if (params.email) body.set('email', params.email);
+    if (params.quota) body.set('quota', params.quota);
+    for (const g of params.groups || []) body.append('groups[]', g);
+
+    await this.ocsCall('/cloud/users?format=json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+
+    return {
+      userId: params.userId,
+      displayName: params.displayName,
+      email: params.email,
+      initialPassword: password,
+    };
+  }
+
+  async getUser(userId: string): Promise<any | null> {
+    try {
+      return await this.ocsCall(`/cloud/users/${encodeURIComponent(userId)}?format=json`);
+    } catch (e: any) {
+      if (/998|not found/i.test(e.message)) return null;
+      throw e;
+    }
+  }
+
+  async userExists(userId: string): Promise<boolean> {
+    const u = await this.getUser(userId);
+    return !!u;
+  }
+
+  async updateUser(userId: string, fields: { displayname?: string; email?: string; password?: string; quota?: string }): Promise<void> {
+    const calls: Array<{ key: string; value: string }> = [];
+    if (fields.displayname) calls.push({ key: 'displayname', value: fields.displayname });
+    if (fields.email) calls.push({ key: 'email', value: fields.email });
+    if (fields.password) calls.push({ key: 'password', value: fields.password });
+    if (fields.quota) calls.push({ key: 'quota', value: fields.quota });
+    for (const { key, value } of calls) {
+      const body = new URLSearchParams({ key, value });
+      await this.ocsCall(`/cloud/users/${encodeURIComponent(userId)}?format=json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+    }
+  }
+
+  async disableUser(userId: string): Promise<void> {
+    await this.ocsCall(`/cloud/users/${encodeURIComponent(userId)}/disable?format=json`, { method: 'PUT' });
+  }
+
+  async enableUser(userId: string): Promise<void> {
+    await this.ocsCall(`/cloud/users/${encodeURIComponent(userId)}/enable?format=json`, { method: 'PUT' });
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    try {
+      await this.ocsCall(`/cloud/users/${encodeURIComponent(userId)}?format=json`, { method: 'DELETE' });
+    } catch (e: any) {
+      if (/998|not found/i.test(e.message)) return;
+      throw e;
+    }
+  }
+
+  /** Generate a cryptographically secure password. */
+  private generatePassword(): string {
+    // 24 bytes base64url → ~32 characters, strong entropy
+    return crypto.randomBytes(24).toString('base64url');
+  }
+}
+

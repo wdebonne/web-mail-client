@@ -1093,7 +1093,7 @@ Importe un calendrier distant via une URL CalDAV pour le compte d'un utilisateur
 
 ### POST /api/admin/nextcloud/test
 
-Teste la connexion NextCloud.
+Teste la connexion NextCloud avec des identifiants **explicites** (avant sauvegarde).
 
 **Body :**
 ```json
@@ -1103,6 +1103,143 @@ Teste la connexion NextCloud.
   "password": "password"
 }
 ```
+
+### GET /api/admin/nextcloud/status
+
+Récupère la configuration actuelle **sans le mot de passe**.
+
+**Réponse 200 :**
+```json
+{
+  "enabled": true,
+  "url": "https://cloud.example.com",
+  "adminUsername": "ncadmin",
+  "hasPassword": true,
+  "autoProvision": true,
+  "autoCreateCalendars": true,
+  "syncIntervalMinutes": 15
+}
+```
+
+### PUT /api/admin/nextcloud/config
+
+Met à jour la configuration NextCloud. Le champ `adminPassword` est **chiffré** avant stockage.
+Si `adminPassword` est omis, l'ancien mot de passe est conservé.
+
+**Body :**
+```json
+{
+  "enabled": true,
+  "url": "https://cloud.example.com",
+  "adminUsername": "ncadmin",
+  "adminPassword": "app-password-here",
+  "autoProvision": true,
+  "autoCreateCalendars": true,
+  "syncIntervalMinutes": 15
+}
+```
+
+### POST /api/admin/nextcloud/test (sans body)
+
+Teste la connexion avec la configuration **sauvegardée**.
+
+### GET /api/admin/nextcloud/users
+
+Liste tous les utilisateurs WebMail avec leur mapping NextCloud.
+
+**Réponse 200 :**
+```json
+{
+  "users": [
+    {
+      "id": "uuid",
+      "email": "user@example.com",
+      "nc_username": "user",
+      "nc_active": true,
+      "last_sync_at": "2025-01-15T12:00:00Z",
+      "last_sync_error": null
+    }
+  ]
+}
+```
+
+### POST /api/admin/nextcloud/users/:userId/provision
+
+Crée un compte NextCloud pour l'utilisateur spécifié (mot de passe aléatoire).
+
+### POST /api/admin/nextcloud/users/:userId/link
+
+Lie un compte NextCloud existant. Le mot de passe est chiffré.
+
+**Body :**
+```json
+{
+  "ncUsername": "existing-nc-user",
+  "ncPassword": "app-password-or-plain"
+}
+```
+
+### DELETE /api/admin/nextcloud/users/:userId
+
+Délie le compte NextCloud (le compte NC n'est pas supprimé côté NextCloud).
+
+### POST /api/admin/nextcloud/users/:userId/sync
+
+Déclenche une synchronisation immédiate (calendriers + contacts) pour l'utilisateur.
+
+---
+
+## Partage de calendrier (NextCloud)
+
+> 🔒 Authentification requise. Requiert un calendrier `nc_managed`.
+
+### POST /api/calendar/:id/share
+
+Partage un calendrier avec un utilisateur **interne** ou **externe**.
+
+**Body (partage interne) :**
+```json
+{ "userId": "uuid", "permission": "read" }
+```
+
+**Body (invitation email) :**
+```json
+{ "email": "guest@example.com", "permission": "write" }
+```
+
+`permission` : `"read"` ou `"write"`.
+
+### DELETE /api/calendar/:id/share
+
+Révoque un partage. Body : `{ "userId": "uuid" }` ou `{ "email": "..." }`.
+
+### GET /api/calendar/:id/shares
+
+Liste tous les partages du calendrier.
+
+**Réponse 200 :**
+```json
+{
+  "internal": [ { "user_id": "uuid", "permission": "read", "nextcloud_share_id": "..." } ],
+  "external": [
+    { "email": "guest@example.com", "permission": "write", "share_type": "email_invite" },
+    { "public_token": "abc", "public_url": "https://cloud/p/abc", "share_type": "public_link" }
+  ]
+}
+```
+
+### POST /api/calendar/:id/publish
+
+Publie le calendrier en lecture seule (lien public).
+
+**Réponse 200 :**
+```json
+{ "public_url": "https://cloud.example.com/public.php/calendar/<token>", "public_token": "abc..." }
+```
+
+### DELETE /api/calendar/:id/publish
+
+Supprime le lien public.
 
 ---
 
