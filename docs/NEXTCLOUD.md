@@ -79,6 +79,15 @@ Deux modes sont disponibles :
    - Le calendrier est enregistré en DB avec `nc_managed = true` et `caldav_url` pointant sur NC
 2. Sinon : calendrier purement local
 
+> La modale « Nouveau calendrier » côté client ne demande **plus** de choisir entre *Local* et *Boîte mail*.
+> Elle affiche simplement la destination détectée automatiquement (Nextcloud si l'utilisateur est lié
+> et que l'option est active, Local sinon). Le front n'envoie plus de `mailAccountId` pour éviter de
+> tenter un MKCALENDAR sur des serveurs CalDAV qui ne le supportent pas (ex : cPanel/o2switch,
+> limité à un seul calendrier par compte).
+>
+> Le statut NC par utilisateur est exposé via `GET /calendar/nextcloud-status` →
+> `{ enabled, linked, ncUsername, ncEmail, autoCreateCalendars }`.
+
 ### Événements et iMIP
 
 Tous les événements créés/modifiés sur un calendrier `nc_managed` sont pushés via PUT vers NextCloud.
@@ -151,5 +160,6 @@ Tables ajoutées :
 | Sync en erreur « 401 » | App Password révoqué ou changé → re-saisir le mot de passe de l'utilisateur |
 | Aucune invitation iMIP reçue | Vérifier que l'app NextCloud « DAV » est active et que le SMTP NC est configuré |
 | Lien public vide | L'app « calendar » NextCloud doit être activée pour que `<CS:publish-calendar>` fonctionne |
+| « there is no unique or exclusion constraint matching the ON CONFLICT specification » (code `42P10`) sur `NextCloudService.syncCalendars` / `syncContacts` | Les index uniques partiels `idx_contacts_nc_email_unique`, `idx_contacts_nc_external_unique` et `idx_calendars_nc_external_unique` sont manquants ou ont un prédicat plus strict que la clause `WHERE source='nextcloud'` des requêtes. Redémarrer le serveur : la migration force un `DROP INDEX IF EXISTS` puis recrée les index avec le bon prédicat. Si la recréation échoue, c'est qu'il existe des doublons en base — les supprimer puis relancer. |
 
 Logs utiles côté serveur : `grep -i "NC" logs/*.log` (tags : `NextCloud`, `nextcloud`, `NC sync`).

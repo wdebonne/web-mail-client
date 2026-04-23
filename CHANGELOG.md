@@ -9,6 +9,23 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Modale « Nouveau calendrier » — choix automatique Local / Nextcloud
+
+- **Choix Local / Boîte mail supprimé** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : la modale ne demande plus où créer le calendrier. Un bandeau *Emplacement* affiche la destination réelle :
+  - **Nextcloud** si l'utilisateur connecté est lié à un compte NC (`nextcloud_users`) **et** que `autoCreateCalendars` est actif côté admin → création MKCALENDAR automatique sur NC, synchronisation gérée par le poller.
+  - **Local** sinon — plus aucune tentative de MKCALENDAR sur le CalDAV de la boîte mail (utile pour les serveurs comme cPanel/o2switch qui n'acceptent qu'un seul calendrier).
+- **Nouveau endpoint `GET /calendar/nextcloud-status`** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts)) : renvoie `{ enabled, linked, ncUsername, ncEmail, autoCreateCalendars }` pour l'utilisateur courant. Consommé par le front via `api.getUserNextcloudStatus()`.
+
+### Corrigé
+
+#### Synchronisation NextCloud — « there is no unique or exclusion constraint matching the ON CONFLICT specification »
+
+- **Index partiels manquants** ([server/src/database/connection.ts](server/src/database/connection.ts)) : les requêtes `ON CONFLICT (user_id, email) WHERE source='nextcloud'` (contacts) et `ON CONFLICT (user_id, external_id) WHERE source='nextcloud'` (calendriers et contacts) nécessitent des index uniques partiels dont le prédicat correspond **exactement** au `WHERE` de la clause `ON CONFLICT`. Trois index ajoutés :
+  - `idx_contacts_nc_email_unique` sur `contacts(user_id, email) WHERE source='nextcloud'`
+  - `idx_contacts_nc_external_unique` sur `contacts(user_id, external_id) WHERE source='nextcloud'`
+  - `idx_calendars_nc_external_unique` sur `calendars(user_id, external_id) WHERE source='nextcloud'`
+- **Migration idempotente forcée** : les index sont `DROP INDEX IF EXISTS` puis recréés à chaque démarrage, afin d'écraser une version antérieure qui aurait un prédicat plus strict (ex : `AND external_id IS NOT NULL`) — ce prédicat stricte n'était pas inférable par PostgreSQL pour l'inférence de `ON CONFLICT` et produisait l'erreur `42P10` observée dans les logs du poller NC.
+
 #### Intégration NextCloud V2 — provisioning, partage, iMIP, sync bidirectionnelle
 
 Refonte complète de l'intégration NextCloud avec provisioning automatique des utilisateurs,
