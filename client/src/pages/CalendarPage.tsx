@@ -19,6 +19,7 @@ import CalendarSidebar from '../components/calendar/CalendarSidebar';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { SyncCalendarsDialog } from '../components/calendar/SyncCalendarsDialog';
 import { AddCalendarUrlDialog } from '../components/calendar/AddCalendarUrlDialog';
+import MigrateCalendarDialog from '../components/calendar/MigrateCalendarDialog';
 import EventModal from '../components/calendar/EventModal';
 import ShareCalendarDialog from '../components/calendar/ShareCalendarDialog';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
@@ -62,6 +63,29 @@ export default function CalendarPage() {
   const [newCalendarOpen, setNewCalendarOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [addCalendarUrlOpen, setAddCalendarUrlOpen] = useState(false);
+  const [migrateTarget, setMigrateTarget] = useState<{ cal: Calendar; target: 'nextcloud' | 'local' } | null>(null);
+
+  const { data: ncStatusPage } = useQuery({
+    queryKey: ['user-nextcloud-status'],
+    queryFn: () => api.getUserNextcloudStatus(),
+  });
+  const nextcloudLinked = !!(ncStatusPage?.enabled && ncStatusPage?.linked);
+
+  const migrateMutation = useMutation({
+    mutationFn: async ({ id, target, deleteRemote }: { id: string; target: 'nextcloud' | 'local'; deleteRemote: boolean }) =>
+      api.migrateCalendar(id, target, deleteRemote),
+    onSuccess: (data: any) => {
+      if (data?.target === 'nextcloud') {
+        toast.success(`Calendrier migré vers NextCloud (${data.pushed ?? 0}/${data.total ?? 0} événements)`);
+      } else {
+        toast.success('Calendrier migré en local');
+      }
+      queryClient.invalidateQueries({ queryKey: ['calendars'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      setMigrateTarget(null);
+    },
+    onError: (err: any) => toast.error(err.message || 'Échec de la migration'),
+  });
 
   const syncAllMutation = useMutation({
     mutationFn: () => api.syncAllCalendars(),
@@ -327,6 +351,8 @@ export default function CalendarPage() {
             onChangeColor={handleChangeColor}
             onDeleteCalendar={handleDeleteCalendar}
             onShareCalendar={handleShareCalendar}
+            onMigrateCalendar={(cal, target) => setMigrateTarget({ cal, target })}
+            nextcloudLinked={nextcloudLinked}
             refreshKey={prefsVersion}
             onChangeRefreshKey={bumpPrefs}
           />
@@ -478,6 +504,17 @@ export default function CalendarPage() {
 
       <SyncCalendarsDialog open={syncDialogOpen} onClose={() => setSyncDialogOpen(false)} />
       <AddCalendarUrlDialog open={addCalendarUrlOpen} onClose={() => setAddCalendarUrlOpen(false)} />
+
+      {migrateTarget && (
+        <MigrateCalendarDialog
+          calendar={migrateTarget.cal}
+          target={migrateTarget.target}
+          onClose={() => setMigrateTarget(null)}
+          onConfirm={async (deleteRemote) => {
+            await migrateMutation.mutateAsync({ id: migrateTarget.cal.id, target: migrateTarget.target, deleteRemote });
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={!!confirmDelete}

@@ -125,6 +125,8 @@ export interface Calendar {
   is_default: boolean;
   is_shared: boolean;
   source: string;
+  nc_managed?: boolean;
+  caldav_url?: string | null;
 }
 
 export interface CalendarEvent {

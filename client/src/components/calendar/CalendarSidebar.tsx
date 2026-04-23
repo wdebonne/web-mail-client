@@ -11,7 +11,7 @@ import { fr } from 'date-fns/locale';
 import {
   ChevronRight, ChevronDown, ChevronUp, Plus, CalendarPlus, FolderPlus,
   Pencil, Palette, Trash2, Share2, Copy, Eye, EyeOff, FolderOpen,
-  GripVertical, MoreHorizontal, CloudDownload,
+  GripVertical, MoreHorizontal, CloudDownload, Cloud, HardDrive,
 } from 'lucide-react';
 import type { Calendar } from '../../types';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
@@ -63,6 +63,10 @@ interface CalendarSidebarProps {
   onChangeColor: (id: string, color: string) => void;
   onDeleteCalendar: (id: string) => void;
   onShareCalendar: (id: string) => void;
+  /** Ask to migrate a calendar to NC or local (parent opens confirmation modal). */
+  onMigrateCalendar?: (cal: Calendar, target: 'nextcloud' | 'local') => void;
+  /** Whether the current user is linked to a NextCloud account. */
+  nextcloudLinked?: boolean;
   /** Bump when local overrides or groups change so the UI refreshes. */
   refreshKey?: number;
   onChangeRefreshKey?: () => void;
@@ -72,6 +76,7 @@ export default function CalendarSidebar({
   calendars, currentDate, onChangeCurrentDate, selectedRange,
   onNewCalendar, onSubscribeCalendar, onToggleCalendarVisibility, onRenameCalendar,
   onChangeColor, onDeleteCalendar, onShareCalendar,
+  onMigrateCalendar, nextcloudLinked = false,
   refreshKey = 0, onChangeRefreshKey,
 }: CalendarSidebarProps) {
   const [miniDate, setMiniDate] = useState(() => startOfMonth(currentDate));
@@ -234,7 +239,12 @@ export default function CalendarSidebar({
   // ── Context menu items ────────────────────────────────────
   const calMenuItems = (c: Calendar): ContextMenuItem[] => {
     const locallyHidden = !c.is_visible;
-    return [
+    const isNc = c.source === 'nextcloud';
+    const isLocal = c.source === 'local' || !c.source;
+    const canMigrateToNc = !!onMigrateCalendar && nextcloudLinked && isLocal;
+    const canMigrateToLocal = !!onMigrateCalendar && isNc;
+
+    const items: ContextMenuItem[] = [
       { label: locallyHidden ? 'Afficher le calendrier' : 'Masquer le calendrier', icon: locallyHidden ? <Eye size={14} /> : <EyeOff size={14} />, onClick: () => onToggleCalendarVisibility(c.id, !c.is_visible) },
       { separator: true, label: '', onClick: () => {} },
       { label: 'Renommer', icon: <Pencil size={14} />, onClick: () => startRenameCalendar(c) },
@@ -260,11 +270,32 @@ export default function CalendarSidebar({
           // fire through parent by calling create via existing handler
           onNewCalendar();
       }, disabled: true },
-      { separator: true, label: '', onClick: () => {} },
-      { label: 'Partager', icon: <Share2 size={14} />, onClick: () => onShareCalendar(c.id) },
-      { separator: true, label: '', onClick: () => {} },
-      { label: 'Supprimer', icon: <Trash2 size={14} />, onClick: () => onDeleteCalendar(c.id), danger: true, disabled: c.is_default },
     ];
+
+    if (canMigrateToNc || canMigrateToLocal) {
+      items.push({ separator: true, label: '', onClick: () => {} });
+      if (canMigrateToNc) {
+        items.push({
+          label: 'Migrer vers NextCloud',
+          icon: <Cloud size={14} />,
+          onClick: () => onMigrateCalendar!(c, 'nextcloud'),
+        });
+      }
+      if (canMigrateToLocal) {
+        items.push({
+          label: 'Migrer en local',
+          icon: <HardDrive size={14} />,
+          onClick: () => onMigrateCalendar!(c, 'local'),
+        });
+      }
+    }
+
+    items.push({ separator: true, label: '', onClick: () => {} });
+    items.push({ label: 'Partager', icon: <Share2 size={14} />, onClick: () => onShareCalendar(c.id) });
+    items.push({ separator: true, label: '', onClick: () => {} });
+    items.push({ label: 'Supprimer', icon: <Trash2 size={14} />, onClick: () => onDeleteCalendar(c.id), danger: true, disabled: c.is_default });
+
+    return items;
   };
 
   const groupMenuItems = (g: CalendarGroup): ContextMenuItem[] => [

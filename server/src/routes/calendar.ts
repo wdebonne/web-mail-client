@@ -117,10 +117,10 @@ calendarRouter.post('/', async (req: AuthRequest, res) => {
       }
 
       const result = await pool.query(
-        `INSERT INTO calendars (user_id, name, color, caldav_url, nc_managed, nc_principal_url)
-         VALUES ($1, $2, $3, $4, $5, $4)
+        `INSERT INTO calendars (user_id, name, color, caldav_url, nc_managed, nc_principal_url, source, external_id)
+         VALUES ($1, $2, $3, $4, $5, $4, $6, $7)
          RETURNING *`,
-        [req.userId, name, resolvedColor, ncUrl, ncManaged]
+        [req.userId, name, resolvedColor, ncUrl, ncManaged, ncManaged ? 'nextcloud' : 'local', ncManaged ? ncUrl : null]
       );
       return res.status(201).json(result.rows[0]);
     }
@@ -241,6 +241,110 @@ calendarRouter.delete('/:id', async (req: AuthRequest, res) => {
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Migrate a calendar between local and NextCloud storage.
+// Body: { target: 'nextcloud' | 'local', deleteRemote?: boolean }
+// - local → nextcloud: create a NC calendar, upload all events, flip DB row to source='nextcloud'.
+// - nextcloud → local: detach from NC (optionally delete the NC collection), events remain in DB.
+calendarRouter.post('/:id/migrate', async (req: AuthRequest, res) => {
+  try {
+    const target = req.body?.target as 'nextcloud' | 'local';
+    const deleteRemote = !!req.body?.deleteRemote;
+    if (target !== 'nextcloud' && target !== 'local') {
+      return res.status(400).json({ error: 'target invalide (nextcloud|local)' });
+    }
+
+    const calRes = await pool.query(
+      `SELECT id, user_id, name, color, source, caldav_url, nc_managed, external_id, mail_account_id, is_default
+         FROM calendars WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.userId]
+    );
+    if (calRes.rows.length === 0) return res.status(404).json({ error: 'Calendrier non trouvé' });
+    const cal = calRes.rows[0];
+
+    if (target === 'nextcloud') {
+      if (cal.source === 'nextcloud') {
+        return res.status(400).json({ error: 'Le calendrier est déjà sur NextCloud' });
+      }
+      const { getUserClient } = await import('../services/nextcloudHelper');
+      const nc = await getUserClient(req.userId!);
+      if (!nc) return res.status(400).json({ error: 'NextCloud n\'est pas configuré pour votre compte' });
+
+      // Create remote calendar
+      const ncUrl = await nc.createCalendar(cal.name, cal.color || '#0078D4');
+
+      // Push all events
+      const events = await pool.query(
+        `SELECT * FROM calendar_events WHERE calendar_id = $1`,
+        [cal.id]
+      );
+      let pushed = 0;
+      let failed = 0;
+      for (const ev of events.rows) {
+        try {
+          const uid = ev.ical_uid || `${ev.id}@webmail.local`;
+          // Reuse existing ical_data if present & valid, otherwise rebuild
+          let ics = ev.ical_data as string | null;
+          if (!ics || !/BEGIN:VEVENT/i.test(ics)) {
+            ics = buildIcs(cal.name, [ev]);
+          } else if (!/BEGIN:VCALENDAR/i.test(ics)) {
+            ics = buildIcs(cal.name, [ev]);
+          }
+          await nc.putEvent(ncUrl, uid, ics);
+          // Ensure UID is persisted so future syncs match
+          if (!ev.ical_uid) {
+            await pool.query(
+              `UPDATE calendar_events SET ical_uid = $1, external_id = $1 WHERE id = $2`,
+              [uid, ev.id]
+            );
+          }
+          pushed++;
+        } catch (e: any) {
+          failed++;
+          logger.warn({ err: e?.message, eventId: ev.id }, 'Migration: event push failed');
+        }
+      }
+
+      await pool.query(
+        `UPDATE calendars
+            SET source = 'nextcloud', caldav_url = $1, nc_managed = true, nc_principal_url = $1,
+                external_id = $1, mail_account_id = NULL, updated_at = NOW()
+          WHERE id = $2`,
+        [ncUrl, cal.id]
+      );
+
+      return res.json({ ok: true, target: 'nextcloud', pushed, failed, total: events.rows.length });
+    }
+
+    // target === 'local'
+    if (cal.source !== 'nextcloud') {
+      return res.status(400).json({ error: 'Le calendrier n\'est pas sur NextCloud' });
+    }
+
+    if (deleteRemote && cal.caldav_url) {
+      try {
+        const { getUserClient } = await import('../services/nextcloudHelper');
+        const nc = await getUserClient(req.userId!);
+        if (nc) await nc.deleteCalendar(cal.caldav_url);
+      } catch (e: any) {
+        logger.warn({ err: e?.message }, 'Migration: NC calendar deletion failed');
+      }
+    }
+
+    await pool.query(
+      `UPDATE calendars
+          SET source = 'local', nc_managed = false, nc_principal_url = NULL, caldav_url = NULL,
+              external_id = NULL, mail_account_id = NULL, updated_at = NOW()
+        WHERE id = $1`,
+      [cal.id]
+    );
+
+    return res.json({ ok: true, target: 'local' });
+  } catch (error: any) {
+    logger.error(error, 'Calendar migration failed');
+    res.status(500).json({ error: error?.message || 'Échec de la migration' });
   }
 });
 

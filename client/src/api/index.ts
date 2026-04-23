@@ -287,6 +287,12 @@ export const api = {
   syncAllCalendars: () =>
     request<{ ok: boolean; synced: number; results: any[] }>(`/calendar/sync`, { method: 'POST' }),
 
+  migrateCalendar: (id: string, target: 'nextcloud' | 'local', deleteRemote = false) =>
+    request<{ ok: boolean; target: string; pushed?: number; failed?: number; total?: number }>(
+      `/calendar/${id}/migrate`,
+      { method: 'POST', body: JSON.stringify({ target, deleteRemote }) }
+    ),
+
   // Settings
   getSettings: () => request<any>('/settings'),
   updateSettings: (data: any) =>
