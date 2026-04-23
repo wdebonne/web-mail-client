@@ -10,6 +10,15 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
+// Force every session to UTC so that TIMESTAMPTZ round-trips are stable
+// regardless of the server's system timezone. Also apply to existing
+// (idle) clients, and to every newly-checked-out connection.
+pool.on('connect', (client) => {
+  client.query("SET TIME ZONE 'UTC'").catch((err) => {
+    logger.error(err, 'Failed to set session TIME ZONE to UTC');
+  });
+});
+
 export const db = drizzle(pool, { schema });
 
 export async function initDatabase() {
@@ -252,6 +261,23 @@ export async function initDatabase() {
       );
       CREATE INDEX IF NOT EXISTS idx_events_calendar ON calendar_events(calendar_id);
       CREATE INDEX IF NOT EXISTS idx_events_dates ON calendar_events(start_date, end_date);
+
+      -- Migrate naive TIMESTAMP columns to TIMESTAMPTZ so that JS ISO strings
+      -- round-trip unchanged regardless of the OS timezone of the DB or API
+      -- container. Existing naive values are assumed to be UTC (the session
+      -- TZ is forced to UTC on every connection in this file).
+      DO $mig$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'calendar_events' AND column_name = 'start_date' AND data_type = 'timestamp without time zone'
+        ) THEN
+          ALTER TABLE calendar_events
+            ALTER COLUMN start_date TYPE TIMESTAMPTZ USING start_date AT TIME ZONE 'UTC',
+            ALTER COLUMN end_date   TYPE TIMESTAMPTZ USING end_date   AT TIME ZONE 'UTC';
+        END IF;
+      END
+      $mig$;
 
       -- CalDAV sync settings on mail accounts (added later)
       ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_url TEXT;

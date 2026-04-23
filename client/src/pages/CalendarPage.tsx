@@ -173,8 +173,9 @@ export default function CalendarPage() {
       toast.error('Échec de la mise à jour');
     },
     onSuccess: (updated: any) => {
-      // Patch the cache directly with the server response instead of refetching,
-      // to avoid the PWA service worker returning a stale cached GET.
+      // Patch the cache with the server response. Dates round-trip correctly
+      // now that DB columns are TIMESTAMPTZ and both Node process and PG
+      // session are forced to UTC (see server/src/database/connection.ts).
       if (updated && updated.id) {
         queryClient.setQueriesData<CalendarEvent[]>({ queryKey: ['events'] }, (old) => {
           if (!old) return old;

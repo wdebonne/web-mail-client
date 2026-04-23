@@ -30,6 +30,13 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+#### Fuseau horaire — décalage de 3 h des événements après `PUT`
+
+- **Colonnes migrées en TIMESTAMPTZ** ([server/src/database/connection.ts](server/src/database/connection.ts)) : `calendar_events.start_date` et `end_date` passent de `TIMESTAMP` (sans fuseau) à `TIMESTAMPTZ` via un `DO $mig$ ... ALTER COLUMN ... TYPE TIMESTAMPTZ USING col AT TIME ZONE 'UTC'` idempotent. Les ISO strings envoyées par le client sont désormais stockées et relues **sans réinterprétation** par la timezone du serveur.
+- **Session PostgreSQL forcée à UTC** : le pool `pg` installe un handler `connect` qui exécute `SET TIME ZONE 'UTC'` sur chaque connexion (nouvelle ou réutilisée).
+- **Process Node forcé à UTC** ([server/src/index.ts](server/src/index.ts)) : `process.env.TZ = 'UTC'` positionné **avant** tout autre import, pour que `new Date().toISOString()` et les calculs internes ne dépendent plus du fuseau du conteneur/host.
+- **Client** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : `updateEventMutation.onSuccess` patche à nouveau le cache avec la réponse serveur (stable maintenant).
+
 #### Service Worker — réponses périmées après mutation d'événement
 
 - **Exclusion du cache pour `/api/calendar/events*`** ([client/src/sw.ts](client/src/sw.ts)) : la route reste en `NetworkFirst` mais avec un plugin `cacheWillUpdate: () => null` qui empêche le stockage. Sinon, après un `PUT` d'événement, un refetch déclenché par TanStack Query pouvait renvoyer l'ancienne réponse depuis le cache Workbox et écraser la mise à jour optimiste.

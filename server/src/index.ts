@@ -1,4 +1,8 @@
 import 'dotenv/config';
+// Force the Node process timezone to UTC so Date() stringification and any
+// date math are stable regardless of the host / container system timezone.
+// This must run before any module that instantiates Date objects at import time.
+process.env.TZ = process.env.TZ || 'UTC';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
