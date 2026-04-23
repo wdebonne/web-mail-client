@@ -12,8 +12,10 @@ import {
   subMonths, parseISO, addDays, subDays, differenceInMinutes,
   getWeek, setHours, setMinutes, startOfDay,
 } from 'date-fns';
+import { formatInTimeZone, toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { fr } from 'date-fns/locale';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '../stores/authStore';
 import CalendarRibbon, { CalendarViewMode, CalendarFilters } from '../components/calendar/CalendarRibbon';
 import CalendarSidebar from '../components/calendar/CalendarSidebar';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
@@ -38,6 +40,7 @@ const DEFAULT_FILTERS: CalendarFilters = {
 
 export default function CalendarPage() {
   const queryClient = useQueryClient();
+  const userTz = useAuthStore((s) => s.user?.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<CalendarViewMode>(() => getCalendarView());
   const [dayCount, setDayCount] = useState(1);
@@ -296,12 +299,16 @@ export default function CalendarPage() {
     const oldStart = parseISO(ev.start_date);
     const oldEnd = parseISO(ev.end_date);
     const duration = Math.max(0, oldEnd.getTime() - oldStart.getTime());
-    const newEnd = new Date(newStart.getTime() + duration);
+    // `newStart` carries naive wall-clock components (h/m of the dropped slot).
+    // Interpret those components in the user's preferred timezone so a drop
+    // on "11:00" is stored as 11:00 in userTz regardless of the browser TZ.
+    const absoluteStart = fromZonedTime(newStart, userTz);
+    const absoluteEnd = new Date(absoluteStart.getTime() + duration);
     updateEventMutation.mutate({
       id: ev.id,
       data: {
-        startDate: newStart.toISOString(),
-        endDate: newEnd.toISOString(),
+        startDate: absoluteStart.toISOString(),
+        endDate: absoluteEnd.toISOString(),
       },
     });
   };
@@ -450,6 +457,7 @@ export default function CalendarPage() {
                 onEventContextMenu={handleEventContextMenu}
                 eventColor={eventColor}
                 onEventMove={handleEventMove}
+                userTz={userTz}
               />
             )}
             {view === 'day' && (
@@ -463,6 +471,7 @@ export default function CalendarPage() {
                 onEventContextMenu={handleEventContextMenu}
                 eventColor={eventColor}
                 onEventMove={handleEventMove}
+                userTz={userTz}
               />
             )}
           </div>
@@ -650,7 +659,7 @@ function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, onE
   );
 }
 
-function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove }: {
+function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz }: {
   currentDate: Date;
   workWeek: boolean;
   timeScale: number;
@@ -660,16 +669,17 @@ function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEve
   onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
   onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
+  userTz: string;
 }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekDays = workWeek ? [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4, 5, 6];
   const days = weekDays.map(i => addDays(weekStart, i));
   return (
-    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} />
+    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} userTz={userTz} />
   );
 }
 
-function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove }: {
+function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz }: {
   currentDate: Date;
   dayCount: number;
   timeScale: number;
@@ -679,14 +689,15 @@ function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEven
   onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
   onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
+  userTz: string;
 }) {
   const days = Array.from({ length: dayCount }, (_, i) => addDays(startOfDay(currentDate), i));
   return (
-    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} />
+    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} userTz={userTz} />
   );
 }
 
-function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove }: {
+function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz }: {
   days: Date[];
   timeScale: number;
   events: CalendarEvent[];
@@ -695,6 +706,7 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
   onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
   onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
+  userTz: string;
 }) {
   const HOUR_HEIGHT = 48;
   const slotsPerHour = Math.max(1, Math.round(60 / timeScale));
@@ -707,15 +719,20 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
   const lastHoverRef = useRef<{ day: Date; slotIdx: number } | null>(null);
 
   const getEventsForDay = (day: Date) => events.filter((ev) => {
-    const s = parseISO(ev.start_date);
+    // Interpret event start in the user's preferred TZ before comparing to
+    // the (browser-local) day grid so events land on the correct column
+    // even when the browser TZ differs from the user preference.
+    const s = toZonedTime(parseISO(ev.start_date), userTz);
     return isSameDay(s, day);
   });
 
   const renderEvent = (ev: CalendarEvent) => {
     const s = parseISO(ev.start_date);
     const e = parseISO(ev.end_date);
-    const startMinutes = s.getHours() * 60 + s.getMinutes();
-    const duration = Math.max(15, differenceInMinutes(e, s));
+    const sz = toZonedTime(s, userTz);
+    const ez = toZonedTime(e, userTz);
+    const startMinutes = sz.getHours() * 60 + sz.getMinutes();
+    const duration = Math.max(15, differenceInMinutes(ez, sz));
     const top = (startMinutes / 60) * HOUR_HEIGHT;
     const height = (duration / 60) * HOUR_HEIGHT;
     return (
@@ -739,7 +756,7 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
       >
         <div className="font-medium truncate">{ev.title}</div>
         <div className="text-[10px] opacity-80 truncate">
-          {format(s, 'HH:mm')}–{format(e, 'HH:mm')}{ev.location ? ` · ${ev.location}` : ''}
+          {formatInTimeZone(s, userTz, 'HH:mm')}–{formatInTimeZone(e, userTz, 'HH:mm')}{ev.location ? ` · ${ev.location}` : ''}
         </div>
       </button>
     );

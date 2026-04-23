@@ -34,8 +34,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 - **Colonnes migrées en TIMESTAMPTZ** ([server/src/database/connection.ts](server/src/database/connection.ts)) : `calendar_events.start_date` et `end_date` passent de `TIMESTAMP` (sans fuseau) à `TIMESTAMPTZ` via un `DO $mig$ ... ALTER COLUMN ... TYPE TIMESTAMPTZ USING col AT TIME ZONE 'UTC'` idempotent. Les ISO strings envoyées par le client sont désormais stockées et relues **sans réinterprétation** par la timezone du serveur.
 - **Session PostgreSQL forcée à UTC** : le pool `pg` installe un handler `connect` qui exécute `SET TIME ZONE 'UTC'` sur chaque connexion (nouvelle ou réutilisée).
-- **Process Node forcé à UTC** ([server/src/index.ts](server/src/index.ts)) : `process.env.TZ = 'UTC'` positionné **avant** tout autre import, pour que `new Date().toISOString()` et les calculs internes ne dépendent plus du fuseau du conteneur/host.
-- **Client** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : `updateEventMutation.onSuccess` patche à nouveau le cache avec la réponse serveur (stable maintenant).
+- **Préférence `user.timezone` utilisée côté client** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : l'agenda utilise `date-fns-tz` (`formatInTimeZone`, `toZonedTime`, `fromZonedTime`) et récupère la timezone de l'utilisateur connecté depuis `useAuthStore` (fallback : timezone du navigateur puis `Europe/Paris`). Concerne :
+  - Positionnement vertical des événements (calcul `startMinutes` en TZ utilisateur)
+  - Libellés d'heures `HH:mm` affichés sur chaque événement
+  - Regroupement par jour (`getEventsForDay` interprète `start_date` en TZ utilisateur)
+  - Drag & drop : un drop sur le créneau « 11:00 » crée une ISO correspondant à 11:00 **dans la TZ de l'utilisateur**, peu importe la TZ du navigateur (utilisation de `fromZonedTime`).
+- **Client** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : `updateEventMutation.onSuccess` patche à nouveau le cache avec la réponse serveur (stable maintenant grâce aux points ci-dessus).
 
 #### Service Worker — réponses périmées après mutation d'événement
 
