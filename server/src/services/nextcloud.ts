@@ -208,16 +208,25 @@ export class NextCloudService {
   async syncCalendars(userId: string) {
     try {
       const calendars = await this.getCalendars();
-      
+      const principal = `${this.config.url}/remote.php/dav/principals/users/${this.config.username}/`;
+
       for (const cal of calendars) {
-        // Upsert calendar
+        // Upsert calendar — mark it as NC-managed so pushEventToCalDAV()
+        // routes updates through this.putEvent() (with iMIP invitations).
         const calResult = await pool.query(
-          `INSERT INTO calendars (user_id, name, color, source, caldav_url, external_id)
-           VALUES ($1, $2, $3, 'nextcloud', $4, $5)
+          `INSERT INTO calendars (user_id, name, color, source, caldav_url, external_id,
+                                  nc_managed, nc_principal_url, last_sync_at)
+           VALUES ($1, $2, $3, 'nextcloud', $4, $5, TRUE, $6, NOW())
            ON CONFLICT (user_id, external_id) WHERE source = 'nextcloud' DO UPDATE SET
-             name = $2, color = $3, caldav_url = $4, updated_at = NOW()
+             name = EXCLUDED.name,
+             color = EXCLUDED.color,
+             caldav_url = EXCLUDED.caldav_url,
+             nc_managed = TRUE,
+             nc_principal_url = EXCLUDED.nc_principal_url,
+             last_sync_at = NOW(),
+             updated_at = NOW()
            RETURNING id`,
-          [userId, cal.name, cal.color || '#0078D4', cal.href, cal.href]
+          [userId, cal.name, cal.color || '#0078D4', cal.href, cal.href, principal]
         );
 
         const calendarId = calResult.rows[0].id;
@@ -232,13 +241,25 @@ export class NextCloudService {
         
         for (const event of events) {
           await pool.query(
-            `INSERT INTO calendar_events (calendar_id, title, description, location, start_date, end_date, all_day, attendees, ical_uid, ical_data, external_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            `INSERT INTO calendar_events
+               (calendar_id, title, description, location, start_date, end_date, all_day,
+                attendees, ical_uid, ical_data, external_id, nc_uri, nc_etag)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              ON CONFLICT (calendar_id, ical_uid) WHERE external_id IS NOT NULL DO UPDATE SET
-               title = $2, description = $3, location = $4, start_date = $5, end_date = $6,
-               all_day = $7, attendees = $8, ical_data = $10, updated_at = NOW()`,
+               title = EXCLUDED.title,
+               description = EXCLUDED.description,
+               location = EXCLUDED.location,
+               start_date = EXCLUDED.start_date,
+               end_date = EXCLUDED.end_date,
+               all_day = EXCLUDED.all_day,
+               attendees = EXCLUDED.attendees,
+               ical_data = EXCLUDED.ical_data,
+               nc_uri = COALESCE(EXCLUDED.nc_uri, calendar_events.nc_uri),
+               nc_etag = COALESCE(EXCLUDED.nc_etag, calendar_events.nc_etag),
+               updated_at = NOW()`,
             [calendarId, event.title, event.description, event.location, event.startDate, event.endDate,
-             event.allDay, JSON.stringify(event.attendees || []), event.uid, event.icalData, event.uid]
+             event.allDay, JSON.stringify(event.attendees || []), event.uid, event.icalData, event.uid,
+             event.href || null, event.etag || null]
           );
         }
       }
@@ -354,13 +375,24 @@ export class NextCloudService {
 
   private parseEvents(xml: string): any[] {
     const events: any[] = [];
-    const regex = /<cal:calendar-data>([\s\S]*?)<\/cal:calendar-data>/g;
-    let match;
-    while ((match = regex.exec(xml)) !== null) {
-      const icalData = match[1].trim();
-      const event = this.parseICalEvent(icalData);
-      if (event) {
-        events.push({ ...event, icalData });
+    // Walk each <d:response> block to capture href + etag together with the ICS body.
+    const responseRegex = /<d:response>([\s\S]*?)<\/d:response>/g;
+    let m: RegExpExecArray | null;
+    while ((m = responseRegex.exec(xml)) !== null) {
+      const block = m[1];
+      const hrefMatch = block.match(/<d:href>([\s\S]*?)<\/d:href>/);
+      const etagMatch = block.match(/<d:getetag>([\s\S]*?)<\/d:getetag>/);
+      const calMatch = block.match(/<cal:calendar-data[^>]*>([\s\S]*?)<\/cal:calendar-data>/);
+      if (!calMatch) continue;
+      const icalData = calMatch[1].trim();
+      const parsed = this.parseICalEvent(icalData);
+      if (parsed) {
+        events.push({
+          ...parsed,
+          icalData,
+          href: hrefMatch ? hrefMatch[1].trim() : undefined,
+          etag: etagMatch ? etagMatch[1].trim() : undefined,
+        });
       }
     }
     return events;

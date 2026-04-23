@@ -726,15 +726,85 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
     return isSameDay(s, day);
   });
 
-  const renderEvent = (ev: CalendarEvent) => {
+  /**
+   * Outlook-style overlap layout.
+   *
+   * Splits overlapping events into vertical "lanes" (columns). Inside a cluster
+   * of mutually overlapping events, each event gets its own lane and its width
+   * is `1 / columns` of the day column. An event that is free to expand to
+   * the right (no neighbour in later lanes at the same time) is allowed to
+   * span the remaining free lanes so it stays readable when alone.
+   */
+  type Laid = { ev: CalendarEvent; start: Date; end: Date; col: number; cols: number; span: number };
+  const layoutDay = (dayEvents: CalendarEvent[]): Laid[] => {
+    const items = dayEvents
+      .map((ev) => ({
+        ev,
+        start: toZonedTime(parseISO(ev.start_date), userTz),
+        end: toZonedTime(parseISO(ev.end_date), userTz),
+      }))
+      .sort((a, b) => a.start.getTime() - b.start.getTime() || b.end.getTime() - a.end.getTime());
+
+    // Group into clusters of overlap
+    const clusters: typeof items[] = [];
+    let cur: typeof items = [];
+    let curEnd = -Infinity;
+    for (const it of items) {
+      if (it.start.getTime() < curEnd) {
+        cur.push(it);
+        curEnd = Math.max(curEnd, it.end.getTime());
+      } else {
+        if (cur.length) clusters.push(cur);
+        cur = [it];
+        curEnd = it.end.getTime();
+      }
+    }
+    if (cur.length) clusters.push(cur);
+
+    const out: Laid[] = [];
+    for (const cluster of clusters) {
+      // Assign each event to the first lane where it fits
+      const lanes: number[] = []; // lane end-time
+      const assigned: { it: typeof cluster[number]; col: number }[] = [];
+      for (const it of cluster) {
+        let col = lanes.findIndex((endTime) => endTime <= it.start.getTime());
+        if (col === -1) { col = lanes.length; lanes.push(it.end.getTime()); }
+        else { lanes[col] = it.end.getTime(); }
+        assigned.push({ it, col });
+      }
+      const cols = lanes.length;
+      // Compute how far each event can expand to the right
+      for (const { it, col } of assigned) {
+        let span = 1;
+        for (let c = col + 1; c < cols; c++) {
+          const conflict = assigned.some(
+            (o) => o.col === c
+              && o.it.start.getTime() < it.end.getTime()
+              && o.it.end.getTime() > it.start.getTime()
+          );
+          if (conflict) break;
+          span++;
+        }
+        out.push({ ev: it.ev, start: it.start, end: it.end, col, cols, span });
+      }
+    }
+    return out;
+  };
+
+  const renderEvent = (laid: Laid) => {
+    const { ev, start: sz, end: ez, col, cols, span } = laid;
     const s = parseISO(ev.start_date);
     const e = parseISO(ev.end_date);
-    const sz = toZonedTime(s, userTz);
-    const ez = toZonedTime(e, userTz);
     const startMinutes = sz.getHours() * 60 + sz.getMinutes();
     const duration = Math.max(15, differenceInMinutes(ez, sz));
     const top = (startMinutes / 60) * HOUR_HEIGHT;
     const height = (duration / 60) * HOUR_HEIGHT;
+    // Leave a tiny 2px inset so adjacent events don't touch. When multiple
+    // lanes exist, slightly overlap by 4px for the Outlook cascaded look.
+    const GUTTER = 2;
+    const OVERLAP = cols > 1 ? 4 : 0;
+    const widthPct = (span / cols) * 100;
+    const leftPct = (col / cols) * 100;
     return (
       <button
         key={ev.id}
@@ -743,16 +813,24 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
           if (!onEventMove) return;
           dragEvt.dataTransfer.effectAllowed = 'move';
           dragEvt.dataTransfer.setData('text/event-id', ev.id);
-          // remember where inside the event the user grabbed (px)
           const rect = (dragEvt.currentTarget as HTMLElement).getBoundingClientRect();
           dragOffsetRef.current = dragEvt.clientY - rect.top;
         }}
         onDragEnd={() => { setDragHover(null); }}
         onClick={(clickEvt) => { clickEvt.stopPropagation(); onEventClick(ev); }}
         onContextMenu={(clickEvt) => onEventContextMenu(clickEvt, ev)}
-        className="absolute left-0.5 right-0.5 rounded px-1.5 py-0.5 text-[11px] text-left truncate hover:opacity-90 transition-opacity shadow-sm cursor-grab active:cursor-grabbing"
-        style={{ top, height, backgroundColor: `${eventColor(ev)}20`, color: eventColor(ev), borderLeft: `3px solid ${eventColor(ev)}` }}
-        title={ev.title}
+        className="absolute rounded px-1.5 py-0.5 text-[11px] text-left overflow-hidden hover:opacity-90 hover:z-20 transition-opacity shadow-sm cursor-grab active:cursor-grabbing"
+        style={{
+          top,
+          height,
+          left: `calc(${leftPct}% + ${GUTTER}px)`,
+          width: `calc(${widthPct}% - ${GUTTER * 2}px + ${OVERLAP}px)`,
+          zIndex: 10 + col,
+          backgroundColor: `${eventColor(ev)}20`,
+          color: eventColor(ev),
+          borderLeft: `3px solid ${eventColor(ev)}`,
+        }}
+        title={`${ev.title} — ${formatInTimeZone(s, userTz, 'HH:mm')}–${formatInTimeZone(e, userTz, 'HH:mm')}${ev.location ? ` · ${ev.location}` : ''}`}
       >
         <div className="font-medium truncate">{ev.title}</div>
         <div className="text-[10px] opacity-80 truncate">
@@ -858,9 +936,9 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
                 })}
                 <div className="absolute inset-0 pointer-events-none">
                   <div className="relative w-full h-full">
-                    {dayEvents.map(ev => (
-                      <div key={ev.id} className="pointer-events-auto">
-                        {renderEvent(ev)}
+                    {layoutDay(dayEvents).map(laid => (
+                      <div key={laid.ev.id} className="pointer-events-auto">
+                        {renderEvent(laid)}
                       </div>
                     ))}
                   </div>

@@ -9,6 +9,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Agenda — Disposition Outlook des événements qui se chevauchent
+
+- **Colonnes parallèles pour les chevauchements** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : les vues *Jour*, *Semaine* et *Semaine de travail* utilisent un algorithme de layout type Outlook. Les événements qui se chevauchent sont groupés en « clusters » (composantes connexes d'overlap), puis distribués dans des « voies » verticales parallèles. Chaque événement occupe `1/cols` de la colonne-jour, avec une légère superposition (4 px) pour le rendu en cascade caractéristique d'Outlook et un z-index croissant (hover = au-dessus).
+- **Expansion latérale automatique** : un événement qui n'a pas de voisin dans les voies à sa droite (pour la plage temporelle qu'il occupe) s'étend pour occuper toute la largeur libre restante — un événement isolé dans sa propre demi-heure reste pleine largeur même si d'autres événements coexistent ailleurs dans la journée.
+
+### Corrigé
+
+#### NextCloud — Synchronisation bidirectionnelle
+
+- **Calendriers synchronisés correctement marqués `nc_managed=true`** ([server/src/services/nextcloud.ts](server/src/services/nextcloud.ts)) : `syncCalendars` positionne désormais `nc_managed = TRUE`, `nc_principal_url` et `last_sync_at` dans l'upsert `INSERT … ON CONFLICT`. Sans ce flag, `pushEventToCalDAV()` ne reconnaissait pas les calendriers tirés depuis NextCloud comme push-targets, et les modifications côté WebMail ne remontaient pas.
+- **`nc_uri` / `nc_etag` stockés sur les événements pullés** : `parseEvents()` extrait maintenant `<d:href>` et `<d:getetag>` au niveau de chaque `<d:response>` (au lieu d'un regex global sur `<cal:calendar-data>`). Ces champs sont persistés par l'upsert pour que les `PUT` ultérieurs envoient un `If-Match` correct et évitent les écritures concurrentes perdues.
+
 #### Agenda — Glisser-déposer d'événements
 
 - **Déplacement d'événement par drag & drop** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : dans les vues *Jour*, *Semaine* et *Semaine de travail*, les événements peuvent être glissés vers n'importe quel créneau pour changer leur date/heure de début. La durée est préservée. Le créneau cible est mis en surbrillance pendant le drag.
