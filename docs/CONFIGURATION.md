@@ -24,14 +24,13 @@ Toutes les variables sont définies dans le fichier `.env` à la racine du proje
 | `DEFAULT_IMAP_PORT` | Port IMAP par défaut | `993` |
 | `DEFAULT_SMTP_PORT` | Port SMTP par défaut | `465` |
 
-### Variables NextCloud (optionnelles)
+### Variables NextCloud
 
-| Variable | Description | Défaut |
-|----------|-------------|--------|
-| `NEXTCLOUD_URL` | URL de l'instance NextCloud | *(non défini)* |
-| `NEXTCLOUD_USERNAME` | Nom d'utilisateur NextCloud | *(non défini)* |
-| `NEXTCLOUD_PASSWORD` | Mot de passe NextCloud | *(non défini)* |
-| `NEXTCLOUD_ENABLED` | Activer l'intégration NextCloud | `false` |
+> Depuis la V2, la configuration NextCloud se fait **exclusivement via l'UI Admin → NextCloud**
+> (URL, compte admin, app password, provisioning auto, intervalle de sync). Les valeurs sont
+> chiffrées en base avec `ENCRYPTION_KEY`. Les anciennes variables `NEXTCLOUD_URL` /
+> `NEXTCLOUD_USERNAME` / `NEXTCLOUD_PASSWORD` / `NEXTCLOUD_ENABLED` sont **obsolètes**.
+> Voir [NEXTCLOUD.md](NEXTCLOUD.md) pour le guide complet.
 
 ### Variables Notifications push (optionnelles)
 
@@ -132,11 +131,7 @@ NODE_ENV=production
 DEFAULT_IMAP_PORT=993
 DEFAULT_SMTP_PORT=465
 
-# ===== NextCloud (optionnel) =====
-# NEXTCLOUD_URL=https://cloud.example.com
-# NEXTCLOUD_USERNAME=admin
-# NEXTCLOUD_PASSWORD=mot_de_passe
-# NEXTCLOUD_ENABLED=true
+# NextCloud : se configure via l'UI Admin → NextCloud (plus aucune variable d'env).
 ```
 
 > **Note** : Les comptes O2Switch et leurs tokens API sont gérés directement via l'interface d'administration (Administration > O2Switch). Les tokens sont chiffrés en AES-256-GCM avant stockage en base de données avec la même `ENCRYPTION_KEY`.

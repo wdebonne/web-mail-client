@@ -58,10 +58,8 @@ DATABASE_URL=postgresql://webmail:${DB_PASSWORD}@db:5432/webmail
 PORT=3000
 NODE_ENV=production
 
-# OPTIONNEL - NextCloud
-NEXTCLOUD_URL=https://cloud.example.com
-NEXTCLOUD_USERNAME=admin
-NEXTCLOUD_PASSWORD=votre_mot_de_passe
+# NextCloud : configuration désormais gérée entièrement via l'UI Admin → NextCloud
+# (les anciennes variables NEXTCLOUD_URL/USERNAME/PASSWORD sont obsolètes).
 
 # OPTIONNEL - Notifications push natives (Web Push)
 # Si omis, une paire VAPID est générée automatiquement au premier démarrage

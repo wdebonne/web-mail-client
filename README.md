@@ -180,12 +180,12 @@ POSTGRES_PASSWORD=un_mot_de_passe_fort
 SESSION_SECRET=une_clé_secrète_aléatoire
 JWT_SECRET=une_autre_clé_secrète
 ENCRYPTION_KEY=clé_hex_64_caractères  # openssl rand -hex 32
-
-# NextCloud (optionnel)
-NEXTCLOUD_URL=https://cloud.example.com
-NEXTCLOUD_USERNAME=admin
-NEXTCLOUD_PASSWORD=mot_de_passe
 ```
+
+> L'intégration NextCloud se configure désormais entièrement depuis l'UI d'administration
+> (**Admin → NextCloud**) et est stockée chiffrée en base. Les anciennes variables
+> `NEXTCLOUD_URL` / `NEXTCLOUD_USERNAME` / `NEXTCLOUD_PASSWORD` ne sont plus utilisées.
+> Voir [docs/NEXTCLOUD.md](docs/NEXTCLOUD.md).
 
 ### 3. Lancer avec Docker Compose
 ```bash

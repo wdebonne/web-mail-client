@@ -8,7 +8,7 @@ WebMail dispose d'un système de gestion des contacts complet avec support de tr
 
 1. **Contacts locaux** (`source: 'local'`) : créés manuellement par l'utilisateur
 2. **Expéditeurs** (`source: 'sender'`) : enregistrés automatiquement depuis les emails reçus
-3. **Contacts NextCloud** (`source: 'nextcloud'`) : synchronisés depuis NextCloud CardDAV
+3. **Contacts NextCloud** (`nc_managed = true`) : créés/synchronisés bidirectionnellement avec NextCloud CardDAV. Depuis la V2, la création/modification/suppression côté WebMail est propagée automatiquement vers NextCloud (et inversement via le sync poller).
 
 ---
 
@@ -422,9 +422,9 @@ CREATE TABLE contacts (
 |--------|-------------|-----------|-----------------|
 | `'local'` | Contact créé manuellement | ✅ Oui | ✅ Oui (si activé) |
 | `'sender'` | Expéditeur auto-enregistré | ✅ Oui | ❌ Non |
-| `'nextcloud'` | Synchronisé depuis NextCloud | ❌ Non* | ✅ Oui |
+| `'nextcloud'` | Synchronisé depuis NextCloud | ✅ Oui (V2) | ✅ Bidirectionnel |
 
-\* Les contacts NextCloud ne peuvent pas être modifiés localement. Les modifications doivent se faire dans NextCloud directement.
+\* Depuis la V2, les contacts `nc_managed` peuvent être édités/supprimés depuis WebMail — les modifications sont propagées vers NextCloud en temps réel.
 
 ---
 
@@ -463,7 +463,7 @@ CREATE TABLE contacts (
 - **Autocomplétion** : minimum 1 caractère (pour une meilleure UX)
 - **Expéditeurs** : pas de limite, tous les emails reçus sont enregistrés silencieusement
 - **Promotion** : une fois promut, un expéditeur ne revient jamais à `source = 'sender'`
-- **NextCloud** : les contacts NextCloud sont en lecture seule localement
+- **NextCloud** : les contacts NextCloud sont **bidirectionnels** depuis la V2 (création, édition, suppression propagées)
 - **Suppression** : la suppression d'un contact supprime aussi ses éventuels doublets dans les autres sources (?) - **à clarifier**
 
 ---
