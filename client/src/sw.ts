@@ -22,6 +22,18 @@ registerRoute(
   new StaleWhileRevalidate({ cacheName: 'contacts-cache' }),
 );
 registerRoute(
+  // Calendar events change often and must reflect mutations immediately.
+  // Exclude them from any cache; let other calendar endpoints use NetworkFirst.
+  ({ url }) => url.pathname.startsWith('/api/calendar/events'),
+  new NetworkFirst({
+    cacheName: 'calendar-events-nocache',
+    networkTimeoutSeconds: 10,
+    plugins: [{
+      cacheWillUpdate: async () => null, // never store
+    }],
+  }),
+);
+registerRoute(
   ({ url }) => url.pathname.startsWith('/api/calendar/'),
   new NetworkFirst({ cacheName: 'calendar-cache', networkTimeoutSeconds: 10 }),
 );

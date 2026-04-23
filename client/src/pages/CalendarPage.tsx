@@ -172,8 +172,15 @@ export default function CalendarPage() {
       }
       toast.error('Échec de la mise à jour');
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
+    onSuccess: (updated: any) => {
+      // Patch the cache directly with the server response instead of refetching,
+      // to avoid the PWA service worker returning a stale cached GET.
+      if (updated && updated.id) {
+        queryClient.setQueriesData<CalendarEvent[]>({ queryKey: ['events'] }, (old) => {
+          if (!old) return old;
+          return old.map((ev) => (ev.id === updated.id ? { ...ev, ...updated } : ev));
+        });
+      }
       setShowEventForm(false);
       setEditingEvent(null);
       toast.success('Événement mis à jour');
