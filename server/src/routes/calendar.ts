@@ -44,6 +44,31 @@ const eventSchema = z.object({
   })).optional(),
 });
 
+// Nextcloud status for the current user (is the user linked to a NC account?)
+calendarRouter.get('/nextcloud-status', async (req: AuthRequest, res) => {
+  try {
+    const { getNextCloudConfig } = await import('../services/nextcloudHelper');
+    const cfg = await getNextCloudConfig(false);
+    if (!cfg?.enabled) return res.json({ enabled: false, linked: false });
+    const r = await pool.query(
+      `SELECT nc_username, nc_email, is_active FROM nextcloud_users WHERE user_id = $1`,
+      [req.userId]
+    );
+    if (r.rows.length === 0 || !r.rows[0].is_active) {
+      return res.json({ enabled: true, linked: false });
+    }
+    res.json({
+      enabled: true,
+      linked: true,
+      ncUsername: r.rows[0].nc_username,
+      ncEmail: r.rows[0].nc_email,
+      autoCreateCalendars: !!cfg.autoCreateCalendars,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // List calendars
 calendarRouter.get('/', async (req: AuthRequest, res) => {
   try {

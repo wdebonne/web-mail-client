@@ -710,30 +710,22 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
   const [color, setColor] = useState('#0078D4');
   const palette = ['#0078D4', '#107C10', '#B4009E', '#E3008C', '#E74856', '#CA5010', '#FFB900', '#5C2E91'];
 
-  const { data: accounts = [] } = useQuery<any[]>({
-    queryKey: ['calendar-accounts'],
-    queryFn: () => api.getCalendarAccounts(),
+  const { data: ncStatus } = useQuery({
+    queryKey: ['user-nextcloud-status'],
+    queryFn: () => api.getUserNextcloudStatus(),
   });
 
-  // Auto-détection : si au moins un compte mail a CalDAV actif et synchronisé (Nextcloud/autre),
-  // on crée directement le calendrier dessus. Sinon, on tombe sur un calendrier local.
-  const caldavAccount = accounts.find((a: any) => a.caldav_url && a.caldav_sync_enabled);
-  const isNextcloud = !!caldavAccount && /remote\.php\/dav|nextcloud/i.test(String(caldavAccount.caldav_url || ''));
-  const targetLabel = isNextcloud ? 'Nextcloud' : 'Boîte mail · CalDAV';
+  // Un vrai compte Nextcloud (provisionné via l'admin) sera utilisé automatiquement par le serveur.
+  // Sinon, on crée un simple calendrier local — on ne touche pas au CalDAV de la boîte mail
+  // (ex: cPanel ne supporte qu'un seul calendrier et ne permet pas MKCALENDAR).
+  const useNextcloud = !!(ncStatus?.enabled && ncStatus?.linked && ncStatus?.autoCreateCalendars);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    if (caldavAccount) {
-      onCreate({
-        name: name.trim(),
-        color,
-        mailAccountId: caldavAccount.id,
-        createOnCaldav: true,
-      });
-    } else {
-      onCreate({ name: name.trim(), color });
-    }
+    // Dans tous les cas, on envoie uniquement name + color.
+    // Le serveur se charge d'auto-créer sur Nextcloud si l'utilisateur est provisionné.
+    onCreate({ name: name.trim(), color });
   };
 
   return (
@@ -762,20 +754,18 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
           <div>
             <label className="text-xs text-outlook-text-secondary mb-1 block">Emplacement</label>
             <div className="p-3 rounded-md border border-outlook-border bg-outlook-bg-hover/30 text-sm">
-              {caldavAccount ? (
+              {useNextcloud ? (
                 <>
-                  <div className="font-medium">{targetLabel}</div>
+                  <div className="font-medium">Nextcloud</div>
                   <div className="text-xs text-outlook-text-secondary">
-                    {isNextcloud
-                      ? `Créé sur Nextcloud (${caldavAccount.email}) et synchronisé automatiquement.`
-                      : `Créé sur ${caldavAccount.email} et synchronisé automatiquement.`}
+                    Créé sur Nextcloud{ncStatus?.ncEmail ? ` (${ncStatus.ncEmail})` : ''} et synchronisé automatiquement.
                   </div>
                 </>
               ) : (
                 <>
                   <div className="font-medium">Local</div>
                   <div className="text-xs text-outlook-text-secondary">
-                    Aucun compte CalDAV/Nextcloud actif : visible uniquement ici.
+                    Aucun compte Nextcloud lié : visible uniquement ici.
                   </div>
                 </>
               )}

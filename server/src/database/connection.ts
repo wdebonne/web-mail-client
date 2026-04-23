@@ -353,6 +353,17 @@ export async function initDatabase() {
       ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS nc_etag VARCHAR(255);
       ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS nc_uri VARCHAR(512);
 
+      -- Unique partial indexes required by NextCloud sync ON CONFLICT clauses
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_nc_email_unique
+        ON contacts(user_id, email)
+        WHERE source = 'nextcloud';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_nc_external_unique
+        ON contacts(user_id, external_id)
+        WHERE source = 'nextcloud' AND external_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_calendars_nc_external_unique
+        ON calendars(user_id, external_id)
+        WHERE source = 'nextcloud' AND external_id IS NOT NULL;
+
       -- Plugins
       CREATE TABLE IF NOT EXISTS plugins (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

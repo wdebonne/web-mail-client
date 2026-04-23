@@ -269,6 +269,9 @@ export const api = {
   // Calendar <-> Mail accounts CalDAV sync
   getCalendarAccounts: () => request<any[]>('/calendar/accounts'),
 
+  getUserNextcloudStatus: () =>
+    request<{ enabled: boolean; linked: boolean; ncUsername?: string; ncEmail?: string; autoCreateCalendars?: boolean }>('/calendar/nextcloud-status'),
+
   updateAccountCaldav: (accountId: string, data: { caldavUrl?: string | null; caldavUsername?: string | null; caldavSyncEnabled?: boolean }) =>
     request(`/calendar/accounts/${accountId}/caldav`, { method: 'PUT', body: JSON.stringify(data) }),
 
