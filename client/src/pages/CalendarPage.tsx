@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { CalendarEvent, Calendar } from '../types';
@@ -692,7 +692,8 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
   const slotsPerHour = Math.max(1, Math.round(60 / timeScale));
   const slotHeight = HOUR_HEIGHT / slotsPerHour;
 
-  const [dragHover, setDragHover] = useState<string | null>(null);
+  const [dragHover, setDragHover] = useState<{ dayKey: string; slotIdx: number } | null>(null);
+  const dragOffsetRef = useRef<number>(0);
 
   const getEventsForDay = (day: Date) => events.filter((ev) => {
     const s = parseISO(ev.start_date);
@@ -714,7 +715,11 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
           if (!onEventMove) return;
           dragEvt.dataTransfer.effectAllowed = 'move';
           dragEvt.dataTransfer.setData('text/event-id', ev.id);
+          // remember where inside the event the user grabbed (px)
+          const rect = (dragEvt.currentTarget as HTMLElement).getBoundingClientRect();
+          dragOffsetRef.current = dragEvt.clientY - rect.top;
         }}
+        onDragEnd={() => { setDragHover(null); }}
         onClick={(clickEvt) => { clickEvt.stopPropagation(); onEventClick(ev); }}
         onContextMenu={(clickEvt) => onEventContextMenu(clickEvt, ev)}
         className="absolute left-0.5 right-0.5 rounded px-1.5 py-0.5 text-[11px] text-left truncate hover:opacity-90 transition-opacity shadow-sm cursor-grab active:cursor-grabbing"
@@ -727,6 +732,14 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
         </div>
       </button>
     );
+  };
+
+  const slotFromPointer = (container: HTMLElement, clientY: number) => {
+    const rect = container.getBoundingClientRect();
+    const y = clientY - rect.top - dragOffsetRef.current;
+    const totalSlots = 24 * slotsPerHour;
+    const idx = Math.max(0, Math.min(totalSlots - 1, Math.round(y / slotHeight)));
+    return idx;
   };
 
   return (
@@ -758,38 +771,53 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
           </div>
           {days.map(day => {
             const dayEvents = getEventsForDay(day);
+            const dayKey = day.toISOString();
             return (
-              <div key={day.toISOString()} className="relative border-l border-outlook-border">
+              <div
+                key={dayKey}
+                className="relative border-l border-outlook-border"
+                onDragOver={(e) => {
+                  if (!onEventMove) return;
+                  if (!e.dataTransfer.types.includes('text/event-id')) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  const idx = slotFromPointer(e.currentTarget as HTMLElement, e.clientY);
+                  setDragHover({ dayKey, slotIdx: idx });
+                }}
+                onDragLeave={(e) => {
+                  // only clear when leaving the column entirely
+                  const related = e.relatedTarget as Node | null;
+                  if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
+                    setDragHover((prev) => (prev && prev.dayKey === dayKey ? null : prev));
+                  }
+                }}
+                onDrop={(e) => {
+                  if (!onEventMove) return;
+                  const id = e.dataTransfer.getData('text/event-id');
+                  if (!id) return;
+                  e.preventDefault();
+                  const ev = events.find(x => x.id === id);
+                  if (!ev) { setDragHover(null); return; }
+                  const idx = slotFromPointer(e.currentTarget as HTMLElement, e.clientY);
+                  const h = Math.floor(idx / slotsPerHour);
+                  const m = (idx % slotsPerHour) * timeScale;
+                  const newStart = setMinutes(setHours(day, h), m);
+                  onEventMove(ev, newStart);
+                  setDragHover(null);
+                }}
+              >
                 {Array.from({ length: 24 * slotsPerHour }).map((_, idx) => {
                   const h = Math.floor(idx / slotsPerHour);
                   const m = (idx % slotsPerHour) * timeScale;
                   const slotDate = setMinutes(setHours(day, h), m);
                   const isHour = m === 0;
-                  const slotKey = `${day.toISOString()}-${idx}`;
+                  const isHoverSlot = dragHover?.dayKey === dayKey && dragHover.slotIdx === idx;
                   return (
                     <div
                       key={idx}
                       onClick={() => onSlotClick(slotDate)}
-                      onDragOver={(e) => {
-                        if (!onEventMove) return;
-                        if (!e.dataTransfer.types.includes('text/event-id')) return;
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        setDragHover(slotKey);
-                      }}
-                      onDragLeave={() => { if (dragHover === slotKey) setDragHover(null); }}
-                      onDrop={(e) => {
-                        if (!onEventMove) return;
-                        const id = e.dataTransfer.getData('text/event-id');
-                        if (!id) return;
-                        e.preventDefault();
-                        const ev = events.find(x => x.id === id);
-                        if (!ev) return;
-                        onEventMove(ev, slotDate);
-                        setDragHover(null);
-                      }}
                       style={{ height: slotHeight }}
-                      className={`hover:bg-outlook-bg-hover/40 cursor-pointer ${dragHover === slotKey ? 'bg-outlook-blue/15 ring-1 ring-inset ring-outlook-blue' : ''} ${isHour ? 'border-b border-outlook-border' : 'border-b border-outlook-border/30'}`}
+                      className={`hover:bg-outlook-bg-hover/40 cursor-pointer ${isHoverSlot ? 'bg-outlook-blue/15 ring-1 ring-inset ring-outlook-blue' : ''} ${isHour ? 'border-b border-outlook-border' : 'border-b border-outlook-border/30'}`}
                     />
                   );
                 })}
