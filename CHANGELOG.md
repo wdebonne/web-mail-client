@@ -9,6 +9,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Agenda — Largeur des colonnes adaptative
+
+- **Nouveau réglage *Colonnes : Fixe / Automatique*** ([client/src/components/calendar/CalendarRibbon.tsx](client/src/components/calendar/CalendarRibbon.tsx)) : ajouté dans l'onglet *Afficher* du ruban (mode classique et simplifié), à droite de l'échelle de temps. Persistant dans `localStorage` (`calendar.columnSizing`) via [client/src/utils/calendarPreferences.ts](client/src/utils/calendarPreferences.ts).
+- **Mode *Automatique*** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx) — `TimeGridView`) : le `gridTemplateColumns` est calculé à partir d'un poids par jour. Le poids est dérivé du nombre maximal de voies de chevauchement utilisées par `layoutDay()` ce jour-là, avec une croissance logarithmique douce (`1 + min(1.4, log2(1+lanes) * 0.7)`). Un jour vide reçoit le poids minimal `0.5`. Résultat : les jours chargés s'élargissent pour rester lisibles, les jours libres se réduisent, sans jamais qu'une colonne ne devienne incliquable.
+- **Mode *Fixe*** : comportement historique conservé (toutes les colonnes ont `1fr`). Reste la valeur par défaut.
+
 #### Agenda — Disposition Outlook des événements qui se chevauchent
 
 - **Colonnes parallèles pour les chevauchements** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : les vues *Jour*, *Semaine* et *Semaine de travail* utilisent un algorithme de layout type Outlook. Les événements qui se chevauchent sont groupés en « clusters » (composantes connexes d'overlap), puis distribués dans des « voies » verticales parallèles. Chaque événement occupe `1/cols` de la colonne-jour, avec une légère superposition (4 px) pour le rendu en cascade caractéristique d'Outlook et un z-index croissant (hover = au-dessus).

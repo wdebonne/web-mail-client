@@ -32,6 +32,7 @@ import {
   getShowSidebar, setShowSidebar,
   getColorOverrides,
   getHiddenLocally,
+  getColumnSizing, setColumnSizing,
 } from '../utils/calendarPreferences';
 
 const DEFAULT_FILTERS: CalendarFilters = {
@@ -46,6 +47,7 @@ export default function CalendarPage() {
   const [dayCount, setDayCount] = useState(1);
   const [splitView, setSplitView] = useState(false);
   const [timeScale, setTimeScale] = useState(30);
+  const [columnSizing, setColumnSizingState] = useState<'fixed' | 'auto'>(() => getColumnSizing());
   const [filters, setFiltersState] = useState<CalendarFilters>(DEFAULT_FILTERS);
 
   const [showEventForm, setShowEventForm] = useState(false);
@@ -381,6 +383,8 @@ export default function CalendarPage() {
           onToggleSidebar={() => setShowSidebarState(v => !v)}
           timeScale={timeScale}
           onChangeTimeScale={setTimeScale}
+          columnSizing={columnSizing}
+          onChangeColumnSizing={(m) => { setColumnSizing(m); setColumnSizingState(m); }}
           filters={filters}
           onChangeFilters={setFiltersState}
           onClearFilters={() => setFiltersState(DEFAULT_FILTERS)}
@@ -459,6 +463,7 @@ export default function CalendarPage() {
                 eventColor={eventColor}
                 onEventMove={handleEventMove}
                 userTz={userTz}
+                columnSizing={columnSizing}
               />
             )}
             {view === 'day' && (
@@ -473,6 +478,7 @@ export default function CalendarPage() {
                 eventColor={eventColor}
                 onEventMove={handleEventMove}
                 userTz={userTz}
+                columnSizing={columnSizing}
               />
             )}
           </div>
@@ -661,7 +667,7 @@ function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, onE
   );
 }
 
-function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz }: {
+function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz, columnSizing }: {
   currentDate: Date;
   workWeek: boolean;
   timeScale: number;
@@ -672,16 +678,17 @@ function WeekView({ currentDate, workWeek, timeScale, events, onSlotClick, onEve
   eventColor: (ev: CalendarEvent) => string;
   onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
   userTz: string;
+  columnSizing?: 'fixed' | 'auto';
 }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekDays = workWeek ? [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4, 5, 6];
   const days = weekDays.map(i => addDays(weekStart, i));
   return (
-    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} userTz={userTz} />
+    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} userTz={userTz} columnSizing={columnSizing} />
   );
 }
 
-function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz }: {
+function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz, columnSizing }: {
   currentDate: Date;
   dayCount: number;
   timeScale: number;
@@ -692,14 +699,15 @@ function DayView({ currentDate, dayCount, timeScale, events, onSlotClick, onEven
   eventColor: (ev: CalendarEvent) => string;
   onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
   userTz: string;
+  columnSizing?: 'fixed' | 'auto';
 }) {
   const days = Array.from({ length: dayCount }, (_, i) => addDays(startOfDay(currentDate), i));
   return (
-    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} userTz={userTz} />
+    <TimeGridView days={days} timeScale={timeScale} events={events} onSlotClick={onSlotClick} onEventClick={onEventClick} onEventContextMenu={onEventContextMenu} eventColor={eventColor} onEventMove={onEventMove} userTz={userTz} columnSizing={columnSizing} />
   );
 }
 
-function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz }: {
+function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEventContextMenu, eventColor, onEventMove, userTz, columnSizing = 'fixed' }: {
   days: Date[];
   timeScale: number;
   events: CalendarEvent[];
@@ -709,6 +717,7 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
   eventColor: (ev: CalendarEvent) => string;
   onEventMove?: (ev: CalendarEvent, newStart: Date) => void;
   userTz: string;
+  columnSizing?: 'fixed' | 'auto';
 }) {
   const HOUR_HEIGHT = 48;
   const slotsPerHour = Math.max(1, Math.round(60 / timeScale));
@@ -850,9 +859,24 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
     return idx;
   };
 
+  // Column weights — "auto" mode shrinks empty days and grows busy ones.
+  // The weight of a day is the maximum number of overlapping events at any
+  // moment of the day (i.e. the number of lanes its `layoutDay` will need),
+  // clamped to a sensible range so even an empty day stays clickable.
+  const dayWeights = days.map(day => {
+    if (columnSizing !== 'auto') return 1;
+    const dayEvents = getEventsForDay(day);
+    if (dayEvents.length === 0) return 0.5; // smallest
+    const laid = layoutDay(dayEvents);
+    const maxLanes = laid.reduce((m, l) => Math.max(m, l.cols), 1);
+    // Soft growth: 1 event = 1, 2 = 1.4, 3 = 1.7, 4 = 1.9, plateau ~2.4
+    return 1 + Math.min(1.4, Math.log2(1 + maxLanes) * 0.7);
+  });
+  const gridCols = `48px ${dayWeights.map(w => `minmax(0, ${w}fr)`).join(' ')}`;
+
   return (
     <div className="h-full flex flex-col">
-      <div className="grid border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0" style={{ gridTemplateColumns: `48px repeat(${days.length}, minmax(0, 1fr))` }}>
+      <div className="grid border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0" style={{ gridTemplateColumns: gridCols }}>
         <div />
         {days.map(day => {
           const today = isToday(day);
@@ -869,7 +893,7 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
         })}
       </div>
       <div className="flex-1 overflow-auto">
-        <div className="grid" style={{ gridTemplateColumns: `48px repeat(${days.length}, minmax(0, 1fr))` }}>
+        <div className="grid" style={{ gridTemplateColumns: gridCols }}>
           <div>
             {Array.from({ length: 24 }).map((_, h) => (
               <div key={h} style={{ height: HOUR_HEIGHT }} className="text-[10px] text-outlook-text-disabled text-right pr-1 border-b border-outlook-border">

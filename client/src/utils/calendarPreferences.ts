@@ -175,6 +175,20 @@ export function setCalendarView(v: CalendarView) {
   localStorage.setItem(KEY_VIEW, v);
 }
 
+// ── Column sizing in time-grid views ──────────────────────────
+// "fixed"    : every day column has the same width (current behaviour)
+// "auto"     : columns are sized proportionally to the number of overlapping
+//              events in each day, so days with more meetings get more room
+const KEY_COLUMN_SIZING = 'calendar.columnSizing';
+export type ColumnSizing = 'fixed' | 'auto';
+export function getColumnSizing(): ColumnSizing {
+  const v = localStorage.getItem(KEY_COLUMN_SIZING);
+  return v === 'auto' ? 'auto' : 'fixed';
+}
+export function setColumnSizing(v: ColumnSizing) {
+  localStorage.setItem(KEY_COLUMN_SIZING, v);
+}
+
 // ── Local name/color overrides (persist even if backend rejects) ──
 export function getColorOverrides(): Record<string, string> {
   return readJSON(KEY_COLOR_OVERRIDES, {});

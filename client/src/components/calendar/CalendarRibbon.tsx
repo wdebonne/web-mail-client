@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   CalendarPlus, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock,
-  Share2, Printer, ChevronDown, Filter, Columns2, Clock,
+  Share2, Printer, ChevronDown, Filter, Columns2, Columns3, Clock,
   Settings, PanelLeftOpen, PanelLeftClose, RefreshCw,
   Save, HelpCircle, Info, Keyboard, Users, Sparkles,
 } from 'lucide-react';
@@ -39,6 +39,10 @@ interface CalendarRibbonProps {
 
   timeScale: number; // minutes per slot: 60, 30, 15, 10, 5
   onChangeTimeScale: (n: number) => void;
+
+  /** Column sizing strategy in Day/Week/WorkWeek views */
+  columnSizing?: 'fixed' | 'auto';
+  onChangeColumnSizing?: (m: 'fixed' | 'auto') => void;
 
   filters: CalendarFilters;
   onChangeFilters: (f: CalendarFilters) => void;
@@ -128,6 +132,7 @@ export default function CalendarRibbon({
   splitView, onToggleSplitView,
   showSidebar, onToggleSidebar,
   timeScale, onChangeTimeScale,
+  columnSizing = 'fixed', onChangeColumnSizing,
   filters, onChangeFilters, onClearFilters,
   isCollapsed, onToggleCollapse,
   ribbonMode, onChangeRibbonMode,
@@ -147,6 +152,10 @@ export default function CalendarRibbon({
   const [scaleMenuOpen, setScaleMenuOpen] = useState(false);
   const [scaleMenuPos, setScaleMenuPos] = useState({ top: 0, left: 0 });
   const scaleMenuBtnRef = useRef<HTMLButtonElement>(null);
+
+  const [colMenuOpen, setColMenuOpen] = useState(false);
+  const [colMenuPos, setColMenuPos] = useState({ top: 0, left: 0 });
+  const colMenuBtnRef = useRef<HTMLButtonElement>(null);
 
   const [savedMenuOpen, setSavedMenuOpen] = useState(false);
   const [savedMenuPos, setSavedMenuPos] = useState({ top: 0, left: 0 });
@@ -307,6 +316,29 @@ export default function CalendarRibbon({
         document.body,
       )}
 
+      {colMenuOpen && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setColMenuOpen(false)} />
+          <div className="fixed z-[9999] bg-white border border-outlook-border rounded-md shadow-lg py-1 w-56" style={{ top: colMenuPos.top, left: colMenuPos.left }}>
+            <div className="px-3 py-1 text-[10px] uppercase text-outlook-text-disabled">Largeur des colonnes</div>
+            {([
+              { v: 'fixed', label: 'Fixe', desc: 'Toutes les colonnes ont la même largeur' },
+              { v: 'auto', label: 'Automatique', desc: 'Les jours chargés s\'élargissent, les jours vides se réduisent' },
+            ] as const).map(opt => (
+              <button
+                key={opt.v}
+                onClick={() => { onChangeColumnSizing?.(opt.v); setColMenuOpen(false); }}
+                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover ${columnSizing === opt.v ? 'text-outlook-blue' : ''}`}
+              >
+                <div className="font-medium">{opt.label}</div>
+                <div className="text-[10px] text-outlook-text-secondary">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
+
       {savedMenuOpen && createPortal(
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => setSavedMenuOpen(false)} />
@@ -400,6 +432,16 @@ export default function CalendarRibbon({
               >
                 <Clock size={14} />
                 <span className="text-xs">{timeScale}min</span>
+                <ChevronDown size={10} />
+              </button>
+              <button
+                ref={colMenuBtnRef}
+                onClick={(e) => openMenu(colMenuBtnRef, setColMenuPos, setColMenuOpen, e)}
+                className="flex items-center gap-1 rounded px-2 py-1 hover:bg-outlook-bg-hover"
+                title="Largeur des colonnes"
+              >
+                <Columns3 size={14} />
+                <span className="text-xs">Colonnes : {columnSizing === 'auto' ? 'Auto' : 'Fixe'}</span>
                 <ChevronDown size={10} />
               </button>
               <button
@@ -527,6 +569,20 @@ export default function CalendarRibbon({
               >
                 <Clock size={18} />
                 <span className="text-[10px] flex items-center gap-0.5">Échelle <ChevronDown size={8} /></span>
+              </button>
+            </RibbonGroup>
+            <RibbonSeparator />
+            <RibbonGroup label="Colonnes">
+              <button
+                ref={colMenuBtnRef}
+                onClick={(e) => openMenu(colMenuBtnRef, setColMenuPos, setColMenuOpen, e)}
+                className={`flex flex-col items-center gap-0.5 rounded px-2 py-1 min-w-[64px] hover:bg-outlook-bg-hover ${colMenuOpen ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Largeur des colonnes (jours)"
+              >
+                <Columns3 size={18} />
+                <span className="text-[10px] flex items-center gap-0.5">
+                  {columnSizing === 'auto' ? 'Auto' : 'Fixe'} <ChevronDown size={8} />
+                </span>
               </button>
             </RibbonGroup>
             <RibbonSeparator />
