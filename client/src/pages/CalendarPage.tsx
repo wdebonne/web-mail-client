@@ -701,6 +701,9 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
 
   const [dragHover, setDragHover] = useState<{ dayKey: string; slotIdx: number } | null>(null);
   const dragOffsetRef = useRef<number>(0);
+  // Latest drop target computed during dragover. Drop uses this so the event
+  // always lands exactly where the highlight was just shown.
+  const lastHoverRef = useRef<{ day: Date; slotIdx: number } | null>(null);
 
   const getEventsForDay = (day: Date) => events.filter((ev) => {
     const s = parseISO(ev.start_date);
@@ -789,6 +792,7 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'move';
                   const idx = slotFromPointer(e.currentTarget as HTMLElement, e.clientY);
+                  lastHoverRef.current = { day, slotIdx: idx };
                   setDragHover({ dayKey, slotIdx: idx });
                 }}
                 onDragLeave={(e) => {
@@ -804,13 +808,19 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
                   if (!id) return;
                   e.preventDefault();
                   const ev = events.find(x => x.id === id);
-                  if (!ev) { setDragHover(null); return; }
-                  const idx = slotFromPointer(e.currentTarget as HTMLElement, e.clientY);
-                  const h = Math.floor(idx / slotsPerHour);
-                  const m = (idx % slotsPerHour) * timeScale;
-                  const newStart = setMinutes(setHours(day, h), m);
+                  if (!ev) { setDragHover(null); lastHoverRef.current = null; return; }
+                  // Prefer the last slot computed during dragover — it is what
+                  // the user saw highlighted and guarantees drop == highlight.
+                  const target = lastHoverRef.current || {
+                    day,
+                    slotIdx: slotFromPointer(e.currentTarget as HTMLElement, e.clientY),
+                  };
+                  const h = Math.floor(target.slotIdx / slotsPerHour);
+                  const m = (target.slotIdx % slotsPerHour) * timeScale;
+                  const newStart = setMinutes(setHours(target.day, h), m);
                   onEventMove(ev, newStart);
                   setDragHover(null);
+                  lastHoverRef.current = null;
                 }}
               >
                 {Array.from({ length: 24 * slotsPerHour }).map((_, idx) => {
