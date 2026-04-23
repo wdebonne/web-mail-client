@@ -145,6 +145,33 @@ export default function CalendarPage() {
   });
   const updateEventMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => api.updateEvent(id, data),
+    onMutate: async ({ id, data }) => {
+      // Optimistic update for drag-and-drop and in-form edits
+      await queryClient.cancelQueries({ queryKey: ['events'] });
+      const previous = queryClient.getQueriesData<CalendarEvent[]>({ queryKey: ['events'] });
+      queryClient.setQueriesData<CalendarEvent[]>({ queryKey: ['events'] }, (old) => {
+        if (!old) return old;
+        return old.map((ev) => {
+          if (ev.id !== id) return ev;
+          const next: any = { ...ev };
+          if (data.startDate) next.start_date = data.startDate;
+          if (data.endDate) next.end_date = data.endDate;
+          if (data.title !== undefined) next.title = data.title;
+          if (data.location !== undefined) next.location = data.location;
+          if (data.allDay !== undefined) next.all_day = data.allDay;
+          return next;
+        });
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) {
+        for (const [key, data] of ctx.previous) {
+          queryClient.setQueryData(key, data);
+        }
+      }
+      toast.error('Échec de la mise à jour');
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
       setShowEventForm(false);
