@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
 import { z } from 'zod';
 import { CalDAVService } from '../services/caldav';
+import { getUserClient } from '../services/nextcloudHelper';
 import { decrypt } from '../utils/encryption';
 import { logger } from '../utils/logger';
 import { buildIcs } from '../utils/ical';
@@ -849,7 +850,7 @@ calendarRouter.post('/accounts/:accountId/sync', async (req: AuthRequest, res) =
   }
 });
 
-// Sync all mail accounts with CalDAV enabled
+// Sync all mail accounts with CalDAV enabled + NextCloud (if linked)
 calendarRouter.post('/sync', async (req: AuthRequest, res) => {
   try {
     const accounts = await pool.query(
@@ -874,7 +875,30 @@ calendarRouter.post('/sync', async (req: AuthRequest, res) => {
       }
     }
 
-    res.json({ ok: true, synced: results.filter(r => r.ok).length, results });
+    // NextCloud sync (calendars + contacts) if the user is provisioned
+    let nextcloud: { ok: boolean; error?: string } | null = null;
+    try {
+      const nc = await getUserClient(req.userId!);
+      if (nc) {
+        await nc.syncCalendars(req.userId!);
+        try { await nc.syncContacts(req.userId!); } catch { /* contacts optional */ }
+        await pool.query(
+          `UPDATE nextcloud_users SET last_sync_at = NOW(), last_sync_error = NULL WHERE user_id = $1`,
+          [req.userId]
+        );
+        nextcloud = { ok: true };
+      }
+    } catch (e: any) {
+      await pool.query(
+        `UPDATE nextcloud_users SET last_sync_error = $1 WHERE user_id = $2`,
+        [(e?.message || 'unknown').slice(0, 500), req.userId]
+      ).catch(() => {});
+      logger.warn({ err: e?.message, userId: req.userId }, 'NextCloud on-demand sync failed');
+      nextcloud = { ok: false, error: e?.message || 'NextCloud sync failed' };
+    }
+
+    const syncedCount = results.filter(r => r.ok).length + (nextcloud?.ok ? 1 : 0);
+    res.json({ ok: true, synced: syncedCount, results, nextcloud });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
