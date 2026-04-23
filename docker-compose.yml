@@ -10,10 +10,13 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://webmail:webmail_secure_pwd@db:5432/webmail
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3000}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://webmail:${DB_PASSWORD:-webmail_secure_pwd}@db:5432/webmail}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-32-chars-minimum-key!!}
+      - DEFAULT_IMAP_PORT=${DEFAULT_IMAP_PORT:-993}
+      - DEFAULT_SMTP_PORT=${DEFAULT_SMTP_PORT:-465}
     volumes:
       - ./plugins:/app/plugins
       - ./uploads:/app/uploads
