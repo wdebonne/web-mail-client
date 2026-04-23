@@ -16,6 +16,11 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+#### Agenda — Modale d'édition respecte le fuseau utilisateur
+
+- **Saisie et affichage en TZ utilisateur** ([client/src/components/calendar/EventModal.tsx](client/src/components/calendar/EventModal.tsx)) : les champs `Début`/`Fin` sont initialisés via `formatInTimeZone(..., userTz, ...)` et le submit convertit la chaîne locale en instant absolu via `fromZonedTime(..., userTz).toISOString()`. Sans cette conversion, un utilisateur en `Europe/Paris` saisissant 08:30 voyait l'événement enregistré comme 10:30 (les deux étaient interprétés en UTC de part et d'autre).
+- **Affichage des métadonnées** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : le popover de l'événement sélectionné et les libellés `HH:mm` de la vue *Mois* utilisent désormais `formatInTimeZone(..., userTz, ...)`.
+
 #### NextCloud — Synchronisation bidirectionnelle
 
 - **Calendriers synchronisés correctement marqués `nc_managed=true`** ([server/src/services/nextcloud.ts](server/src/services/nextcloud.ts)) : `syncCalendars` positionne désormais `nc_managed = TRUE`, `nc_principal_url` et `last_sync_at` dans l'upsert `INSERT … ON CONFLICT`. Sans ce flag, `pushEventToCalDAV()` ne reconnaissait pas les calendriers tirés depuis NextCloud comme push-targets, et les modifications côté WebMail ne remontaient pas.

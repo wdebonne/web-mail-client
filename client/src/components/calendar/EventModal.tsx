@@ -1,9 +1,11 @@
 import { useState, useMemo, useRef } from 'react';
 import { format, parseISO } from 'date-fns';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import {
   X, Paperclip, Plus, Trash2, Users, Repeat, FileText, Upload, Tag, Link as LinkIcon,
 } from 'lucide-react';
 import type { CalendarEvent, Calendar, EventAttendee } from '../../types';
+import { useAuthStore } from '../../stores/authStore';
 
 /* ============================================================
  * Types
@@ -205,6 +207,7 @@ export default function EventModal({
   calendars, initialDate, editingEvent, onSubmit, onClose, isSubmitting, defaultOrganizerEmail,
   initialTab = 'summary', defaultDurationMinutes = 60,
 }: EventModalProps) {
+  const userTz = useAuthStore((s) => s.user?.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   const seedStart = editingEvent ? parseISO(editingEvent.start_date) : initialDate;
   const seedEnd = editingEvent
     ? parseISO(editingEvent.end_date)
@@ -220,10 +223,11 @@ export default function EventModal({
     editingEvent?.calendar_id || calendars.find(c => c.is_default)?.id || calendars[0]?.id || ''
   );
   const [allDay, setAllDay] = useState(!!editingEvent?.all_day);
-  const [startDate, setStartDate] = useState(format(seedStart, 'yyyy-MM-dd'));
-  const [startTime, setStartTime] = useState(format(seedStart, 'HH:mm'));
-  const [endDate, setEndDate] = useState(format(seedEnd, 'yyyy-MM-dd'));
-  const [endTime, setEndTime] = useState(format(seedEnd, 'HH:mm'));
+  // Dates/heures affichées et éditées dans le fuseau de l'utilisateur (Paramètres)
+  const [startDate, setStartDate] = useState(formatInTimeZone(seedStart, userTz, 'yyyy-MM-dd'));
+  const [startTime, setStartTime] = useState(formatInTimeZone(seedStart, userTz, 'HH:mm'));
+  const [endDate, setEndDate] = useState(formatInTimeZone(seedEnd, userTz, 'yyyy-MM-dd'));
+  const [endTime, setEndTime] = useState(formatInTimeZone(seedEnd, userTz, 'HH:mm'));
   const [reminder, setReminder] = useState<number | null>(editingEvent?.reminder_minutes ?? null);
   const [categories, setCategories] = useState<string[]>(editingEvent?.categories || []);
   const [categoryInput, setCategoryInput] = useState('');
@@ -328,10 +332,16 @@ export default function EventModal({
     e.preventDefault();
     if (!title.trim() || !calendarId) return;
 
-    const start = allDay ? `${startDate}T00:00:00` : `${startDate}T${startTime}:00`;
-    const end = allDay
+    // L'utilisateur saisit l'heure dans son fuseau (ex. Europe/Paris).
+    // On convertit en instant absolu UTC pour que le backend stocke un
+    // TIMESTAMPTZ correct et que toute la chaîne (affichage, drag&drop,
+    // pushes NextCloud) reste cohérente.
+    const startLocal = allDay ? `${startDate}T00:00:00` : `${startDate}T${startTime}:00`;
+    const endLocal = allDay
       ? `${endDate || startDate}T23:59:59`
       : `${endDate || startDate}T${endTime || startTime}:00`;
+    const start = fromZonedTime(startLocal, userTz).toISOString();
+    const end = fromZonedTime(endLocal, userTz).toISOString();
 
     const rrule = buildRRule(rec);
     const rdates = rec.freq === 'CUSTOM' ? rec.rdates.map(d => `${d}T00:00:00`) : undefined;

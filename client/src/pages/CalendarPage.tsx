@@ -444,6 +444,7 @@ export default function CalendarPage() {
                 onEventClick={(ev) => setSelectedEvent(ev)}
                 onEventContextMenu={handleEventContextMenu}
                 eventColor={eventColor}
+                userTz={userTz}
               />
             )}
             {(view === 'week' || view === 'workweek') && (
@@ -494,7 +495,7 @@ export default function CalendarPage() {
               <div className="flex items-center gap-2 text-outlook-text-secondary">
                 <Clock size={14} />
                 {selectedEvent.all_day ? 'Toute la journée' : (
-                  <span>{format(parseISO(selectedEvent.start_date), 'EEEE d MMMM yyyy HH:mm', { locale: fr })} – {format(parseISO(selectedEvent.end_date), 'HH:mm', { locale: fr })}</span>
+                  <span>{formatInTimeZone(parseISO(selectedEvent.start_date), userTz, 'EEEE d MMMM yyyy HH:mm', { locale: fr })} – {formatInTimeZone(parseISO(selectedEvent.end_date), userTz, 'HH:mm', { locale: fr })}</span>
                 )}
               </div>
               {selectedEvent.location && (
@@ -597,13 +598,14 @@ export default function CalendarPage() {
   );
 }
 
-function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, onEventContextMenu, eventColor }: {
+function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, onEventContextMenu, eventColor, userTz }: {
   currentDate: Date;
   getEventsForDay: (d: Date) => CalendarEvent[];
   onDayClick: (d: Date) => void;
   onEventClick: (ev: CalendarEvent) => void;
   onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
   eventColor: (ev: CalendarEvent) => string;
+  userTz: string;
 }) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -642,7 +644,7 @@ function MonthView({ currentDate, getEventsForDay, onDayClick, onEventClick, onE
                   className="w-full text-left text-[10px] px-1 py-0.5 rounded mb-0.5 truncate transition-opacity hover:opacity-80"
                   style={{ backgroundColor: `${eventColor(event)}20`, color: eventColor(event), borderLeft: `2px solid ${eventColor(event)}` }}
                 >
-                  {event.all_day ? '' : format(parseISO(event.start_date), 'HH:mm') + ' '}
+                  {event.all_day ? '' : formatInTimeZone(parseISO(event.start_date), userTz, 'HH:mm') + ' '}
                   {event.title}
                 </button>
               ))}
