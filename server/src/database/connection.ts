@@ -45,45 +45,6 @@ export async function initDatabase() {
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS attachment_action_mode VARCHAR(20) DEFAULT 'preview';
 
-      -- CalDAV sync settings on mail accounts (added later)
-      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_url TEXT;
-      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_username VARCHAR(255);
-      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_sync_enabled BOOLEAN DEFAULT false;
-      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_last_sync TIMESTAMP;
-
-      -- CardDAV sync settings on mail accounts
-      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_url TEXT;
-      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_username VARCHAR(255);
-      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_sync_enabled BOOLEAN DEFAULT false;
-      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_last_sync TIMESTAMP;
-
-      -- Link calendars back to the mail account they were synced from
-      ALTER TABLE IF EXISTS calendars ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE CASCADE;
-      CREATE INDEX IF NOT EXISTS idx_calendars_mail_account ON calendars(mail_account_id);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_calendars_caldav_unique
-        ON calendars(mail_account_id, external_id)
-        WHERE mail_account_id IS NOT NULL AND external_id IS NOT NULL;
-
-      -- Unique index required by CalDAV sync ON CONFLICT on calendar_events
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_events_caldav_unique
-        ON calendar_events(calendar_id, ical_uid)
-        WHERE external_id IS NOT NULL;
-
-      -- Rich RFC 5545 event fields (RoundCube-equivalent)
-      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS priority INT;
-      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS url TEXT;
-      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '[]'::jsonb;
-      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS transparency VARCHAR(20);
-      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
-      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS rdates JSONB DEFAULT '[]'::jsonb;
-
-      -- Link contacts back to the mail account + CardDAV item identifiers (for push-back)
-      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE SET NULL;
-      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_url TEXT;
-      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_href TEXT;
-      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_etag TEXT;
-      CREATE INDEX IF NOT EXISTS idx_contacts_mail_account ON contacts(mail_account_id);
-
       -- User groups
       CREATE TABLE IF NOT EXISTS groups (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -291,6 +252,45 @@ export async function initDatabase() {
       );
       CREATE INDEX IF NOT EXISTS idx_events_calendar ON calendar_events(calendar_id);
       CREATE INDEX IF NOT EXISTS idx_events_dates ON calendar_events(start_date, end_date);
+
+      -- CalDAV sync settings on mail accounts (added later)
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_url TEXT;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_username VARCHAR(255);
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_sync_enabled BOOLEAN DEFAULT false;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS caldav_last_sync TIMESTAMP;
+
+      -- CardDAV sync settings on mail accounts
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_url TEXT;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_username VARCHAR(255);
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_sync_enabled BOOLEAN DEFAULT false;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS carddav_last_sync TIMESTAMP;
+
+      -- Link calendars back to the mail account they were synced from
+      ALTER TABLE IF EXISTS calendars ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE CASCADE;
+      CREATE INDEX IF NOT EXISTS idx_calendars_mail_account ON calendars(mail_account_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_calendars_caldav_unique
+        ON calendars(mail_account_id, external_id)
+        WHERE mail_account_id IS NOT NULL AND external_id IS NOT NULL;
+
+      -- Unique index required by CalDAV sync ON CONFLICT on calendar_events
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_events_caldav_unique
+        ON calendar_events(calendar_id, ical_uid)
+        WHERE external_id IS NOT NULL;
+
+      -- Rich RFC 5545 event fields (RoundCube-equivalent)
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS priority INT;
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS url TEXT;
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS transparency VARCHAR(20);
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS rdates JSONB DEFAULT '[]'::jsonb;
+
+      -- Link contacts back to the mail account + CardDAV item identifiers (for push-back)
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS mail_account_id UUID REFERENCES mail_accounts(id) ON DELETE SET NULL;
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_url TEXT;
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_href TEXT;
+      ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_etag TEXT;
+      CREATE INDEX IF NOT EXISTS idx_contacts_mail_account ON contacts(mail_account_id);
 
       -- Shared calendar access (internal sharing between app users)
       CREATE TABLE IF NOT EXISTS shared_calendar_access (
