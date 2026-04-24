@@ -509,6 +509,24 @@ export async function initDatabase() {
         last_used_at TIMESTAMP DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+
+      -- Device sessions (refresh token rotation for "stay signed in" per device)
+      CREATE TABLE IF NOT EXISTS device_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        refresh_token_hash TEXT NOT NULL UNIQUE,
+        device_name TEXT,
+        user_agent TEXT,
+        ip_last_seen VARCHAR(45),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        last_used_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL,
+        revoked_at TIMESTAMPTZ,
+        replaced_by UUID REFERENCES device_sessions(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_device_sessions_user ON device_sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_device_sessions_hash ON device_sessions(refresh_token_hash);
+      CREATE INDEX IF NOT EXISTS idx_device_sessions_expires ON device_sessions(expires_at);
     `);
 
     logger.info('Database schema created/updated successfully');

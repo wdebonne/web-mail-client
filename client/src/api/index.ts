@@ -1,8 +1,46 @@
 const API_BASE = '/api';
 
-async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+/**
+ * Silent-refresh state.
+ *
+ * When an API call returns 401 we try once to rotate the httpOnly refresh
+ * cookie via POST /api/auth/refresh, update `auth_token`, and retry the
+ * original request. Concurrent 401s share the same pending refresh promise
+ * so we never fire multiple refreshes in parallel.
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function performRefresh(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) return false;
+      const data = await res.json().catch(() => null) as { token?: string } | null;
+      if (!data?.token) return false;
+      localStorage.setItem('auth_token', data.token);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      // Clear on next tick so any piggy-backed callers see the same result.
+      setTimeout(() => { refreshInFlight = null; }, 0);
+    }
+  })();
+  return refreshInFlight;
+}
+
+/** Attempt to silently restore a session on app boot (uses the refresh cookie). */
+export async function tryRestoreSession(): Promise<boolean> {
+  return performRefresh();
+}
+
+async function request<T>(url: string, options: RequestInit = {}, _retry = false): Promise<T> {
   const token = localStorage.getItem('auth_token');
-  
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
@@ -19,8 +57,17 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (response.status === 401) {
+    // Never try to refresh the refresh endpoint itself.
+    if (!_retry && !url.startsWith('/auth/refresh') && !url.startsWith('/auth/login')) {
+      const refreshed = await performRefresh();
+      if (refreshed) {
+        return request<T>(url, options, true);
+      }
+    }
     localStorage.removeItem('auth_token');
-    window.location.href = '/';
+    if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+      window.location.href = '/';
+    }
     throw new Error('Session expirée');
   }
 
@@ -49,6 +96,19 @@ export const api = {
   logout: () => request('/auth/logout', { method: 'POST' }),
 
   getMe: () => request<any>('/auth/me'),
+
+  // Device sessions ("stay signed in" per device)
+  getDevices: () => request<Array<{
+    id: string;
+    deviceName: string | null;
+    userAgent: string | null;
+    ipLastSeen: string | null;
+    createdAt: string;
+    lastUsedAt: string;
+    expiresAt: string;
+    current: boolean;
+  }>>('/auth/devices'),
+  revokeDevice: (id: string) => request<{ success: boolean }>(`/auth/devices/${id}`, { method: 'DELETE' }),
 
   // Accounts
   getAccounts: () => request<any[]>('/accounts'),

@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
   Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
-  FolderOpen, CheckCircle2, AlertCircle, RefreshCw
+  FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -17,7 +17,7 @@ import {
   getLastBackupAt, getLastBackupError, runAutoBackup, subscribeBackupStatus,
 } from '../utils/backup';
 
-type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup';
+type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup' | 'devices';
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
@@ -28,6 +28,7 @@ export default function SettingsPage() {
     { id: 'mail' as const, icon: Paperclip, label: 'Messagerie' },
     { id: 'appearance' as const, icon: Palette, label: 'Apparence' },
     { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
+    { id: 'devices' as const, icon: Monitor, label: 'Mes appareils' },
     { id: 'backup' as const, icon: HardDrive, label: 'Sauvegarde' },
   ];
 
@@ -59,6 +60,7 @@ export default function SettingsPage() {
           {tab === 'mail' && <MailBehaviorSettings />}
           {tab === 'appearance' && <AppearanceSettings />}
           {tab === 'notifications' && <NotificationSettings />}
+          {tab === 'devices' && <DevicesSettings />}
           {tab === 'backup' && <BackupSettings />}
         </div>
       </div>
@@ -743,5 +745,116 @@ function BackupSettings() {
     </div>
   );
 }
+
+/**
+ * Devices settings — lists active device sessions so the user can see every
+ * browser/PWA install signed into their account and revoke one remotely (e.g.
+ * when a phone is lost). Built on top of the refresh-token rotation system.
+ */
+function DevicesSettings() {
+  const qc = useQueryClient();
+  const { data: devices, isLoading } = useQuery({
+    queryKey: ['auth-devices'],
+    queryFn: () => api.getDevices(),
+    refetchOnWindowFocus: true,
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (id: string) => api.revokeDevice(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['auth-devices'] });
+      toast.success('Appareil déconnecté');
+    },
+    onError: () => toast.error('Impossible de déconnecter cet appareil'),
+  });
+
+  const handleRevoke = (id: string, isCurrent: boolean) => {
+    const msg = isCurrent
+      ? 'Déconnecter cet appareil ? Vous devrez vous reconnecter.'
+      : 'Déconnecter cet appareil à distance ?';
+    if (!window.confirm(msg)) return;
+    revokeMutation.mutate(id);
+  };
+
+  const iconFor = (ua: string | null) => {
+    const lower = (ua || '').toLowerCase();
+    if (lower.includes('iphone') || lower.includes('android')) return Smartphone;
+    if (lower.includes('ipad') || lower.includes('tablet')) return Tablet;
+    return Monitor;
+  };
+
+  const formatDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+    } catch {
+      return iso;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <h3 className="text-lg font-semibold mb-1 text-outlook-text-primary">Mes appareils connectés</h3>
+        <p className="text-sm text-outlook-text-secondary mb-4">
+          Chaque appareil sur lequel vous vous connectez reste authentifié sans redemander votre mot de passe.
+          Vous pouvez le déconnecter à distance ici en cas de perte ou de vol.
+        </p>
+
+        {isLoading && (
+          <div className="text-sm text-outlook-text-secondary">Chargement…</div>
+        )}
+
+        {!isLoading && devices && devices.length === 0 && (
+          <div className="text-sm text-outlook-text-secondary">Aucun appareil actif.</div>
+        )}
+
+        <div className="space-y-2">
+          {devices?.map(device => {
+            const Icon = iconFor(device.userAgent);
+            return (
+              <div
+                key={device.id}
+                className="flex items-start gap-3 p-3 border border-outlook-border rounded-md bg-white"
+              >
+                <div className="w-10 h-10 rounded-full bg-outlook-bg-hover flex items-center justify-center flex-shrink-0">
+                  <Icon size={18} className="text-outlook-text-secondary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm text-outlook-text-primary">
+                      {device.deviceName || 'Appareil'}
+                    </span>
+                    {device.current && (
+                      <span className="text-2xs uppercase tracking-wide px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+                        Cet appareil
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-outlook-text-secondary mt-0.5">
+                    Dernière utilisation : {formatDate(device.lastUsedAt)}
+                    {device.ipLastSeen && <> · {device.ipLastSeen}</>}
+                  </div>
+                  <div className="text-xs text-outlook-text-disabled mt-0.5">
+                    Connecté le {formatDate(device.createdAt)} · expire le {formatDate(device.expiresAt)}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleRevoke(device.id, device.current)}
+                  disabled={revokeMutation.isPending}
+                  className="flex items-center gap-1 text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                  title="Déconnecter cet appareil"
+                >
+                  <Trash2 size={12} /> Déconnecter
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+
 
 
