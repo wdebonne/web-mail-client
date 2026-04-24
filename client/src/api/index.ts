@@ -220,6 +220,12 @@ export const api = {
   searchContacts: (q: string) =>
     request<{ contacts: any[]; distributionLists: any[] }>(`/contacts/search/autocomplete?q=${encodeURIComponent(q)}`),
 
+  // Organization directory — app users (optionally filtered by q).
+  listDirectoryUsers: (q?: string) =>
+    request<Array<{ id: string; email: string; display_name: string | null; avatar_url: string | null; nc_username: string | null }>>(
+      `/contacts/directory/users${q ? `?q=${encodeURIComponent(q)}` : ''}`
+    ),
+
   getContactGroups: () => request<any[]>('/contacts/groups/list'),
 
   createContactGroup: (name: string) =>
@@ -340,7 +346,7 @@ export const api = {
     request<any>(`/admin/nextcloud/users/${userId}/sync`, { method: 'POST' }),
 
   // Calendar sharing / publishing
-  shareCalendar: (calendarId: string, payload: { userId?: string; email?: string; permission?: 'read' | 'write' }) =>
+  shareCalendar: (calendarId: string, payload: { userId?: string; email?: string; permission?: 'read' | 'write' | 'busy' | 'titles' }) =>
     request<any>(`/calendar/${calendarId}/share`, { method: 'POST', body: JSON.stringify(payload) }),
   revokeShareCalendar: (calendarId: string, payload: { userId?: string; email?: string }) =>
     request<any>(`/calendar/${calendarId}/share`, { method: 'DELETE', body: JSON.stringify(payload) }),

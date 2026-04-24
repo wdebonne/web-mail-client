@@ -420,7 +420,21 @@ calendarRouter.post('/:id/migrate', async (req: AuthRequest, res) => {
 calendarRouter.post('/:id/share', async (req: AuthRequest, res) => {
   try {
     const { userId, email, permission } = req.body || {};
-    const perm = permission === 'write' || permission === 'read-write' ? 'read-write' : 'read';
+
+    // Accept both the legacy binary levels ('read', 'write') and Outlook-style
+    // granular levels ('busy', 'titles', 'read', 'write'). Granular values
+    // are persisted as-is and later enforced by the read path (busy/titles
+    // filter out sensitive fields when serialising events).
+    const granular: 'busy' | 'titles' | 'read' | 'write' =
+      permission === 'write' || permission === 'edit' || permission === 'read-write'
+        ? 'write'
+        : permission === 'titles' || permission === 'titles_locations'
+          ? 'titles'
+          : permission === 'busy' || permission === 'free_busy'
+            ? 'busy'
+            : 'read';
+    // NextCloud only has a binary read / read-write concept → map back.
+    const perm = granular === 'write' ? 'read-write' : 'read';
 
     // Verify ownership + read NC info
     const check = await pool.query(
@@ -472,14 +486,32 @@ calendarRouter.post('/:id/share', async (req: AuthRequest, res) => {
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (calendar_id, user_id)
          DO UPDATE SET permission = $3, nextcloud_share_id = $4`,
-        [req.params.id, targetUserId, perm === 'read-write' ? 'write' : 'read', nextcloudShareId]
+        [req.params.id, targetUserId, granular, nextcloudShareId]
       );
     } else if (targetEmail) {
-      // External: record in external_calendar_shares
+      // External share: auto-register the recipient in the user's address
+      // book if unknown, so follow-up interactions (compose autocomplete,
+      // directory search) find them.
+      try {
+        const existing = await pool.query(
+          `SELECT id FROM contacts WHERE user_id = $1 AND LOWER(email) = LOWER($2) LIMIT 1`,
+          [req.userId, targetEmail]
+        );
+        if (existing.rows.length === 0) {
+          await pool.query(
+            `INSERT INTO contacts (user_id, email, display_name, source)
+             VALUES ($1, $2, $3, 'local')`,
+            [req.userId, targetEmail, targetEmail]
+          );
+        }
+      } catch (e: any) {
+        logger.warn({ err: e?.message }, 'Auto-create contact after share failed');
+      }
+
       await pool.query(
         `INSERT INTO external_calendar_shares (calendar_id, share_type, recipient_email, permission, nextcloud_share_id, created_by)
          VALUES ($1, 'email', $2, $3, $4, $5)`,
-        [req.params.id, targetEmail, perm === 'read-write' ? 'write' : 'read', nextcloudShareId, req.userId]
+        [req.params.id, targetEmail, granular, nextcloudShareId, req.userId]
       );
     } else {
       return res.status(400).json({ error: 'userId ou email requis' });

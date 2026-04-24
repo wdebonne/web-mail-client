@@ -342,12 +342,38 @@ contactRouter.post('/:id/promote', async (req: AuthRequest, res) => {
   }
 });
 
+// Organization directory — list other app users for internal sharing.
+// Optional `q` parameter filters by email / display_name.
+contactRouter.get('/directory/users', async (req: AuthRequest, res) => {
+  try {
+    const q = (req.query.q as string | undefined)?.trim() || '';
+    const params: any[] = [req.userId];
+    let where = 'u.id <> $1';
+    if (q.length >= 1) {
+      params.push(`%${q}%`);
+      where += ` AND (u.email ILIKE $2 OR u.display_name ILIKE $2)`;
+    }
+    const result = await pool.query(
+      `SELECT u.id, u.email, u.display_name, u.avatar_url, nc.nc_username
+         FROM users u
+         LEFT JOIN nextcloud_users nc ON nc.user_id = u.id
+        WHERE ${where}
+        ORDER BY u.display_name NULLS LAST, u.email
+        LIMIT 50`,
+      params
+    );
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Search contacts (autocomplete for email compose)
 contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
   try {
     const query = req.query.q as string;
     if (!query || query.length < 2) {
-      return res.json([]);
+      return res.json({ contacts: [], distributionLists: [] });
     }
 
     const result = await pool.query(
