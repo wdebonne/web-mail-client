@@ -34,6 +34,12 @@ const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 3000;
 
+// Trust the first proxy hop (Nginx Proxy Manager / Traefik / etc.) so that
+// Express honours X-Forwarded-Proto when deciding whether to set cookies
+// with the `Secure` flag. Required for the httpOnly refresh cookie to be
+// delivered over HTTPS behind a reverse proxy.
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: false,
