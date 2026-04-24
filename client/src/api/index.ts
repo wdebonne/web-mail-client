@@ -352,8 +352,16 @@ export const api = {
     request<any>(`/calendar/${calendarId}/share`, { method: 'DELETE', body: JSON.stringify(payload) }),
   listCalendarShares: (calendarId: string) =>
     request<{ internal: any[]; external: any[] }>(`/calendar/${calendarId}/shares`),
-  publishCalendar: (calendarId: string) =>
-    request<{ success: boolean; publicUrl: string }>(`/calendar/${calendarId}/publish`, { method: 'POST' }),
+  publishCalendar: (calendarId: string, permission: 'busy' | 'titles' | 'read' = 'read') =>
+    request<{ success: boolean; publicUrl: string; htmlUrl: string; icsUrl: string; token: string; permission: string }>(
+      `/calendar/${calendarId}/publish`,
+      { method: 'POST', body: JSON.stringify({ permission }) }
+    ),
+  updatePublicLinkPermission: (calendarId: string, permission: 'busy' | 'titles' | 'read') =>
+    request<{ success: boolean; htmlUrl: string; icsUrl: string; permission: string; token: string }>(
+      `/calendar/${calendarId}/publish`,
+      { method: 'PATCH', body: JSON.stringify({ permission }) }
+    ),
   unpublishCalendar: (calendarId: string) =>
     request(`/calendar/${calendarId}/publish`, { method: 'DELETE' }),
 

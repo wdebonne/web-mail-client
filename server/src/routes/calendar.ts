@@ -568,31 +568,120 @@ calendarRouter.delete('/:id/share', async (req: AuthRequest, res) => {
   }
 });
 
-// Publish calendar (public read-only link)
+// Build absolute base URL from the request, respecting reverse-proxy headers.
+function getRequestBaseUrl(req: any): string {
+  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
+  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host;
+  return `${proto}://${host}`;
+}
+
+function buildPublicUrls(req: any, token: string) {
+  const base = getRequestBaseUrl(req);
+  return {
+    htmlUrl: `${base}/api/public/calendar/${token}`,
+    icsUrl: `${base}/api/public/calendar/${token}.ics`,
+  };
+}
+
+// Publish calendar (public read-only link with permission filter)
 calendarRouter.post('/:id/publish', async (req: AuthRequest, res) => {
   try {
     const cal = await pool.query(
-      `SELECT nc_managed, caldav_url FROM calendars WHERE id = $1 AND user_id = $2`,
+      `SELECT id, nc_managed, caldav_url FROM calendars WHERE id = $1 AND user_id = $2`,
       [req.params.id, req.userId]
     );
     if (cal.rows.length === 0) return res.status(404).json({ error: 'Calendrier non trouvé' });
-    if (!cal.rows[0].nc_managed || !cal.rows[0].caldav_url) {
-      return res.status(400).json({ error: 'Publication disponible uniquement pour les calendriers NextCloud' });
-    }
-    const { getUserClient } = await import('../services/nextcloudHelper');
-    const nc = await getUserClient(req.userId!);
-    if (!nc) return res.status(400).json({ error: 'Compte NextCloud non lié' });
-    const publicUrl = await nc.publishCalendar(cal.rows[0].caldav_url);
-    if (!publicUrl) return res.status(500).json({ error: 'URL publique introuvable' });
 
-    const token = publicUrl.split('/').filter(Boolean).pop() || crypto.randomBytes(16).toString('hex');
+    // Permission: 'busy' | 'titles' | 'read'
+    const rawPerm = (req.body?.permission as string | undefined) || 'read';
+    const permission: 'busy' | 'titles' | 'read' =
+      rawPerm === 'busy' || rawPerm === 'free_busy' ? 'busy'
+      : rawPerm === 'titles' || rawPerm === 'titles_locations' ? 'titles'
+      : 'read';
+
+    // Look up existing token (if already published)
+    const existing = await pool.query(
+      `SELECT public_token FROM external_calendar_shares
+        WHERE calendar_id = $1 AND share_type = 'public_link' LIMIT 1`,
+      [req.params.id]
+    );
+    const token = existing.rows[0]?.public_token || crypto.randomBytes(16).toString('hex');
+    const { htmlUrl, icsUrl } = buildPublicUrls(req, token);
+
+    // Optionally publish on NextCloud (does not change our returned URLs)
+    if (cal.rows[0].nc_managed && cal.rows[0].caldav_url) {
+      try {
+        const nc = await getUserClient(req.userId!);
+        if (nc) await nc.publishCalendar(cal.rows[0].caldav_url);
+      } catch (e: any) {
+        logger.warn(`NC publish failed (ignored): ${e.message}`);
+      }
+    }
+
     await pool.query(
       `INSERT INTO external_calendar_shares (calendar_id, share_type, public_token, public_url, permission, created_by)
-       VALUES ($1, 'public_link', $2, $3, 'read', $4)
-       ON CONFLICT DO NOTHING`,
-      [req.params.id, token, publicUrl, req.userId]
+       VALUES ($1, 'public_link', $2, $3, $4, $5)
+       ON CONFLICT (calendar_id) WHERE share_type = 'public_link'
+       DO UPDATE SET permission = EXCLUDED.permission, public_url = EXCLUDED.public_url`,
+      [req.params.id, token, htmlUrl, permission, req.userId]
     );
-    res.json({ success: true, publicUrl });
+
+    res.json({ success: true, publicUrl: htmlUrl, htmlUrl, icsUrl, token, permission });
+  } catch (error: any) {
+    // Fallback if the conflict target does not exist (older deployments): do plain insert-or-update
+    try {
+      if (String(error?.code) === '42P10' || /no unique.*exclusion constraint/i.test(error?.message || '')) {
+        const calId = req.params.id;
+        const rawPerm = (req.body?.permission as string | undefined) || 'read';
+        const permission: 'busy' | 'titles' | 'read' =
+          rawPerm === 'busy' || rawPerm === 'free_busy' ? 'busy'
+          : rawPerm === 'titles' || rawPerm === 'titles_locations' ? 'titles'
+          : 'read';
+        const existing = await pool.query(
+          `SELECT id, public_token FROM external_calendar_shares
+            WHERE calendar_id = $1 AND share_type = 'public_link' LIMIT 1`,
+          [calId]
+        );
+        const token = existing.rows[0]?.public_token || crypto.randomBytes(16).toString('hex');
+        const { htmlUrl, icsUrl } = buildPublicUrls(req, token);
+        if (existing.rows[0]) {
+          await pool.query(
+            `UPDATE external_calendar_shares SET permission = $1, public_url = $2 WHERE id = $3`,
+            [permission, htmlUrl, existing.rows[0].id]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO external_calendar_shares (calendar_id, share_type, public_token, public_url, permission, created_by)
+             VALUES ($1, 'public_link', $2, $3, $4, $5)`,
+            [calId, token, htmlUrl, permission, req.userId]
+          );
+        }
+        return res.json({ success: true, publicUrl: htmlUrl, htmlUrl, icsUrl, token, permission });
+      }
+    } catch {}
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update public-link permission only
+calendarRouter.patch('/:id/publish', async (req: AuthRequest, res) => {
+  try {
+    const own = await pool.query(`SELECT 1 FROM calendars WHERE id = $1 AND user_id = $2`, [req.params.id, req.userId]);
+    if (own.rows.length === 0) return res.status(404).json({ error: 'Calendrier non trouvé' });
+    const rawPerm = (req.body?.permission as string | undefined) || 'read';
+    const permission: 'busy' | 'titles' | 'read' =
+      rawPerm === 'busy' || rawPerm === 'free_busy' ? 'busy'
+      : rawPerm === 'titles' || rawPerm === 'titles_locations' ? 'titles'
+      : 'read';
+    const r = await pool.query(
+      `UPDATE external_calendar_shares SET permission = $1
+        WHERE calendar_id = $2 AND share_type = 'public_link' RETURNING public_token, public_url`,
+      [permission, req.params.id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Aucun lien public actif' });
+    const token = r.rows[0].public_token;
+    const { htmlUrl, icsUrl } = buildPublicUrls(req, token);
+    res.json({ success: true, permission, htmlUrl, icsUrl, token });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -641,7 +730,19 @@ calendarRouter.get('/:id/shares', async (req: AuthRequest, res) => {
          FROM external_calendar_shares WHERE calendar_id = $1`,
       [req.params.id]
     );
-    res.json({ internal: internal.rows, external: external.rows });
+    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
+    const host = (req.headers['x-forwarded-host'] as string) || req.headers.host;
+    const externalRows = external.rows.map((r: any) => {
+      if (r.share_type === 'public_link' && r.public_token) {
+        return {
+          ...r,
+          public_html_url: `${proto}://${host}/api/public/calendar/${r.public_token}`,
+          public_ics_url: `${proto}://${host}/api/public/calendar/${r.public_token}.ics`,
+        };
+      }
+      return r;
+    });
+    res.json({ internal: internal.rows, external: externalRows });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

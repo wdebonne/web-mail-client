@@ -57,12 +57,20 @@ export default function ShareCalendarDialog({
   });
 
   const publishMutation = useMutation({
-    mutationFn: () => api.publishCalendar(calendar.id),
+    mutationFn: (permission: SharePermission) =>
+      api.publishCalendar(calendar.id, (permission === 'write' ? 'read' : permission) as 'busy' | 'titles' | 'read'),
     onSuccess: (r: any) => {
       toast.success('Lien public créé');
-      if (r?.publicUrl) navigator.clipboard?.writeText(r.publicUrl).catch(() => {});
+      if (r?.htmlUrl) navigator.clipboard?.writeText(r.htmlUrl).catch(() => {});
       refetch();
     },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const updatePublicMutation = useMutation({
+    mutationFn: (permission: SharePermission) =>
+      api.updatePublicLinkPermission(calendar.id, (permission === 'write' ? 'read' : permission) as 'busy' | 'titles' | 'read'),
+    onSuccess: () => { toast.success('Permission mise à jour'); refetch(); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -137,9 +145,10 @@ export default function ShareCalendarDialog({
             <PublicTab
               ncManaged={ncManaged}
               publicLink={publicLink}
-              onPublish={() => publishMutation.mutate()}
+              onPublish={(perm) => publishMutation.mutate(perm)}
+              onUpdatePermission={(perm) => updatePublicMutation.mutate(perm)}
               onUnpublish={() => unpublishMutation.mutate()}
-              isPublishing={publishMutation.isPending}
+              isPublishing={publishMutation.isPending || updatePublicMutation.isPending}
             />
           )}
         </div>
@@ -435,53 +444,150 @@ function EmailTab({
 
 // ── Public link tab ────────────────────────────────────────────────────────
 function PublicTab({
-  ncManaged, publicLink, onPublish, onUnpublish, isPublishing,
+  ncManaged, publicLink, onPublish, onUpdatePermission, onUnpublish, isPublishing,
 }: {
   ncManaged: boolean;
   publicLink: any;
-  onPublish: () => void;
+  onPublish: (permission: SharePermission) => void;
+  onUpdatePermission: (permission: SharePermission) => void;
   onUnpublish: () => void;
   isPublishing: boolean;
 }) {
+  const initialPerm: SharePermission = normalizePerm(publicLink?.permission) || 'read';
+  const [permission, setPermission] = useState<SharePermission>(initialPerm);
+  useEffect(() => { setPermission(normalizePerm(publicLink?.permission)); }, [publicLink?.permission]);
+
+  const htmlUrl: string = publicLink?.public_html_url || publicLink?.public_url || '';
+  const icsUrl: string = publicLink?.public_ics_url || '';
+  const webcalUrl = icsUrl.replace(/^https?:\/\//, 'webcal://');
+
+  const copy = (url: string, label: string) => {
+    if (!url) return;
+    navigator.clipboard?.writeText(url);
+    toast.success(`${label} copié`);
+  };
+
+  const publicPermOptions = PERMISSION_OPTIONS.filter(o => o.value !== 'write');
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-outlook-text-secondary">
-        Publiez ce calendrier via un lien accessible publiquement en lecture seule. Utile pour l'intégrer dans
-        un site ou l'envoyer à une personne sans compte NextCloud.
+        Publiez ce calendrier via un lien accessible publiquement. Le niveau de détail visible dépend de
+        la permission sélectionnée. Un lien de page web et un lien d'abonnement iCal (.ics) sont générés.
       </p>
 
-      {publicLink ? (
-        <div className="border border-outlook-border rounded p-3 flex items-center gap-2">
-          <Link2 size={14} className="text-outlook-blue" />
-          <input
-            type="text"
-            readOnly
-            value={publicLink.public_url || ''}
-            className="flex-1 text-xs bg-gray-50 border border-outlook-border rounded px-2 py-1 font-mono"
-          />
+      {/* Permission selector (for new publish or update) */}
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-outlook-text-secondary whitespace-nowrap">Les visiteurs peuvent voir :</label>
+        <select
+          value={permission}
+          onChange={(e) => setPermission(e.target.value as SharePermission)}
+          className="flex-1 border border-outlook-border rounded-md bg-white px-2 py-2 text-sm"
+        >
+          {publicPermOptions.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {publicLink ? (
           <button
-            onClick={() => { navigator.clipboard?.writeText(publicLink.public_url || ''); toast.success('Lien copié'); }}
-            className="p-1.5 hover:bg-gray-100 rounded" title="Copier"
-          ><Copy size={14} /></button>
+            onClick={() => onUpdatePermission(permission)}
+            disabled={isPublishing || permission === normalizePerm(publicLink?.permission)}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-2 rounded-md text-sm disabled:opacity-50"
+          >
+            Mettre à jour
+          </button>
+        ) : (
           <button
-            onClick={() => confirm('Supprimer le lien public ?') && onUnpublish()}
-            className="p-1.5 hover:bg-red-50 rounded text-red-600" title="Supprimer"
-          ><Trash2 size={14} /></button>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between gap-2 border border-dashed border-outlook-border rounded p-4">
-          <span className="text-xs text-outlook-text-secondary">
-            {ncManaged
-              ? 'Aucun lien public actif.'
-              : 'Disponible uniquement pour les calendriers NextCloud.'}
-          </span>
-          <button
-            onClick={onPublish}
-            disabled={!ncManaged || isPublishing}
-            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-xs disabled:opacity-50"
+            onClick={() => onPublish(permission)}
+            disabled={isPublishing}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-2 rounded-md text-sm disabled:opacity-50"
           >
             {isPublishing ? 'Publication…' : 'Publier'}
           </button>
+        )}
+      </div>
+
+      {publicLink ? (
+        <div className="space-y-3">
+          {/* HTML viewer link */}
+          <div>
+            <div className="text-xs font-semibold text-outlook-text-secondary mb-1">PAGE WEB (HTML)</div>
+            <div className="flex items-center gap-2 border border-outlook-border rounded p-2">
+              <Globe size={14} className="text-outlook-blue flex-shrink-0" />
+              <input
+                type="text"
+                readOnly
+                value={htmlUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 text-xs bg-gray-50 border border-outlook-border rounded px-2 py-1 font-mono"
+              />
+              <a
+                href={htmlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 hover:bg-gray-100 rounded"
+                title="Ouvrir"
+              >
+                <Link2 size={14} />
+              </a>
+              <button
+                onClick={() => copy(htmlUrl, 'Lien HTML')}
+                className="p-1.5 hover:bg-gray-100 rounded"
+                title="Copier"
+              >
+                <Copy size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* ICS link */}
+          <div>
+            <div className="text-xs font-semibold text-outlook-text-secondary mb-1">ABONNEMENT ICS (.ics)</div>
+            <div className="flex items-center gap-2 border border-outlook-border rounded p-2">
+              <Link2 size={14} className="text-outlook-blue flex-shrink-0" />
+              <input
+                type="text"
+                readOnly
+                value={icsUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 text-xs bg-gray-50 border border-outlook-border rounded px-2 py-1 font-mono"
+              />
+              <a
+                href={webcalUrl}
+                className="p-1.5 hover:bg-gray-100 rounded"
+                title="S'abonner (webcal)"
+              >
+                <Globe size={14} />
+              </a>
+              <button
+                onClick={() => copy(icsUrl, 'Lien ICS')}
+                className="p-1.5 hover:bg-gray-100 rounded"
+                title="Copier"
+              >
+                <Copy size={14} />
+              </button>
+            </div>
+            <p className="text-[11px] text-outlook-text-secondary mt-1">
+              Cliquez sur <strong>s'abonner</strong> pour l'ajouter à Outlook, Apple Calendar, Google Calendar…
+            </p>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              onClick={() => confirm('Supprimer le lien public ?') && onUnpublish()}
+              className="flex items-center gap-1 text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded"
+            >
+              <Trash2 size={13} /> Supprimer le lien public
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="border border-dashed border-outlook-border rounded p-6 text-center">
+          <Globe size={28} className="mx-auto text-outlook-text-disabled mb-2" />
+          <p className="text-xs text-outlook-text-secondary">
+            Aucun lien public actif.
+            {!ncManaged && ' La page HTML et le flux .ics fonctionneront même sans NextCloud.'}
+          </p>
         </div>
       )}
     </div>

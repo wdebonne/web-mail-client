@@ -346,6 +346,8 @@ export async function initDatabase() {
         created_at TIMESTAMP DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_ext_cal_shares_calendar ON external_calendar_shares(calendar_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_ext_cal_shares_public_link
+        ON external_calendar_shares(calendar_id) WHERE share_type = 'public_link';
 
       -- NextCloud per-user provisioning (mapping app user <-> NC account)
       CREATE TABLE IF NOT EXISTS nextcloud_users (
