@@ -17,7 +17,7 @@ import { calendarRouter } from './routes/calendar';
 import { calendarPublicRouter } from './routes/calendarPublic';
 import { settingsRouter } from './routes/settings';
 import { accountRouter } from './routes/accounts';
-import { adminRouter } from './routes/admin';
+import { adminRouter, oauthCallbackRouter } from './routes/admin';
 import { pluginRouter } from './routes/plugins';
 import { searchRouter } from './routes/search';
 import { pushRouter } from './routes/push';
@@ -100,6 +100,11 @@ app.use('/api/calendar', authMiddleware, calendarRouter);
 app.use('/api/public/calendar', calendarPublicRouter);
 app.use('/api/settings', authMiddleware, settingsRouter);
 app.use('/api/accounts', authMiddleware, accountRouter);
+// OAuth callbacks (Microsoft, …) must be mounted BEFORE the authenticated
+// admin router. The browser redirect from login.microsoftonline.com only
+// carries the session cookie, not the SPA's Bearer token, so the callback
+// handler authenticates via `req.session.oauthUserId` (set at /start time).
+app.use('/api/admin', oauthCallbackRouter);
 app.use('/api/admin', authMiddleware, adminRouter);
 app.use('/api/admin/branding', authMiddleware, brandingAdminRouter);
 app.use('/api/branding', brandingPublicRouter);

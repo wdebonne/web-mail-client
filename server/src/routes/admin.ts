@@ -16,6 +16,16 @@ import {
 
 export const adminRouter = Router();
 
+/**
+ * Public-facing router for the Microsoft OAuth callback.
+ *
+ * The callback is hit by a top-level browser redirect from login.microsoftonline.com,
+ * so the SPA's Bearer token is NOT sent — only the express-session cookie is.
+ * We therefore mount this on `app` WITHOUT authMiddleware / adminMiddleware and
+ * authenticate via the userId we stored in the session at /start time.
+ */
+export const oauthCallbackRouter = Router();
+
 // All admin routes require admin access
 adminRouter.use(adminMiddleware);
 
@@ -422,6 +432,16 @@ adminRouter.post('/mail-accounts/oauth/:provider/start', async (req: AuthRequest
     const state = crypto.randomBytes(24).toString('hex');
     (req.session as any).oauthState = state;
     (req.session as any).oauthProvider = provider;
+    // Persist the admin identity in the session so the callback (hit by a
+    // browser redirect without a Bearer token) can authenticate via cookie.
+    (req.session as any).oauthUserId = req.userId;
+    (req.session as any).oauthIsAdmin = req.isAdmin === true;
+    // Ensure the session is saved *before* we return the authorize URL,
+    // otherwise a race with the popup navigation can leave oauthState
+    // unpersisted.
+    await new Promise<void>((resolve, reject) =>
+      req.session.save((err) => (err ? reject(err) : resolve())),
+    );
     const loginHint = typeof req.body?.loginHint === 'string' ? req.body.loginHint : undefined;
     const url = await buildAuthorizeUrl(provider, state, loginHint);
     res.json({ url, state });
@@ -430,7 +450,15 @@ adminRouter.post('/mail-accounts/oauth/:provider/start', async (req: AuthRequest
   }
 });
 
-adminRouter.get('/mail-accounts/oauth/:provider/callback', async (req: AuthRequest, res) => {
+adminRouter.get('/mail-accounts/oauth/:provider/callback', async (_req: AuthRequest, res) => {
+  // The real callback lives on `oauthCallbackRouter`, mounted BEFORE
+  // authMiddleware in index.ts (the redirect from Microsoft only carries the
+  // session cookie, not the SPA's Bearer token). If this handler is ever
+  // reached, it means the public router wasn't mounted correctly.
+  res.status(500).send('OAuth callback misconfigured: oauthCallbackRouter must be mounted before the authenticated admin router.');
+});
+
+oauthCallbackRouter.get('/mail-accounts/oauth/:provider/callback', async (req: AuthRequest, res) => {
   const provider = req.params.provider;
   const { code, state, error: oauthError, error_description } = req.query as Record<string, string>;
 
@@ -460,15 +488,21 @@ adminRouter.get('/mail-accounts/oauth/:provider/callback', async (req: AuthReque
   try {
     if (oauthError) throw new Error(error_description || oauthError);
     if (!code || !state) throw new Error('Paramètres OAuth manquants.');
-    const expected = (req.session as any)?.oauthState;
+    const sess = req.session as any;
+    const oauthUserId: string | undefined = sess?.oauthUserId;
+    const oauthIsAdmin: boolean = sess?.oauthIsAdmin === true;
+    if (!oauthUserId || !oauthIsAdmin) {
+      throw new Error("Session administrateur introuvable. Reconnectez-vous et relancez la connexion Microsoft.");
+    }
+    const expected = sess?.oauthState;
     if (!expected || state !== expected) throw new Error('État OAuth invalide (anti-CSRF).');
-    (req.session as any).oauthState = undefined;
+    sess.oauthState = undefined;
     if (provider !== 'microsoft') throw new Error(`Fournisseur non supporté : ${provider}`);
 
     const { exchangeCode, storePendingOAuth } = await import('../services/oauth');
     const tokens = await exchangeCode('microsoft', code);
     if (!tokens.email) throw new Error("Le jeton OAuth ne contient pas d'adresse e-mail.");
-    const pendingId = storePendingOAuth(req.userId!, tokens);
+    const pendingId = storePendingOAuth(oauthUserId, tokens);
     renderClosingPage({ ok: true, provider, pendingId, email: tokens.email, name: tokens.name });
   } catch (err: any) {
     renderClosingPage({ ok: false, provider, error: err.message });
