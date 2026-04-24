@@ -9,6 +9,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- **Liste des dossiers mail non scrollable** ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)) : la racine du `FolderPane` n'avait pas de hauteur explicite (`flex-shrink-0` sans `h-full`), donc la zone interne `flex-1 overflow-y-auto` ne se contraignait jamais et la barre de défilement n'apparaissait pas — les comptes avec beaucoup de dossiers (Outlook complet : Boîte de réception, sous-dossiers, Brouillons, Courrier indésirable, Archives, Calendrier, Contacts, Notes, Tâches, etc.) étaient tronqués. Ajout de `h-full min-h-0` sur le conteneur racine pour activer le scroll vertical.
 - **Callback OAuth Microsoft renvoyait `Non authentifié`** ([server/src/routes/admin.ts](server/src/routes/admin.ts), [server/src/index.ts](server/src/index.ts)) : la redirection top-level depuis `login.microsoftonline.com` n'envoie que le cookie de session, pas le Bearer token du SPA — la callback bloquait donc sur `authMiddleware`. La callback est désormais exposée via un `oauthCallbackRouter` public monté avant `authMiddleware` ; l'identité admin est persistée dans `req.session.oauthUserId/oauthIsAdmin` lors du `POST /start` (avec `session.save()` attendu pour éviter une race avec l'ouverture du popup) et relue dans la callback.
 
 ### Ajouté
