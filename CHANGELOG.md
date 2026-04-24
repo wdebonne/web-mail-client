@@ -7,6 +7,10 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Corrigé
+
+- **Callback OAuth Microsoft renvoyait `Non authentifié`** ([server/src/routes/admin.ts](server/src/routes/admin.ts), [server/src/index.ts](server/src/index.ts)) : la redirection top-level depuis `login.microsoftonline.com` n'envoie que le cookie de session, pas le Bearer token du SPA — la callback bloquait donc sur `authMiddleware`. La callback est désormais exposée via un `oauthCallbackRouter` public monté avant `authMiddleware` ; l'identité admin est persistée dans `req.session.oauthUserId/oauthIsAdmin` lors du `POST /start` (avec `session.save()` attendu pour éviter une race avec l'ouverture du popup) et relue dans la callback.
+
 ### Ajouté
 
 #### Administration — Authentification OAuth2 pour Microsoft 365 / Outlook

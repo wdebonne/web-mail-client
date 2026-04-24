@@ -215,6 +215,16 @@ Microsoft a désactivé l'authentification basique IMAP/SMTP en septembre 2022. 
 
 Pour reconnecter un compte dont le refresh token a été révoqué (changement de mot de passe, consentement révoqué), rouvrez la fiche du compte et cliquez sur **Reconnecter**.
 
+#### Dépannage OAuth Microsoft
+
+| Erreur Microsoft | Cause | Solution |
+|------------------|-------|----------|
+| `AADSTS700016: Application … was not found in the directory` | L'App Registration n'est pas accessible depuis le tenant de l'utilisateur qui tente de se connecter. | Dans Azure → **Authentification** → cochez *« Accounts in any organizational directory and personal Microsoft accounts »* (multi-tenant). Côté app, laissez **Tenant = `common`**. |
+| `AADSTS50011: The redirect URI … does not match` | L'URI envoyée (schéma / host / path) ne correspond pas exactement à celle déclarée dans Azure. | Azure exige **HTTPS** en prod. Vérifiez que `PUBLIC_URL` commence par `https://` et que la redirect URI dans Azure est identique au caractère près (schéma, host, path, casse). Videz le champ *Redirect URI* dans l'UI Admin pour qu'il soit déduit automatiquement de `PUBLIC_URL`. |
+| `Non authentifié` / `unauthenticated` lors du retour sur la callback | La redirection top-level depuis Microsoft n'envoie que le cookie de session, pas le Bearer token. | Corrigé : la callback est désormais une route publique (`oauthCallbackRouter`) qui authentifie via `req.session.oauthUserId`. Si vous voyez encore l'erreur, vérifiez que le proxy (NPM / Traefik) transmet bien le cookie `connect.sid` et que `NODE_ENV=production` + `trust proxy` sont actifs en HTTPS. |
+| `invalid_grant` au refresh | Le refresh token a été révoqué (changement de mot de passe MS, consentement retiré, compte désactivé). | Ouvrez la fiche du compte dans Admin → cliquez **Reconnecter**. |
+| `offline_access manquant ou consentement incomplet` | Le consentement admin n'a pas été accordé pour `offline_access`. | Azure → **API permissions** → vérifiez `offline_access` (Microsoft Graph, Delegated) → **Grant admin consent**. |
+
 ### Paramètres IMAP/SMTP pour o2switch
 
 | Paramètre | Valeur |
