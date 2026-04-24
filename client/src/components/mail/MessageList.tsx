@@ -192,6 +192,10 @@ export default function MessageList({
   // UID of the row currently being swiped past the commit threshold, used
   // to trigger an exit animation before the parent removes the message.
   const [committingSwipe, setCommittingSwipe] = useState<{ uid: number; dir: 'left' | 'right' } | null>(null);
+  // UID of the row currently being dragged by the user. Used to reveal the
+  // coloured action backgrounds only for that row — idle rows stay clean so
+  // the list remains readable.
+  const [activeSwipeUid, setActiveSwipeUid] = useState<number | null>(null);
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => {
@@ -719,6 +723,7 @@ export default function MessageList({
                         dragElastic: 0.25,
                         dragMomentum: false,
                         dragConstraints: { left: 0, right: 0 },
+                        onDragStart: () => setActiveSwipeUid(message.uid),
                         onDragEnd: (_e: any, info: { offset: { x: number; y: number }; velocity: { x: number; y: number } }) => {
                           const dx = info.offset.x;
                           const vx = info.velocity.x;
@@ -739,6 +744,8 @@ export default function MessageList({
                               setCommittingSwipe((cur) => cur?.uid === message.uid ? null : cur);
                             }, 160);
                           }
+                          // Hide the coloured background once the row snaps back or exits.
+                          setActiveSwipeUid((cur) => cur === message.uid ? null : cur);
                         },
                       } : {})}
                       style={rowStyle}
@@ -989,28 +996,30 @@ export default function MessageList({
 
                   return (
                     <div key={message.uid} className="relative overflow-hidden select-none">
-                      {/* Background revealed while swiping — split into two halves so
-                          the user can see at a glance which action each direction
-                          triggers. Positioned behind the actual row (which sits on
-                          top and translates horizontally via Framer Motion). */}
-                      <div className="absolute inset-0 flex pointer-events-none">
-                        <div className={`flex-1 flex items-center justify-start pl-5 ${rightMeta ? rightMeta.bg : 'bg-outlook-bg-primary/40'} ${rightMeta ? rightMeta.fg : 'text-outlook-text-disabled'}`}>
-                          {rightMeta ? (
-                            <div className="flex items-center gap-2 text-sm font-medium">
-                              {rightMeta.icon}
-                              <span>{rightMeta.label}</span>
-                            </div>
-                          ) : null}
+                      {/* Background revealed ONLY while this row is being swiped
+                          (or during its exit animation after commit). Rendering
+                          it conditionally keeps idle rows clean and preserves
+                          the normal list readability. */}
+                      {(activeSwipeUid === message.uid || committing) && (
+                        <div className="absolute inset-0 flex pointer-events-none">
+                          <div className={`flex-1 flex items-center justify-start pl-5 ${rightMeta ? rightMeta.bg : 'bg-outlook-bg-primary/40'} ${rightMeta ? rightMeta.fg : 'text-outlook-text-disabled'}`}>
+                            {rightMeta ? (
+                              <div className="flex items-center gap-2 text-sm font-medium">
+                                {rightMeta.icon}
+                                <span>{rightMeta.label}</span>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className={`flex-1 flex items-center justify-end pr-5 ${leftMeta ? leftMeta.bg : 'bg-outlook-bg-primary/40'} ${leftMeta ? leftMeta.fg : 'text-outlook-text-disabled'}`}>
+                            {leftMeta ? (
+                              <div className="flex items-center gap-2 text-sm font-medium">
+                                <span>{leftMeta.label}</span>
+                                {leftMeta.icon}
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className={`flex-1 flex items-center justify-end pr-5 ${leftMeta ? leftMeta.bg : 'bg-outlook-bg-primary/40'} ${leftMeta ? leftMeta.fg : 'text-outlook-text-disabled'}`}>
-                          {leftMeta ? (
-                            <div className="flex items-center gap-2 text-sm font-medium">
-                              <span>{leftMeta.label}</span>
-                              {leftMeta.icon}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
+                      )}
                       {rowNode}
                     </div>
                   );
