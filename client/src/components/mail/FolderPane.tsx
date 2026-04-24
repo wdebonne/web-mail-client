@@ -262,7 +262,7 @@ export default function FolderPane({
   };
 
   return (
-    <div className="w-full bg-white flex flex-col flex-shrink-0 overflow-hidden">
+    <div className="w-full h-full min-h-0 bg-white flex flex-col flex-shrink-0 overflow-hidden">
       <div className="p-3">
         <button
           onClick={onCompose}
