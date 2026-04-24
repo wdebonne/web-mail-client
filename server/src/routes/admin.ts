@@ -376,6 +376,74 @@ adminRouter.post('/nextcloud/users/:userId/sync', async (req: AuthRequest, res) 
 
 // ---- Mail Account Management (Admin) ----
 
+// ---- OAuth2 flow for mail accounts (Microsoft 365 / Outlook, …) ----
+// Must be declared before `/mail-accounts/:id/...` so that `/oauth/...` is not
+// matched as an account id.
+
+adminRouter.post('/mail-accounts/oauth/:provider/start', async (req: AuthRequest, res) => {
+  try {
+    const provider = req.params.provider;
+    if (provider !== 'microsoft') {
+      return res.status(400).json({ error: `Fournisseur OAuth non supporté : ${provider}` });
+    }
+    const { buildAuthorizeUrl } = await import('../services/oauth');
+    const crypto = await import('crypto');
+    const state = crypto.randomBytes(24).toString('hex');
+    (req.session as any).oauthState = state;
+    (req.session as any).oauthProvider = provider;
+    const loginHint = typeof req.body?.loginHint === 'string' ? req.body.loginHint : undefined;
+    const url = buildAuthorizeUrl(provider, state, loginHint);
+    res.json({ url, state });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+adminRouter.get('/mail-accounts/oauth/:provider/callback', async (req: AuthRequest, res) => {
+  const provider = req.params.provider;
+  const { code, state, error: oauthError, error_description } = req.query as Record<string, string>;
+
+  const renderClosingPage = (payload: any) => {
+    const safe = JSON.stringify(payload).replace(/</g, '\\u003c');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!doctype html>
+<html><head><meta charset="utf-8"><title>OAuth</title></head>
+<body style="font-family:system-ui;padding:24px;">
+<script>
+  (function () {
+    var payload = ${safe};
+    try {
+      if (window.opener) {
+        window.opener.postMessage({ type: 'mail-oauth', payload: payload }, window.location.origin);
+      }
+    } catch (e) {}
+    document.body.innerText = payload.ok
+      ? 'Connexion réussie, vous pouvez fermer cette fenêtre.'
+      : ('Erreur : ' + (payload.error || 'inconnue'));
+    setTimeout(function () { try { window.close(); } catch (e) {} }, payload.ok ? 600 : 5000);
+  })();
+</script>
+</body></html>`);
+  };
+
+  try {
+    if (oauthError) throw new Error(error_description || oauthError);
+    if (!code || !state) throw new Error('Paramètres OAuth manquants.');
+    const expected = (req.session as any)?.oauthState;
+    if (!expected || state !== expected) throw new Error('État OAuth invalide (anti-CSRF).');
+    (req.session as any).oauthState = undefined;
+    if (provider !== 'microsoft') throw new Error(`Fournisseur non supporté : ${provider}`);
+
+    const { exchangeCode, storePendingOAuth } = await import('../services/oauth');
+    const tokens = await exchangeCode('microsoft', code);
+    if (!tokens.email) throw new Error("Le jeton OAuth ne contient pas d'adresse e-mail.");
+    const pendingId = storePendingOAuth(req.userId!, tokens);
+    renderClosingPage({ ok: true, provider, pendingId, email: tokens.email, name: tokens.name });
+  } catch (err: any) {
+    renderClosingPage({ ok: false, provider, error: err.message });
+  }
+});
+
 const mailAccountSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
@@ -386,7 +454,10 @@ const mailAccountSchema = z.object({
   smtpPort: z.number().default(465),
   smtpSecure: z.boolean().default(true),
   username: z.string().min(1),
-  password: z.string().min(1),
+  // Either `password` (basic auth) or `oauthPendingId` (a token-exchange id
+  // returned by POST /mail-accounts/oauth/:provider/start → callback flow).
+  password: z.string().optional(),
+  oauthPendingId: z.string().optional(),
   isShared: z.boolean().default(false),
   signatureHtml: z.string().optional(),
   signatureText: z.string().optional(),
@@ -402,6 +473,7 @@ adminRouter.get('/mail-accounts', async (req: AuthRequest, res) => {
       `SELECT ma.id, ma.name, ma.email, ma.imap_host, ma.imap_port, ma.imap_secure,
               ma.smtp_host, ma.smtp_port, ma.smtp_secure, ma.username,
               ma.is_shared, ma.signature_html, ma.signature_text, ma.color, ma.created_at,
+              ma.oauth_provider,
               COUNT(mba.id) as assignment_count
        FROM mail_accounts ma
        LEFT JOIN mailbox_assignments mba ON mba.mail_account_id = ma.id
@@ -418,13 +490,55 @@ adminRouter.get('/mail-accounts', async (req: AuthRequest, res) => {
 adminRouter.post('/mail-accounts', async (req: AuthRequest, res) => {
   try {
     const data = mailAccountSchema.parse(req.body);
-    const encryptedPassword = encrypt(data.password);
+
+    // Resolve OAuth tokens from the pending store if the form consumed the
+    // OAuth popup flow. Falls back to basic-auth password otherwise.
+    let oauthData: {
+      provider: string;
+      refreshToken: string;
+      accessToken: string;
+      expiresAt: Date;
+      scope: string;
+    } | null = null;
+    if (data.oauthPendingId) {
+      const { consumePendingOAuth } = await import('../services/oauth');
+      const pending = consumePendingOAuth(req.userId!, data.oauthPendingId);
+      if (!pending) {
+        return res.status(400).json({ error: 'Jeton OAuth expiré, relancez la connexion.' });
+      }
+      oauthData = {
+        provider: pending.provider,
+        refreshToken: pending.refreshToken,
+        accessToken: pending.accessToken,
+        expiresAt: pending.expiresAt,
+        scope: pending.scope,
+      };
+    } else if (!data.password) {
+      return res.status(400).json({ error: "Mot de passe requis (ou utilisez l'authentification OAuth)." });
+    }
+
+    const encryptedPassword = data.password ? encrypt(data.password) : null;
 
     const result = await pool.query(
-      `INSERT INTO mail_accounts (user_id, name, email, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, username, password_encrypted, is_shared, signature_html, signature_text, color)
-       VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      `INSERT INTO mail_accounts (
+         user_id, name, email, imap_host, imap_port, imap_secure,
+         smtp_host, smtp_port, smtp_secure, username, password_encrypted,
+         is_shared, signature_html, signature_text, color,
+         oauth_provider, oauth_refresh_token_encrypted, oauth_access_token_encrypted,
+         oauth_token_expires_at, oauth_scope)
+       VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+               $15, $16, $17, $18, $19)
        RETURNING id, name, email, imap_host, imap_port, smtp_host, smtp_port, is_shared, color`,
-      [data.name, data.email, data.imapHost, data.imapPort, data.imapSecure, data.smtpHost, data.smtpPort, data.smtpSecure, data.username, encryptedPassword, data.isShared, data.signatureHtml, data.signatureText, data.color]
+      [
+        data.name, data.email, data.imapHost, data.imapPort, data.imapSecure,
+        data.smtpHost, data.smtpPort, data.smtpSecure, data.username, encryptedPassword,
+        data.isShared, data.signatureHtml, data.signatureText, data.color,
+        oauthData?.provider || null,
+        oauthData ? encrypt(oauthData.refreshToken) : null,
+        oauthData ? encrypt(oauthData.accessToken) : null,
+        oauthData?.expiresAt || null,
+        oauthData?.scope || null,
+      ],
     );
 
     const accountId: string = result.rows[0].id;
@@ -483,6 +597,25 @@ adminRouter.put('/mail-accounts/:id', async (req: AuthRequest, res) => {
       values.push(encrypt(data.password));
     }
 
+    // Re-authenticate via OAuth: consumes a pending id returned by the popup
+    // flow. Clears password_encrypted since we now use XOAUTH2.
+    if (data.oauthPendingId) {
+      const { consumePendingOAuth } = await import('../services/oauth');
+      const pending = consumePendingOAuth(req.userId!, data.oauthPendingId);
+      if (!pending) return res.status(400).json({ error: 'Jeton OAuth expiré, relancez la connexion.' });
+      updates.push(`oauth_provider = $${paramIndex++}`);
+      values.push(pending.provider);
+      updates.push(`oauth_refresh_token_encrypted = $${paramIndex++}`);
+      values.push(encrypt(pending.refreshToken));
+      updates.push(`oauth_access_token_encrypted = $${paramIndex++}`);
+      values.push(encrypt(pending.accessToken));
+      updates.push(`oauth_token_expires_at = $${paramIndex++}`);
+      values.push(pending.expiresAt);
+      updates.push(`oauth_scope = $${paramIndex++}`);
+      values.push(pending.scope);
+      updates.push(`password_encrypted = NULL`);
+    }
+
     if (updates.length === 0) return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });
 
     updates.push(`updated_at = NOW()`);
@@ -521,9 +654,19 @@ adminRouter.post('/mail-accounts/:id/test', async (req: AuthRequest, res) => {
     if (result.rows.length === 0) return res.status(404).json({ error: 'Compte non trouvé' });
 
     const account = result.rows[0];
+    let password = '';
+    let accessToken: string | undefined;
+    if (account.oauth_provider) {
+      const { ensureFreshAccessToken } = await import('../services/oauth');
+      accessToken = (await ensureFreshAccessToken(account)) || undefined;
+    } else {
+      password = decrypt(account.password_encrypted);
+    }
     const mailService = new MailService({
       ...account,
-      password: decrypt(account.password_encrypted),
+      username: account.username || account.email,
+      password,
+      access_token: accessToken,
     });
 
     const folders = await mailService.getFolders();

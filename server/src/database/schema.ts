@@ -43,7 +43,15 @@ export const mailAccounts = pgTable('mail_accounts', {
   smtpPort: integer('smtp_port').default(465),
   smtpSecure: boolean('smtp_secure').default(true),
   username: varchar('username', { length: 255 }).notNull(),
-  passwordEncrypted: text('password_encrypted').notNull(),
+  passwordEncrypted: text('password_encrypted'),
+  // OAuth2 (Microsoft 365 / Outlook, Google — when the remote IMAP/SMTP server
+  // requires modern authentication and refuses Basic Auth). When these fields
+  // are present, authentication uses XOAUTH2 instead of LOGIN/PLAIN.
+  oauthProvider: varchar('oauth_provider', { length: 32 }),
+  oauthRefreshTokenEncrypted: text('oauth_refresh_token_encrypted'),
+  oauthAccessTokenEncrypted: text('oauth_access_token_encrypted'),
+  oauthTokenExpiresAt: timestamp('oauth_token_expires_at', { withTimezone: true }),
+  oauthScope: text('oauth_scope'),
   isDefault: boolean('is_default').default(false),
   isShared: boolean('is_shared').default(false),
   signatureHtml: text('signature_html'),

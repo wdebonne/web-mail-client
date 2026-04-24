@@ -697,6 +697,18 @@ async function getAccountForUser(accountId: string, userId: string) {
   if (result.rows.length === 0) return null;
 
   const account = result.rows[0];
+  // OAuth accounts: refresh access token if needed and attach it.
+  // Non-OAuth accounts: decrypt the stored IMAP/SMTP password as before.
+  if (account.oauth_provider) {
+    const { ensureFreshAccessToken } = await import('../services/oauth');
+    const accessToken = await ensureFreshAccessToken(account);
+    return {
+      ...account,
+      username: account.username || account.email,
+      access_token: accessToken,
+      password: '',
+    };
+  }
   return {
     ...account,
     password: decrypt(account.password_encrypted),

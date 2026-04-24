@@ -131,6 +131,23 @@ NODE_ENV=production
 DEFAULT_IMAP_PORT=993
 DEFAULT_SMTP_PORT=465
 
+# ===== OAuth2 Microsoft (Outlook / Microsoft 365) =====
+# Requis pour connecter les comptes Microsoft 365 avec MFA (Authenticator).
+# Créez une App Registration sur https://portal.azure.com :
+#  - Supported account types : « Accounts in any organizational directory and personal Microsoft accounts »
+#  - Redirect URI (Web) : {PUBLIC_URL}/api/admin/mail-accounts/oauth/microsoft/callback
+#  - API permissions (Delegated) : offline_access, openid, email, profile,
+#    IMAP.AccessAsUser.All (Office 365 Exchange Online), SMTP.Send
+#  - Client secret → reportez la valeur dans MICROSOFT_OAUTH_CLIENT_SECRET
+PUBLIC_URL=https://mail.exemple.com
+MICROSOFT_OAUTH_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+MICROSOFT_OAUTH_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Optionnel : `common` (par défaut, perso + pro), `organizations` (pro uniquement),
+# ou un tenant GUID spécifique.
+MICROSOFT_OAUTH_TENANT=common
+# Optionnel : par défaut déduit de PUBLIC_URL.
+# MICROSOFT_OAUTH_REDIRECT_URI=https://mail.exemple.com/api/admin/mail-accounts/oauth/microsoft/callback
+
 # NextCloud : se configure via l'UI Admin → NextCloud (plus aucune variable d'env).
 ```
 
@@ -148,7 +165,7 @@ Au clic sur **+ Nouveau compte**, un sélecteur affiche les fournisseurs pris en
 
 | Fournisseur | IMAP | SMTP | Remarques |
 |-------------|------|------|-----------|
-| **Outlook / Microsoft 365** | `outlook.office365.com:993` | `smtp.office365.com:587` | Mot de passe d'application si MFA actif |
+| **Outlook / Microsoft 365** | `outlook.office365.com:993` | `smtp.office365.com:587` | **OAuth2 obligatoire** (bouton « Se connecter avec Microsoft ») — Basic Auth est désactivé par Microsoft depuis 2022 |
 | **Gmail** | `imap.gmail.com:993` | `smtp.gmail.com:465` | IMAP doit être activé ; mot de passe d'application requis |
 | **Yahoo Mail** | `imap.mail.yahoo.com:993` | `smtp.mail.yahoo.com:465` | Mot de passe d'application requis |
 | **iCloud Mail** | `imap.mail.me.com:993` | `smtp.mail.me.com:587` | Mot de passe d'application Apple ID requis |
@@ -156,6 +173,18 @@ Au clic sur **+ Nouveau compte**, un sélecteur affiche les fournisseurs pris en
 | **IMAP / SMTP (autre)** | saisie manuelle | saisie manuelle | Configuration libre (OVH, Zoho, Fastmail…) |
 
 Pour les quatre premiers fournisseurs, les champs serveur et port sont masqués (résumé en lecture seule) et l'identifiant est automatiquement l'adresse e-mail. Seul le mot de passe (d'application si nécessaire) reste à saisir.
+
+### Microsoft 365 / Outlook — Authentification OAuth2
+
+Microsoft a désactivé l'authentification basique IMAP/SMTP en septembre 2022. Les comptes Outlook.com, Hotmail, Live et Microsoft 365 — et *a fortiori* ceux protégés par Microsoft Authenticator — doivent obligatoirement passer par OAuth2.
+
+1. Configurez l'application Azure AD (voir variables `MICROSOFT_OAUTH_*` dans le `.env` ci-dessus).
+2. Dans **Administration → Comptes mail → + Nouveau compte**, choisissez **Outlook / Microsoft 365**.
+3. Renseignez le nom du compte et l'adresse e-mail, puis cliquez sur **« Se connecter avec Microsoft »**.
+4. Une fenêtre Microsoft s'ouvre : connectez-vous, validez le MFA (Authenticator / SMS / clé de sécurité) et acceptez les permissions IMAP.AccessAsUser.All + SMTP.Send.
+5. De retour sur l'application, cliquez sur **Enregistrer**. Le serveur stocke un `refresh_token` chiffré (AES-256-GCM) et rafraîchit automatiquement le jeton d'accès à chaque opération IMAP/SMTP.
+
+Pour reconnecter un compte dont le refresh token a été révoqué (changement de mot de passe, consentement révoqué), rouvrez la fiche du compte et cliquez sur **Reconnecter**.
 
 ### Paramètres IMAP/SMTP pour o2switch
 

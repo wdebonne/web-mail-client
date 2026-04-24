@@ -22,6 +22,21 @@ function stripHtml(s: string | null | undefined): string {
 }
 
 async function checkAccount(row: any) {
+  let accessToken: string | undefined;
+  let password = '';
+  if (row.oauth_provider) {
+    const { ensureFreshAccessToken } = await import('./oauth');
+    try {
+      accessToken = (await ensureFreshAccessToken(row)) || undefined;
+    } catch (err) {
+      logger.debug({ err, accountId: row.id }, 'new-mail poll: OAuth refresh failed');
+      return;
+    }
+  } else {
+    try { password = decrypt(row.password_encrypted); }
+    catch { return; }
+  }
+
   const service = new MailService({
     email: row.email,
     name: row.name,
@@ -31,8 +46,9 @@ async function checkAccount(row: any) {
     smtp_host: row.smtp_host,
     smtp_port: row.smtp_port,
     smtp_secure: row.smtp_secure,
-    username: row.username,
-    password: decrypt(row.password_encrypted),
+    username: row.username || row.email,
+    password,
+    access_token: accessToken,
   });
 
   const uids = await service.listFolderUids('INBOX').catch((err) => {

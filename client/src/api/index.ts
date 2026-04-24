@@ -604,6 +604,11 @@ export const api = {
     request(`/admin/mail-accounts/${id}`, { method: 'DELETE' }),
   testAdminMailAccount: (id: string) =>
     request<{ success: boolean; error?: string }>(`/admin/mail-accounts/${id}/test`, { method: 'POST' }),
+  startAdminMailAccountOAuth: (provider: 'microsoft', loginHint?: string) =>
+    request<{ url: string; state: string }>(`/admin/mail-accounts/oauth/${provider}/start`, {
+      method: 'POST',
+      body: JSON.stringify({ loginHint }),
+    }),
   getMailAccountAssignments: (accountId: string) =>
     request<any[]>(`/admin/mail-accounts/${accountId}/assignments`),
   createMailAccountAssignment: (accountId: string, data: any) =>

@@ -15,6 +15,10 @@ interface MailAccount {
   smtp_secure: boolean;
   username: string;
   password: string;
+  // OAuth2 access token (XOAUTH2). When provided, takes precedence over `password`
+  // and the client authenticates via XOAUTH2 (required by Microsoft 365 since
+  // Basic Auth was disabled in 2022, and by Google once OAuth is configured).
+  access_token?: string;
 }
 
 interface SendMailOptions {
@@ -40,27 +44,32 @@ export class MailService {
   }
 
   private createImapClient(): ImapFlow {
+    const auth: any = this.account.access_token
+      ? { user: this.account.username || this.account.email, accessToken: this.account.access_token }
+      : { user: this.account.username, pass: this.account.password };
     return new ImapFlow({
       host: this.account.imap_host,
       port: this.account.imap_port,
       secure: this.account.imap_secure,
-      auth: {
-        user: this.account.username,
-        pass: this.account.password,
-      },
+      auth,
       logger: false,
     });
   }
 
   private createSmtpTransport() {
+    const auth: any = this.account.access_token
+      ? {
+          type: 'OAuth2',
+          user: this.account.username || this.account.email,
+          accessToken: this.account.access_token,
+        }
+      : { user: this.account.username, pass: this.account.password };
     return nodemailer.createTransport({
       host: this.account.smtp_host,
       port: this.account.smtp_port,
       secure: this.account.smtp_secure,
-      auth: {
-        user: this.account.username,
-        pass: this.account.password,
-      },
+      requireTLS: !this.account.smtp_secure,
+      auth,
     });
   }
 

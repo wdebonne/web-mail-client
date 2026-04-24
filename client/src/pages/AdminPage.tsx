@@ -802,6 +802,10 @@ interface MailProviderPreset {
   usernameIsEmail: boolean;
   hideServers: boolean;
   isO2Switch: boolean;
+  // If set, the form offers a "Connect with ..." OAuth2 button instead of the
+  // password field. Required for Microsoft 365 (Basic Auth disabled since 2022)
+  // and recommended for Google Workspace.
+  oauthProvider?: 'microsoft';
   note?: string;
   logo: React.ReactNode;
 }
@@ -819,7 +823,8 @@ const MAIL_PROVIDERS: MailProviderPreset[] = [
     usernameIsEmail: true,
     hideServers: true,
     isO2Switch: false,
-    note: "Si l'authentification moderne (MFA) est activée, un mot de passe d'application est requis.",
+    oauthProvider: 'microsoft',
+    note: "Microsoft 365 / Outlook exige la connexion moderne (OAuth2). Cliquez sur « Se connecter avec Microsoft » ci-dessous pour autoriser l'accès via Microsoft Authenticator.",
     logo: (
       <svg viewBox="0 0 48 48" className="w-8 h-8" aria-hidden="true">
         <path fill="#0078D4" d="M44 12v24a2 2 0 0 1-2 2H22V10h20a2 2 0 0 1 2 2Z"/>
@@ -964,6 +969,13 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
   const [o2switchAutoSync, setO2switchAutoSync] = useState<boolean>(
     account ? !!account.caldav_sync_enabled : true,
   );
+  // OAuth (Microsoft, …): the popup flow returns a short-lived pending id we
+  // submit alongside the form. If the account already uses OAuth, we don't
+  // require the user to reconnect it to save other edits.
+  const [oauthPendingId, setOauthPendingId] = useState<string | null>(null);
+  const [oauthEmail, setOauthEmail] = useState<string | null>(null);
+  const [oauthConnecting, setOauthConnecting] = useState(false);
+  const accountUsesOAuth = !!account?.oauth_provider;
 
   const selectProvider = (p: MailProviderPreset) => {
     setProvider(p);
@@ -995,6 +1007,15 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
     const effectiveSmtpHost = provider?.hideServers && provider.smtpHost ? provider.smtpHost : smtpHost;
     const effectiveSmtpPort = provider?.hideServers ? provider.smtpPort : smtpPort;
     const effectiveUsername = provider?.usernameIsEmail ? (username || email) : (username || email);
+
+    // OAuth providers: require either a newly-obtained pending id (new
+    // account, or re-authentication) OR an existing oauth_provider on the
+    // account row (we're just editing non-credential fields).
+    if (provider?.oauthProvider && !oauthPendingId && !accountUsesOAuth) {
+      toast.error(`Cliquez sur « Se connecter avec ${provider.label.split(' ')[0]} » avant d'enregistrer.`);
+      return;
+    }
+
     mutation.mutate({
       name,
       email,
@@ -1003,12 +1024,65 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
       smtpHost: effectiveSmtpHost,
       smtpPort: effectiveSmtpPort,
       username: effectiveUsername,
-      password: password || undefined,
+      password: provider?.oauthProvider ? undefined : (password || undefined),
+      oauthPendingId: oauthPendingId || undefined,
       isShared,
       color,
       signatureHtml,
       o2switchAutoSync: provider?.isO2Switch ? o2switchAutoSync : false,
     });
+  };
+
+  /** Opens a popup for the OAuth authorize URL and waits for the postMessage. */
+  const handleOAuthConnect = async () => {
+    if (!provider?.oauthProvider) return;
+    setOauthConnecting(true);
+    try {
+      const { url } = await api.startAdminMailAccountOAuth(provider.oauthProvider, email || undefined);
+      const width = 520;
+      const height = 640;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open(
+        url,
+        'mail-oauth',
+        `width=${width},height=${height},left=${left},top=${top}`,
+      );
+      if (!popup) {
+        toast.error("Impossible d'ouvrir la fenêtre de connexion (bloquée par le navigateur ?).");
+        setOauthConnecting(false);
+        return;
+      }
+      const origin = window.location.origin;
+      const finalize = () => { setOauthConnecting(false); window.removeEventListener('message', listener); };
+      const listener = (ev: MessageEvent) => {
+        if (ev.origin !== origin) return;
+        const msg = ev.data;
+        if (!msg || msg.type !== 'mail-oauth') return;
+        const payload = msg.payload;
+        finalize();
+        if (!payload?.ok) {
+          toast.error(payload?.error || "Échec de la connexion OAuth");
+          return;
+        }
+        setOauthPendingId(payload.pendingId);
+        setOauthEmail(payload.email);
+        if (!email && payload.email) setEmail(payload.email);
+        if (!name && payload.name) setName(payload.name);
+        toast.success(`Connecté en tant que ${payload.email}`);
+      };
+      window.addEventListener('message', listener);
+      // Fallback: if the popup closes without posting, release the UI state.
+      const closeWatch = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(closeWatch);
+          setTimeout(finalize, 500);
+        }
+      }, 500);
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur OAuth');
+      setOauthConnecting(false);
+    }
   };
 
   // Step 1: provider picker (only for new accounts)
@@ -1115,18 +1189,48 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
-            {!provider.usernameIsEmail && (
+            {!provider.usernameIsEmail && !provider.oauthProvider && (
               <div>
                 <label className="text-xs text-outlook-text-secondary">Identifiant</label>
                 <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder={email || 'email@example.com'} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
               </div>
             )}
-            <div className={provider.usernameIsEmail ? 'col-span-2' : ''}>
-              <label className="text-xs text-outlook-text-secondary">
-                {provider.hideServers ? "Mot de passe (d'application si MFA)" : 'Mot de passe'}
-              </label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required={!account} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
-            </div>
+            {!provider.oauthProvider && (
+              <div className={provider.usernameIsEmail ? 'col-span-2' : ''}>
+                <label className="text-xs text-outlook-text-secondary">
+                  {provider.hideServers ? "Mot de passe (d'application si MFA)" : 'Mot de passe'}
+                </label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required={!account} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+              </div>
+            )}
+            {provider.oauthProvider && (
+              <div className="col-span-2 flex flex-col gap-2">
+                <label className="text-xs text-outlook-text-secondary">Connexion sécurisée</label>
+                {oauthPendingId ? (
+                  <div className="flex items-center justify-between border border-green-200 bg-green-50 rounded-md px-3 py-2 text-sm text-green-900">
+                    <span>✓ Connecté en tant que <strong>{oauthEmail}</strong></span>
+                    <button type="button" onClick={() => { setOauthPendingId(null); setOauthEmail(null); }} className="text-xs underline">Reconnecter</button>
+                  </div>
+                ) : accountUsesOAuth ? (
+                  <div className="flex items-center justify-between border border-outlook-border bg-outlook-bg-hover/30 rounded-md px-3 py-2 text-sm">
+                    <span>Compte déjà connecté via OAuth ({account?.oauth_provider}).</span>
+                    <button type="button" disabled={oauthConnecting} onClick={handleOAuthConnect} className="text-xs underline disabled:opacity-50">
+                      {oauthConnecting ? 'Connexion…' : 'Reconnecter'}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={oauthConnecting}
+                    onClick={handleOAuthConnect}
+                    className="inline-flex items-center justify-center gap-2 border border-outlook-border rounded-md px-3 py-2 text-sm font-medium hover:bg-outlook-bg-hover disabled:opacity-50"
+                  >
+                    {provider.logo}
+                    <span>{oauthConnecting ? 'Connexion…' : `Se connecter avec ${provider.label.split(' ')[0]}`}</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm">

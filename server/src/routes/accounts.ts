@@ -200,10 +200,20 @@ accountRouter.post('/:id/test', async (req: AuthRequest, res) => {
 
     const account = result.rows[0];
     const { decrypt } = await import('../utils/encryption');
-    
+    let password = '';
+    let accessToken: string | undefined;
+    if (account.oauth_provider) {
+      const { ensureFreshAccessToken } = await import('../services/oauth');
+      accessToken = (await ensureFreshAccessToken(account)) || undefined;
+    } else {
+      password = decrypt(account.password_encrypted);
+    }
+
     const mailService = new MailService({
       ...account,
-      password: decrypt(account.password_encrypted),
+      username: account.username || account.email,
+      password,
+      access_token: accessToken,
     });
 
     const folders = await mailService.getFolders();

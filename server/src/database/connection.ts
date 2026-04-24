@@ -318,6 +318,17 @@ export async function initDatabase() {
       ALTER TABLE IF EXISTS contacts ADD COLUMN IF NOT EXISTS carddav_etag TEXT;
       CREATE INDEX IF NOT EXISTS idx_contacts_mail_account ON contacts(mail_account_id);
 
+      -- OAuth2 (Microsoft 365, Google Workspace, …) on mail accounts. When any
+      -- of these columns are populated, MailService uses XOAUTH2 instead of
+      -- plain IMAP/SMTP LOGIN. password_encrypted is no longer required in
+      -- that case (Microsoft 365 refuses Basic Auth by default since 2022).
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_provider VARCHAR(32);
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_refresh_token_encrypted TEXT;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_access_token_encrypted TEXT;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_token_expires_at TIMESTAMPTZ;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_scope TEXT;
+      ALTER TABLE IF EXISTS mail_accounts ALTER COLUMN password_encrypted DROP NOT NULL;
+
       -- Shared calendar access (internal sharing between app users)
       CREATE TABLE IF NOT EXISTS shared_calendar_access (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
