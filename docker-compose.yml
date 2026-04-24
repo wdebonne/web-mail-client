@@ -15,8 +15,17 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://webmail:${DB_PASSWORD:-webmail_secure_pwd}@db:5432/webmail}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-32-chars-minimum-key!!}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID:-localhost}
+      - WEBAUTHN_RP_NAME=${WEBAUTHN_RP_NAME:-Web Mail}
+      - WEBAUTHN_ORIGIN=${WEBAUTHN_ORIGIN:-http://localhost:5173}
       - DEFAULT_IMAP_PORT=${DEFAULT_IMAP_PORT:-993}
       - DEFAULT_SMTP_PORT=${DEFAULT_SMTP_PORT:-465}
+      - APP_URL=${APP_URL:-}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_CONTACT=${VAPID_CONTACT:-}
+      - NEW_MAIL_POLL_INTERVAL_MS=${NEW_MAIL_POLL_INTERVAL_MS:-60000}
     volumes:
       - ./plugins:/app/plugins
       - ./uploads:/app/uploads
