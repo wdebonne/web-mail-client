@@ -275,3 +275,79 @@ export function getDeleteConfirmEnabled(): boolean {
 export function setDeleteConfirmEnabled(enabled: boolean) {
   localStorage.setItem(KEY_DELETE_CONFIRM, String(enabled));
 }
+
+// --- Swipe gesture preferences (mobile / tablet) ---
+/**
+ * Actions qui peuvent être déclenchées par un balayage horizontal sur un
+ * message dans la liste. 'none' désactive le côté correspondant.
+ */
+export type SwipeAction = 'none' | 'archive' | 'trash' | 'move' | 'copy' | 'flag' | 'read';
+
+export interface SwipePrefs {
+  /** Active les gestes de balayage sur mobile/tablette. */
+  enabled: boolean;
+  /** Action quand on glisse vers la gauche. */
+  leftAction: SwipeAction;
+  /** Action quand on glisse vers la droite. */
+  rightAction: SwipeAction;
+  /**
+   * Dossier par défaut pour les actions "Déplacer" (par compte).
+   * Clé = accountId, valeur = chemin IMAP du dossier cible.
+   * Si vide ou si le dossier n'existe plus, l'utilisateur sera invité à choisir.
+   */
+  moveTargets: Record<string, string>;
+  /** Idem pour l'action "Copier". */
+  copyTargets: Record<string, string>;
+}
+
+const KEY_SWIPE_PREFS = 'mail.swipePrefs';
+
+const DEFAULT_SWIPE_PREFS: SwipePrefs = {
+  enabled: true,
+  leftAction: 'archive',
+  rightAction: 'trash',
+  moveTargets: {},
+  copyTargets: {},
+};
+
+export function getSwipePrefs(): SwipePrefs {
+  const raw = readJSON<Partial<SwipePrefs> | null>(KEY_SWIPE_PREFS, null);
+  if (!raw) return { ...DEFAULT_SWIPE_PREFS };
+  return {
+    enabled: raw.enabled ?? DEFAULT_SWIPE_PREFS.enabled,
+    leftAction: (raw.leftAction as SwipeAction) ?? DEFAULT_SWIPE_PREFS.leftAction,
+    rightAction: (raw.rightAction as SwipeAction) ?? DEFAULT_SWIPE_PREFS.rightAction,
+    moveTargets: raw.moveTargets ?? {},
+    copyTargets: raw.copyTargets ?? {},
+  };
+}
+
+export function setSwipePrefs(prefs: SwipePrefs) {
+  writeJSON(KEY_SWIPE_PREFS, prefs);
+}
+
+export function updateSwipePrefs(patch: Partial<SwipePrefs>) {
+  setSwipePrefs({ ...getSwipePrefs(), ...patch });
+}
+
+export function getSwipeMoveTarget(accountId: string): string | null {
+  return getSwipePrefs().moveTargets[accountId] || null;
+}
+
+export function setSwipeMoveTarget(accountId: string, folderPath: string | null) {
+  const prefs = getSwipePrefs();
+  if (folderPath) prefs.moveTargets[accountId] = folderPath;
+  else delete prefs.moveTargets[accountId];
+  setSwipePrefs(prefs);
+}
+
+export function getSwipeCopyTarget(accountId: string): string | null {
+  return getSwipePrefs().copyTargets[accountId] || null;
+}
+
+export function setSwipeCopyTarget(accountId: string, folderPath: string | null) {
+  const prefs = getSwipePrefs();
+  if (folderPath) prefs.copyTargets[accountId] = folderPath;
+  else delete prefs.copyTargets[accountId];
+  setSwipePrefs(prefs);
+}

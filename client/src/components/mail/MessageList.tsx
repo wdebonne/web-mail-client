@@ -18,11 +18,26 @@ import {
   getCategories, getMessageCategories, categoryRowTint,
   subscribeCategories, MailCategory,
 } from '../../utils/categories';
+import type { SwipeAction } from '../../utils/mailPreferences';
 
 type SortField = 'date' | 'from' | 'subject' | 'size' | 'importance';
 type SortOrder = 'asc' | 'desc';
 type FilterType = 'all' | 'unread' | 'flagged' | 'attachments' | 'tome';
 type DateFilter = 'all' | 'today' | 'yesterday' | 'lastweek' | 'lastmonth' | 'lastyear' | 'custom';
+
+// Visual metadata for the swipe action backgrounds (icon, label, colour).
+function swipeActionMeta(action: SwipeAction): { label: string; icon: JSX.Element; bg: string; fg: string } | null {
+  switch (action) {
+    case 'archive': return { label: 'Archiver', icon: <Archive size={20} />, bg: 'bg-emerald-500', fg: 'text-white' };
+    case 'trash': return { label: 'Corbeille', icon: <Trash2 size={20} />, bg: 'bg-red-500', fg: 'text-white' };
+    case 'move': return { label: 'Déplacer', icon: <FolderInput size={20} />, bg: 'bg-blue-500', fg: 'text-white' };
+    case 'copy': return { label: 'Copier', icon: <Copy size={20} />, bg: 'bg-sky-500', fg: 'text-white' };
+    case 'flag': return { label: 'Drapeau', icon: <Flag size={20} />, bg: 'bg-amber-500', fg: 'text-white' };
+    case 'read': return { label: 'Lu / Non lu', icon: <MailOpen size={20} />, bg: 'bg-slate-500', fg: 'text-white' };
+    case 'none':
+    default: return null;
+  }
+}
 
 interface MessageListProps {
   messages: Email[];
@@ -60,6 +75,14 @@ interface MessageListProps {
   conversationGrouping?: 'none' | 'conversation' | 'branches';
   /** Open the category picker for a given message (context menu entry). */
   onOpenCategoryPicker?: (message: Email, x: number, y: number) => void;
+  /** Enable horizontal swipe gestures on touch devices. */
+  swipeEnabled?: boolean;
+  /** Action triggered when swiping a row to the left. */
+  swipeLeftAction?: SwipeAction;
+  /** Action triggered when swiping a row to the right. */
+  swipeRightAction?: SwipeAction;
+  /** Called when a row is fully swiped past the threshold. Parent resolves the action. */
+  onSwipe?: (uid: number, direction: 'left' | 'right') => void;
 }
 
 interface MessageGroup {
@@ -101,6 +124,10 @@ export default function MessageList({
   conversationView = false,
   conversationGrouping = 'none',
   onOpenCategoryPicker,
+  swipeEnabled = false,
+  swipeLeftAction = 'archive',
+  swipeRightAction = 'trash',
+  onSwipe,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -148,6 +175,23 @@ export default function MessageList({
   const toggleDropdown = (name: 'sort' | 'filter' | 'date') => {
     setOpenDropdown(prev => prev === name ? null : name);
   };
+
+  // --- Swipe gestures (mobile/tablet only) ---
+  // Detects a coarse pointer + narrow viewport. We intentionally exclude
+  // desktop so the native HTML5 drag-and-drop (folder panel) keeps working.
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia('(max-width: 1024px) and (pointer: coarse)');
+    const update = () => setIsTouchDevice(mql.matches);
+    update();
+    mql.addEventListener?.('change', update);
+    return () => mql.removeEventListener?.('change', update);
+  }, []);
+  const swipeActive = !!(swipeEnabled && onSwipe && isTouchDevice);
+  // UID of the row currently being swiped past the commit threshold, used
+  // to trigger an exit animation before the parent removes the message.
+  const [committingSwipe, setCommittingSwipe] = useState<{ uid: number; dir: 'left' | 'right' } | null>(null);
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => {
@@ -634,11 +678,18 @@ export default function MessageList({
                     ? { backgroundColor: categoryRowTint(primaryCatColor, 0.18) }
                     : {};
 
-                  return (
+                  // --- Swipe metadata ---
+                  const leftMeta = swipeActive ? swipeActionMeta(swipeLeftAction) : null;
+                  const rightMeta = swipeActive ? swipeActionMeta(swipeRightAction) : null;
+                  const canSwipe = swipeActive && !selectionMode && !isThreadChild && (!!leftMeta || !!rightMeta);
+                  const committing = committingSwipe?.uid === message.uid ? committingSwipe.dir : null;
+
+                  const rowNode = (
                     <motion.div
-                      key={message.uid}
                       initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
+                      animate={committing
+                        ? { opacity: 0, x: committing === 'left' ? -600 : 600, transition: { duration: 0.18 } }
+                        : { opacity: 1, y: 0 }}
                       transition={{ duration: 0.15, delay: Math.min(msgIndex * 0.02, 0.3), ease: 'easeOut' }}
                       onClick={() => {
                         if (selectionMode) {
@@ -651,8 +702,8 @@ export default function MessageList({
                         e.preventDefault();
                         setContextMenu({ x: e.clientX, y: e.clientY, message });
                       }}
-                      draggable={draggable && !selectionMode}
-                      onDragStartCapture={(e: any) => {
+                      draggable={!canSwipe && draggable && !selectionMode}
+                      onDragStartCapture={canSwipe ? undefined : (e: any) => {
                         e.dataTransfer.setData('text/x-mail-uid', String(message.uid));
                         if (accountId) {
                           e.dataTransfer.setData(
@@ -662,6 +713,34 @@ export default function MessageList({
                         }
                         e.dataTransfer.effectAllowed = 'copyMove';
                       }}
+                      {...(canSwipe ? {
+                        drag: 'x' as const,
+                        dragDirectionLock: true,
+                        dragElastic: 0.25,
+                        dragMomentum: false,
+                        dragConstraints: { left: 0, right: 0 },
+                        onDragEnd: (_e: any, info: { offset: { x: number; y: number }; velocity: { x: number; y: number } }) => {
+                          const dx = info.offset.x;
+                          const vx = info.velocity.x;
+                          const threshold = 90; // px
+                          const fastFlick = Math.abs(vx) > 500 && Math.abs(dx) > 35;
+                          // dx < 0 => swipe left => leftAction, dx > 0 => swipe right => rightAction
+                          if ((dx <= -threshold || (fastFlick && dx < 0)) && leftMeta) {
+                            setCommittingSwipe({ uid: message.uid, dir: 'left' });
+                            // Give the exit animation a moment before delegating.
+                            setTimeout(() => {
+                              onSwipe?.(message.uid, 'left');
+                              setCommittingSwipe((cur) => cur?.uid === message.uid ? null : cur);
+                            }, 160);
+                          } else if ((dx >= threshold || (fastFlick && dx > 0)) && rightMeta) {
+                            setCommittingSwipe({ uid: message.uid, dir: 'right' });
+                            setTimeout(() => {
+                              onSwipe?.(message.uid, 'right');
+                              setCommittingSwipe((cur) => cur?.uid === message.uid ? null : cur);
+                            }, 160);
+                          }
+                        },
+                      } : {})}
                       style={rowStyle}
                       className={`flex items-center gap-2 px-3 cursor-pointer border-b border-outlook-border transition-colors group relative
                         ${isWide ? densityWide : densityCompact}
@@ -901,6 +980,39 @@ export default function MessageList({
                         </div>
                       )}
                     </motion.div>
+                  );
+
+                  if (!canSwipe) {
+                    // Without swipe, give the motion.div the list key directly.
+                    return <div key={message.uid} style={{ display: 'contents' }}>{rowNode}</div>;
+                  }
+
+                  return (
+                    <div key={message.uid} className="relative overflow-hidden select-none">
+                      {/* Background revealed while swiping — split into two halves so
+                          the user can see at a glance which action each direction
+                          triggers. Positioned behind the actual row (which sits on
+                          top and translates horizontally via Framer Motion). */}
+                      <div className="absolute inset-0 flex pointer-events-none">
+                        <div className={`flex-1 flex items-center justify-start pl-5 ${rightMeta ? rightMeta.bg : 'bg-outlook-bg-primary/40'} ${rightMeta ? rightMeta.fg : 'text-outlook-text-disabled'}`}>
+                          {rightMeta ? (
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                              {rightMeta.icon}
+                              <span>{rightMeta.label}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className={`flex-1 flex items-center justify-end pr-5 ${leftMeta ? leftMeta.bg : 'bg-outlook-bg-primary/40'} ${leftMeta ? leftMeta.fg : 'text-outlook-text-disabled'}`}>
+                          {leftMeta ? (
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                              <span>{leftMeta.label}</span>
+                              {leftMeta.icon}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      {rowNode}
+                    </div>
                   );
                 });
                 })()}

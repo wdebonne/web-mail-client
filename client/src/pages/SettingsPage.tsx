@@ -6,10 +6,16 @@ import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
   Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
-  Fingerprint, ShieldCheck, Database
+  Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CacheSettings from '../components/CacheSettings';
+import FolderPickerDialog from '../components/mail/FolderPickerDialog';
+import {
+  getSwipePrefs, setSwipePrefs, getDeleteConfirmEnabled, setDeleteConfirmEnabled,
+  setSwipeMoveTarget, setSwipeCopyTarget, type SwipeAction,
+} from '../utils/mailPreferences';
+import type { MailAccount, MailFolder } from '../types';
 import {
   collectBackup, downloadBackup, parseBackupFile, applyBackup,
   isAutoBackupEnabled, setAutoBackupEnabled,
@@ -126,6 +132,249 @@ function MailBehaviorSettings() {
           </button>
         </div>
       </div>
+
+      <SwipeSettings />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Balayage (swipe) sur mobile / tablette
+// ---------------------------------------------------------------------------
+const SWIPE_ACTIONS: { value: SwipeAction; label: string }[] = [
+  { value: 'none',    label: 'Aucune action' },
+  { value: 'archive', label: 'Archiver' },
+  { value: 'trash',   label: 'Mettre à la corbeille' },
+  { value: 'move',    label: 'Déplacer vers un dossier' },
+  { value: 'copy',    label: 'Copier vers un dossier' },
+  { value: 'flag',    label: 'Drapeau / Favori' },
+  { value: 'read',    label: 'Marquer lu / non lu' },
+];
+
+function SwipeSettings() {
+  const [prefs, setPrefs] = useState(() => getSwipePrefs());
+  const [deleteConfirm, setDeleteConfirmLocal] = useState(() => getDeleteConfirmEnabled());
+
+  const { data: accounts = [] } = useQuery<MailAccount[]>({
+    queryKey: ['mail-accounts'],
+    queryFn: api.getAccounts,
+  });
+
+  // Fetch folders lazily per account, only when the user opens the picker —
+  // keeps the settings page light when the user has many accounts.
+  const queryClient = useQueryClient();
+  const [picker, setPicker] = useState<
+    | { accountId: string; kind: 'move' | 'copy'; folders: MailFolder[]; initial: string | null }
+    | null
+  >(null);
+
+  const persist = (patch: Partial<typeof prefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    setSwipePrefs(next);
+    window.dispatchEvent(new Event('mail-swipe-prefs-changed'));
+  };
+
+  const openPicker = async (accountId: string, kind: 'move' | 'copy') => {
+    let folders = queryClient.getQueryData<MailFolder[]>(['folders', accountId]);
+    if (!folders) {
+      try {
+        folders = await queryClient.fetchQuery({
+          queryKey: ['folders', accountId],
+          queryFn: () => api.getFolders(accountId),
+        });
+      } catch (e: any) {
+        toast.error(e?.message || 'Impossible de charger les dossiers');
+        return;
+      }
+    }
+    const initial = (kind === 'move' ? prefs.moveTargets : prefs.copyTargets)[accountId] || null;
+    setPicker({ accountId, kind, folders: folders || [], initial });
+  };
+
+  const createFolderAwait = async (accountId: string, name: string): Promise<string | null> => {
+    try {
+      const sanitized = name.trim().replace(/[\\\/]/g, '');
+      if (!sanitized) return null;
+      await api.createFolder(accountId, sanitized);
+      await queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+      const fresh = await queryClient.fetchQuery({
+        queryKey: ['folders', accountId],
+        queryFn: () => api.getFolders(accountId),
+      });
+      if (picker) setPicker({ ...picker, folders: fresh });
+      toast.success('Dossier créé');
+      return fresh.find((f) => f.path === sanitized || f.name === sanitized)?.path ?? sanitized;
+    } catch (e: any) {
+      toast.error(e?.message || 'Erreur lors de la création du dossier');
+      return null;
+    }
+  };
+
+  const needsMoveTargets = prefs.leftAction === 'move' || prefs.rightAction === 'move';
+  const needsCopyTargets = prefs.leftAction === 'copy' || prefs.rightAction === 'copy';
+
+  return (
+    <div className="mt-8 border-t border-outlook-border pt-6 space-y-5">
+      <div>
+        <h4 className="text-sm font-semibold text-outlook-text-primary flex items-center gap-2">
+          <ArrowLeftRight size={14} />
+          Balayage sur mobile et tablette
+        </h4>
+        <p className="text-xs text-outlook-text-secondary mt-1">
+          Sur un écran tactile (téléphone ou tablette), faites glisser un e-mail vers la
+          gauche ou vers la droite pour déclencher une action rapide. Sans effet sur ordinateur.
+        </p>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={prefs.enabled}
+          onChange={(e) => persist({ enabled: e.target.checked })}
+          className="w-4 h-4"
+        />
+        Activer le balayage
+      </label>
+
+      <div className={`grid sm:grid-cols-2 gap-4 ${prefs.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
+        <div>
+          <label className="text-sm text-outlook-text-secondary">Glissement vers la gauche</label>
+          <select
+            value={prefs.leftAction}
+            onChange={(e) => persist({ leftAction: e.target.value as SwipeAction })}
+            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+          >
+            {SWIPE_ACTIONS.map((a) => (
+              <option key={a.value} value={a.value}>{a.label}</option>
+            ))}
+          </select>
+          <p className="text-[11px] text-outlook-text-disabled mt-1">Par défaut : Archiver</p>
+        </div>
+
+        <div>
+          <label className="text-sm text-outlook-text-secondary">Glissement vers la droite</label>
+          <select
+            value={prefs.rightAction}
+            onChange={(e) => persist({ rightAction: e.target.value as SwipeAction })}
+            className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+          >
+            {SWIPE_ACTIONS.map((a) => (
+              <option key={a.value} value={a.value}>{a.label}</option>
+            ))}
+          </select>
+          <p className="text-[11px] text-outlook-text-disabled mt-1">Par défaut : Corbeille</p>
+        </div>
+      </div>
+
+      {/* Confirmation de mise en corbeille (partagée avec le ruban). */}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={deleteConfirm}
+          onChange={(e) => { setDeleteConfirmLocal(e.target.checked); setDeleteConfirmEnabled(e.target.checked); }}
+          className="w-4 h-4 mt-0.5"
+        />
+        <span>
+          Demander confirmation avant de mettre à la corbeille
+          <span className="block text-[11px] text-outlook-text-disabled">
+            Désactivez cette option pour nettoyer vos mails très rapidement d'une seule main.
+            (Cette préférence s'applique aussi au ruban et au menu contextuel.)
+          </span>
+        </span>
+      </label>
+
+      {/* Dossiers par défaut pour Déplacer / Copier — un par compte. */}
+      {(needsMoveTargets || needsCopyTargets) && prefs.enabled && (
+        <div className="border border-outlook-border rounded-md p-3 space-y-3">
+          <div>
+            <div className="text-sm font-medium text-outlook-text-primary">Dossiers de destination par défaut</div>
+            <p className="text-[11px] text-outlook-text-secondary mt-0.5">
+              Définissez un dossier cible par compte pour que le balayage l'exécute sans
+              confirmation. Si aucun dossier n'est choisi, un sélecteur apparaîtra au moment
+              du balayage (vous pourrez aussi en créer un nouveau, par exemple « À trier »).
+            </p>
+          </div>
+
+          {accounts.length === 0 ? (
+            <div className="text-xs text-outlook-text-disabled">Aucun compte mail configuré.</div>
+          ) : accounts.map((acc) => (
+            <div key={acc.id} className="border-t border-outlook-border pt-3 first:border-t-0 first:pt-0">
+              <div className="text-xs font-medium text-outlook-text-primary mb-1">{acc.name || acc.email}</div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                {needsMoveTargets && (
+                  <FolderTargetRow
+                    label="Déplacer"
+                    path={prefs.moveTargets[acc.id]}
+                    onPick={() => openPicker(acc.id, 'move')}
+                    onClear={() => { setSwipeMoveTarget(acc.id, null); setPrefs(getSwipePrefs()); }}
+                  />
+                )}
+                {needsCopyTargets && (
+                  <FolderTargetRow
+                    label="Copier"
+                    path={prefs.copyTargets[acc.id]}
+                    onPick={() => openPicker(acc.id, 'copy')}
+                    onClear={() => { setSwipeCopyTarget(acc.id, null); setPrefs(getSwipePrefs()); }}
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <FolderPickerDialog
+        open={!!picker}
+        title={picker?.kind === 'move' ? 'Dossier pour « Déplacer »' : 'Dossier pour « Copier »'}
+        description="Sélectionnez ou créez le dossier qui sera utilisé lors du balayage pour ce compte."
+        confirmLabel="Définir par défaut"
+        folders={picker?.folders || []}
+        accountId={picker?.accountId}
+        initialPath={picker?.initial ?? null}
+        onCreate={createFolderAwait}
+        onPick={(path) => {
+          if (!picker) return;
+          if (picker.kind === 'move') setSwipeMoveTarget(picker.accountId, path);
+          else setSwipeCopyTarget(picker.accountId, path);
+          setPrefs(getSwipePrefs());
+          window.dispatchEvent(new Event('mail-swipe-prefs-changed'));
+          setPicker(null);
+          toast.success('Dossier par défaut enregistré');
+        }}
+        onCancel={() => setPicker(null)}
+      />
+    </div>
+  );
+}
+
+function FolderTargetRow({
+  label, path, onPick, onClear,
+}: {
+  label: string;
+  path: string | undefined;
+  onPick: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
+      <span className="text-outlook-text-secondary w-16 flex-shrink-0">{label}</span>
+      <button
+        onClick={onPick}
+        className="flex-1 flex items-center gap-1.5 min-w-0 px-2 py-1.5 border border-outlook-border rounded-md text-left hover:bg-outlook-bg-hover"
+      >
+        <Folder size={14} className="flex-shrink-0 text-outlook-text-secondary" />
+        <span className="truncate">{path || <em className="text-outlook-text-disabled not-italic">Demander à chaque balayage</em>}</span>
+      </button>
+      {path && (
+        <button
+          onClick={onClear}
+          className="text-xs text-outlook-text-secondary hover:text-red-600 px-1"
+          title="Effacer"
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

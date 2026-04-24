@@ -42,6 +42,7 @@ const BACKUP_KEYS: string[] = [
   'mail.unifiedInboxEnabled',
   'mail.unifiedSentEnabled',
   'mail.deleteConfirmEnabled',
+  'mail.swipePrefs',
   // Vues / mise en page
   'readingPaneMode',
   'listDensity',

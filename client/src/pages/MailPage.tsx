@@ -23,6 +23,8 @@ import {
   findInboxFolderPath, findSentFolderPath,
   findTrashFolderPath, isTrashFolderPath,
   getDeleteConfirmEnabled,
+  getSwipePrefs, getSwipeMoveTarget, getSwipeCopyTarget, setSwipeMoveTarget, setSwipeCopyTarget,
+  type SwipeAction,
 } from '../utils/mailPreferences';
 import {
   toggleMessageCategory, clearMessageCategories, getMessageCategories,
@@ -30,6 +32,7 @@ import {
 } from '../utils/categories';
 import { CategoryEditorModal, CategoryManageModal, CategoryPicker } from '../components/mail/CategoryModals';
 import { resolveFolderDisplayName } from '../components/mail/MessageList';
+import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import type { MailFolder } from '../types';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
@@ -272,6 +275,61 @@ export default function MailPage() {
     | { title: string; description: string; permanent: boolean; onConfirm: () => void }
     | null
   >(null);
+
+  // --- Swipe gesture state (mobile/tablet) ---
+  // Preferences live in localStorage (see utils/mailPreferences). We keep a
+  // local copy here so the MessageList re-renders when the user changes them
+  // in the Settings page. A custom 'mail-swipe-prefs-changed' event is also
+  // listened to for same-tab updates (storage events only fire across tabs).
+  const [swipePrefs, setSwipePrefsState] = useState(() => getSwipePrefs());
+  useEffect(() => {
+    const reload = () => setSwipePrefsState(getSwipePrefs());
+    window.addEventListener('storage', reload);
+    window.addEventListener('mail-swipe-prefs-changed', reload);
+    return () => {
+      window.removeEventListener('storage', reload);
+      window.removeEventListener('mail-swipe-prefs-changed', reload);
+    };
+  }, []);
+  // Folder picker dialog (used when a swipe action is 'move' or 'copy' but no
+  // default target is configured for the account, or when the configured
+  // folder no longer exists).
+  const [folderPicker, setFolderPicker] = useState<
+    | {
+        title: string;
+        description: string;
+        confirmLabel: string;
+        accountId: string;
+        folders: MailFolder[];
+        initialPath: string | null;
+        /** Whether to remember the picked folder as the default for this account. */
+        rememberAs: 'move' | 'copy' | null;
+        onPick: (path: string) => void;
+      }
+    | null
+  >(null);
+
+  // Folder creation helper usable from the picker dialog.
+  const createFolderAwait = useCallback(async (accountId: string, name: string): Promise<string | null> => {
+    try {
+      const sanitized = name.trim().replace(/[\\\/]/g, '');
+      if (!sanitized) return null;
+      const path = sanitized;
+      await api.createFolder(accountId, path);
+      await queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+      // Re-fetch synchronously to return the actual created path.
+      const fresh = await queryClient.fetchQuery({
+        queryKey: ['folders', accountId],
+        queryFn: () => api.getFolders(accountId),
+      });
+      const found = fresh.find((f) => f.path === path || f.name === sanitized);
+      toast.success('Dossier créé');
+      return found?.path ?? path;
+    } catch (e: any) {
+      toast.error(e?.message || 'Erreur lors de la création du dossier');
+      return null;
+    }
+  }, [queryClient]);
 
   /** Wrap a delete request: resolve the Trash folder of the origin account,
    *  move the message there when possible, or fall back to a permanent IMAP
@@ -1116,6 +1174,71 @@ export default function MailPage() {
     return thread.length > 1 ? thread : undefined;
   }, [conversationView, conversationShowAllInReadingPane, selectedMessage, visibleMessages]);
 
+  // ---- Swipe action dispatcher ----
+  // Resolves a swipe direction to a concrete IMAP operation. For 'move'/'copy'
+  // this respects the per-account default folder; when missing, we open the
+  // folder picker dialog so the user can choose and optionally memorise it.
+  const handleSwipeAction = (uid: number, action: SwipeAction) => {
+    if (action === 'none') return;
+    const o = originByUid(uid);
+    const accId = o.accountId;
+    if (!accId) return;
+
+    switch (action) {
+      case 'archive':
+        archiveMutation.mutate({ uid, accountId: accId, fromFolder: o.folder });
+        return;
+      case 'trash':
+        requestDelete({ uid, accountId: accId, folder: o.folder });
+        return;
+      case 'flag': {
+        const msg = messages.find((m) => m.uid === uid);
+        flagMutation.mutate({ uid, isFlagged: !msg?.flags?.flagged, accountId: accId, folder: o.folder });
+        return;
+      }
+      case 'read': {
+        const msg = messages.find((m) => m.uid === uid);
+        markReadMutation.mutate({ uid, isRead: !msg?.flags?.seen, accountId: accId, folder: o.folder });
+        return;
+      }
+      case 'move':
+      case 'copy': {
+        const accFolders = queryClient.getQueryData<MailFolder[]>(['folders', accId]) ?? (selectedAccount?.id === accId ? folders : []);
+        const preset = action === 'move' ? getSwipeMoveTarget(accId) : getSwipeCopyTarget(accId);
+        const folderExists = !!(preset && accFolders.some((f) => f.path === preset));
+        const runWith = (path: string) => {
+          if (action === 'move') moveMutation.mutate({ uid, toFolder: path, accountId: accId, fromFolder: o.folder });
+          else copyMutation.mutate({ uid, toFolder: path, accountId: accId, fromFolder: o.folder });
+        };
+        if (folderExists && preset) {
+          runWith(preset);
+          return;
+        }
+        setFolderPicker({
+          title: action === 'move' ? 'Déplacer vers…' : 'Copier vers…',
+          description:
+            action === 'move'
+              ? 'Choisissez un dossier de destination. Vous pouvez le définir par défaut dans les préférences pour un balayage plus rapide.'
+              : 'Choisissez un dossier de destination pour la copie.',
+          confirmLabel: action === 'move' ? 'Déplacer' : 'Copier',
+          accountId: accId,
+          folders: accFolders,
+          initialPath: preset || null,
+          rememberAs: action,
+          onPick: (path) => {
+            runWith(path);
+          },
+        });
+        return;
+      }
+    }
+  };
+
+  const handleSwipe = (uid: number, direction: 'left' | 'right') => {
+    const action = direction === 'left' ? swipePrefs.leftAction : swipePrefs.rightAction;
+    handleSwipeAction(uid, action);
+  };
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-outlook-bg-tertiary">
       {/* Ribbon toolbar block */}
@@ -1297,6 +1420,10 @@ export default function MailPage() {
             listDisplayMode={effectiveListDisplayMode}
             conversationView={conversationView}
             conversationGrouping={conversationGrouping}
+            swipeEnabled={swipePrefs.enabled}
+            swipeLeftAction={swipePrefs.leftAction}
+            swipeRightAction={swipePrefs.rightAction}
+            onSwipe={handleSwipe}
           />
         </div>
 
@@ -1379,6 +1506,10 @@ export default function MailPage() {
                   listDisplayMode={effectiveListDisplayMode}
                   conversationView={conversationView}
                   conversationGrouping={conversationGrouping}
+                  swipeEnabled={swipePrefs.enabled}
+                  swipeLeftAction={swipePrefs.leftAction}
+                  swipeRightAction={swipePrefs.rightAction}
+                  onSwipe={handleSwipe}
                 />
               )}
             </div>
@@ -1759,6 +1890,33 @@ export default function MailPage() {
         icon={deleteConfirm?.permanent ? 'warning' : 'trash'}
         onConfirm={() => deleteConfirm?.onConfirm()}
         onCancel={() => setDeleteConfirm(null)}
+      />
+
+      {/* Folder picker triggered by a swipe → move/copy when no default folder
+          is configured for the account (or when the configured folder is gone). */}
+      <FolderPickerDialog
+        open={!!folderPicker}
+        title={folderPicker?.title || ''}
+        description={folderPicker?.description}
+        confirmLabel={folderPicker?.confirmLabel || 'Sélectionner'}
+        folders={folderPicker?.folders || []}
+        accountId={folderPicker?.accountId}
+        initialPath={folderPicker?.initialPath ?? null}
+        onCreate={createFolderAwait}
+        onPick={(path) => {
+          if (!folderPicker) return;
+          // Persist as default if the user hasn't configured one yet.
+          if (folderPicker.rememberAs === 'move' && !getSwipeMoveTarget(folderPicker.accountId)) {
+            setSwipeMoveTarget(folderPicker.accountId, path);
+            window.dispatchEvent(new Event('mail-swipe-prefs-changed'));
+          } else if (folderPicker.rememberAs === 'copy' && !getSwipeCopyTarget(folderPicker.accountId)) {
+            setSwipeCopyTarget(folderPicker.accountId, path);
+            window.dispatchEvent(new Event('mail-swipe-prefs-changed'));
+          }
+          folderPicker.onPick(path);
+          setFolderPicker(null);
+        }}
+        onCancel={() => setFolderPicker(null)}
       />
     </div>
   );

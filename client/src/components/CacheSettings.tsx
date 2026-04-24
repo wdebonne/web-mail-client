@@ -95,7 +95,7 @@ export default function CacheSettings() {
 
   const handleSync = () => {
     if (isRunning) return;
-    toast.promise(syncAllCache(), {
+    toast.promise(syncAllCache({ force: true }), {
       loading: 'Mise en cache en cours…',
       success: 'Cache mis à jour',
       error: 'Échec de la mise en cache',
@@ -119,7 +119,7 @@ export default function CacheSettings() {
       setBreakdown([]);
       toast.success('Cache réinitialisé — reconstruction…');
       setConfirmPurge(false);
-      await syncAllCache();
+      await syncAllCache({ force: true });
       toast.success('Cache reconstruit');
     } catch (err: any) {
       toast.error(err?.message || 'Erreur');

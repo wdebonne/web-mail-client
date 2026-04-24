@@ -135,7 +135,7 @@ export default function CacheIndicator() {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              onClick={() => { setPopoverOpen(false); syncAllCache(); }}
+              onClick={() => { setPopoverOpen(false); syncAllCache({ force: true }); }}
               disabled={isRunning}
               className="flex-1 px-2 py-1.5 text-xs rounded bg-outlook-blue text-white hover:bg-outlook-blue-hover disabled:opacity-50 disabled:cursor-not-allowed"
             >
