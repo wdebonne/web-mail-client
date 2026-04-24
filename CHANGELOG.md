@@ -18,7 +18,8 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
   - **2FA au login** — si l'utilisateur a enregistré ≥ 1 passkey, le mot de passe seul ne suffit plus ; le serveur émet un `pendingToken` JWT 5 min et exige une preuve biométrique avant d'émettre la session.
   - **Déverrouillage local de la PWA** ([client/src/components/BiometricLock.tsx](client/src/components/BiometricLock.tsx)) — après 7 j d'inactivité, overlay plein écran qui demande une vérification biométrique sans retaper le mot de passe.
 - **Onglet *Sécurité*** dans les paramètres : enrôlement nominatif des clés, visualisation des passkeys synchronisées (iCloud / Google) vs liées à l'appareil (Windows Hello local), suppression.
-- **Nouvelles variables d'environnement** ([.env.example](.env.example)) : `JWT_SECRET`, `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_ORIGIN`.
+- **Nouvelles variables d'environnement** ([.env.example](.env.example)) : `JWT_SECRET`, `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_ORIGIN`. Toutes sont maintenant transmises au conteneur via [docker-compose.yml](docker-compose.yml) (les valeurs définies dans Portainer prennent la priorité sur le fichier `.env`).
+- **`app.set('trust proxy', 1)`** ajouté dans [server/src/index.ts](server/src/index.ts) pour que le cookie `wm_refresh` soit correctement posé avec le flag `Secure` derrière Nginx Proxy Manager / Traefik.
 
 #### Partage de calendrier — Dialogue à onglets (Outlook-like)
 

@@ -116,7 +116,7 @@ Si vous découvrez une faille de sécurité, **ne créez pas d'Issue publique**.
 - [ ] Définir `JWT_SECRET` (minimum 64 caractères aléatoires, distinct de `SESSION_SECRET`)
 - [ ] Définir `WEBAUTHN_RP_ID` et `WEBAUTHN_ORIGIN` au domaine public (sinon les passkeys sont rejetées)
 - [ ] Activer HTTPS (via reverse proxy) — requis pour les cookies `Secure` et WebAuthn
-- [ ] Ajouter `app.set('trust proxy', 1)` si derrière un reverse proxy (déjà prévu par défaut)
+- [ ] Vérifier que le reverse proxy transmet `X-Forwarded-Proto: https` (sinon le cookie `wm_refresh` n'est pas posé)
 - [ ] Ne pas exposer le port PostgreSQL (5432) publiquement
 
 ### Recommandé

@@ -50,9 +50,17 @@ cp .env.example .env
 DB_PASSWORD=mot_de_passe_fort_bdd
 SESSION_SECRET=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 16)
+JWT_SECRET=$(openssl rand -hex 32)
 
 # OBLIGATOIRE - Base de données
 DATABASE_URL=postgresql://webmail:${DB_PASSWORD}@db:5432/webmail
+
+# OBLIGATOIRE en production - WebAuthn / Passkeys
+# RP_ID = le domaine public exact (sans https://, sans port, sans slash)
+# ORIGIN = l'URL complète que tape l'utilisateur (scheme + host + port éventuel)
+WEBAUTHN_RP_ID=mail.example.com
+WEBAUTHN_RP_NAME=Web Mail
+WEBAUTHN_ORIGIN=https://mail.example.com
 
 # OPTIONNEL - Serveur
 PORT=3000
@@ -112,6 +120,14 @@ docker-compose logs -f app
 | `DB_PASSWORD` | votre_mot_de_passe_bdd |
 | `SESSION_SECRET` | clé_secrète_64_caractères |
 | `ENCRYPTION_KEY` | clé_chiffrement_32_caractères |
+| `JWT_SECRET` | clé_secrète_64_caractères |
+| `WEBAUTHN_RP_ID` | votre_domaine_public (ex. `mail.example.com`) |
+| `WEBAUTHN_RP_NAME` | Nom affiché dans le prompt biométrique |
+| `WEBAUTHN_ORIGIN` | URL complète (ex. `https://mail.example.com`) |
+
+> Les variables saisies dans Portainer ont la priorité sur le fichier
+> `.env` du dépôt. Pas besoin de modifier le `.env` si tu passes par
+> l'interface Portainer.
 
 6. Cliquez sur **Deploy the stack**
 
@@ -242,6 +258,45 @@ server {
         add_header Cache-Control "public, immutable";
     }
 }
+```
+
+> **Important — `X-Forwarded-Proto` est obligatoire.** L'application active
+> `app.set('trust proxy', 1)` et dépend de cet en-tête pour décider de poser
+> le cookie httpOnly `wm_refresh` avec le flag `Secure`. Sans lui, le
+> rafraîchissement silencieux ne fonctionnera pas et les utilisateurs seront
+> déconnectés au bout de 15 minutes.
+
+### Nginx Proxy Manager
+
+Dans l'onglet **Advanced** du Proxy Host, colle :
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+```
+
+Active **Force SSL** et **Websockets Support**. Une fois HTTPS fonctionnel,
+tu peux activer **HTTP/2** et **HSTS**.
+
+---
+
+## WebAuthn / Passkeys — pièges fréquents
+
+| Symptôme | Cause | Correctif |
+|----------|-------|-----------|
+| `'rp.id' cannot be used with the current origin` | Le hostname dans la barre d'adresse du navigateur ne correspond pas à `WEBAUTHN_RP_ID` | Mettre exactement le domaine public, sans `https://`, sans port, sans slash |
+| Pas de prompt biométrique | HTTP utilisé en prod | Forcer HTTPS ; WebAuthn n'autorise HTTP que sur `localhost` |
+| Les variables Portainer sont ignorées | Ancien `docker-compose.yml` sans `WEBAUTHN_*` dans `environment:` | Pull & redeploy la stack avec la dernière version |
+| Passkey enrôlée puis inutilisable | Domaine changé (ex. passé de `localhost` à `mail.example.com`) | Les passkeys sont liées au RP_ID ; supprimer et ré-enrôler |
+| Utilisateur reconnecté toutes les 15 min | `X-Forwarded-Proto` absent → cookie `Secure` refusé | Ajouter `proxy_set_header X-Forwarded-Proto $scheme;` dans le reverse proxy |
+
+Vérifier l'environnement réellement vu par le conteneur :
+
+```bash
+docker exec webmail-app printenv | grep -E "WEBAUTHN|JWT"
 ```
 
 ---
