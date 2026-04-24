@@ -147,6 +147,15 @@ export const api = {
       body: JSON.stringify({ response }),
     }),
 
+  // Passwordless passkey login (discoverable credential)
+  webauthnPasskeyOptions: () =>
+    request<any>('/auth/webauthn/passkey/options', { method: 'POST' }),
+  webauthnPasskeyVerify: (response: any) =>
+    request<{ token: string; user: any }>('/auth/webauthn/passkey/verify', {
+      method: 'POST',
+      body: JSON.stringify({ response }),
+    }),
+
   // Accounts
   getAccounts: () => request<any[]>('/accounts'),
 
@@ -511,6 +520,20 @@ export const api = {
     app_name: string;
     icons: { favicon: string; icon192: string; icon512: string; apple: string };
     custom: { favicon: boolean; icon192: boolean; icon512: boolean; apple: boolean };
+    login_appearance: {
+      title: string | null;
+      subtitle: string | null;
+      backgroundColor: string | null;
+      backgroundImage: string | null;
+      backgroundBlur: number;
+      backgroundOverlay: string | null;
+      cardBgColor: string | null;
+      cardTextColor: string | null;
+      accentColor: string | null;
+      accentHoverColor: string | null;
+      showRegister: boolean;
+      showPasskeyButton: boolean;
+    };
   }>('/branding'),
   uploadBrandingIcon: async (type: 'favicon' | 'icon192' | 'icon512' | 'apple', file: File) => {
     const token = localStorage.getItem('auth_token');
@@ -530,6 +553,25 @@ export const api = {
   },
   resetBrandingIcon: (type: 'favicon' | 'icon192' | 'icon512' | 'apple') =>
     request(`/admin/branding/${type}`, { method: 'DELETE' }),
+
+  uploadLoginBackground: async (file: File) => {
+    const token = localStorage.getItem('auth_token');
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/admin/branding/login-background/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(err.error || `Erreur ${res.status}`);
+    }
+    return res.json() as Promise<{ success: boolean; filename: string }>;
+  },
+  deleteLoginBackground: () =>
+    request<{ success: boolean }>('/admin/branding/login-background', { method: 'DELETE' }),
 
   // Admin Mail Accounts
   getAdminMailAccounts: () => request<any[]>('/admin/mail-accounts'),

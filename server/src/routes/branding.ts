@@ -47,7 +47,15 @@ export const brandingPublicRouter = Router();
 brandingPublicRouter.get('/', async (_req, res) => {
   try {
     const result = await pool.query(
-      `SELECT key, value FROM admin_settings WHERE key IN ('app_name')`
+      `SELECT key, value FROM admin_settings WHERE key IN (
+        'app_name',
+        'login_title', 'login_subtitle',
+        'login_background_color', 'login_background_image',
+        'login_background_blur', 'login_background_overlay',
+        'login_card_bg_color', 'login_card_text_color',
+        'login_accent_color', 'login_accent_hover_color',
+        'login_show_register', 'login_show_passkey_button'
+      )`
     );
     const settings: Record<string, any> = {};
     for (const row of result.rows) settings[row.key] = row.value;
@@ -64,6 +72,26 @@ brandingPublicRouter.get('/', async (_req, res) => {
       }
     };
 
+    // Login background: filename stored in settings (to preserve extension).
+    const bgFile = typeof settings.login_background_image === 'string' ? settings.login_background_image : null;
+    const bgExists = bgFile ? fs.existsSync(path.join(BRANDING_DIR, bgFile)) : false;
+    const loginBackgroundUrl = bgExists
+      ? `/uploads/branding/${bgFile}?v=${iconVersion(bgFile!)}`
+      : null;
+
+    const str = (v: any, fallback: string | null = null) =>
+      typeof v === 'string' && v.trim() ? v : fallback;
+    const num = (v: any, fallback: number) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const bool = (v: any, fallback: boolean) => {
+      if (typeof v === 'boolean') return v;
+      if (v === 'true') return true;
+      if (v === 'false') return false;
+      return fallback;
+    };
+
     res.json({
       app_name: appName,
       icons: {
@@ -78,6 +106,20 @@ brandingPublicRouter.get('/', async (_req, res) => {
         icon512: fs.existsSync(path.join(BRANDING_DIR, 'icon-512.png')),
         apple: fs.existsSync(path.join(BRANDING_DIR, 'apple-touch-icon.png')),
       },
+      login_appearance: {
+        title: str(settings.login_title, null),
+        subtitle: str(settings.login_subtitle, null),
+        backgroundColor: str(settings.login_background_color, null),
+        backgroundImage: loginBackgroundUrl,
+        backgroundBlur: num(settings.login_background_blur, 0),
+        backgroundOverlay: str(settings.login_background_overlay, null),
+        cardBgColor: str(settings.login_card_bg_color, null),
+        cardTextColor: str(settings.login_card_text_color, null),
+        accentColor: str(settings.login_accent_color, null),
+        accentHoverColor: str(settings.login_accent_hover_color, null),
+        showRegister: bool(settings.login_show_register, true),
+        showPasskeyButton: bool(settings.login_show_passkey_button, true),
+      },
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -88,6 +130,74 @@ brandingPublicRouter.get('/', async (_req, res) => {
 export const brandingAdminRouter = Router();
 
 brandingAdminRouter.use(adminMiddleware);
+
+/**
+ * Login background image — stored under an arbitrary extension (png/jpg/webp)
+ * and referenced from admin_settings.login_background_image. A separate
+ * endpoint is used (rather than reusing BRANDING_FILES) because the filename
+ * extension varies per upload.
+ *
+ * NOTE: These specific routes are declared BEFORE the `/:type` routes below,
+ * otherwise Express would match `/login-background/*` as `type=login-background`.
+ */
+const loginBgUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (_req, file, cb) => {
+    const ok = /^image\/(png|jpeg|webp|gif)$/.test(file.mimetype);
+    if (ok) cb(null, true);
+    else cb(new Error('Type de fichier non supporté (PNG, JPEG, WEBP, GIF)') as any, false);
+  },
+});
+
+const loginBgFileName = (mime: string): string => {
+  if (mime === 'image/png') return 'login-background.png';
+  if (mime === 'image/webp') return 'login-background.webp';
+  if (mime === 'image/gif') return 'login-background.gif';
+  return 'login-background.jpg';
+};
+
+brandingAdminRouter.post('/login-background/upload', loginBgUpload.single('file'), async (req: AuthRequest, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Aucun fichier fourni' });
+    const filename = loginBgFileName(req.file.mimetype);
+
+    // Remove any previously uploaded background with a different extension.
+    for (const f of ['login-background.png', 'login-background.jpg', 'login-background.webp', 'login-background.gif']) {
+      if (f !== filename) {
+        const p = path.join(BRANDING_DIR, f);
+        if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch { /* noop */ } }
+      }
+    }
+
+    fs.writeFileSync(path.join(BRANDING_DIR, filename), req.file.buffer);
+
+    await pool.query(
+      `INSERT INTO admin_settings (key, value, updated_at) VALUES ('login_background_image', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+      [JSON.stringify(filename)]
+    );
+
+    logger.info(`Login background uploaded: ${filename} (${req.file.size} bytes)`);
+    res.json({ success: true, filename, size: req.file.size });
+  } catch (error: any) {
+    logger.error(error, 'Login background upload failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+brandingAdminRouter.delete('/login-background', async (_req: AuthRequest, res) => {
+  try {
+    for (const f of ['login-background.png', 'login-background.jpg', 'login-background.webp', 'login-background.gif']) {
+      const p = path.join(BRANDING_DIR, f);
+      if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch { /* noop */ } }
+    }
+    await pool.query(`DELETE FROM admin_settings WHERE key = 'login_background_image'`);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 brandingAdminRouter.post('/:type', upload.single('file'), async (req: AuthRequest, res) => {
   try {

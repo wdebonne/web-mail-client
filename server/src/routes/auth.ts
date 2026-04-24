@@ -22,6 +22,8 @@ import {
   listCredentials,
   deleteCredential,
   hasCredentials,
+  beginDiscoverableAuthentication,
+  finishDiscoverableAuthentication,
 } from '../services/webauthn';
 import { z } from 'zod';
 
@@ -449,6 +451,61 @@ authRouter.post('/webauthn/unlock/verify', authMiddleware, async (req: AuthReque
     res.json({ success: true });
   } catch (error: any) {
     console.error('WebAuthn unlock verify error:', error);
+    res.status(400).json({ error: error?.message || 'Vérification échouée' });
+  }
+});
+
+/**
+ * Passwordless login with a discoverable passkey (FIDO2 resident credential).
+ * The client calls `/options` without any identifier — the browser displays an
+ * account picker of resident keys bound to this RP. On `/verify`, the server
+ * resolves the user from the returned credential id and issues a full session.
+ *
+ * Public endpoints: by design, WebAuthn replaces the password in this flow.
+ */
+authRouter.post('/webauthn/passkey/options', async (_req, res) => {
+  try {
+    const options = await beginDiscoverableAuthentication();
+    res.json(options);
+  } catch (error: any) {
+    console.error('WebAuthn passkey options error:', error);
+    res.status(500).json({ error: error?.message || 'Erreur serveur' });
+  }
+});
+
+authRouter.post('/webauthn/passkey/verify', async (req, res) => {
+  try {
+    const response = req.body?.response;
+    if (!response) return res.status(400).json({ error: 'Réponse manquante' });
+    const { userId } = await finishDiscoverableAuthentication(response);
+
+    const userRes = await pool.query(
+      'SELECT id, email, display_name, avatar_url, role, is_admin, language, timezone, theme FROM users WHERE id = $1',
+      [userId]
+    );
+    if (userRes.rows.length === 0) return res.status(404).json({ error: 'Utilisateur introuvable' });
+    const user = userRes.rows[0];
+
+    req.session.userId = user.id;
+    req.session.isAdmin = user.is_admin;
+
+    const { accessToken } = await issueSession(req, res, user.id, user.is_admin);
+    res.json({
+      token: accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.display_name,
+        avatarUrl: user.avatar_url,
+        role: user.role,
+        isAdmin: user.is_admin,
+        language: user.language,
+        timezone: user.timezone,
+        theme: user.theme,
+      },
+    });
+  } catch (error: any) {
+    console.error('WebAuthn passkey verify error:', error);
     res.status(400).json({ error: error?.message || 'Vérification échouée' });
   }
 });

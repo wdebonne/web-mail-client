@@ -5,13 +5,13 @@ import {
   Users, Shield, Plug, Cloud, Settings, Plus, Trash2, X,
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
-  Contact, Search, Link,
+  Contact, Search, Link, Palette,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import AdminCalendarManagement from '../components/admin/AdminCalendarManagement';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance';
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('dashboard');
@@ -26,6 +26,7 @@ export default function AdminPage() {
     { id: 'plugins' as const, icon: Plug, label: 'Plugins' },
     { id: 'nextcloud' as const, icon: Cloud, label: 'NextCloud' },
     { id: 'logs' as const, icon: ScrollText, label: 'Logs' },
+    { id: 'loginAppearance' as const, icon: Palette, label: 'Apparence connexion' },
     { id: 'system' as const, icon: Settings, label: 'Système' },
   ];
 
@@ -59,6 +60,7 @@ export default function AdminPage() {
           {tab === 'plugins' && <PluginManagement />}
           {tab === 'nextcloud' && <NextCloudSettings />}
           {tab === 'logs' && <LogsPanel />}
+          {tab === 'loginAppearance' && <LoginAppearanceSettings />}
           {tab === 'system' && <SystemSettings />}
         </div>
       </div>
@@ -1641,6 +1643,447 @@ function BrandingSettings() {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Login page appearance ─────────────────────────────────────────────────────
+//
+// Lets administrators customize the public login screen: wallpaper with blur,
+// overlay, card colors, accent color, custom title/subtitle, and toggles for
+// the "create account" and "passkey" buttons. All values are persisted in the
+// admin_settings table and exposed via the public /api/branding endpoint.
+function LoginAppearanceSettings() {
+  const queryClient = useQueryClient();
+  const { data: settings } = useQuery({ queryKey: ['admin-settings'], queryFn: api.getAdminSettings });
+  const { data: branding, refetch: refetchBranding } = useQuery({
+    queryKey: ['branding'],
+    queryFn: api.getBranding,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: api.updateAdminSettings,
+    onSuccess: () => {
+      toast.success('Apparence de la page de connexion enregistrée');
+      queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['branding'] });
+      queryClient.invalidateQueries({ queryKey: ['branding-public'] });
+    },
+  });
+
+  const [title, setTitle] = useState('');
+  const [subtitle, setSubtitle] = useState('');
+  const [bgColor, setBgColor] = useState('');
+  const [blur, setBlur] = useState(0);
+  const [overlay, setOverlay] = useState('');
+  const [cardBg, setCardBg] = useState('');
+  const [cardText, setCardText] = useState('');
+  const [accent, setAccent] = useState('');
+  const [accentHover, setAccentHover] = useState('');
+  const [showRegister, setShowRegister] = useState(true);
+  const [showPasskey, setShowPasskey] = useState(true);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (!settings) return;
+    const str = (v: any, f = '') => (typeof v === 'string' ? v : f);
+    const num = (v: any, f = 0) => { const n = Number(v); return Number.isFinite(n) ? n : f; };
+    const bool = (v: any, f = true) => (typeof v === 'boolean' ? v : v === 'true' ? true : v === 'false' ? false : f);
+    setTitle(str(settings.login_title));
+    setSubtitle(str(settings.login_subtitle));
+    setBgColor(str(settings.login_background_color));
+    setBlur(num(settings.login_background_blur, 0));
+    setOverlay(str(settings.login_background_overlay));
+    setCardBg(str(settings.login_card_bg_color));
+    setCardText(str(settings.login_card_text_color));
+    setAccent(str(settings.login_accent_color));
+    setAccentHover(str(settings.login_accent_hover_color));
+    setShowRegister(bool(settings.login_show_register, true));
+    setShowPasskey(bool(settings.login_show_passkey_button, true));
+  }, [settings]);
+
+  const save = () => {
+    updateMutation.mutate({
+      login_title: title.trim() || null,
+      login_subtitle: subtitle.trim() || null,
+      login_background_color: bgColor.trim() || null,
+      login_background_blur: Math.max(0, Math.min(30, Math.round(blur))),
+      login_background_overlay: overlay.trim() || null,
+      login_card_bg_color: cardBg.trim() || null,
+      login_card_text_color: cardText.trim() || null,
+      login_accent_color: accent.trim() || null,
+      login_accent_hover_color: accentHover.trim() || null,
+      login_show_register: showRegister,
+      login_show_passkey_button: showPasskey,
+    });
+  };
+
+  const handleUploadBg = async (file: File) => {
+    try {
+      setUploading(true);
+      await api.uploadLoginBackground(file);
+      toast.success('Fond d\'écran mis à jour');
+      await refetchBranding();
+      queryClient.invalidateQueries({ queryKey: ['branding-public'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Échec du téléversement');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveBg = async () => {
+    try {
+      await api.deleteLoginBackground();
+      toast.success('Fond d\'écran supprimé');
+      await refetchBranding();
+      queryClient.invalidateQueries({ queryKey: ['branding-public'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Échec de la suppression');
+    }
+  };
+
+  const appearance = branding?.login_appearance;
+  const appName = branding?.app_name || 'WebMail';
+
+  return (
+    <div>
+      <h3 className="text-base font-semibold mb-1">Apparence de la page de connexion</h3>
+      <p className="text-xs text-outlook-text-disabled mb-6">
+        Personnalisez l'écran de connexion que voient tous les utilisateurs : fond d'écran,
+        floutage, couleurs de la modale, bouton principal et options affichées.
+      </p>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ── Contrôles ─────────────────────────────────────────── */}
+        <div className="space-y-5">
+          {/* Textes */}
+          <div>
+            <h4 className="text-sm font-semibold mb-2">Textes</h4>
+            <label className="block text-xs text-outlook-text-secondary mt-2">Titre (par défaut : nom de l'app)</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={appName}
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+            />
+            <label className="block text-xs text-outlook-text-secondary mt-3">Sous-titre</label>
+            <input
+              type="text"
+              value={subtitle}
+              onChange={(e) => setSubtitle(e.target.value)}
+              placeholder="Connectez-vous à votre messagerie"
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
+            />
+          </div>
+
+          {/* Arrière-plan */}
+          <div>
+            <h4 className="text-sm font-semibold mb-2">Arrière-plan</h4>
+
+            <div className="border border-outlook-border rounded-md p-3 mb-3">
+              <div className="text-xs text-outlook-text-secondary mb-2">Image de fond</div>
+              {appearance?.backgroundImage ? (
+                <div className="flex items-center gap-3">
+                  <img src={appearance.backgroundImage} alt="" className="w-24 h-16 object-cover rounded border border-outlook-border" />
+                  <div className="flex-1 text-xs text-green-600">✓ Image personnalisée active</div>
+                  <button
+                    onClick={handleRemoveBg}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+              ) : (
+                <div className="text-xs text-outlook-text-disabled">Aucune image</div>
+              )}
+              <label className="inline-block mt-2 bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-xs cursor-pointer">
+                {uploading ? 'Envoi…' : 'Téléverser une image'}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadBg(f);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              <p className="text-xs text-outlook-text-disabled mt-1">
+                PNG, JPEG, WEBP ou GIF. Max 10 Mo. Recommandé : 1920×1080 ou plus.
+              </p>
+            </div>
+
+            <label className="block text-xs text-outlook-text-secondary">
+              Couleur de fond (ignorée si une image est présente)
+            </label>
+            <div className="flex gap-2 mt-1">
+              <input
+                type="color"
+                value={bgColor || '#0078d4'}
+                onChange={(e) => setBgColor(e.target.value)}
+                className="h-10 w-14 rounded border border-outlook-border cursor-pointer"
+              />
+              <input
+                type="text"
+                value={bgColor}
+                onChange={(e) => setBgColor(e.target.value)}
+                placeholder="#0078d4 ou linear-gradient(…)"
+                className="flex-1 border border-outlook-border rounded-md px-3 py-2 text-sm font-mono"
+              />
+            </div>
+
+            <label className="block text-xs text-outlook-text-secondary mt-3">
+              Flou d'arrière-plan : <span className="font-semibold">{blur}px</span>
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={30}
+              value={blur}
+              onChange={(e) => setBlur(Number(e.target.value))}
+              className="w-full"
+            />
+            <p className="text-xs text-outlook-text-disabled">
+              S'applique uniquement si une image de fond est définie. 0 = net, 30 = très flou.
+            </p>
+
+            <label className="block text-xs text-outlook-text-secondary mt-3">
+              Superposition (rgba/hex) — ex. <code>rgba(0,0,0,0.4)</code>
+            </label>
+            <input
+              type="text"
+              value={overlay}
+              onChange={(e) => setOverlay(e.target.value)}
+              placeholder="rgba(0,0,0,0.4)"
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1 font-mono"
+            />
+            <p className="text-xs text-outlook-text-disabled">
+              Calque placé au-dessus de l'image pour améliorer la lisibilité.
+            </p>
+          </div>
+
+          {/* Modale */}
+          <div>
+            <h4 className="text-sm font-semibold mb-2">Modale de connexion</h4>
+
+            <label className="block text-xs text-outlook-text-secondary">Couleur de fond de la modale</label>
+            <div className="flex gap-2 mt-1">
+              <input
+                type="color"
+                value={cardBg || '#ffffff'}
+                onChange={(e) => setCardBg(e.target.value)}
+                className="h-10 w-14 rounded border border-outlook-border cursor-pointer"
+              />
+              <input
+                type="text"
+                value={cardBg}
+                onChange={(e) => setCardBg(e.target.value)}
+                placeholder="#ffffff ou rgba(255,255,255,0.9)"
+                className="flex-1 border border-outlook-border rounded-md px-3 py-2 text-sm font-mono"
+              />
+            </div>
+
+            <label className="block text-xs text-outlook-text-secondary mt-3">Couleur du texte du titre</label>
+            <div className="flex gap-2 mt-1">
+              <input
+                type="color"
+                value={cardText || '#323130'}
+                onChange={(e) => setCardText(e.target.value)}
+                className="h-10 w-14 rounded border border-outlook-border cursor-pointer"
+              />
+              <input
+                type="text"
+                value={cardText}
+                onChange={(e) => setCardText(e.target.value)}
+                placeholder="#323130"
+                className="flex-1 border border-outlook-border rounded-md px-3 py-2 text-sm font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Accent */}
+          <div>
+            <h4 className="text-sm font-semibold mb-2">Couleur d'accent (bouton principal)</h4>
+            <div className="flex gap-2">
+              <input
+                type="color"
+                value={accent || '#0078d4'}
+                onChange={(e) => setAccent(e.target.value)}
+                className="h-10 w-14 rounded border border-outlook-border cursor-pointer"
+              />
+              <input
+                type="text"
+                value={accent}
+                onChange={(e) => setAccent(e.target.value)}
+                placeholder="#0078d4"
+                className="flex-1 border border-outlook-border rounded-md px-3 py-2 text-sm font-mono"
+              />
+            </div>
+            <p className="text-xs text-outlook-text-disabled mt-1">
+              Utilisée pour le logo, le bouton « Se connecter » et les liens.
+            </p>
+          </div>
+
+          {/* Options */}
+          <div>
+            <h4 className="text-sm font-semibold mb-2">Options affichées</h4>
+            <label className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showPasskey}
+                onChange={(e) => setShowPasskey(e.target.checked)}
+              />
+              Afficher le bouton « Se connecter avec une clé d'accès »
+            </label>
+            <label className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showRegister}
+                onChange={(e) => setShowRegister(e.target.checked)}
+              />
+              Afficher le lien « Créer un compte »
+            </label>
+          </div>
+
+          <div className="pt-2 flex gap-2">
+            <button
+              onClick={save}
+              disabled={updateMutation.isPending}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 rounded-md text-sm disabled:opacity-50"
+            >
+              {updateMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+            <button
+              onClick={() => {
+                setTitle(''); setSubtitle('');
+                setBgColor(''); setBlur(0); setOverlay('');
+                setCardBg(''); setCardText('');
+                setAccent(''); setAccentHover('');
+                setShowRegister(true); setShowPasskey(true);
+              }}
+              className="border border-outlook-border px-4 py-2 rounded-md text-sm hover:bg-outlook-bg-hover"
+            >
+              Réinitialiser
+            </button>
+          </div>
+        </div>
+
+        {/* ── Prévisualisation ──────────────────────────────────── */}
+        <div>
+          <h4 className="text-sm font-semibold mb-2">Aperçu</h4>
+          <LoginPreview
+            title={title || appName}
+            subtitle={subtitle || 'Connectez-vous à votre messagerie'}
+            backgroundColor={bgColor}
+            backgroundImage={appearance?.backgroundImage || null}
+            backgroundBlur={blur}
+            backgroundOverlay={overlay}
+            cardBg={cardBg}
+            cardText={cardText}
+            accent={accent}
+            showPasskey={showPasskey}
+            showRegister={showRegister}
+          />
+          <p className="text-xs text-outlook-text-disabled mt-2">
+            Les modifications sont visibles immédiatement sur la page de connexion après
+            enregistrement. Le bouton « clé d'accès » n'apparaît qu'aux navigateurs qui
+            supportent WebAuthn.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoginPreview({
+  title, subtitle, backgroundColor, backgroundImage, backgroundBlur, backgroundOverlay,
+  cardBg, cardText, accent, showPasskey, showRegister,
+}: {
+  title: string;
+  subtitle: string;
+  backgroundColor: string;
+  backgroundImage: string | null;
+  backgroundBlur: number;
+  backgroundOverlay: string;
+  cardBg: string;
+  cardText: string;
+  accent: string;
+  showPasskey: boolean;
+  showRegister: boolean;
+}) {
+  const rootStyle: React.CSSProperties = backgroundImage
+    ? {}
+    : { background: backgroundColor || 'linear-gradient(135deg,#0078d4,#106ebe)' };
+  const cardStyle: React.CSSProperties = {};
+  if (cardBg) cardStyle.backgroundColor = cardBg;
+  if (cardText) cardStyle.color = cardText;
+  const btnStyle: React.CSSProperties = accent ? { backgroundColor: accent } : { backgroundColor: '#0078d4' };
+
+  return (
+    <div
+      className="relative h-80 rounded-lg overflow-hidden border border-outlook-border"
+      style={rootStyle}
+    >
+      {backgroundImage && (
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-center bg-cover"
+          style={{
+            backgroundImage: `url(${backgroundImage})`,
+            filter: backgroundBlur > 0 ? `blur(${backgroundBlur}px)` : undefined,
+            transform: backgroundBlur > 0 ? 'scale(1.1)' : undefined,
+          }}
+        />
+      )}
+      {backgroundImage && backgroundOverlay && (
+        <div aria-hidden className="absolute inset-0" style={{ background: backgroundOverlay }} />
+      )}
+      <div className="relative h-full flex items-center justify-center p-4">
+        <div
+          className="bg-white rounded-lg shadow-xl p-5 w-full max-w-[260px] text-center"
+          style={cardStyle}
+        >
+          <div
+            className="w-10 h-10 rounded-md flex items-center justify-center mx-auto mb-2"
+            style={btnStyle}
+          >
+            <Mail size={18} className="text-white" />
+          </div>
+          <div className="text-sm font-semibold truncate" style={cardText ? { color: cardText } : undefined}>
+            {title}
+          </div>
+          <div className="text-[10px] text-outlook-text-secondary mt-0.5 truncate">
+            {subtitle}
+          </div>
+          {showPasskey && (
+            <div className="mt-3 border border-outlook-border rounded px-2 py-1.5 text-[10px]">
+              🔑 Se connecter avec une clé d'accès
+            </div>
+          )}
+          <div className="mt-2 space-y-1">
+            <div className="h-5 bg-outlook-bg-hover rounded" />
+            <div className="h-5 bg-outlook-bg-hover rounded" />
+          </div>
+          <div
+            className="mt-2 rounded py-1 text-[10px] text-white font-medium"
+            style={btnStyle}
+          >
+            Se connecter
+          </div>
+          {showRegister && (
+            <div
+              className="mt-2 text-[10px]"
+              style={accent ? { color: accent } : { color: '#0078d4' }}
+            >
+              Créer un compte
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

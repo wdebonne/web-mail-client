@@ -9,6 +9,19 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Authentification — Passkey passwordless + personnalisation de la page de connexion
+
+- **Connexion sans mot de passe avec un passkey** ([server/src/routes/auth.ts](server/src/routes/auth.ts), [server/src/services/webauthn.ts](server/src/services/webauthn.ts)) : deux nouveaux endpoints publics `POST /api/auth/webauthn/passkey/options` et `/verify` basés sur les **credentials découvrables** (resident keys). L'utilisateur clique sur « Se connecter avec une clé d'accès » depuis la page principale ([client/src/pages/LoginPage.tsx](client/src/pages/LoginPage.tsx)), le navigateur affiche le sélecteur de comptes iCloud / Google Password Manager / Windows Hello, et la session est émise sans email ni mot de passe.
+- **Enrôlement passkey mis à jour** ([server/src/services/webauthn.ts](server/src/services/webauthn.ts)) : `residentKey: 'required'` (au lieu de `preferred`) pour garantir que toutes les clés nouvellement enregistrées sont découvrables et utilisables pour la connexion passwordless.
+- **Nouvel onglet *Apparence connexion*** dans l'admin ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) avec prévisualisation en direct :
+  - fond d'écran personnalisé (PNG/JPEG/WEBP/GIF, 10 Mo max) avec **flou réglable** de 0 à 30 px et calque d'opacité (`rgba(...)`) pour améliorer la lisibilité,
+  - couleur de fond alternative (hex / `linear-gradient(…)`) si pas d'image,
+  - couleur et texte de la modale (`cardBgColor` / `cardTextColor`), couleur d'accent (boutons et liens),
+  - titre et sous-titre personnalisables,
+  - toggles pour masquer le bouton « clé d'accès » ou le lien « créer un compte ».
+- **Endpoints admin correspondants** ([server/src/routes/branding.ts](server/src/routes/branding.ts)) : `POST /api/admin/branding/login-background/upload`, `DELETE /api/admin/branding/login-background`. Les autres réglages (couleurs, textes, toggles) passent par l'endpoint générique `PUT /api/admin/settings` sous les clés `login_title`, `login_subtitle`, `login_background_color`, `login_background_blur`, `login_background_overlay`, `login_card_bg_color`, `login_card_text_color`, `login_accent_color`, `login_show_register`, `login_show_passkey_button`.
+- **Endpoint public `/api/branding`** étendu avec le bloc `login_appearance` pour que la page de connexion charge son thème sans authentification.
+
 #### Authentification — Rester connecté + biométrie
 
 - **Refresh token rotation par appareil** ([server/src/services/deviceSessions.ts](server/src/services/deviceSessions.ts)) : table `device_sessions` avec refresh tokens 256 bits hashés SHA-256, cookie `wm_refresh` `httpOnly` + `SameSite=Strict` + `Secure` en prod, scope `/api/auth`, TTL glissant 90 jours. Chaque rotation lie l'ancien au nouveau via `replaced_by` ; rejouer un token déjà révoqué révoque toute la chaîne (détection de vol).

@@ -92,7 +92,10 @@ export async function beginRegistration(userId: string, userEmail: string, userN
     userID: Buffer.from(userId),
     attestationType: 'none',
     authenticatorSelection: {
-      residentKey: 'preferred',
+      // `required` ensures the credential is a **discoverable** (resident) key,
+      // which is mandatory for the passwordless passkey-login flow that does
+      // not send an email/allowCredentials list.
+      residentKey: 'required',
       userVerification: 'preferred',
       authenticatorAttachment: 'platform',
     },
@@ -236,4 +239,62 @@ export async function hasCredentials(userId: string): Promise<boolean> {
     [userId]
   );
   return r.rows.length > 0;
+}
+
+/**
+ * Generate options for a **discoverable credential** ceremony (passwordless
+ * login). No `allowCredentials` is sent so the authenticator offers the user
+ * any resident passkey bound to this RP. The challenge is stored with a NULL
+ * user_id and resolved at verify time by looking up the credential.
+ */
+export async function beginDiscoverableAuthentication() {
+  const options = await generateAuthenticationOptions({
+    rpID: rpID(),
+    userVerification: 'preferred',
+    // No allowCredentials ⇒ browser shows the account picker from resident keys.
+  });
+  await storeChallenge(null, options.challenge, 'authenticate');
+  return options;
+}
+
+export async function finishDiscoverableAuthentication(
+  response: AuthenticationResponseJSON
+): Promise<{ userId: string }> {
+  const expectedChallenge = extractChallenge(response.response.clientDataJSON);
+  const consumed = await consumeChallenge(expectedChallenge, 'authenticate');
+  // Discoverable ceremonies are stored with user_id = NULL.
+  if (!consumed || consumed.userId !== null) {
+    throw new Error('Challenge invalide');
+  }
+
+  // Resolve the owning user from the returned credential id.
+  const row = await pool.query(
+    `SELECT id, user_id, credential_id, public_key, counter, transports
+     FROM webauthn_credentials WHERE credential_id = $1 LIMIT 1`,
+    [response.id]
+  );
+  if (row.rows.length === 0) throw new Error('Credential inconnu');
+  const stored = row.rows[0];
+
+  const verification = await verifyAuthenticationResponse({
+    response,
+    expectedChallenge,
+    expectedOrigin: origin(),
+    expectedRPID: rpID(),
+    credential: {
+      id: stored.credential_id,
+      publicKey: new Uint8Array(stored.public_key),
+      counter: Number(stored.counter),
+      transports: stored.transports ? (stored.transports.split(',') as AuthenticatorTransportFuture[]) : undefined,
+    },
+    requireUserVerification: true, // passwordless ⇒ verifiable user presence is mandatory
+  });
+  if (!verification.verified) {
+    throw new Error('Vérification WebAuthn échouée');
+  }
+  await pool.query(
+    `UPDATE webauthn_credentials SET counter = $1, last_used_at = NOW() WHERE id = $2`,
+    [verification.authenticationInfo.newCounter, stored.id]
+  );
+  return { userId: stored.user_id };
 }
