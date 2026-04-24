@@ -110,6 +110,27 @@ export const api = {
   }>>('/auth/devices'),
   revokeDevice: (id: string) => request<{ success: boolean }>(`/auth/devices/${id}`, { method: 'DELETE' }),
 
+  // Admin: all device sessions across users
+  adminListDevices: () => request<Array<{
+    userId: string;
+    email: string;
+    displayName: string | null;
+    isAdmin: boolean;
+    devices: Array<{
+      id: string;
+      deviceName: string | null;
+      userAgent: string | null;
+      ipLastSeen: string | null;
+      createdAt: string;
+      lastUsedAt: string;
+      expiresAt: string;
+    }>;
+  }>>('/admin/devices'),
+  adminRevokeDevice: (id: string) =>
+    request<{ success: boolean }>(`/admin/devices/${id}`, { method: 'DELETE' }),
+  adminRevokeUserDevices: (userId: string) =>
+    request<{ success: boolean; revoked: number }>(`/admin/users/${userId}/devices`, { method: 'DELETE' }),
+
   // WebAuthn / passkeys
   webauthnRegisterOptions: () =>
     request<any>('/auth/webauthn/register/options', { method: 'POST' }),

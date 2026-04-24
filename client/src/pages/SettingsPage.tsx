@@ -808,7 +808,14 @@ function DevicesSettings() {
         )}
 
         {!isLoading && devices && devices.length === 0 && (
-          <div className="text-sm text-outlook-text-secondary">Aucun appareil actif.</div>
+          <div className="text-sm text-outlook-text-secondary p-4 border border-dashed border-outlook-border rounded">
+            Aucun appareil actif.
+            <div className="text-xs text-outlook-text-disabled mt-1">
+              Si vous êtes bien connecté ici, votre session a probablement été
+              créée avant l'activation du suivi d'appareils. Déconnectez-vous
+              puis reconnectez-vous pour que cet appareil apparaisse dans la liste.
+            </div>
+          </div>
         )}
 
         <div className="space-y-2">

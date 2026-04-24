@@ -8,6 +8,11 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { execSync } from 'child_process';
 import { buildIcs } from '../utils/ical';
+import {
+  listAllActiveDeviceSessions,
+  revokeAllUserDeviceSessions,
+  adminRevokeDeviceSession,
+} from '../services/deviceSessions';
 
 export const adminRouter = Router();
 
@@ -1676,6 +1681,88 @@ adminRouter.post('/calendars/:id/push-to-caldav', async (req: AuthRequest, res) 
     res.json({ ok: true, url: target, events: events.rows.length });
   } catch (error: any) {
     logger.error(error as Error, 'Calendar push-to-caldav failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Placeholder
+
+// ========================================
+// ---- Device Sessions (admin) ----
+// ========================================
+//
+// Returns every active device session grouped by user. The admin UI uses this
+// to audit who is signed in where and to force-sign-out a single device or
+// every device of a given user (e.g. on offboarding or after a suspected
+// password compromise).
+
+adminRouter.get('/devices', async (_req: AuthRequest, res) => {
+  try {
+    const rows = await listAllActiveDeviceSessions();
+    // Group by user for easier rendering client-side.
+    const byUser = new Map<string, {
+      userId: string;
+      email: string;
+      displayName: string | null;
+      isAdmin: boolean;
+      devices: Array<{
+        id: string;
+        deviceName: string | null;
+        userAgent: string | null;
+        ipLastSeen: string | null;
+        createdAt: string;
+        lastUsedAt: string;
+        expiresAt: string;
+      }>;
+    }>();
+    for (const r of rows) {
+      let entry = byUser.get(r.user_id);
+      if (!entry) {
+        entry = {
+          userId: r.user_id,
+          email: r.user_email,
+          displayName: r.user_display_name,
+          isAdmin: r.user_is_admin,
+          devices: [],
+        };
+        byUser.set(r.user_id, entry);
+      }
+      entry.devices.push({
+        id: r.id,
+        deviceName: r.device_name,
+        userAgent: r.user_agent,
+        ipLastSeen: r.ip_last_seen,
+        createdAt: r.created_at,
+        lastUsedAt: r.last_used_at,
+        expiresAt: r.expires_at,
+      });
+    }
+    res.json(Array.from(byUser.values()));
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin list devices failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.delete('/devices/:id', async (req: AuthRequest, res) => {
+  try {
+    const ok = await adminRevokeDeviceSession(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Appareil introuvable' });
+    await addLog(req.userId, 'device.revoke', 'security', req, { deviceId: req.params.id }, 'device', req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin revoke device failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.delete('/users/:userId/devices', async (req: AuthRequest, res) => {
+  try {
+    const count = await revokeAllUserDeviceSessions(req.params.userId);
+    await addLog(req.userId, 'device.revoke_all', 'security', req, { userId: req.params.userId, count }, 'user', req.params.userId);
+    res.json({ success: true, revoked: count });
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin revoke all devices failed');
     res.status(500).json({ error: error.message });
   }
 });

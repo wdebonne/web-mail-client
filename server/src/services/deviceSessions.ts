@@ -272,6 +272,51 @@ export async function listDeviceSessions(userId: string): Promise<DeviceSessionR
   return r.rows;
 }
 
+export interface AdminDeviceSessionRow extends DeviceSessionRow {
+  user_email: string;
+  user_display_name: string | null;
+  user_is_admin: boolean;
+}
+
+/** Admin-wide list of active device sessions joined with user info. */
+export async function listAllActiveDeviceSessions(): Promise<AdminDeviceSessionRow[]> {
+  const r = await pool.query(
+    `SELECT ds.id, ds.user_id, ds.device_name, ds.user_agent, ds.ip_last_seen,
+            ds.created_at, ds.last_used_at, ds.expires_at, ds.revoked_at,
+            u.email AS user_email,
+            u.display_name AS user_display_name,
+            u.is_admin AS user_is_admin
+       FROM device_sessions ds
+       JOIN users u ON u.id = ds.user_id
+      WHERE ds.revoked_at IS NULL
+        AND ds.expires_at > NOW()
+      ORDER BY u.display_name NULLS LAST, u.email, ds.last_used_at DESC`,
+  );
+  return r.rows;
+}
+
+/** Admin: revoke every active session of a single user. Returns count. */
+export async function revokeAllUserDeviceSessions(userId: string): Promise<number> {
+  const r = await pool.query(
+    `UPDATE device_sessions
+        SET revoked_at = NOW()
+      WHERE user_id = $1 AND revoked_at IS NULL`,
+    [userId],
+  );
+  return r.rowCount || 0;
+}
+
+/** Admin: revoke a single session without requiring ownership. */
+export async function adminRevokeDeviceSession(sessionId: string): Promise<boolean> {
+  const r = await pool.query(
+    `UPDATE device_sessions
+        SET revoked_at = NOW()
+      WHERE id = $1 AND revoked_at IS NULL`,
+    [sessionId],
+  );
+  return (r.rowCount || 0) > 0;
+}
+
 /** Look up a session id (used by the access-token middleware to verify it wasn't revoked). */
 export async function isSessionActive(sessionId: string): Promise<boolean> {
   const r = await pool.query(

@@ -5,13 +5,14 @@ import {
   Users, Shield, Plug, Cloud, Settings, Plus, Trash2, X,
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
-  Contact, Search, Link, Palette,
+  Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
+  ChevronDown, ChevronRight, LogOut,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import AdminCalendarManagement from '../components/admin/AdminCalendarManagement';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices';
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('dashboard');
@@ -27,6 +28,7 @@ export default function AdminPage() {
     { id: 'nextcloud' as const, icon: Cloud, label: 'NextCloud' },
     { id: 'logs' as const, icon: ScrollText, label: 'Logs' },
     { id: 'loginAppearance' as const, icon: Palette, label: 'Apparence connexion' },
+    { id: 'devices' as const, icon: Monitor, label: 'Appareils' },
     { id: 'system' as const, icon: Settings, label: 'Système' },
   ];
 
@@ -61,6 +63,7 @@ export default function AdminPage() {
           {tab === 'nextcloud' && <NextCloudSettings />}
           {tab === 'logs' && <LogsPanel />}
           {tab === 'loginAppearance' && <LoginAppearanceSettings />}
+          {tab === 'devices' && <DeviceSessionsManagement />}
           {tab === 'system' && <SystemSettings />}
         </div>
       </div>
@@ -785,8 +788,168 @@ function MailAccountManagement() {
   );
 }
 
+type MailProviderId = 'outlook' | 'gmail' | 'yahoo' | 'icloud' | 'o2switch' | 'imap';
+
+interface MailProviderPreset {
+  id: MailProviderId;
+  label: string;
+  description: string;
+  color: string;
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  usernameIsEmail: boolean;
+  hideServers: boolean;
+  isO2Switch: boolean;
+  note?: string;
+  logo: React.ReactNode;
+}
+
+const MAIL_PROVIDERS: MailProviderPreset[] = [
+  {
+    id: 'outlook',
+    label: 'Outlook / Microsoft 365',
+    description: 'outlook.com, hotmail.com, live.com, Microsoft 365',
+    color: '#0078D4',
+    imapHost: 'outlook.office365.com',
+    imapPort: 993,
+    smtpHost: 'smtp.office365.com',
+    smtpPort: 587,
+    usernameIsEmail: true,
+    hideServers: true,
+    isO2Switch: false,
+    note: "Si l'authentification moderne (MFA) est activée, un mot de passe d'application est requis.",
+    logo: (
+      <svg viewBox="0 0 48 48" className="w-8 h-8" aria-hidden="true">
+        <path fill="#0078D4" d="M44 12v24a2 2 0 0 1-2 2H22V10h20a2 2 0 0 1 2 2Z"/>
+        <path fill="#fff" d="M33 20h6v2h-6zM33 24h6v2h-6zM33 28h6v2h-6z"/>
+        <path fill="#106EBE" d="M22 10v28H8a2 2 0 0 1-2-2V12a2 2 0 0 1 2-2h14Z"/>
+        <circle cx="14" cy="24" r="5" fill="#fff"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'gmail',
+    label: 'Gmail',
+    description: 'gmail.com, Google Workspace',
+    color: '#EA4335',
+    imapHost: 'imap.gmail.com',
+    imapPort: 993,
+    smtpHost: 'smtp.gmail.com',
+    smtpPort: 465,
+    usernameIsEmail: true,
+    hideServers: true,
+    isO2Switch: false,
+    note: "Google exige un mot de passe d'application (IMAP doit être activé dans les paramètres Gmail).",
+    logo: (
+      <svg viewBox="0 0 48 48" className="w-8 h-8" aria-hidden="true">
+        <path fill="#4285F4" d="M44 12v24a2 2 0 0 1-2 2h-4V18l-14 10L10 18v20H6a2 2 0 0 1-2-2V12l20 14Z"/>
+        <path fill="#34A853" d="M38 38V18l-14 10L10 18v20h28Z" opacity=".0"/>
+        <path fill="#EA4335" d="M4 12a2 2 0 0 1 2-2h4l14 10 14-10h4a2 2 0 0 1 2 2L24 26 4 12Z"/>
+        <path fill="#FBBC04" d="M10 18v20H6a2 2 0 0 1-2-2V12l6 6Z"/>
+        <path fill="#34A853" d="M38 18v20h4a2 2 0 0 0 2-2V12l-6 6Z"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'yahoo',
+    label: 'Yahoo Mail',
+    description: 'yahoo.com, yahoo.fr, ymail.com',
+    color: '#6001D2',
+    imapHost: 'imap.mail.yahoo.com',
+    imapPort: 993,
+    smtpHost: 'smtp.mail.yahoo.com',
+    smtpPort: 465,
+    usernameIsEmail: true,
+    hideServers: true,
+    isO2Switch: false,
+    note: "Yahoo exige un mot de passe d'application à générer depuis la sécurité du compte.",
+    logo: (
+      <svg viewBox="0 0 48 48" className="w-8 h-8" aria-hidden="true">
+        <rect width="48" height="48" rx="8" fill="#6001D2"/>
+        <path fill="#fff" d="M13 15h5l4.5 7 4.5-7h5l-7 11v7h-5v-7L13 15Z"/>
+        <circle cx="34" cy="30" r="2.5" fill="#fff"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'icloud',
+    label: 'iCloud Mail',
+    description: 'icloud.com, me.com, mac.com',
+    color: '#007AFF',
+    imapHost: 'imap.mail.me.com',
+    imapPort: 993,
+    smtpHost: 'smtp.mail.me.com',
+    smtpPort: 587,
+    usernameIsEmail: true,
+    hideServers: true,
+    isO2Switch: false,
+    note: "Apple exige un mot de passe d'application généré depuis appleid.apple.com.",
+    logo: (
+      <svg viewBox="0 0 48 48" className="w-8 h-8" aria-hidden="true">
+        <rect width="48" height="48" rx="8" fill="#e9ecef"/>
+        <path fill="#6c757d" d="M36 28c0 3.5-2.8 6-6.5 6H17.5C13.4 34 10 30.8 10 26.8c0-3.6 2.7-6.5 6.2-6.9.8-3.5 4-6.1 7.8-6.1 3.5 0 6.5 2.1 7.6 5.2 2.6.4 4.4 2.6 4.4 5.3 0 .2 0 .4 0 .6 0 .4.1.7.1 1v.1Z"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'o2switch',
+    label: 'O2Switch',
+    description: 'Hébergement O2Switch (CalDAV/CardDAV inclus)',
+    color: '#0C7C59',
+    imapHost: '',
+    imapPort: 993,
+    smtpHost: '',
+    smtpPort: 465,
+    usernameIsEmail: true,
+    hideServers: false,
+    isO2Switch: true,
+    note: "Renseignez les hôtes IMAP/SMTP fournis par O2Switch. La synchronisation CalDAV/CardDAV sera activée automatiquement.",
+    logo: (
+      <svg viewBox="0 0 48 48" className="w-8 h-8" aria-hidden="true">
+        <rect width="48" height="48" rx="8" fill="#0C7C59"/>
+        <path fill="#fff" d="M24 12a12 12 0 1 0 0 24 12 12 0 0 0 0-24Zm0 4a8 8 0 1 1 0 16 8 8 0 0 1 0-16Z"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'imap',
+    label: 'IMAP / SMTP (autre)',
+    description: 'Configuration manuelle pour tout autre fournisseur',
+    color: '#6B7280',
+    imapHost: '',
+    imapPort: 993,
+    smtpHost: '',
+    smtpPort: 465,
+    usernameIsEmail: false,
+    hideServers: false,
+    isO2Switch: false,
+    logo: (
+      <svg viewBox="0 0 48 48" className="w-8 h-8" aria-hidden="true">
+        <rect width="48" height="48" rx="8" fill="#E5E7EB"/>
+        <path fill="#374151" d="M10 16h28v16H10z" opacity=".15"/>
+        <path fill="#374151" d="M10 16l14 10 14-10v2L24 28 10 18v-2Z"/>
+        <path fill="none" stroke="#374151" strokeWidth="2" d="M10 16h28v16H10z"/>
+      </svg>
+    ),
+  },
+];
+
+function detectProviderFromAccount(account: any): MailProviderPreset {
+  if (!account) return MAIL_PROVIDERS[MAIL_PROVIDERS.length - 1];
+  const imap = (account.imap_host || '').toLowerCase();
+  const match = MAIL_PROVIDERS.find(
+    (p) => p.imapHost && imap === p.imapHost.toLowerCase(),
+  );
+  return match || MAIL_PROVIDERS[MAIL_PROVIDERS.length - 1];
+}
+
 function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const [provider, setProvider] = useState<MailProviderPreset | null>(
+    account ? detectProviderFromAccount(account) : null,
+  );
   const [name, setName] = useState(account?.name || '');
   const [email, setEmail] = useState(account?.email || '');
   const [imapHost, setImapHost] = useState(account?.imap_host || '');
@@ -802,6 +965,18 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
     account ? !!account.caldav_sync_enabled : true,
   );
 
+  const selectProvider = (p: MailProviderPreset) => {
+    setProvider(p);
+    if (!account) {
+      if (p.imapHost) setImapHost(p.imapHost);
+      setImapPort(p.imapPort);
+      if (p.smtpHost) setSmtpHost(p.smtpHost);
+      setSmtpPort(p.smtpPort);
+      setColor(p.color);
+      setO2switchAutoSync(p.isO2Switch);
+    }
+  };
+
   const mutation = useMutation({
     mutationFn: (data: any) => account ? api.updateAdminMailAccount(account.id, data) : api.createAdminMailAccount(data),
     onSuccess: () => {
@@ -814,21 +989,91 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // For well-known providers we force the preset hosts/ports even if user didn't touch them.
+    const effectiveImapHost = provider?.hideServers && provider.imapHost ? provider.imapHost : imapHost;
+    const effectiveImapPort = provider?.hideServers ? provider.imapPort : imapPort;
+    const effectiveSmtpHost = provider?.hideServers && provider.smtpHost ? provider.smtpHost : smtpHost;
+    const effectiveSmtpPort = provider?.hideServers ? provider.smtpPort : smtpPort;
+    const effectiveUsername = provider?.usernameIsEmail ? (username || email) : (username || email);
     mutation.mutate({
-      name, email, imapHost, imapPort, smtpHost, smtpPort,
-      username: username || email, password: password || undefined,
-      isShared, color, signatureHtml,
-      o2switchAutoSync,
+      name,
+      email,
+      imapHost: effectiveImapHost,
+      imapPort: effectiveImapPort,
+      smtpHost: effectiveSmtpHost,
+      smtpPort: effectiveSmtpPort,
+      username: effectiveUsername,
+      password: password || undefined,
+      isShared,
+      color,
+      signatureHtml,
+      o2switchAutoSync: provider?.isO2Switch ? o2switchAutoSync : false,
     });
   };
+
+  // Step 1: provider picker (only for new accounts)
+  if (!provider) {
+    return (
+      <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
+        <div className="bg-white rounded-lg shadow-xl w-[560px] max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-lg font-semibold">Ajouter tous vos comptes de messagerie</h2>
+            <button onClick={onClose}><X size={18} /></button>
+          </div>
+          <p className="text-sm text-outlook-text-secondary mb-4">
+            Choisissez votre fournisseur. Les paramètres de connexion seront adaptés automatiquement.
+          </p>
+          <div className="grid grid-cols-1 gap-2">
+            {MAIL_PROVIDERS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => selectProvider(p)}
+                className="flex items-center gap-3 w-full text-left border border-outlook-border rounded-md p-3 hover:bg-outlook-bg-hover transition-colors"
+              >
+                <div className="flex-shrink-0">{p.logo}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">{p.label}</div>
+                  <div className="text-xs text-outlook-text-secondary truncate">{p.description}</div>
+                </div>
+                <ChevronRight size={16} className="text-outlook-text-disabled" />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded-lg shadow-xl w-[560px] max-h-[85vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">{account ? 'Modifier le compte' : 'Nouveau compte mail'}</h2>
+          <div className="flex items-center gap-2">
+            {!account && (
+              <button
+                type="button"
+                onClick={() => setProvider(null)}
+                className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary"
+                title="Changer de fournisseur"
+              >
+                <ChevronRight size={16} className="rotate-180" />
+              </button>
+            )}
+            <div className="flex items-center gap-2">
+              <div className="scale-75 origin-left">{provider.logo}</div>
+              <h2 className="text-lg font-semibold">
+                {account ? 'Modifier le compte' : `Nouveau compte ${provider.label}`}
+              </h2>
+            </div>
+          </div>
           <button onClick={onClose}><X size={18} /></button>
         </div>
+        {provider.note && (
+          <div className="mb-3 text-xs p-2 rounded border border-amber-200 bg-amber-50 text-amber-900">
+            {provider.note}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -840,33 +1085,46 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
             </div>
           </div>
+          {!provider.hideServers && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-outlook-text-secondary">Serveur IMAP</label>
+                  <input type="text" value={imapHost} onChange={(e) => setImapHost(e.target.value)} required placeholder="imap.example.com" className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-outlook-text-secondary">Port IMAP</label>
+                  <input type="number" value={imapPort} onChange={(e) => setImapPort(parseInt(e.target.value))} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-outlook-text-secondary">Serveur SMTP</label>
+                  <input type="text" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} required placeholder="smtp.example.com" className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-outlook-text-secondary">Port SMTP</label>
+                  <input type="number" value={smtpPort} onChange={(e) => setSmtpPort(parseInt(e.target.value))} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+                </div>
+              </div>
+            </>
+          )}
+          {provider.hideServers && (
+            <div className="text-xs text-outlook-text-secondary p-2 rounded bg-outlook-bg-hover/50 border border-outlook-border">
+              IMAP <code>{provider.imapHost}:{provider.imapPort}</code> · SMTP <code>{provider.smtpHost}:{provider.smtpPort}</code>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-outlook-text-secondary">Serveur IMAP</label>
-              <input type="text" value={imapHost} onChange={(e) => setImapHost(e.target.value)} required placeholder="imap.example.com" className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs text-outlook-text-secondary">Port IMAP</label>
-              <input type="number" value={imapPort} onChange={(e) => setImapPort(parseInt(e.target.value))} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-outlook-text-secondary">Serveur SMTP</label>
-              <input type="text" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} required placeholder="smtp.example.com" className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs text-outlook-text-secondary">Port SMTP</label>
-              <input type="number" value={smtpPort} onChange={(e) => setSmtpPort(parseInt(e.target.value))} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-outlook-text-secondary">Identifiant</label>
-              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder={email || 'email@example.com'} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs text-outlook-text-secondary">Mot de passe</label>
+            {!provider.usernameIsEmail && (
+              <div>
+                <label className="text-xs text-outlook-text-secondary">Identifiant</label>
+                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder={email || 'email@example.com'} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+              </div>
+            )}
+            <div className={provider.usernameIsEmail ? 'col-span-2' : ''}>
+              <label className="text-xs text-outlook-text-secondary">
+                {provider.hideServers ? "Mot de passe (d'application si MFA)" : 'Mot de passe'}
+              </label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required={!account} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
             </div>
           </div>
@@ -880,20 +1138,22 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
               <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-8 h-8 border-0 cursor-pointer" />
             </div>
           </div>
-          <label className="flex items-start gap-2 text-sm p-2 rounded border border-outlook-border bg-outlook-bg-hover/30">
-            <input
-              type="checkbox"
-              checked={o2switchAutoSync}
-              onChange={(e) => setO2switchAutoSync(e.target.checked)}
-              className="rounded mt-0.5"
-            />
-            <span>
-              <span className="font-medium">Synchronisation O2Switch (CalDAV + CardDAV)</span>
-              <span className="block text-xs text-outlook-text-secondary">
-                Pré-remplit les URLs <code>https://&lt;cpanel&gt;:2080/calendars/&lt;email&gt;/calendar</code> et <code>/addressbooks/&lt;email&gt;/addressbook</code> et active la synchro immédiate pour les utilisateurs assignés.
+          {provider.isO2Switch && (
+            <label className="flex items-start gap-2 text-sm p-2 rounded border border-outlook-border bg-outlook-bg-hover/30">
+              <input
+                type="checkbox"
+                checked={o2switchAutoSync}
+                onChange={(e) => setO2switchAutoSync(e.target.checked)}
+                className="rounded mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Synchronisation O2Switch (CalDAV + CardDAV)</span>
+                <span className="block text-xs text-outlook-text-secondary">
+                  Pré-remplit les URLs <code>https://&lt;cpanel&gt;:2080/calendars/&lt;email&gt;/calendar</code> et <code>/addressbooks/&lt;email&gt;/addressbook</code> et active la synchro immédiate pour les utilisateurs assignés.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          )}
           <div>
             <label className="text-xs text-outlook-text-secondary">Signature (HTML)</label>
             <textarea value={signatureHtml} onChange={(e) => setSignatureHtml(e.target.value)} rows={3} placeholder="<p>Cordialement,<br/>Nom</p>" className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm resize-none font-mono" />
@@ -2084,6 +2344,280 @@ function LoginPreview({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// end marker
+
+// ========================================
+// Device Sessions Management (admin)
+// ========================================
+//
+// Shows every active device session across all users so an admin can audit
+// logins and remotely sign out a single device or every device of a user.
+// Users are grouped in collapsible cards (collapsed by default) to stay
+// readable with many users, and a search box filters users by name or email.
+
+function DeviceSessionsManagement() {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const { data: groups, isLoading } = useQuery({
+    queryKey: ['admin-devices'],
+    queryFn: () => api.adminListDevices(),
+    refetchOnWindowFocus: true,
+  });
+
+  const revokeOne = useMutation({
+    mutationFn: (id: string) => api.adminRevokeDevice(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-devices'] });
+      toast.success('Appareil déconnecté');
+    },
+    onError: () => toast.error('Impossible de déconnecter cet appareil'),
+  });
+
+  const revokeAll = useMutation({
+    mutationFn: (userId: string) => api.adminRevokeUserDevices(userId),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['admin-devices'] });
+      toast.success(`${res.revoked} appareil(s) déconnecté(s)`);
+    },
+    onError: () => toast.error('Impossible de déconnecter les appareils'),
+  });
+
+  const filtered = useMemo(() => {
+    if (!groups) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter((g) =>
+      (g.displayName || '').toLowerCase().includes(q) ||
+      g.email.toLowerCase().includes(q),
+    );
+  }, [groups, search]);
+
+  // Autocomplete suggestions: distinct users matching the current query,
+  // sorted by display name. Shown below the input as clickable chips.
+  const suggestions = useMemo(() => {
+    if (!groups) return [];
+    const q = search.trim().toLowerCase();
+    if (!q || q.length < 1) return [];
+    const matched = groups
+      .filter((g) =>
+        (g.displayName || '').toLowerCase().includes(q) ||
+        g.email.toLowerCase().includes(q),
+      )
+      .slice(0, 6);
+    // Only show suggestions if the search does not already match exactly one user
+    if (matched.length === 1 && (matched[0].email.toLowerCase() === q || (matched[0].displayName || '').toLowerCase() === q)) {
+      return [];
+    }
+    return matched;
+  }, [groups, search]);
+
+  const toggle = (userId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId); else next.add(userId);
+      return next;
+    });
+  };
+
+  const expandAll = () => setExpanded(new Set((filtered || []).map((g) => g.userId)));
+  const collapseAll = () => setExpanded(new Set());
+
+  const iconFor = (ua: string | null) => {
+    const lower = (ua || '').toLowerCase();
+    if (lower.includes('iphone') || lower.includes('android')) return Smartphone;
+    if (lower.includes('ipad') || lower.includes('tablet')) return Tablet;
+    return Monitor;
+  };
+
+  const formatDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+    } catch { return iso; }
+  };
+
+  const totalDevices = (filtered || []).reduce((n, g) => n + g.devices.length, 0);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-base font-semibold mb-1">Appareils connectés</h3>
+        <p className="text-sm text-outlook-text-secondary">
+          Toutes les sessions actives de l'instance, groupées par utilisateur.
+          Vous pouvez déconnecter un appareil précis ou tous les appareils d'un
+          utilisateur (par ex. en cas de départ ou de compte compromis).
+        </p>
+      </div>
+
+      {/* Search + controls */}
+      <div className="relative">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un utilisateur (nom ou email)…"
+              className="w-full pl-7 pr-3 py-2 text-sm border border-outlook-border rounded bg-white"
+            />
+          </div>
+          <button
+            onClick={expandAll}
+            className="text-xs px-3 py-2 border border-outlook-border rounded bg-white hover:bg-outlook-bg-hover"
+          >
+            Tout déplier
+          </button>
+          <button
+            onClick={collapseAll}
+            className="text-xs px-3 py-2 border border-outlook-border rounded bg-white hover:bg-outlook-bg-hover"
+          >
+            Tout replier
+          </button>
+        </div>
+        {suggestions.length > 0 && (
+          <div className="absolute z-10 left-0 right-[8.5rem] mt-1 bg-white border border-outlook-border rounded shadow-md overflow-hidden">
+            {suggestions.map((s) => (
+              <button
+                key={s.userId}
+                onClick={() => {
+                  setSearch(s.email);
+                  setExpanded((prev) => new Set(prev).add(s.userId));
+                }}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-outlook-bg-hover"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-outlook-text-primary">
+                    {s.displayName || s.email}
+                  </div>
+                  <div className="truncate text-xs text-outlook-text-secondary">{s.email}</div>
+                </div>
+                <span className="text-xs text-outlook-text-disabled whitespace-nowrap">
+                  {s.devices.length} appareil{s.devices.length > 1 ? 's' : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {isLoading && <div className="text-sm text-outlook-text-secondary">Chargement…</div>}
+
+      {!isLoading && filtered.length === 0 && (
+        <div className="text-sm text-outlook-text-secondary p-6 text-center border border-dashed border-outlook-border rounded">
+          {search ? 'Aucun utilisateur ne correspond à cette recherche.' : 'Aucune session active.'}
+        </div>
+      )}
+
+      {!isLoading && filtered.length > 0 && (
+        <div className="text-xs text-outlook-text-disabled">
+          {filtered.length} utilisateur{filtered.length > 1 ? 's' : ''} · {totalDevices} appareil{totalDevices > 1 ? 's' : ''} connecté{totalDevices > 1 ? 's' : ''}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {filtered.map((group) => {
+          const isOpen = expanded.has(group.userId);
+          const pending = revokeAll.isPending && revokeAll.variables === group.userId;
+          return (
+            <div key={group.userId} className="border border-outlook-border rounded bg-white overflow-hidden">
+              {/* Header (click to expand) */}
+              <button
+                onClick={() => toggle(group.userId)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-outlook-bg-hover text-left"
+              >
+                {isOpen
+                  ? <ChevronDown size={16} className="text-outlook-text-secondary flex-shrink-0" />
+                  : <ChevronRight size={16} className="text-outlook-text-secondary flex-shrink-0" />
+                }
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-outlook-text-primary truncate">
+                      {group.displayName || group.email}
+                    </span>
+                    {group.isAdmin && (
+                      <span className="text-2xs uppercase tracking-wide px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
+                        Admin
+                      </span>
+                    )}
+                  </div>
+                  {group.displayName && (
+                    <div className="text-xs text-outlook-text-secondary truncate">{group.email}</div>
+                  )}
+                </div>
+                <span className="text-xs text-outlook-text-secondary whitespace-nowrap">
+                  {group.devices.length} appareil{group.devices.length > 1 ? 's' : ''}
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!window.confirm(`Déconnecter les ${group.devices.length} appareil(s) de ${group.displayName || group.email} ?`)) return;
+                    revokeAll.mutate(group.userId);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      if (!window.confirm(`Déconnecter les ${group.devices.length} appareil(s) de ${group.displayName || group.email} ?`)) return;
+                      revokeAll.mutate(group.userId);
+                    }
+                  }}
+                  aria-disabled={pending}
+                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors text-red-600 hover:bg-red-50 ${pending ? 'opacity-50 pointer-events-none' : ''}`}
+                  title="Déconnecter tous les appareils de cet utilisateur"
+                >
+                  <LogOut size={12} /> Tout déconnecter
+                </span>
+              </button>
+
+              {/* Devices */}
+              {isOpen && (
+                <div className="border-t border-outlook-border divide-y divide-outlook-border bg-outlook-bg-primary/40">
+                  {group.devices.map((device) => {
+                    const Icon = iconFor(device.userAgent);
+                    return (
+                      <div key={device.id} className="flex items-start gap-3 px-3 py-2.5">
+                        <div className="w-9 h-9 rounded-full bg-outlook-bg-hover flex items-center justify-center flex-shrink-0">
+                          <Icon size={16} className="text-outlook-text-secondary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-outlook-text-primary truncate">
+                            {device.deviceName || 'Appareil'}
+                          </div>
+                          <div className="text-xs text-outlook-text-secondary truncate">
+                            Dernière utilisation : {formatDate(device.lastUsedAt)}
+                            {device.ipLastSeen && <> · {device.ipLastSeen}</>}
+                          </div>
+                          <div className="text-xs text-outlook-text-disabled truncate">
+                            Connecté le {formatDate(device.createdAt)} · expire le {formatDate(device.expiresAt)}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (!window.confirm('Déconnecter cet appareil ?')) return;
+                            revokeOne.mutate(device.id);
+                          }}
+                          disabled={revokeOne.isPending}
+                          className="flex items-center gap-1 text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                          title="Déconnecter cet appareil"
+                        >
+                          <Trash2 size={12} /> Déconnecter
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
