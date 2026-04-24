@@ -527,6 +527,33 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_device_sessions_user ON device_sessions(user_id);
       CREATE INDEX IF NOT EXISTS idx_device_sessions_hash ON device_sessions(refresh_token_hash);
       CREATE INDEX IF NOT EXISTS idx_device_sessions_expires ON device_sessions(expires_at);
+
+      -- WebAuthn credentials (passkeys / biometric)
+      CREATE TABLE IF NOT EXISTS webauthn_credentials (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        credential_id TEXT NOT NULL UNIQUE,
+        public_key BYTEA NOT NULL,
+        counter BIGINT NOT NULL DEFAULT 0,
+        transports TEXT,
+        device_type VARCHAR(32),
+        backed_up BOOLEAN DEFAULT false,
+        nickname TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        last_used_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_id);
+
+      -- Transient WebAuthn ceremony challenges
+      CREATE TABLE IF NOT EXISTS webauthn_challenges (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        challenge TEXT NOT NULL,
+        kind VARCHAR(20) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_expires ON webauthn_challenges(expires_at);
     `);
 
     logger.info('Database schema created/updated successfully');

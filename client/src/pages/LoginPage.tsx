@@ -1,15 +1,34 @@
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
-import { Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { api } from '../api';
+import { Mail, Lock, User, AlertCircle, Fingerprint } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { startAuthentication } from '@simplewebauthn/browser';
 
 export default function LoginPage() {
-  const { login, register, isLoading } = useAuthStore();
+  const { login, register, finalizeLogin, isLoading } = useAuthStore();
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+
+  const run2FA = async (token: string) => {
+    setError('');
+    setVerifying(true);
+    try {
+      const options = await api.webauthnLoginOptions(token);
+      const response = await startAuthentication({ optionsJSON: options });
+      const result = await api.webauthnLoginVerify(token, response);
+      finalizeLogin(result.token, result.user);
+    } catch (err: any) {
+      setError(err?.message || 'Authentification biométrique annulée');
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +38,12 @@ export default function LoginPage() {
       if (isRegister) {
         await register(email, password, displayName);
       } else {
-        await login(email, password);
+        const result = await login(email, password);
+        if (result.requires2FA && result.pendingToken) {
+          setPendingToken(result.pendingToken);
+          // Fire the ceremony immediately (platform authenticator prompt).
+          await run2FA(result.pendingToken);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Une erreur est survenue');
@@ -58,6 +82,26 @@ export default function LoginPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {pendingToken && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4 flex flex-col items-center text-center">
+            <Fingerprint size={32} className="text-outlook-blue mb-2" />
+            <p className="text-sm text-outlook-text-primary font-medium mb-1">
+              Vérification biométrique
+            </p>
+            <p className="text-xs text-outlook-text-secondary mb-3">
+              Confirmez votre identité avec Touch ID, Face ID ou Windows Hello.
+            </p>
+            <button
+              type="button"
+              onClick={() => run2FA(pendingToken)}
+              disabled={verifying}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white text-sm px-4 py-2 rounded-md disabled:opacity-50"
+            >
+              {verifying ? 'En attente…' : 'Réessayer'}
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegister && (

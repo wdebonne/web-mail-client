@@ -82,10 +82,10 @@ async function request<T>(url: string, options: RequestInit = {}, _retry = false
 export const api = {
   // Auth
   login: (email: string, password: string) =>
-    request<{ token: string; user: any }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    }),
+    request<{ token?: string; user?: any; requires2FA?: boolean; pendingToken?: string; userId?: string }>(
+      '/auth/login',
+      { method: 'POST', body: JSON.stringify({ email, password }) }
+    ),
 
   register: (email: string, password: string, displayName: string) =>
     request<{ token: string; user: any }>('/auth/register', {
@@ -109,6 +109,43 @@ export const api = {
     current: boolean;
   }>>('/auth/devices'),
   revokeDevice: (id: string) => request<{ success: boolean }>(`/auth/devices/${id}`, { method: 'DELETE' }),
+
+  // WebAuthn / passkeys
+  webauthnRegisterOptions: () =>
+    request<any>('/auth/webauthn/register/options', { method: 'POST' }),
+  webauthnRegisterVerify: (response: any, nickname?: string) =>
+    request<{ success: boolean; id: string }>('/auth/webauthn/register/verify', {
+      method: 'POST',
+      body: JSON.stringify({ response, nickname }),
+    }),
+  webauthnCredentials: () =>
+    request<Array<{
+      id: string;
+      nickname: string | null;
+      deviceType: string | null;
+      backedUp: boolean;
+      createdAt: string;
+      lastUsedAt: string | null;
+    }>>('/auth/webauthn/credentials'),
+  webauthnDeleteCredential: (id: string) =>
+    request<{ success: boolean }>(`/auth/webauthn/credentials/${id}`, { method: 'DELETE' }),
+  webauthnLoginOptions: (pendingToken: string) =>
+    request<any>('/auth/webauthn/login/options', {
+      method: 'POST',
+      body: JSON.stringify({ pendingToken }),
+    }),
+  webauthnLoginVerify: (pendingToken: string, response: any) =>
+    request<{ token: string; user: any }>('/auth/webauthn/login/verify', {
+      method: 'POST',
+      body: JSON.stringify({ pendingToken, response }),
+    }),
+  webauthnUnlockOptions: () =>
+    request<any>('/auth/webauthn/unlock/options', { method: 'POST' }),
+  webauthnUnlockVerify: (response: any) =>
+    request<{ success: boolean }>('/auth/webauthn/unlock/verify', {
+      method: 'POST',
+      body: JSON.stringify({ response }),
+    }),
 
   // Accounts
   getAccounts: () => request<any[]>('/accounts'),

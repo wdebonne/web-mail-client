@@ -5,7 +5,8 @@ import { useAuthStore } from '../stores/authStore';
 import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
   Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
-  FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2
+  FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
+  Fingerprint, ShieldCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -17,7 +18,7 @@ import {
   getLastBackupAt, getLastBackupError, runAutoBackup, subscribeBackupStatus,
 } from '../utils/backup';
 
-type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup' | 'devices';
+type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security';
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
@@ -29,6 +30,7 @@ export default function SettingsPage() {
     { id: 'appearance' as const, icon: Palette, label: 'Apparence' },
     { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
     { id: 'devices' as const, icon: Monitor, label: 'Mes appareils' },
+    { id: 'security' as const, icon: ShieldCheck, label: 'Sécurité' },
     { id: 'backup' as const, icon: HardDrive, label: 'Sauvegarde' },
   ];
 
@@ -61,6 +63,7 @@ export default function SettingsPage() {
           {tab === 'appearance' && <AppearanceSettings />}
           {tab === 'notifications' && <NotificationSettings />}
           {tab === 'devices' && <DevicesSettings />}
+          {tab === 'security' && <SecuritySettings />}
           {tab === 'backup' && <BackupSettings />}
         </div>
       </div>
@@ -856,5 +859,157 @@ function DevicesSettings() {
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Security settings — passkeys / biometric enrolment
+// ─────────────────────────────────────────────────────────────────────────────
 
+function SecuritySettings() {
+  const qc = useQueryClient();
+  const { data: credentials, isLoading } = useQuery({
+    queryKey: ['webauthn-credentials'],
+    queryFn: () => api.webauthnCredentials(),
+  });
 
+  const [enrolling, setEnrolling] = useState(false);
+  const [nickname, setNickname] = useState('');
+
+  const enroll = async () => {
+    setEnrolling(true);
+    try {
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const options = await api.webauthnRegisterOptions();
+      const response = await startRegistration({ optionsJSON: options });
+      await api.webauthnRegisterVerify(response, nickname || undefined);
+      setNickname('');
+      qc.invalidateQueries({ queryKey: ['webauthn-credentials'] });
+      toast.success('Clé biométrique enregistrée');
+    } catch (err: any) {
+      toast.error(err?.message || 'Enrôlement annulé');
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => api.webauthnDeleteCredential(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['webauthn-credentials'] });
+      toast.success('Clé supprimée');
+    },
+    onError: (e: any) => toast.error(e?.message || 'Suppression impossible'),
+  });
+
+  const handleRemove = (id: string) => {
+    if (!confirm('Supprimer cette clé biométrique ? Vous devrez en réenregistrer une pour réutiliser Touch ID / Face ID / Windows Hello.')) return;
+    removeMutation.mutate(id);
+  };
+
+  const formatDate = (iso: string | null) => {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }); }
+    catch { return iso; }
+  };
+
+  const supported = typeof window !== 'undefined'
+    && typeof window.PublicKeyCredential !== 'undefined';
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <h2 className="text-lg font-semibold text-outlook-text-primary mb-1 flex items-center gap-2">
+          <Fingerprint size={18} /> Sécurité biométrique
+        </h2>
+        <p className="text-sm text-outlook-text-secondary mb-4">
+          Enregistrez Touch ID, Face ID ou Windows Hello pour déverrouiller
+          l'application rapidement et ajouter une seconde vérification lors
+          des connexions depuis un nouvel appareil.
+        </p>
+
+        {!supported && (
+          <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-800 mb-4">
+            Ce navigateur ne prend pas en charge WebAuthn. Utilisez un
+            navigateur récent sur un appareil doté d'un capteur biométrique.
+          </div>
+        )}
+
+        <div className="border border-outlook-border rounded-md p-4 bg-white mb-4">
+          <label className="block text-sm font-medium text-outlook-text-primary mb-1">
+            Nom de la clé (optionnel)
+          </label>
+          <input
+            type="text"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            placeholder="Mon MacBook, iPhone perso…"
+            className="w-full px-3 py-2 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue mb-3"
+          />
+          <button
+            onClick={enroll}
+            disabled={!supported || enrolling}
+            className="inline-flex items-center gap-2 bg-outlook-blue hover:bg-outlook-blue-hover text-white text-sm px-4 py-2 rounded-md disabled:opacity-50"
+          >
+            <Fingerprint size={16} />
+            {enrolling ? 'En attente du capteur…' : 'Ajouter une clé biométrique'}
+          </button>
+        </div>
+
+        {isLoading && <p className="text-sm text-outlook-text-secondary">Chargement…</p>}
+        {!isLoading && credentials && credentials.length === 0 && (
+          <p className="text-sm text-outlook-text-secondary">
+            Aucune clé enregistrée pour l'instant.
+          </p>
+        )}
+
+        <div className="space-y-2">
+          {credentials?.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-start gap-3 p-3 border border-outlook-border rounded-md bg-white"
+            >
+              <div className="w-10 h-10 rounded-full bg-outlook-bg-hover flex items-center justify-center flex-shrink-0">
+                <Fingerprint size={18} className="text-outlook-text-secondary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm text-outlook-text-primary flex items-center gap-2 flex-wrap">
+                  {c.nickname || 'Clé biométrique'}
+                  {c.backedUp && (
+                    <span className="text-2xs uppercase tracking-wide px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
+                      Synchronisée
+                    </span>
+                  )}
+                  {c.deviceType === 'singleDevice' && (
+                    <span className="text-2xs uppercase tracking-wide px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">
+                      Liée à cet appareil
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-outlook-text-secondary mt-0.5">
+                  Créée le {formatDate(c.createdAt)}
+                </div>
+                <div className="text-xs text-outlook-text-disabled mt-0.5">
+                  Dernière utilisation : {formatDate(c.lastUsedAt)}
+                </div>
+              </div>
+              <button
+                onClick={() => handleRemove(c.id)}
+                disabled={removeMutation.isPending}
+                className="flex items-center gap-1 text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                title="Supprimer cette clé"
+              >
+                <Trash2 size={12} /> Retirer
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 p-3 bg-outlook-bg-hover rounded-md text-xs text-outlook-text-secondary">
+          <strong className="text-outlook-text-primary">Comment ça marche :</strong> une fois
+          une clé enregistrée, la connexion par mot de passe demandera aussi
+          une vérification biométrique (2FA). L'application vous demandera
+          également votre empreinte / visage après plusieurs jours d'inactivité
+          au lieu de votre mot de passe.
+        </div>
+      </section>
+    </div>
+  );
+}

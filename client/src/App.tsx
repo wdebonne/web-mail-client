@@ -8,6 +8,7 @@ import { api } from './api';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { motion, AnimatePresence } from 'motion/react';
 import Layout from './components/Layout';
+import { BiometricLock } from './components/BiometricLock';
 import LoginPage from './pages/LoginPage';
 import MailPage from './pages/MailPage';
 import CalendarPage from './pages/CalendarPage';
@@ -92,6 +93,7 @@ function App() {
           ⚠ Mode hors-ligne — Les modifications seront synchronisées au retour de la connexion
         </motion.div>
       )}
+      <BiometricLock>
       <Layout>
         <AnimatePresence mode="wait">
           <motion.div
@@ -117,6 +119,7 @@ function App() {
           </motion.div>
         </AnimatePresence>
       </Layout>
+      </BiometricLock>
     </>
   );
 }

@@ -7,7 +7,11 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** Returns { requires2FA, pendingToken } when a passkey challenge is needed. */
+  login: (email: string, password: string) => Promise<{ requires2FA?: boolean; pendingToken?: string }>;
+  loginWith2FA: (pendingToken: string) => Promise<void>;
+  /** Apply a token + user pair produced by the WebAuthn 2FA ceremony. */
+  finalizeLogin: (token: string, user: User) => void;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -25,12 +29,31 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const response = await api.login(email, password);
+          if (response.requires2FA && response.pendingToken) {
+            set({ isLoading: false });
+            return { requires2FA: true, pendingToken: response.pendingToken };
+          }
+          if (!response.token || !response.user) {
+            throw new Error('Réponse invalide du serveur');
+          }
           localStorage.setItem('auth_token', response.token);
           set({ user: response.user, token: response.token, isLoading: false });
+          return {};
         } catch (error) {
           set({ isLoading: false });
           throw error;
         }
+      },
+
+      loginWith2FA: async (pendingToken: string) => {
+        // Kept as a no-op placeholder; the UI drives the browser ceremony and
+        // then calls finalizeLogin with the result. See LoginPage.
+        void pendingToken;
+      },
+
+      finalizeLogin: (token: string, user: User) => {
+        localStorage.setItem('auth_token', token);
+        set({ user, token, isLoading: false });
       },
 
       register: async (email: string, password: string, displayName: string) => {

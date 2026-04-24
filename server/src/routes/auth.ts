@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { pool } from '../database/connection';
 import { AuthRequest, authMiddleware } from '../middleware/auth';
 import {
@@ -13,7 +14,33 @@ import {
   refreshCookieOptions,
   REFRESH_COOKIE_NAME,
 } from '../services/deviceSessions';
+import {
+  beginRegistration,
+  finishRegistration,
+  beginAuthentication,
+  finishAuthentication,
+  listCredentials,
+  deleteCredential,
+  hasCredentials,
+} from '../services/webauthn';
 import { z } from 'zod';
+
+const PENDING_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'change-me';
+
+/** Short-lived token bridging step 1 (password) and step 2 (biometric). */
+function issuePendingToken(userId: string, isAdmin: boolean): string {
+  return jwt.sign({ userId, isAdmin, purpose: '2fa' }, PENDING_SECRET, { expiresIn: '5m' });
+}
+
+function verifyPendingToken(token: string): { userId: string; isAdmin: boolean } | null {
+  try {
+    const decoded = jwt.verify(token, PENDING_SECRET) as any;
+    if (decoded.purpose !== '2fa') return null;
+    return { userId: decoded.userId, isAdmin: decoded.isAdmin };
+  } catch {
+    return null;
+  }
+}
 
 export const authRouter = Router();
 
@@ -57,6 +84,17 @@ authRouter.post('/login', async (req, res) => {
     
     if (!validPassword) {
       return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+    }
+
+    // Step-up 2FA: if the user has registered at least one passkey, force
+    // biometric proof before issuing a full session.
+    if (await hasCredentials(user.id)) {
+      const pendingToken = issuePendingToken(user.id, user.is_admin);
+      return res.json({
+        requires2FA: true,
+        pendingToken,
+        userId: user.id,
+      });
     }
 
     // Keep the legacy session cookie active for backward compatibility.
@@ -271,5 +309,146 @@ authRouter.get('/me', authMiddleware, async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WebAuthn / passkeys
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Begin enrolment of a new passkey for the logged-in user. */
+authRouter.post('/webauthn/register/options', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const user = await pool.query(
+      'SELECT email, display_name FROM users WHERE id = $1',
+      [req.userId!]
+    );
+    if (user.rows.length === 0) return res.status(404).json({ error: 'Utilisateur introuvable' });
+    const options = await beginRegistration(
+      req.userId!,
+      user.rows[0].email,
+      user.rows[0].display_name || user.rows[0].email
+    );
+    res.json(options);
+  } catch (error) {
+    console.error('WebAuthn register options error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+authRouter.post('/webauthn/register/verify', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const nickname = typeof req.body?.nickname === 'string' ? req.body.nickname.slice(0, 80) : undefined;
+    const response = req.body?.response;
+    if (!response) return res.status(400).json({ error: 'Réponse manquante' });
+    const saved = await finishRegistration(req.userId!, response, nickname);
+    res.json({ success: true, id: saved.id });
+  } catch (error: any) {
+    console.error('WebAuthn register verify error:', error);
+    res.status(400).json({ error: error?.message || 'Vérification échouée' });
+  }
+});
+
+/** List registered passkeys. */
+authRouter.get('/webauthn/credentials', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    res.json(await listCredentials(req.userId!));
+  } catch (error) {
+    console.error('WebAuthn list error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+authRouter.delete('/webauthn/credentials/:id', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const ok = await deleteCredential(req.userId!, req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Credential introuvable' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('WebAuthn delete error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+/**
+ * Step-2 login: exchange a pending token + biometric proof for a full session.
+ */
+authRouter.post('/webauthn/login/options', async (req, res) => {
+  try {
+    const pending = typeof req.body?.pendingToken === 'string' ? req.body.pendingToken : '';
+    const ctx = verifyPendingToken(pending);
+    if (!ctx) return res.status(401).json({ error: 'Session de connexion expirée' });
+    const options = await beginAuthentication(ctx.userId);
+    res.json(options);
+  } catch (error: any) {
+    console.error('WebAuthn login options error:', error);
+    res.status(400).json({ error: error?.message || 'Erreur' });
+  }
+});
+
+authRouter.post('/webauthn/login/verify', async (req, res) => {
+  try {
+    const pending = typeof req.body?.pendingToken === 'string' ? req.body.pendingToken : '';
+    const ctx = verifyPendingToken(pending);
+    if (!ctx) return res.status(401).json({ error: 'Session de connexion expirée' });
+    const response = req.body?.response;
+    if (!response) return res.status(400).json({ error: 'Réponse manquante' });
+    await finishAuthentication(ctx.userId, response);
+
+    const userRes = await pool.query(
+      'SELECT id, email, display_name, avatar_url, role, is_admin, language, timezone, theme FROM users WHERE id = $1',
+      [ctx.userId]
+    );
+    if (userRes.rows.length === 0) return res.status(404).json({ error: 'Utilisateur introuvable' });
+    const user = userRes.rows[0];
+
+    req.session.userId = user.id;
+    req.session.isAdmin = user.is_admin;
+
+    const { accessToken } = await issueSession(req, res, user.id, user.is_admin);
+    res.json({
+      token: accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.display_name,
+        avatarUrl: user.avatar_url,
+        role: user.role,
+        isAdmin: user.is_admin,
+        language: user.language,
+        timezone: user.timezone,
+        theme: user.theme,
+      },
+    });
+  } catch (error: any) {
+    console.error('WebAuthn login verify error:', error);
+    res.status(400).json({ error: error?.message || 'Vérification échouée' });
+  }
+});
+
+/**
+ * PWA unlock — the authenticated user proves presence (biometric) to unlock
+ * the app after a period of inactivity. Uses the current access token to
+ * identify the user.
+ */
+authRouter.post('/webauthn/unlock/options', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const options = await beginAuthentication(req.userId!);
+    res.json(options);
+  } catch (error: any) {
+    console.error('WebAuthn unlock options error:', error);
+    res.status(400).json({ error: error?.message || 'Erreur' });
+  }
+});
+
+authRouter.post('/webauthn/unlock/verify', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const response = req.body?.response;
+    if (!response) return res.status(400).json({ error: 'Réponse manquante' });
+    await finishAuthentication(req.userId!, response);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('WebAuthn unlock verify error:', error);
+    res.status(400).json({ error: error?.message || 'Vérification échouée' });
   }
 });
