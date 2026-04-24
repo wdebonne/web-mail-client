@@ -926,23 +926,26 @@ function TimeGridView({ days, timeScale, events, onSlotClick, onEventClick, onEv
 
   return (
     <div className="h-full flex flex-col">
-      <div className="grid border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0" style={{ gridTemplateColumns: gridCols }}>
-        <div />
-        {days.map(day => {
-          const today = isToday(day);
-          return (
-            <div key={day.toISOString()} className="text-center py-2 border-l border-outlook-border">
-              <div className={`text-xs uppercase ${today ? 'text-outlook-blue' : 'text-outlook-text-secondary'}`}>
-                {format(day, 'EEEE', { locale: fr })}
+      <div className="flex-1 overflow-auto" style={{ scrollbarGutter: 'stable' }}>
+        {/* Sticky day header — kept inside the same scroll container so it
+            shares the exact column widths with the grid below, even when
+            the vertical scrollbar is displayed. */}
+        <div className="grid border-b border-outlook-border bg-outlook-bg-primary sticky top-0 z-10" style={{ gridTemplateColumns: gridCols }}>
+          <div />
+          {days.map(day => {
+            const today = isToday(day);
+            return (
+              <div key={day.toISOString()} className="text-center py-2 border-l border-outlook-border">
+                <div className={`text-xs uppercase ${today ? 'text-outlook-blue' : 'text-outlook-text-secondary'}`}>
+                  {format(day, 'EEEE', { locale: fr })}
+                </div>
+                <div className={`text-lg font-semibold ${today ? 'text-outlook-blue' : ''}`}>
+                  {format(day, 'd')}
+                </div>
               </div>
-              <div className={`text-lg font-semibold ${today ? 'text-outlook-blue' : ''}`}>
-                {format(day, 'd')}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex-1 overflow-auto">
+            );
+          })}
+        </div>
         <div className="grid" style={{ gridTemplateColumns: gridCols }}>
           <div>
             {Array.from({ length: 24 }).map((_, h) => (
