@@ -9,6 +9,28 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Partage de calendrier — Dialogue à onglets (Outlook-like)
+
+- **Nouvelle interface de partage à 3 onglets** ([client/src/components/calendar/ShareCalendarDialog.tsx](client/src/components/calendar/ShareCalendarDialog.tsx)) :
+  - **Au sein de votre organisation** — annuaire interne (utilisateurs de l'app + liens NextCloud) via nouveau endpoint [server/src/routes/contacts.ts](server/src/routes/contacts.ts) `GET /api/contacts/directory/users`. Recherche live, avatar/initiales, ajout en 1 clic.
+  - **Invitations par email** — autocomplétion sur **tous** les contacts (locaux + NextCloud) via `api.searchContacts`. Si l'adresse saisie n'est pas dans les contacts, elle est **automatiquement ajoutée** comme contact local en plus d'être invitée.
+  - **Lien public** — voir ci-dessous.
+- **Permissions granulaires** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts)) : 4 niveaux persistés dans `shared_calendar_access.permission` / `external_calendar_shares.permission` : `busy` (disponibilités), `titles` (titres et lieux), `read` (tous les détails), `write` (édition). Pour NextCloud, les 3 premiers sont propagés comme `read`, `write` comme `read-write`.
+
+#### Partage de calendrier — Lien public autonome (HTML + ICS)
+
+- **Nouveau routeur public non authentifié** ([server/src/routes/calendarPublic.ts](server/src/routes/calendarPublic.ts)) monté sur `/api/public/calendar` :
+  - `GET /:token` → page HTML autonome responsive (clair/sombre), avec boutons *Télécharger .ics*, *S'abonner* (`webcal://`) et *Copier le lien*.
+  - `GET /:token.ics` → flux iCalendar RFC 5545 (`Content-Type: text/calendar`) compatible Outlook, Apple Calendar, Google Calendar, Thunderbird.
+  - `GET /:token.json` → flux JSON (intégrations custom).
+- **Filtrage par permission appliqué côté serveur** :
+  - `busy` → titre remplacé par « Occupé(e) », aucune autre donnée (ni lieu, ni description, ni invités, ni pièces jointes).
+  - `titles` → titre et lieu uniquement.
+  - `read` → toutes les propriétés.
+- **`POST /api/calendar/:id/publish`** accepte désormais `{ permission }` et retourne `htmlUrl`, `icsUrl`, `token` et `permission`. Upsert par index unique partiel garantissant un seul lien public par calendrier ([server/src/database/connection.ts](server/src/database/connection.ts)).
+- **`PATCH /api/calendar/:id/publish`** — nouvelle route pour modifier la permission d'un lien déjà publié sans régénérer le token.
+- **Nouveau panneau client** ([client/src/components/calendar/ShareCalendarDialog.tsx](client/src/components/calendar/ShareCalendarDialog.tsx)) avec sélecteur de permission, champ **PAGE WEB (HTML)** et champ **ABONNEMENT ICS (.ics)** séparés, boutons copier/ouvrir/webcal.
+
 #### Agenda — Largeur des colonnes adaptative
 
 - **Nouveau réglage *Colonnes : Fixe / Automatique*** ([client/src/components/calendar/CalendarRibbon.tsx](client/src/components/calendar/CalendarRibbon.tsx)) : ajouté dans l'onglet *Afficher* du ruban (mode classique et simplifié), à droite de l'échelle de temps. Persistant dans `localStorage` (`calendar.columnSizing`) via [client/src/utils/calendarPreferences.ts](client/src/utils/calendarPreferences.ts).
@@ -21,6 +43,11 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **Expansion latérale automatique** : un événement qui n'a pas de voisin dans les voies à sa droite (pour la plage temporelle qu'il occupe) s'étend pour occuper toute la largeur libre restante — un événement isolé dans sa propre demi-heure reste pleine largeur même si d'autres événements coexistent ailleurs dans la journée.
 
 ### Corrigé
+
+#### Partage de calendrier — Lien public pointait vers WebDAV NextCloud
+
+- **URL publique désormais servie par l'application** ([server/src/routes/calendar.ts](server/src/routes/calendar.ts), [server/src/routes/calendarPublic.ts](server/src/routes/calendarPublic.ts)) : auparavant le `publishCalendar()` de NextCloud retournait une URL qui renvoyait vers l'interface WebDAV (*« This is the WebDAV interface. It can only be accessed by WebDAV clients… »*), inutilisable dans un navigateur. Le lien retourné par l'API pointe maintenant systématiquement sur le viewer HTML de l'application (`/api/public/calendar/:token`). La publication NextCloud reste tentée en best-effort mais n'est plus exposée à l'utilisateur.
+- **Publication possible aussi pour les calendriers locaux** : la contrainte `nc_managed === true` sur `POST /publish` est levée. Seule la compatibilité d'affichage HTML + flux .ics est désormais requise, et elle est fournie par le serveur.
 
 #### Agenda — Modale d'édition respecte le fuseau utilisateur
 

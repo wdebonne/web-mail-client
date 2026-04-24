@@ -1210,9 +1210,10 @@ Déclenche une synchronisation immédiate (calendriers + contacts) pour l'utilis
 
 ---
 
-## Partage de calendrier (NextCloud)
+## Partage de calendrier
 
-> 🔒 Authentification requise. Requiert un calendrier `nc_managed`.
+> 🔒 Authentification requise pour toutes les routes sauf `/api/public/calendar/*`.
+> Les partages NextCloud nécessitent un calendrier `nc_managed`. Les liens publics HTML/ICS fonctionnent pour **tous** les calendriers (locaux ou NextCloud).
 
 ### POST /api/calendar/:id/share
 
@@ -1228,7 +1229,15 @@ Partage un calendrier avec un utilisateur **interne** ou **externe**.
 { "email": "guest@example.com", "permission": "write" }
 ```
 
-`permission` : `"read"` ou `"write"`.
+`permission` — valeurs granulaires acceptées :
+- `"busy"` — disponibilités uniquement
+- `"titles"` — titres et lieux
+- `"read"` — tous les détails (lecture seule)
+- `"write"` — lecture + écriture
+
+> Pour les calendriers NextCloud, les niveaux `busy`, `titles` et `read` sont propagés comme `read` sur NC, et `write` comme `read-write`. Le filtrage détaillé est appliqué côté application et sur le flux public.
+
+Si l'email passé en `email` n'existe pas dans les contacts de l'utilisateur, un contact est automatiquement créé (source `local`).
 
 ### DELETE /api/calendar/:id/share
 
@@ -1241,26 +1250,89 @@ Liste tous les partages du calendrier.
 **Réponse 200 :**
 ```json
 {
-  "internal": [ { "user_id": "uuid", "permission": "read", "nextcloud_share_id": "..." } ],
+  "internal": [
+    { "user_id": "uuid", "email": "...", "display_name": "...", "permission": "read", "nextcloud_share_id": "..." }
+  ],
   "external": [
-    { "email": "guest@example.com", "permission": "write", "share_type": "email_invite" },
-    { "public_token": "abc", "public_url": "https://cloud/p/abc", "share_type": "public_link" }
+    { "share_type": "email", "recipient_email": "guest@example.com", "permission": "write" },
+    {
+      "share_type": "public_link",
+      "public_token": "abc...",
+      "public_url": "https://app/api/public/calendar/abc",
+      "public_html_url": "https://app/api/public/calendar/abc",
+      "public_ics_url": "https://app/api/public/calendar/abc.ics",
+      "permission": "titles"
+    }
   ]
 }
 ```
 
+### GET /api/contacts/directory/users
+
+Annuaire interne utilisé par l'onglet « Au sein de votre organisation » du dialogue de partage.
+Retourne les utilisateurs de l'application (hors utilisateur courant) avec leur éventuel compte NC lié.
+Query : `q` (facultatif, filtre ILIKE sur email/display_name).
+
+```json
+[{ "id": "uuid", "email": "...", "display_name": "...", "avatar_url": null, "nc_username": "..." }]
+```
+
 ### POST /api/calendar/:id/publish
 
-Publie le calendrier en lecture seule (lien public).
+Publie le calendrier en lecture seule via un lien public HTML + un flux iCal.
+
+**Body :**
+```json
+{ "permission": "read" }
+```
+
+`permission` ∈ `"busy" | "titles" | "read"` — contrôle le niveau de détail exposé par les flux publics.
 
 **Réponse 200 :**
 ```json
-{ "public_url": "https://cloud.example.com/public.php/calendar/<token>", "public_token": "abc..." }
+{
+  "success": true,
+  "publicUrl": "https://app.example.com/api/public/calendar/<token>",
+  "htmlUrl":   "https://app.example.com/api/public/calendar/<token>",
+  "icsUrl":    "https://app.example.com/api/public/calendar/<token>.ics",
+  "token": "abc...",
+  "permission": "read"
+}
 ```
+
+Un seul lien public par calendrier : un appel répété met à jour la permission et la `public_url` (upsert).
+Si le calendrier est NC-managé, la publication NextCloud est aussi tentée en best-effort, mais l'URL retournée pointe toujours vers l'application (pas vers l'interface WebDAV de NextCloud).
+
+### PATCH /api/calendar/:id/publish
+
+Met à jour uniquement la permission d'un lien public déjà existant.
+
+**Body :** `{ "permission": "busy" | "titles" | "read" }`
 
 ### DELETE /api/calendar/:id/publish
 
-Supprime le lien public.
+Supprime le lien public (et dépublie côté NextCloud si applicable).
+
+---
+
+## Flux publics (non authentifiés)
+
+> 🌐 Aucune authentification. Accès par `public_token` uniquement.
+
+### GET /api/public/calendar/:token
+
+Page HTML autonome du calendrier publié (viewer responsive clair/sombre). Affiche la liste des évènements à venir selon la permission associée au jeton, avec boutons « Télécharger .ics », « S'abonner » (`webcal://`) et « Copier le lien ».
+
+### GET /api/public/calendar/:token.ics
+
+Flux iCalendar (RFC 5545, `Content-Type: text/calendar`). Compatible Outlook, Apple Calendar, Google Calendar, Thunderbird. Les évènements sont filtrés selon la permission :
+- `busy` → titre remplacé par « Occupé(e) », aucune autre donnée
+- `titles` → titre et lieu uniquement
+- `read` → toutes les propriétés
+
+### GET /api/public/calendar/:token.json
+
+Flux JSON (intégrations custom), mêmes règles de filtrage.
 
 ---
 

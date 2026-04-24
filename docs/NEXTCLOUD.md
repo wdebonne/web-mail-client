@@ -96,20 +96,36 @@ Si l'ICS contient des `ATTENDEE`, **NextCloud envoie automatiquement les invitat
 
 ### Partage de calendrier
 
-Un nouvel endpoint `POST /calendar/:id/share` accepte trois modes :
+Le dialog « Partager » propose **3 onglets** (voir [client/src/components/calendar/ShareCalendarDialog.tsx](../client/src/components/calendar/ShareCalendarDialog.tsx)) :
 
-| Payload | Résultat |
-|---------|----------|
-| `{ userId: "<app-user>", permission: "read"\|"write" }` | Partage interne. Si le destinataire est aussi provisionné NC, un partage NC-natif est fait via `<CS:share>` entre principals |
-| `{ email: "user@ext.com", permission: ... }` | Invitation NC par email (NC envoie automatiquement le mail d'invitation) |
-| `POST /calendar/:id/publish` | Lien public en lecture seule (via `<CS:publish-calendar>` + PROPFIND de `<CS:publish-url>`) |
+1. **Au sein de votre organisation** — annuaire interne (utilisateurs de l'app + comptes NC liés) exposé par `GET /api/contacts/directory/users`. Ajoute un partage interne NC-natif via `<CS:share>` quand les deux parties sont provisionnées.
+2. **Invitations par email** — autocomplétion sur tous les contacts (locaux + NC). Une adresse inconnue est **auto-créée** comme contact local en plus d'être invitée. NextCloud envoie l'email d'invitation si `nc_managed`.
+3. **Lien public** — génère un lien **HTML autonome** + un **flux iCal (.ics)** servis par l'application elle-même (`/api/public/calendar/:token[.ics]`), avec filtrage par permission. Fonctionne pour les calendriers locaux **et** NextCloud.
 
-Endpoints de gestion :
-- `GET /calendar/:id/shares` → liste les partages (internes + externes)
-- `DELETE /calendar/:id/share` → révoque un partage (body `{ userId }` ou `{ email }`)
-- `DELETE /calendar/:id/publish` → supprime le lien public
+**Permissions granulaires** (persistées en base, mappées vers NC) :
 
-L'interface est disponible via le dialog « Partager » depuis la sidebar du calendrier.
+| Niveau | Description | NC mapping |
+|--------|-------------|------------|
+| `busy` | Disponibilités uniquement | `read` (filtré côté app) |
+| `titles` | Titres et lieux | `read` (filtré côté app) |
+| `read` | Tous les détails | `read` |
+| `write` | Lecture + écriture | `read-write` |
+
+Endpoints :
+
+| Méthode | URL | Description |
+|---------|-----|-------------|
+| `POST` | `/api/calendar/:id/share` | Ajouter/mettre à jour un partage (body `{ userId?, email?, permission }`) |
+| `DELETE` | `/api/calendar/:id/share` | Révoquer un partage (body `{ userId }` ou `{ email }`) |
+| `GET` | `/api/calendar/:id/shares` | Liste (internal + external, avec `public_html_url` / `public_ics_url`) |
+| `POST` | `/api/calendar/:id/publish` | Publier / republier (body `{ permission: "busy"\|"titles"\|"read" }`) |
+| `PATCH` | `/api/calendar/:id/publish` | Modifier la permission d'un lien déjà publié |
+| `DELETE` | `/api/calendar/:id/publish` | Supprimer le lien public |
+| `GET` | `/api/public/calendar/:token` | Viewer HTML (sans auth) |
+| `GET` | `/api/public/calendar/:token.ics` | Flux iCalendar RFC 5545 (sans auth) |
+| `GET` | `/api/public/calendar/:token.json` | Flux JSON (sans auth) |
+
+> ℹ️ Auparavant `POST /publish` renvoyait l'URL `<CS:publish-url>` de NextCloud, qui conduisait à l'interface WebDAV *(« This is the WebDAV interface… »)*. Le lien est désormais servi par l'application sous forme de page HTML et de flux `.ics` directement consommables par Outlook, Apple Calendar, Google Calendar et Thunderbird.
 
 ### Contacts
 
