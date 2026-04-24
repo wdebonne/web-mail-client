@@ -153,6 +153,10 @@ Toutes les routes utilisent `@simplewebauthn/server`. Le challenge est émis par
 | POST | `/api/auth/webauthn/login/verify` | Public | Finalise le login 2FA. Body : `{ pendingToken, response }`. Émet le token + cookie refresh |
 | POST | `/api/auth/webauthn/unlock/options` | Bearer | Challenge de déverrouillage local PWA |
 | POST | `/api/auth/webauthn/unlock/verify` | Bearer | Finalise le déverrouillage. Body : `{ response }` |
+| POST | `/api/auth/webauthn/passkey/options` | Public | Options d'un login *passwordless* (FIDO2 discoverable credential). Pas de body. |
+| POST | `/api/auth/webauthn/passkey/verify` | Public | Finalise le login passwordless. Body : `{ response }`. Émet le token + cookie refresh directement (pas de mot de passe requis). |
+
+> ℹ️ Le flow *passwordless* nécessite que la passkey ait été enrôlée avec `residentKey: required` (cas par défaut depuis la mise à jour). Les clés plus anciennes (`residentKey: preferred`) continuent de fonctionner pour le 2FA mais ne sont pas garanties découvrables — il faut les réénrôler pour bénéficier du bouton « Se connecter avec une clé d'accès ».
 
 ### GET /api/auth/me
 
@@ -1037,6 +1041,51 @@ Supprime l'icône personnalisée et rétablit l'icône par défaut fournie par l
 ```json
 { "success": true }
 ```
+
+### GET /api/admin/devices
+
+> 🔒 Admin requis
+
+Liste **toutes les sessions actives** de l'instance, groupées par utilisateur (une entrée par compte, un tableau d'appareils dedans). Utilisé par l'onglet admin *Appareils*.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "userId": "uuid",
+    "email": "user@example.com",
+    "displayName": "Jean Dupont",
+    "isAdmin": false,
+    "devices": [
+      {
+        "id": "uuid",
+        "deviceName": "Chrome · Windows",
+        "userAgent": "Mozilla/5.0 ...",
+        "ipLastSeen": "203.0.113.42",
+        "createdAt": "2026-04-01T09:12:00Z",
+        "lastUsedAt": "2026-04-23T18:07:00Z",
+        "expiresAt": "2026-07-23T18:07:00Z"
+      }
+    ]
+  }
+]
+```
+
+### DELETE /api/admin/devices/:id
+
+> 🔒 Admin requis
+
+Déconnecte à distance un appareil spécifique (sans vérification d'appartenance). Journalisé dans `admin_logs` comme `device.revoke`.
+
+**Réponse 200 :** `{ "success": true }` · **404 :** appareil introuvable ou déjà révoqué.
+
+### DELETE /api/admin/users/:userId/devices
+
+> 🔒 Admin requis
+
+Déconnecte **tous** les appareils d'un utilisateur. Typiquement utilisé à l'offboarding ou après suspicion de compromission. Journalisé comme `device.revoke_all`.
+
+**Réponse 200 :** `{ "success": true, "revoked": 3 }`
 
 ### GET /api/admin/users
 

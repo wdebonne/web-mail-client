@@ -305,6 +305,9 @@ webmail/
 |---------|-------|-------------|
 | GET | `/api/admin/dashboard` | Statistiques système |
 | GET | `/api/admin/logs` | Logs d'audit |
+| GET | `/api/admin/devices` | Sessions actives de tous les utilisateurs (groupées) |
+| DELETE | `/api/admin/devices/:id` | Déconnecter un appareil (admin) |
+| DELETE | `/api/admin/users/:userId/devices` | Déconnecter tous les appareils d'un utilisateur |
 | GET | `/api/admin/o2switch/accounts` | Comptes O2Switch |
 | POST | `/api/admin/o2switch/accounts` | Ajouter un compte O2Switch |
 | POST | `/api/admin/o2switch/accounts/:id/sync` | Synchroniser emails |

@@ -51,7 +51,9 @@ Si vous découvrez une faille de sécurité, **ne créez pas d'Issue publique**.
 | Cookie refresh | `httpOnly`, `SameSite=Strict`, `Secure` en prod, scope `/api/auth`, TTL glissant 90 j |
 | Détection de rejeu | Un refresh token réutilisé révoque toute la chaîne du device |
 | Révocation à distance | Liste des appareils + déconnexion immédiate (vérif `isSessionActive` à chaque requête) |
+| Révocation admin | Panneau admin *Appareils* pour auditer et déconnecter toute session (un appareil ou tous ceux d'un utilisateur) — journalisé dans `admin_logs` |
 | 2FA WebAuthn (passkeys) | Touch ID / Face ID / Windows Hello en option (`webauthn_credentials`) |
+| Login sans mot de passe | Passkey FIDO2 découvrable (`residentKey: required`) — le navigateur affiche un sélecteur de comptes, aucun email/mot de passe n'est transmis |
 | Verrouillage local PWA | Déverrouillage biométrique après 7 j d'inactivité |
 | Premier utilisateur | Automatiquement administrateur |
 

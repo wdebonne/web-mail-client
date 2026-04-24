@@ -9,6 +9,20 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Administration — Gestion globale des appareils connectés
+
+- **Nouvel onglet admin *Appareils*** ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) qui liste toutes les sessions actives de l'instance groupées par utilisateur dans des cartes repliables (collapsed par défaut pour rester lisible avec beaucoup d'utilisateurs).
+  - **Champ de recherche avec autocomplétion** sur le nom ou l'email — suggestions cliquables qui filtrent la liste et déplient automatiquement la carte correspondante.
+  - **Boutons globaux** « Tout déplier » / « Tout replier » pour un audit rapide.
+  - **Actions par utilisateur** : bouton « Tout déconnecter » qui révoque toutes les sessions d'un compte en un clic (utile en cas de départ ou de compromission).
+  - **Actions par appareil** : bouton « Déconnecter » individuel pour chaque session (navigateur + OS + IP + dernière utilisation).
+- **Nouveaux endpoints admin** ([server/src/routes/admin.ts](server/src/routes/admin.ts), [server/src/services/deviceSessions.ts](server/src/services/deviceSessions.ts)) :
+  - `GET /api/admin/devices` — retourne un tableau déjà groupé `[{ userId, email, displayName, isAdmin, devices:[…] }]`.
+  - `DELETE /api/admin/devices/:id` — révoque une session spécifique.
+  - `DELETE /api/admin/users/:userId/devices` — révoque toutes les sessions d'un utilisateur.
+  - Chaque action est journalisée (`device.revoke`, `device.revoke_all`) dans `admin_logs`.
+- **Page *Mes appareils* — message vide enrichi** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) : explique désormais qu'une session créée avant le déploiement de ce module n'apparaît qu'après une reconnexion.
+
 #### Authentification — Passkey passwordless + personnalisation de la page de connexion
 
 - **Connexion sans mot de passe avec un passkey** ([server/src/routes/auth.ts](server/src/routes/auth.ts), [server/src/services/webauthn.ts](server/src/services/webauthn.ts)) : deux nouveaux endpoints publics `POST /api/auth/webauthn/passkey/options` et `/verify` basés sur les **credentials découvrables** (resident keys). L'utilisateur clique sur « Se connecter avec une clé d'accès » depuis la page principale ([client/src/pages/LoginPage.tsx](client/src/pages/LoginPage.tsx)), le navigateur affiche le sélecteur de comptes iCloud / Google Password Manager / Windows Hello, et la session est émise sans email ni mot de passe.
