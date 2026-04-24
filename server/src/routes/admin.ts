@@ -380,6 +380,37 @@ adminRouter.post('/nextcloud/users/:userId/sync', async (req: AuthRequest, res) 
 // Must be declared before `/mail-accounts/:id/...` so that `/oauth/...` is not
 // matched as an account id.
 
+// Get the current Microsoft OAuth configuration (effective values + sources).
+adminRouter.get('/oauth-settings/microsoft', async (_req: AuthRequest, res) => {
+  try {
+    const { getMicrosoftOAuthSettingsStatus } = await import('../services/oauth');
+    const status = await getMicrosoftOAuthSettingsStatus();
+    res.json(status);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save Microsoft OAuth configuration in admin_settings (env vars still take
+// priority at runtime — env overrides these values).
+adminRouter.put('/oauth-settings/microsoft', async (req: AuthRequest, res) => {
+  try {
+    const { saveMicrosoftOAuthSettings, getMicrosoftOAuthSettingsStatus } = await import('../services/oauth');
+    const body = req.body || {};
+    await saveMicrosoftOAuthSettings({
+      clientId: typeof body.clientId === 'string' ? body.clientId : undefined,
+      clientSecret: typeof body.clientSecret === 'string' ? body.clientSecret : undefined,
+      clearClientSecret: body.clearClientSecret === true,
+      tenant: typeof body.tenant === 'string' ? body.tenant : undefined,
+      redirectUri: typeof body.redirectUri === 'string' ? body.redirectUri : undefined,
+    });
+    const status = await getMicrosoftOAuthSettingsStatus();
+    res.json(status);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 adminRouter.post('/mail-accounts/oauth/:provider/start', async (req: AuthRequest, res) => {
   try {
     const provider = req.params.provider;
@@ -392,7 +423,7 @@ adminRouter.post('/mail-accounts/oauth/:provider/start', async (req: AuthRequest
     (req.session as any).oauthState = state;
     (req.session as any).oauthProvider = provider;
     const loginHint = typeof req.body?.loginHint === 'string' ? req.body.loginHint : undefined;
-    const url = buildAuthorizeUrl(provider, state, loginHint);
+    const url = await buildAuthorizeUrl(provider, state, loginHint);
     res.json({ url, state });
   } catch (error: any) {
     res.status(400).json({ error: error.message });

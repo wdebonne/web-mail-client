@@ -20,11 +20,15 @@ export type OAuthProvider = 'microsoft' | 'google';
 
 // -- Provider config -------------------------------------------------------
 
-// Microsoft tenant: 'common' accepts both personal (outlook.com/hotmail.com)
-// and work/school accounts. Admins can scope to a specific tenant via env.
-const MS_TENANT = process.env.MICROSOFT_OAUTH_TENANT || 'common';
-const MS_AUTHORIZE_URL = `https://login.microsoftonline.com/${MS_TENANT}/oauth2/v2.0/authorize`;
-const MS_TOKEN_URL = `https://login.microsoftonline.com/${MS_TENANT}/oauth2/v2.0/token`;
+// Microsoft endpoints are built from the tenant. 'common' accepts both
+// personal (outlook.com/hotmail.com) and work/school accounts. The tenant
+// can be overridden via env var or the admin UI.
+function msAuthorizeUrl(tenant: string) {
+  return `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`;
+}
+function msTokenUrl(tenant: string) {
+  return `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
+}
 
 // Scopes required for IMAP + SMTP + profile. `offline_access` is mandatory
 // to receive a refresh_token.
@@ -46,28 +50,78 @@ export interface OAuthConfig {
   scope: string;
 }
 
-export function getMicrosoftConfig(): OAuthConfig {
-  const clientId = process.env.MICROSOFT_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.MICROSOFT_OAUTH_CLIENT_SECRET;
+/**
+ * Read a setting from `admin_settings` (fallback for env vars). Values are
+ * stored as JSON-encoded strings to match the existing NextCloud pattern.
+ */
+async function readAdminSetting(key: string): Promise<string | undefined> {
+  try {
+    const res = await pool.query('SELECT value FROM admin_settings WHERE key = $1', [key]);
+    if (!res.rows.length) return undefined;
+    const raw = res.rows[0].value;
+    if (raw === null || raw === undefined) return undefined;
+    if (typeof raw === 'string') {
+      try { const parsed = JSON.parse(raw); return typeof parsed === 'string' ? parsed : raw; }
+      catch { return raw; }
+    }
+    return String(raw);
+  } catch (e) {
+    logger.error(e as Error, 'readAdminSetting failed');
+    return undefined;
+  }
+}
+
+/**
+ * Resolve Microsoft OAuth configuration.
+ *
+ * Priority order (highest first):
+ *   1. Environment variables (set e.g. through Portainer / Docker compose)
+ *   2. `admin_settings` table (configured via Admin UI)
+ *
+ * `admin_settings` is used as a fallback only — individual fields can be
+ * mixed: e.g. env sets the client_id, DB provides the secret.
+ */
+export async function getMicrosoftConfig(): Promise<OAuthConfig> {
+  const envClientId = process.env.MICROSOFT_OAUTH_CLIENT_ID?.trim();
+  const envClientSecret = process.env.MICROSOFT_OAUTH_CLIENT_SECRET?.trim();
+  const envTenant = process.env.MICROSOFT_OAUTH_TENANT?.trim();
+  const envRedirect = process.env.MICROSOFT_OAUTH_REDIRECT_URI?.trim();
+
+  const dbClientId = envClientId ? undefined : await readAdminSetting('microsoft_oauth_client_id');
+  const dbTenant = envTenant ? undefined : await readAdminSetting('microsoft_oauth_tenant');
+  const dbRedirect = envRedirect ? undefined : await readAdminSetting('microsoft_oauth_redirect_uri');
+  let dbSecret: string | undefined;
+  if (!envClientSecret) {
+    const encrypted = await readAdminSetting('microsoft_oauth_client_secret_encrypted');
+    if (encrypted) {
+      try { dbSecret = decrypt(encrypted); }
+      catch (e) { logger.error(e as Error, 'Failed to decrypt MICROSOFT_OAUTH_CLIENT_SECRET from admin_settings'); }
+    }
+  }
+
+  const clientId = envClientId || dbClientId;
+  const clientSecret = envClientSecret || dbSecret;
+  const tenant = (envTenant || dbTenant || 'common').trim();
   const redirectUri =
-    process.env.MICROSOFT_OAUTH_REDIRECT_URI ||
-    `${process.env.PUBLIC_URL || 'http://localhost:3000'}/api/admin/mail-accounts/oauth/microsoft/callback`;
+    (envRedirect || dbRedirect)?.trim() ||
+    `${(process.env.PUBLIC_URL || 'http://localhost:3000').replace(/\/$/, '')}/api/admin/mail-accounts/oauth/microsoft/callback`;
+
   if (!clientId || !clientSecret) {
     throw new Error(
-      "OAuth Microsoft non configuré : définissez MICROSOFT_OAUTH_CLIENT_ID et MICROSOFT_OAUTH_CLIENT_SECRET (voir docs/CONFIGURATION.md).",
+      "OAuth Microsoft non configuré : renseignez MICROSOFT_OAUTH_CLIENT_ID et MICROSOFT_OAUTH_CLIENT_SECRET (via Portainer/.env prioritaire, ou via Administration → Comptes mail → Configuration OAuth Microsoft).",
     );
   }
   return {
     clientId,
     clientSecret,
     redirectUri,
-    authorizeUrl: MS_AUTHORIZE_URL,
-    tokenUrl: MS_TOKEN_URL,
+    authorizeUrl: msAuthorizeUrl(tenant),
+    tokenUrl: msTokenUrl(tenant),
     scope: MS_SCOPES,
   };
 }
 
-function getConfig(provider: OAuthProvider): OAuthConfig {
+async function getConfig(provider: OAuthProvider): Promise<OAuthConfig> {
   switch (provider) {
     case 'microsoft':
       return getMicrosoftConfig();
@@ -83,8 +137,8 @@ function getConfig(provider: OAuthProvider): OAuthConfig {
  * `prompt=select_account` lets the user pick the right MS account even if
  * they are already signed in.
  */
-export function buildAuthorizeUrl(provider: OAuthProvider, state: string, loginHint?: string): string {
-  const cfg = getConfig(provider);
+export async function buildAuthorizeUrl(provider: OAuthProvider, state: string, loginHint?: string): Promise<string> {
+  const cfg = await getConfig(provider);
   const params = new URLSearchParams({
     client_id: cfg.clientId,
     response_type: 'code',
@@ -161,7 +215,7 @@ export interface ExchangedTokens {
 }
 
 export async function exchangeCode(provider: OAuthProvider, code: string): Promise<ExchangedTokens> {
-  const cfg = getConfig(provider);
+  const cfg = await getConfig(provider);
   const tok = await postTokenRequest(cfg, { grant_type: 'authorization_code', code });
   if (!tok.refresh_token) {
     throw new Error(
@@ -184,7 +238,7 @@ async function refreshAccessToken(
   provider: OAuthProvider,
   refreshToken: string,
 ): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date; scope: string }> {
-  const cfg = getConfig(provider);
+  const cfg = await getConfig(provider);
   const tok = await postTokenRequest(cfg, { grant_type: 'refresh_token', refresh_token: refreshToken });
   return {
     accessToken: tok.access_token,
@@ -316,4 +370,118 @@ export function peekPendingOAuth(userId: string, id: string): PendingOAuth | nul
     return null;
   }
   return entry;
+}
+
+// -- Admin UI configuration (admin_settings fallback) ---------------------
+
+export interface MicrosoftOAuthSettingsStatus {
+  configured: boolean;
+  // Effective values that will be used at runtime (env overrides DB).
+  clientId: string;
+  hasClientSecret: boolean;
+  tenant: string;
+  redirectUri: string;
+  // Which source each field comes from ('env' = set via process.env,
+  // 'db' = stored in admin_settings, 'none' = unset).
+  sources: {
+    clientId: 'env' | 'db' | 'none';
+    clientSecret: 'env' | 'db' | 'none';
+    tenant: 'env' | 'db' | 'default';
+    redirectUri: 'env' | 'db' | 'default';
+  };
+  // Values the admin has saved in DB (separate from effective values so the
+  // admin can see what they configured, even if env currently overrides it).
+  db: {
+    clientId: string;
+    hasClientSecret: boolean;
+    tenant: string;
+    redirectUri: string;
+  };
+}
+
+/** Describe the current Microsoft OAuth configuration for the admin UI. */
+export async function getMicrosoftOAuthSettingsStatus(): Promise<MicrosoftOAuthSettingsStatus> {
+  const envClientId = process.env.MICROSOFT_OAUTH_CLIENT_ID?.trim();
+  const envClientSecret = process.env.MICROSOFT_OAUTH_CLIENT_SECRET?.trim();
+  const envTenant = process.env.MICROSOFT_OAUTH_TENANT?.trim();
+  const envRedirect = process.env.MICROSOFT_OAUTH_REDIRECT_URI?.trim();
+
+  const dbClientId = (await readAdminSetting('microsoft_oauth_client_id')) || '';
+  const dbTenant = (await readAdminSetting('microsoft_oauth_tenant')) || '';
+  const dbRedirect = (await readAdminSetting('microsoft_oauth_redirect_uri')) || '';
+  const dbSecretEncrypted = await readAdminSetting('microsoft_oauth_client_secret_encrypted');
+  const hasDbSecret = !!dbSecretEncrypted;
+
+  const effectiveClientId = envClientId || dbClientId;
+  const effectiveTenant = envTenant || dbTenant || 'common';
+  const effectiveRedirect =
+    envRedirect ||
+    dbRedirect ||
+    `${(process.env.PUBLIC_URL || 'http://localhost:3000').replace(/\/$/, '')}/api/admin/mail-accounts/oauth/microsoft/callback`;
+  const hasSecret = !!envClientSecret || hasDbSecret;
+
+  return {
+    configured: !!effectiveClientId && hasSecret,
+    clientId: effectiveClientId,
+    hasClientSecret: hasSecret,
+    tenant: effectiveTenant,
+    redirectUri: effectiveRedirect,
+    sources: {
+      clientId: envClientId ? 'env' : dbClientId ? 'db' : 'none',
+      clientSecret: envClientSecret ? 'env' : hasDbSecret ? 'db' : 'none',
+      tenant: envTenant ? 'env' : dbTenant ? 'db' : 'default',
+      redirectUri: envRedirect ? 'env' : dbRedirect ? 'db' : 'default',
+    },
+    db: {
+      clientId: dbClientId,
+      hasClientSecret: hasDbSecret,
+      tenant: dbTenant,
+      redirectUri: dbRedirect,
+    },
+  };
+}
+
+/** Upsert a single admin_settings row (value JSON-encoded, NextCloud pattern). */
+async function upsertAdminSetting(key: string, value: string | null): Promise<void> {
+  if (value === null) {
+    await pool.query('DELETE FROM admin_settings WHERE key = $1', [key]);
+    return;
+  }
+  await pool.query(
+    `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+    [key, JSON.stringify(value)],
+  );
+}
+
+/**
+ * Save Microsoft OAuth settings from the Admin UI. Fields set to empty
+ * string are cleared. `clientSecret` is only persisted when a non-empty
+ * value is provided (so admins can update other fields without re-entering
+ * the secret). Use `clearClientSecret: true` to delete it.
+ */
+export async function saveMicrosoftOAuthSettings(input: {
+  clientId?: string;
+  clientSecret?: string;
+  clearClientSecret?: boolean;
+  tenant?: string;
+  redirectUri?: string;
+}): Promise<void> {
+  if (input.clientId !== undefined) {
+    await upsertAdminSetting('microsoft_oauth_client_id', input.clientId.trim() || null);
+  }
+  if (input.tenant !== undefined) {
+    await upsertAdminSetting('microsoft_oauth_tenant', input.tenant.trim() || null);
+  }
+  if (input.redirectUri !== undefined) {
+    await upsertAdminSetting('microsoft_oauth_redirect_uri', input.redirectUri.trim() || null);
+  }
+  if (input.clearClientSecret) {
+    await upsertAdminSetting('microsoft_oauth_client_secret_encrypted', null);
+  } else if (input.clientSecret !== undefined && input.clientSecret.trim() !== '') {
+    await upsertAdminSetting(
+      'microsoft_oauth_client_secret_encrypted',
+      encrypt(input.clientSecret.trim()),
+    );
+  }
 }

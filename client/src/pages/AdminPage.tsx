@@ -726,6 +726,8 @@ function MailAccountManagement() {
 
   return (
     <div>
+      <MicrosoftOAuthSettings />
+
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold">Comptes mail ({accounts.length})</h3>
         <button onClick={() => { setEditing(null); setShowForm(true); }} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5">
@@ -808,6 +810,206 @@ interface MailProviderPreset {
   oauthProvider?: 'microsoft';
   note?: string;
   logo: React.ReactNode;
+}
+
+// --------------------------------------------------------------------------
+// Microsoft OAuth settings (Azure AD / Microsoft Entra ID credentials)
+// --------------------------------------------------------------------------
+// Env vars (MICROSOFT_OAUTH_CLIENT_ID / _SECRET / _TENANT / _REDIRECT_URI)
+// always win over values saved here. This panel lets admins configure the
+// app registration without editing .env / restarting the container.
+// --------------------------------------------------------------------------
+function MicrosoftOAuthSettings() {
+  const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [tenant, setTenant] = useState('');
+  const [redirectUri, setRedirectUri] = useState('');
+  const [dirty, setDirty] = useState(false);
+
+  const { data: status } = useQuery({
+    queryKey: ['admin-oauth-microsoft'],
+    queryFn: api.getMicrosoftOAuthSettings,
+  });
+
+  useEffect(() => {
+    if (!status) return;
+    // Prefill from what admin saved in DB (not the effective values, so the
+    // admin sees exactly what they typed).
+    setClientId(status.db.clientId || '');
+    setTenant(status.db.tenant || '');
+    setRedirectUri(status.db.redirectUri || '');
+    setClientSecret('');
+    setDirty(false);
+  }, [status]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: {
+      clientId?: string;
+      clientSecret?: string;
+      clearClientSecret?: boolean;
+      tenant?: string;
+      redirectUri?: string;
+    }) => api.saveMicrosoftOAuthSettings(payload),
+    onSuccess: () => {
+      toast.success('Configuration OAuth Microsoft enregistrée');
+      queryClient.invalidateQueries({ queryKey: ['admin-oauth-microsoft'] });
+      setClientSecret('');
+      setDirty(false);
+    },
+    onError: (e: any) => toast.error(e.message || 'Échec'),
+  });
+
+  if (!status) return null;
+
+  const hasEnvOverride =
+    status.sources.clientId === 'env' ||
+    status.sources.clientSecret === 'env' ||
+    status.sources.tenant === 'env' ||
+    status.sources.redirectUri === 'env';
+
+  const sourceBadge = (src: 'env' | 'db' | 'default' | 'none') => {
+    if (src === 'env') return <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Env (Portainer)</span>;
+    if (src === 'db') return <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">UI Admin</span>;
+    if (src === 'default') return <span className="text-[10px] px-1.5 py-0.5 rounded bg-outlook-bg-hover text-outlook-text-secondary">Défaut</span>;
+    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">Non configuré</span>;
+  };
+
+  return (
+    <div className="mb-6 border border-outlook-border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-outlook-bg-hover hover:bg-outlook-bg-selected text-left"
+      >
+        <div className="flex items-center gap-2">
+          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          <Shield size={16} className="text-outlook-blue" />
+          <span className="font-medium text-sm">Configuration OAuth Microsoft 365 / Outlook</span>
+          {status.configured
+            ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">Configuré</span>
+            : <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">À configurer</span>}
+        </div>
+        <span className="text-xs text-outlook-text-secondary">
+          {hasEnvOverride ? 'Variables d\'environnement actives' : 'Configuré via l\'UI'}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="p-4 space-y-4 bg-outlook-bg-primary">
+          <div className="text-xs text-outlook-text-secondary space-y-2">
+            <p>
+              Nécessaire pour connecter les comptes <strong>Outlook.com / Hotmail / Live / Microsoft 365</strong>{' '}
+              (Microsoft a désactivé l'authentification basique IMAP/SMTP en septembre 2022).
+              Créez une App Registration sur{' '}
+              <a href="https://entra.microsoft.com" target="_blank" rel="noreferrer" className="text-outlook-blue hover:underline">entra.microsoft.com</a>
+              {' '}(gratuit, même avec un compte perso — aucune entreprise requise).
+            </p>
+            <p>
+              <strong>Priorité :</strong> les variables d'environnement{' '}
+              <code className="px-1 rounded bg-outlook-bg-hover">MICROSOFT_OAUTH_*</code> (renseignées dans Portainer / .env)
+              sont toujours prioritaires sur les valeurs saisies ici. Pratique pour verrouiller la config en prod.
+            </p>
+            <p>
+              URI de redirection à configurer dans Azure (copiez la valeur exacte affichée ci-dessous) :{' '}
+              <code className="px-1 rounded bg-outlook-bg-hover break-all">{status.redirectUri}</code>
+            </p>
+          </div>
+
+          {hasEnvOverride && (
+            <div className="text-xs p-3 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              Une ou plusieurs valeurs sont fournies par les variables d'environnement. Les champs correspondants ci-dessous sont modifiables mais n'auront effet que si vous retirez la variable d'environnement correspondante.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-outlook-text-secondary flex items-center gap-2 mb-1">
+                Client ID (Application ID) {sourceBadge(status.sources.clientId)}
+              </label>
+              <input
+                type="text"
+                value={clientId}
+                onChange={(e) => { setClientId(e.target.value); setDirty(true); }}
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                className="w-full px-3 py-2 text-sm border border-outlook-border rounded bg-outlook-bg-secondary"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-outlook-text-secondary flex items-center gap-2 mb-1">
+                Client Secret {sourceBadge(status.sources.clientSecret)}
+                {status.db.hasClientSecret && <span className="text-[10px] text-green-700 dark:text-green-400">• Enregistré</span>}
+              </label>
+              <input
+                type="password"
+                value={clientSecret}
+                onChange={(e) => { setClientSecret(e.target.value); setDirty(true); }}
+                placeholder={status.db.hasClientSecret ? '•••••••• (laisser vide pour conserver)' : 'Valeur du secret'}
+                className="w-full px-3 py-2 text-sm border border-outlook-border rounded bg-outlook-bg-secondary"
+                autoComplete="new-password"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-outlook-text-secondary flex items-center gap-2 mb-1">
+                Tenant {sourceBadge(status.sources.tenant)}
+              </label>
+              <input
+                type="text"
+                value={tenant}
+                onChange={(e) => { setTenant(e.target.value); setDirty(true); }}
+                placeholder="common"
+                className="w-full px-3 py-2 text-sm border border-outlook-border rounded bg-outlook-bg-secondary"
+              />
+              <div className="text-[10px] text-outlook-text-secondary mt-1">
+                <code>common</code> = perso + pro · <code>organizations</code> = pro uniquement · <code>consumers</code> = perso uniquement · ou un GUID de tenant
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-outlook-text-secondary flex items-center gap-2 mb-1">
+                Redirect URI (optionnel) {sourceBadge(status.sources.redirectUri)}
+              </label>
+              <input
+                type="text"
+                value={redirectUri}
+                onChange={(e) => { setRedirectUri(e.target.value); setDirty(true); }}
+                placeholder={status.redirectUri}
+                className="w-full px-3 py-2 text-sm border border-outlook-border rounded bg-outlook-bg-secondary"
+              />
+              <div className="text-[10px] text-outlook-text-secondary mt-1">
+                Par défaut déduit de <code>PUBLIC_URL</code>. Ne surchargez que si nécessaire.
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              onClick={() => saveMutation.mutate({
+                clientId,
+                clientSecret: clientSecret || undefined,
+                tenant,
+                redirectUri,
+              })}
+              disabled={!dirty || saveMutation.isPending}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm disabled:opacity-50"
+            >
+              {saveMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+            {status.db.hasClientSecret && (
+              <button
+                onClick={() => {
+                  if (!confirm('Supprimer le Client Secret enregistré ?')) return;
+                  saveMutation.mutate({ clearClientSecret: true });
+                }}
+                className="px-3 py-1.5 rounded-md text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                Supprimer le secret
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const MAIL_PROVIDERS: MailProviderPreset[] = [

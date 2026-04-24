@@ -609,6 +609,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ loginHint }),
     }),
+  getMicrosoftOAuthSettings: () =>
+    request<{
+      configured: boolean;
+      clientId: string;
+      hasClientSecret: boolean;
+      tenant: string;
+      redirectUri: string;
+      sources: {
+        clientId: 'env' | 'db' | 'none';
+        clientSecret: 'env' | 'db' | 'none';
+        tenant: 'env' | 'db' | 'default';
+        redirectUri: 'env' | 'db' | 'default';
+      };
+      db: { clientId: string; hasClientSecret: boolean; tenant: string; redirectUri: string };
+    }>('/admin/oauth-settings/microsoft'),
+  saveMicrosoftOAuthSettings: (data: {
+    clientId?: string;
+    clientSecret?: string;
+    clearClientSecret?: boolean;
+    tenant?: string;
+    redirectUri?: string;
+  }) =>
+    request('/admin/oauth-settings/microsoft', { method: 'PUT', body: JSON.stringify(data) }),
   getMailAccountAssignments: (accountId: string) =>
     request<any[]>(`/admin/mail-accounts/${accountId}/assignments`),
   createMailAccountAssignment: (accountId: string, data: any) =>

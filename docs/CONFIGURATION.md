@@ -133,7 +133,14 @@ DEFAULT_SMTP_PORT=465
 
 # ===== OAuth2 Microsoft (Outlook / Microsoft 365) =====
 # Requis pour connecter les comptes Microsoft 365 avec MFA (Authenticator).
-# Créez une App Registration sur https://portal.azure.com :
+# Ces variables sont PRIORITAIRES sur les valeurs saisies dans l'UI Admin
+# (Administration → Comptes mail → Configuration OAuth Microsoft).
+# Vous pouvez les définir dans Portainer / docker-compose pour verrouiller la
+# configuration en production. Laissez-les vides pour piloter la config
+# uniquement via l'UI.
+#
+# Créez une App Registration sur https://entra.microsoft.com (gratuit même
+# sans entreprise, avec un simple compte Microsoft perso) :
 #  - Supported account types : « Accounts in any organizational directory and personal Microsoft accounts »
 #  - Redirect URI (Web) : {PUBLIC_URL}/api/admin/mail-accounts/oauth/microsoft/callback
 #  - API permissions (Delegated) : offline_access, openid, email, profile,
@@ -178,11 +185,33 @@ Pour les quatre premiers fournisseurs, les champs serveur et port sont masqués 
 
 Microsoft a désactivé l'authentification basique IMAP/SMTP en septembre 2022. Les comptes Outlook.com, Hotmail, Live et Microsoft 365 — et *a fortiori* ceux protégés par Microsoft Authenticator — doivent obligatoirement passer par OAuth2.
 
-1. Configurez l'application Azure AD (voir variables `MICROSOFT_OAUTH_*` dans le `.env` ci-dessus).
-2. Dans **Administration → Comptes mail → + Nouveau compte**, choisissez **Outlook / Microsoft 365**.
-3. Renseignez le nom du compte et l'adresse e-mail, puis cliquez sur **« Se connecter avec Microsoft »**.
-4. Une fenêtre Microsoft s'ouvre : connectez-vous, validez le MFA (Authenticator / SMS / clé de sécurité) et acceptez les permissions IMAP.AccessAsUser.All + SMTP.Send.
-5. De retour sur l'application, cliquez sur **Enregistrer**. Le serveur stocke un `refresh_token` chiffré (AES-256-GCM) et rafraîchit automatiquement le jeton d'accès à chaque opération IMAP/SMTP.
+**Deux façons de fournir les identifiants Azure (Microsoft Entra ID) — variables d'environnement prioritaires :**
+
+| Source | Quand l'utiliser | Persistance |
+|--------|------------------|-------------|
+| **Variables d'environnement** (`MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`, `MICROSOFT_OAUTH_TENANT`, `MICROSOFT_OAUTH_REDIRECT_URI`) | Recommandé en prod, déploiement Portainer/Docker. Verrouille la configuration via l'infra. | `.env` / `docker-compose.yml` / stack Portainer |
+| **Interface Admin** → Comptes mail → *Configuration OAuth Microsoft* | Simple à modifier sans redémarrer, idéal pour démarrer rapidement. | Table `admin_settings` (secret chiffré AES-256-GCM) |
+
+> Si une variable d'environnement est définie, elle écrase la valeur correspondante saisie dans l'UI Admin (champ par champ : vous pouvez par exemple fixer le `CLIENT_ID` par env et laisser le secret en base).
+
+**Procédure complète :**
+
+1. **Créer l'App Registration Azure (gratuit, compte perso accepté)** :
+   - Allez sur https://entra.microsoft.com et connectez-vous avec votre compte Microsoft. Un tenant personnel est créé automatiquement — aucune entreprise ni abonnement payant requis.
+   - **Applications → Inscriptions d'applications → + Nouvelle inscription**.
+   - *Types de comptes pris en charge* : « Accounts in any organizational directory and personal Microsoft accounts » (3ᵉ option).
+   - *URI de redirection (Web)* : `{PUBLIC_URL}/api/admin/mail-accounts/oauth/microsoft/callback`. La valeur exacte est affichée dans le panneau **Configuration OAuth Microsoft** (encadré bleu).
+2. **Récupérer les identifiants** :
+   - *Application (client) ID* → `MICROSOFT_OAUTH_CLIENT_ID` (ou champ Client ID dans l'UI).
+   - *Certificates & secrets → + New client secret* → copiez la **Valeur** → `MICROSOFT_OAUTH_CLIENT_SECRET`.
+3. **Permissions API (déléguées)** :
+   - *Office 365 Exchange Online* : `IMAP.AccessAsUser.All`, `SMTP.Send`.
+   - *Microsoft Graph* : `offline_access`, `openid`, `email`, `profile`.
+   - Cliquez **Grant admin consent** (sur votre tenant personnel, vous en êtes admin).
+4. **Configurer l'application**, au choix :
+   - Via Portainer : ajoutez les variables dans la stack et redémarrez le conteneur.
+   - Via l'UI : **Administration → Comptes mail → Configuration OAuth Microsoft** (panneau dépliable en haut de la liste), remplissez les champs et **Enregistrer**. Prend effet immédiatement sans redémarrage.
+5. **Connecter un compte** : **+ Nouveau compte → Outlook / Microsoft 365 → Se connecter avec Microsoft**. Authentifiez-vous (mot de passe + Microsoft Authenticator), acceptez les permissions, cliquez **Enregistrer**. Le serveur stocke un `refresh_token` chiffré (AES-256-GCM) et rafraîchit automatiquement le jeton d'accès avant chaque opération IMAP/SMTP.
 
 Pour reconnecter un compte dont le refresh token a été révoqué (changement de mot de passe, consentement révoqué), rouvrez la fiche du compte et cliquez sur **Reconnecter**.
 
