@@ -6,9 +6,10 @@ import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
   Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
-  Fingerprint, ShieldCheck
+  Fingerprint, ShieldCheck, Database
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import CacheSettings from '../components/CacheSettings';
 import {
   collectBackup, downloadBackup, parseBackupFile, applyBackup,
   isAutoBackupEnabled, setAutoBackupEnabled,
@@ -18,7 +19,7 @@ import {
   getLastBackupAt, getLastBackupError, runAutoBackup, subscribeBackupStatus,
 } from '../utils/backup';
 
-type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security';
+type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
@@ -32,6 +33,7 @@ export default function SettingsPage() {
     { id: 'devices' as const, icon: Monitor, label: 'Mes appareils' },
     { id: 'security' as const, icon: ShieldCheck, label: 'Sécurité' },
     { id: 'backup' as const, icon: HardDrive, label: 'Sauvegarde' },
+    { id: 'cache' as const, icon: Database, label: 'Cache local' },
   ];
 
   return (
@@ -62,6 +64,7 @@ export default function SettingsPage() {
           {tab === 'mail' && <MailBehaviorSettings />}
           {tab === 'appearance' && <AppearanceSettings />}
           {tab === 'notifications' && <NotificationSettings />}
+          {tab === 'cache' && <CacheSettings />}
           {tab === 'devices' && <DevicesSettings />}
           {tab === 'security' && <SecuritySettings />}
           {tab === 'backup' && <BackupSettings />}

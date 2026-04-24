@@ -17,6 +17,7 @@ import SettingsPage from './pages/SettingsPage';
 import SecurityPage from './pages/SecurityPage';
 import AdminPage from './pages/AdminPage';
 import { listenForNotificationClicks } from './pwa/push';
+import { syncAllCache, refreshCacheStats } from './services/cacheService';
 
 function App() {
   const { user, token, checkAuth, isLoading } = useAuthStore();
@@ -65,6 +66,17 @@ function App() {
       }
     });
   }, [navigate]);
+
+  // Kick off a background cache sync a few seconds after the user is logged in,
+  // so the first mail interactions are already served from IndexedDB.
+  useEffect(() => {
+    if (!user || !isOnline) return;
+    refreshCacheStats().catch(() => {});
+    const t = window.setTimeout(() => {
+      syncAllCache().catch(() => {});
+    }, 4000);
+    return () => window.clearTimeout(t);
+  }, [user, isOnline]);
 
   if (isLoading && token) {
     return (

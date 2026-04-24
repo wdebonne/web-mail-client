@@ -1,7 +1,7 @@
 import { openDB, IDBPDatabase } from 'idb';
 
 const DB_NAME = 'webmail-offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbInstance: IDBPDatabase | null = null;
 
@@ -41,10 +41,42 @@ async function getDB(): Promise<IDBPDatabase> {
       if (!db.objectStoreNames.contains('drafts')) {
         db.createObjectStore('drafts', { keyPath: 'id', autoIncrement: true });
       }
+
+      // Folder tree cache (one entry per account)
+      if (!db.objectStoreNames.contains('folders')) {
+        db.createObjectStore('folders', { keyPath: 'accountId' });
+      }
+
+      // Meta (lastSync, etc.)
+      if (!db.objectStoreNames.contains('meta')) {
+        db.createObjectStore('meta');
+      }
     },
   });
 
   return dbInstance;
+}
+
+// Rough byte estimate of a JS value when serialised.
+function byteSizeOf(value: unknown): number {
+  try {
+    return new Blob([JSON.stringify(value)]).size;
+  } catch {
+    return 0;
+  }
+}
+
+export interface CacheStats {
+  emails: number;
+  attachments: number;
+  attachmentsSize: number;
+  folders: number;
+  contacts: number;
+  events: number;
+  totalSize: number;
+  quota?: number;
+  usage?: number;
+  lastSync?: string | null;
 }
 
 export const offlineDB = {
@@ -145,5 +177,105 @@ export const offlineDB = {
   async deleteDraft(id: number) {
     const db = await getDB();
     return db.delete('drafts', id);
+  },
+
+  // ===== Folder tree =====
+  async cacheFolders(accountId: string, folders: any[]) {
+    const db = await getDB();
+    await db.put('folders', { accountId, folders, cachedAt: new Date().toISOString() });
+  },
+
+  async getFoldersCache(accountId: string): Promise<any[] | null> {
+    const db = await getDB();
+    const entry = await db.get('folders', accountId);
+    return entry?.folders ?? null;
+  },
+
+  async getAllAccountFolders(): Promise<Array<{ accountId: string; folders: any[] }>> {
+    const db = await getDB();
+    return db.getAll('folders');
+  },
+
+  /** Return all cached emails across every account/folder — used by the Cache settings panel. */
+  async getAllCachedEmails(): Promise<any[]> {
+    const db = await getDB();
+    return db.getAll('emails');
+  },
+
+  // ===== Meta (last sync timestamp, etc.) =====
+  async setMeta(key: string, value: any) {
+    const db = await getDB();
+    await db.put('meta', value, key);
+  },
+
+  async getMeta<T = any>(key: string): Promise<T | undefined> {
+    const db = await getDB();
+    return db.get('meta', key);
+  },
+
+  // ===== Stats & purge =====
+  async getStats(): Promise<CacheStats> {
+    const db = await getDB();
+    const [emails, contacts, events, folderEntries] = await Promise.all([
+      db.getAll('emails'),
+      db.getAll('contacts'),
+      db.getAll('events'),
+      db.getAll('folders'),
+    ]);
+
+    let attachments = 0;
+    let attachmentsSize = 0;
+    let emailsSize = 0;
+    for (const e of emails) {
+      emailsSize += byteSizeOf(e);
+      const atts = Array.isArray(e?.attachments) ? e.attachments : [];
+      attachments += atts.length;
+      for (const a of atts) {
+        attachmentsSize += Number(a?.size) || 0;
+      }
+    }
+    const contactsSize = byteSizeOf(contacts);
+    const eventsSize = byteSizeOf(events);
+    const foldersSize = byteSizeOf(folderEntries);
+    const folderCount = folderEntries.reduce(
+      (acc, entry) => acc + (Array.isArray(entry?.folders) ? entry.folders.length : 0),
+      0,
+    );
+
+    const totalSize =
+      emailsSize + contactsSize + eventsSize + foldersSize + attachmentsSize;
+
+    let quota: number | undefined;
+    let usage: number | undefined;
+    try {
+      if (navigator.storage?.estimate) {
+        const est = await navigator.storage.estimate();
+        quota = est.quota;
+        usage = est.usage;
+      }
+    } catch {
+      // ignore
+    }
+
+    const lastSync = (await db.get('meta', 'lastSync')) as string | undefined;
+
+    return {
+      emails: emails.length,
+      attachments,
+      attachmentsSize,
+      folders: folderCount,
+      contacts: contacts.length,
+      events: events.length,
+      totalSize,
+      quota,
+      usage,
+      lastSync: lastSync ?? null,
+    };
+  },
+
+  async clearAll() {
+    const db = await getDB();
+    const stores = ['emails', 'folders', 'contacts', 'events', 'meta'] as const;
+    await Promise.all(stores.map((s) => db.clear(s)));
   },
 };

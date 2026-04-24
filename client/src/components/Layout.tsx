@@ -8,6 +8,7 @@ import {
   Mail, Calendar, Users, Settings, Shield, Search, KeyRound,
   LogOut, Menu, Sun, Moon, Monitor, Check
 } from 'lucide-react';
+import CacheIndicator from './CacheIndicator';
 
 interface LayoutProps {
   children: ReactNode;
@@ -103,8 +104,10 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </form>
 
-        {/* User menu — avatar opens a dropdown with theme + logout */}
-        <div className="ml-auto relative" ref={userMenuRef}>
+        {/* Cache status indicator + user menu */}
+        <div className="ml-auto flex items-center gap-1">
+          <CacheIndicator />
+          <div className="relative" ref={userMenuRef}>
           <button
             onClick={() => setUserMenuOpen((v) => !v)}
             className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white text-sm font-semibold transition-colors"
@@ -170,6 +173,7 @@ export default function Layout({ children }: LayoutProps) {
               </button>
             </div>
           )}
+          </div>
         </div>
       </header>
 
