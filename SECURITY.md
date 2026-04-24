@@ -46,8 +46,13 @@ Si vous découvrez une faille de sécurité, **ne créez pas d'Issue publique**.
 |--------|--------|
 | Hachage des mots de passe | bcryptjs (10 rounds de salt) |
 | Sessions | express-session + connect-pg-simple (stockées en BDD) |
-| JWT | Tokens signés pour l'authentification API et PWA |
-| Expiration | Sessions limitées dans le temps |
+| Access tokens JWT | Courts (15 min), signés avec `JWT_SECRET` (fallback `SESSION_SECRET`) |
+| Refresh tokens | Aléatoires 256 bits, stockés hashés SHA-256, rotation à chaque usage |
+| Cookie refresh | `httpOnly`, `SameSite=Strict`, `Secure` en prod, scope `/api/auth`, TTL glissant 90 j |
+| Détection de rejeu | Un refresh token réutilisé révoque toute la chaîne du device |
+| Révocation à distance | Liste des appareils + déconnexion immédiate (vérif `isSessionActive` à chaque requête) |
+| 2FA WebAuthn (passkeys) | Touch ID / Face ID / Windows Hello en option (`webauthn_credentials`) |
+| Verrouillage local PWA | Déverrouillage biométrique après 7 j d'inactivité |
 | Premier utilisateur | Automatiquement administrateur |
 
 ### Chiffrement
@@ -108,7 +113,10 @@ Si vous découvrez une faille de sécurité, **ne créez pas d'Issue publique**.
 - [ ] Changer `SESSION_SECRET` (minimum 64 caractères aléatoires)
 - [ ] Changer `ENCRYPTION_KEY` (minimum 32 caractères aléatoires)
 - [ ] Changer `DB_PASSWORD` (mot de passe fort)
-- [ ] Activer HTTPS (via reverse proxy)
+- [ ] Définir `JWT_SECRET` (minimum 64 caractères aléatoires, distinct de `SESSION_SECRET`)
+- [ ] Définir `WEBAUTHN_RP_ID` et `WEBAUTHN_ORIGIN` au domaine public (sinon les passkeys sont rejetées)
+- [ ] Activer HTTPS (via reverse proxy) — requis pour les cookies `Secure` et WebAuthn
+- [ ] Ajouter `app.set('trust proxy', 1)` si derrière un reverse proxy (déjà prévu par défaut)
 - [ ] Ne pas exposer le port PostgreSQL (5432) publiquement
 
 ### Recommandé
@@ -128,6 +136,9 @@ openssl rand -hex 32
 
 # ENCRYPTION_KEY (32 caractères hex)
 openssl rand -hex 16
+
+# JWT_SECRET (64 caractères hex)
+openssl rand -hex 32
 
 # DB_PASSWORD
 openssl rand -base64 24

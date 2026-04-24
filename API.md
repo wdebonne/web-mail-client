@@ -71,21 +71,88 @@ Connexion avec email et mot de passe.
 }
 ```
 
-**Réponse 200 :**
+**Réponse 200 (compte sans passkey) :**
 ```json
 {
   "user": { "id": "uuid", "email": "...", "displayName": "...", "role": "user" },
   "token": "eyJhbGciOi..."
 }
 ```
+Un cookie `wm_refresh` (httpOnly, SameSite=Strict, scope `/api/auth`, TTL 90 j glissant) est également posé.
+
+**Réponse 200 (compte avec passkey enrôlée — 2FA obligatoire) :**
+```json
+{
+  "requires2FA": true,
+  "pendingToken": "eyJhbGciOi...",
+  "userId": "uuid"
+}
+```
+Aucun cookie n'est posé à ce stade. Le client doit poursuivre avec `/api/auth/webauthn/login/options` puis `/verify` en passant le `pendingToken` (validité 5 min).
 
 **Erreur 401 :** Identifiants invalides
 
 ### POST /api/auth/logout
 
-Déconnexion (supprime la session).
+Déconnexion — révoque le refresh token du device courant, détruit la session legacy et efface les cookies.
 
-**Réponse 200 :** `{ "message": "Déconnexion réussie" }`
+**Réponse 200 :** `{ "message": "Déconnecté" }`
+
+### POST /api/auth/refresh
+
+Rotation silencieuse du refresh token (appelée automatiquement par le client sur 401 et au boot).
+N'accepte aucun body ; le cookie `wm_refresh` suffit.
+
+**Réponse 200 :**
+```json
+{ "token": "eyJhbGciOi..." }
+```
+Un nouveau cookie `wm_refresh` est posé ; l'ancien est révoqué.
+
+**Erreurs 401 :**
+- `{ "code": "no_refresh" }` — cookie absent
+- `{ "code": "refresh_invalid" }` — cookie expiré ou déjà réutilisé (chaîne révoquée)
+
+### GET /api/auth/devices
+
+Liste les sessions actives de l'utilisateur (une ligne par appareil).
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "deviceName": "Chrome · Windows",
+    "userAgent": "Mozilla/5.0 ...",
+    "ipLastSeen": "203.0.113.42",
+    "createdAt": "2026-01-10T09:12:00Z",
+    "lastUsedAt": "2026-04-23T18:07:00Z",
+    "expiresAt": "2026-07-23T18:07:00Z",
+    "current": true
+  }
+]
+```
+
+### DELETE /api/auth/devices/:id
+
+Déconnecte à distance un appareil. L'access token courant de ce device devient invalide à la requête suivante (vérification serveur `isSessionActive`).
+
+**Réponse 200 :** `{ "success": true }`
+
+### WebAuthn / Passkeys
+
+Toutes les routes utilisent `@simplewebauthn/server`. Le challenge est émis par le serveur et consommé une seule fois.
+
+| Méthode | Route | Auth | Description |
+|---------|-------|------|-------------|
+| POST | `/api/auth/webauthn/register/options` | Bearer | Options d'enrôlement d'une nouvelle clé |
+| POST | `/api/auth/webauthn/register/verify` | Bearer | Finalise l'enrôlement. Body : `{ response, nickname? }` |
+| GET | `/api/auth/webauthn/credentials` | Bearer | Liste les passkeys enregistrées |
+| DELETE | `/api/auth/webauthn/credentials/:id` | Bearer | Supprime une passkey |
+| POST | `/api/auth/webauthn/login/options` | Public | Options du challenge 2FA. Body : `{ pendingToken }` |
+| POST | `/api/auth/webauthn/login/verify` | Public | Finalise le login 2FA. Body : `{ pendingToken, response }`. Émet le token + cookie refresh |
+| POST | `/api/auth/webauthn/unlock/options` | Bearer | Challenge de déverrouillage local PWA |
+| POST | `/api/auth/webauthn/unlock/verify` | Bearer | Finalise le déverrouillage. Body : `{ response }` |
 
 ### GET /api/auth/me
 

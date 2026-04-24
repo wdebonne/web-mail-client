@@ -9,6 +9,17 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Authentification — Rester connecté + biométrie
+
+- **Refresh token rotation par appareil** ([server/src/services/deviceSessions.ts](server/src/services/deviceSessions.ts)) : table `device_sessions` avec refresh tokens 256 bits hashés SHA-256, cookie `wm_refresh` `httpOnly` + `SameSite=Strict` + `Secure` en prod, scope `/api/auth`, TTL glissant 90 jours. Chaque rotation lie l'ancien au nouveau via `replaced_by` ; rejouer un token déjà révoqué révoque toute la chaîne (détection de vol).
+- **Access tokens courts** (15 min) signés avec `JWT_SECRET` (fallback `SESSION_SECRET`) et rafraîchis silencieusement côté client ([client/src/api/index.ts](client/src/api/index.ts)) : intercepteur 401 → `POST /api/auth/refresh` → retry unique. Résultat : plus de ressaisie d'identifiants au quotidien, jusqu'à 90 j d'inactivité par appareil.
+- **Page *Mes appareils*** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) : liste les sessions (navigateur, IP, dernière utilisation) et permet la **déconnexion à distance** via `DELETE /api/auth/devices/:id` (effet immédiat grâce à la vérification `isSessionActive` à chaque requête).
+- **WebAuthn / Passkeys** ([server/src/services/webauthn.ts](server/src/services/webauthn.ts)) : Touch ID, Face ID, Windows Hello. Deux usages :
+  - **2FA au login** — si l'utilisateur a enregistré ≥ 1 passkey, le mot de passe seul ne suffit plus ; le serveur émet un `pendingToken` JWT 5 min et exige une preuve biométrique avant d'émettre la session.
+  - **Déverrouillage local de la PWA** ([client/src/components/BiometricLock.tsx](client/src/components/BiometricLock.tsx)) — après 7 j d'inactivité, overlay plein écran qui demande une vérification biométrique sans retaper le mot de passe.
+- **Onglet *Sécurité*** dans les paramètres : enrôlement nominatif des clés, visualisation des passkeys synchronisées (iCloud / Google) vs liées à l'appareil (Windows Hello local), suppression.
+- **Nouvelles variables d'environnement** ([.env.example](.env.example)) : `JWT_SECRET`, `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_ORIGIN`.
+
 #### Partage de calendrier — Dialogue à onglets (Outlook-like)
 
 - **Nouvelle interface de partage à 3 onglets** ([client/src/components/calendar/ShareCalendarDialog.tsx](client/src/components/calendar/ShareCalendarDialog.tsx)) :
