@@ -272,8 +272,34 @@ calendarRouter.post('/:id/migrate', async (req: AuthRequest, res) => {
       const nc = await getUserClient(req.userId!);
       if (!nc) return res.status(400).json({ error: 'NextCloud n\'est pas configuré pour votre compte' });
 
-      // Create remote calendar
-      const ncUrl = await nc.createCalendar(cal.name, cal.color || '#0078D4');
+      // Prefer adopting an existing NC collection already known to the app
+      // (typically the user's default "Personnel" at /personal/). This way
+      // migrating "Mon calendrier" reuses that collection instead of creating
+      // a second NC calendar, and the old "Personnel" row is naturally
+      // merged away by the sibling sweep below. If the user has no NC
+      // calendar yet we fall back to creating a new one.
+      const ncExisting = await pool.query(
+        `SELECT id, caldav_url, name FROM calendars
+           WHERE user_id = $1
+             AND source = 'nextcloud'
+             AND caldav_url IS NOT NULL
+             AND id <> $2
+           ORDER BY (caldav_url LIKE '%/personal/%') DESC,
+                    (LOWER(name) IN ('personnel','personal','par défaut','default')) DESC,
+                    created_at ASC
+           LIMIT 1`,
+        [req.userId, cal.id]
+      );
+      let ncUrl: string;
+      if (ncExisting.rows.length > 0) {
+        ncUrl = ncExisting.rows[0].caldav_url as string;
+        // Rename the adopted NC collection so the user sees the migrated name
+        // reflected on NextCloud as well (non-fatal if NC refuses).
+        try { await nc.renameCalendar(ncUrl, cal.name, cal.color || '#0078D4'); }
+        catch (e: any) { logger.warn({ err: e?.message }, 'Migration: NC renameCalendar failed'); }
+      } else {
+        ncUrl = await nc.createCalendar(cal.name, cal.color || '#0078D4');
+      }
 
       // Push all events
       const events = await pool.query(
