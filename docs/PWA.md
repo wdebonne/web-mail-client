@@ -37,6 +37,52 @@ WebMail est une **Progressive Web App** (PWA) complète qui permet :
 
 ---
 
+## Cache local des dossiers et messages
+
+En complément du cache Workbox (réseau/assets), l'application entretient un **cache applicatif** dans IndexedDB qui pré-charge toute l'arborescence de vos boîtes mail pour rendre l'affichage instantané et permettre la consultation hors-ligne des messages déjà vus.
+
+### Fonctionnement
+
+- Démarré automatiquement ~4 secondes après la connexion (si le réseau est disponible), via [`syncAllCache()`](../client/src/services/cacheService.ts).
+- Parcourt chaque **compte mail** → chaque **dossier** (hors `\All` et `\Junk`) :
+  1. L'arborescence du compte est stockée dans la store IndexedDB `folders`.
+  2. La première page de chaque dossier est récupérée et les messages (sujet, expéditeur, date, snippet, métadonnées pièces jointes) sont stockés dans la store `emails`.
+- L'horodatage de la dernière synchro est persisté dans la store `meta` (clé `lastSync`).
+- Les **corps HTML complets** et les **octets de pièces jointes** ne sont pas pré-téléchargés — ils atterrissent en cache uniquement quand l'utilisateur ouvre le message / télécharge la pièce jointe.
+
+### Indicateur visuel
+
+Un anneau SVG circulaire est affiché dans la barre supérieure, juste à gauche de l'avatar ([`CacheIndicator.tsx`](../client/src/components/CacheIndicator.tsx)). Il reflète en direct :
+
+- l'**état** (repos / en cours / terminé / erreur) via une icône au centre ;
+- le **pourcentage** global (nombre de dossiers traités ÷ total) via le remplissage de l'anneau ;
+- au clic, un popover détaille l'action courante (`Dossier X — compte Y`), les compteurs `X / Y dossiers`, la date de dernière synchro et propose un bouton **Mettre à jour**.
+
+### Panneau Paramètres → Cache local
+
+[`CacheSettings.tsx`](../client/src/components/CacheSettings.tsx) expose :
+
+- 6 tuiles : e-mails, pièces jointes, dossiers, poids total cache, poids pièces jointes, dernière synchro ;
+- la **barre de quota navigateur** (`navigator.storage.estimate()`) — usage / quota disponible ;
+- un tableau détaillé par **compte × dossier** listant le nombre de messages en cache ;
+- trois actions : **Mettre à jour**, **Réinitialiser & reconstruire** (purge + resync), **Purger le cache** (confirmation en deux clics).
+
+### Store IndexedDB
+
+| Store       | Clé               | Contenu                                          |
+|-------------|-------------------|--------------------------------------------------|
+| `emails`    | `id` (composé)    | Messages (un par dossier)                        |
+| `folders`   | `accountId`       | Arborescence complète du compte                  |
+| `contacts`  | `id`              | Contacts synchronisés                            |
+| `events`    | `id`              | Événements calendrier                            |
+| `outbox`    | auto-increment    | Messages composés hors-ligne en attente d'envoi  |
+| `drafts`    | auto-increment    | Brouillons locaux                                |
+| `meta`      | clé libre         | `lastSync`, etc.                                 |
+
+La version du schéma est `DB_VERSION = 2` ([`offlineDB.ts`](../client/src/pwa/offlineDB.ts)) — la migration depuis la version 1 est transparente (les stores manquants sont ajoutés).
+
+---
+
 ## Service Worker
 
 ### Configuration (`client/src/pwa/register.ts`)

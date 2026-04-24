@@ -7,6 +7,20 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+#### Cache local des dossiers et messages
+
+- **Pré-chargement complet en IndexedDB** ([client/src/services/cacheService.ts](client/src/services/cacheService.ts), [client/src/pwa/offlineDB.ts](client/src/pwa/offlineDB.ts)) : au démarrage (4 s après l'ouverture de session, si en ligne), le client parcourt chaque compte → chaque dossier (hors `\All` / `\Junk`) et met en cache l'arborescence complète et la première page des messages (sujet, expéditeur, date, snippet, métadonnées pièces jointes) dans IndexedDB pour accélérer l'affichage et la consultation hors-ligne. Les corps complets et octets des pièces jointes restent téléchargés à la demande.
+- **Indicateur de progression dans la barre supérieure** ([client/src/components/CacheIndicator.tsx](client/src/components/CacheIndicator.tsx), [client/src/components/Layout.tsx](client/src/components/Layout.tsx)) : anneau SVG circulaire placé à gauche de l'avatar, indiquant en direct le pourcentage de mise en cache et l'état (`repos` / `en cours` / `terminé` / `erreur`). Un clic ouvre un popover listant l'action courante (« Dossier *Evelyne Berthy* — *fred@pro.com* »), la progression `X / Y dossiers traités`, l'horodatage de la dernière synchro et un bouton **Mettre à jour**.
+- **Onglet « Cache local » dans Paramètres** ([client/src/components/CacheSettings.tsx](client/src/components/CacheSettings.tsx), [client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) :
+  - 6 tuiles de statistiques : nombre d'e-mails, de pièces jointes, de dossiers, poids total du cache, poids des pièces jointes, date de dernière synchronisation.
+  - Barre d'utilisation du **quota navigateur** (via `navigator.storage.estimate()`) affichant `usage / quota`.
+  - Tableau détaillé par compte × dossier avec le nombre de messages mis en cache.
+  - Boutons **Mettre à jour**, **Réinitialiser & reconstruire** (purge puis resync) et **Purger le cache** (confirmation en deux clics).
+- **Store Zustand dédié** ([client/src/stores/cacheStore.ts](client/src/stores/cacheStore.ts)) : expose `isRunning`, `phase`, `progress`, `currentLabel`, `processedItems / totalItems`, `lastSyncAt`, `lastError`, `stats` à tous les composants observateurs.
+- **Nouvelles stores IndexedDB** : `folders` (arborescence par compte) et `meta` (horodatage `lastSync`). `DB_VERSION` passe de 1 à 2 — migration automatique transparente.
+
 ### Corrigé
 
 - **Liste des dossiers mail non scrollable** ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)) : la racine du `FolderPane` n'avait pas de hauteur explicite (`flex-shrink-0` sans `h-full`), donc la zone interne `flex-1 overflow-y-auto` ne se contraignait jamais et la barre de défilement n'apparaissait pas — les comptes avec beaucoup de dossiers (Outlook complet : Boîte de réception, sous-dossiers, Brouillons, Courrier indésirable, Archives, Calendrier, Contacts, Notes, Tâches, etc.) étaient tronqués. Ajout de `h-full min-h-0` sur le conteneur racine pour activer le scroll vertical.
