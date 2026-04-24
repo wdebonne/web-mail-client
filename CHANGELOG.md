@@ -9,6 +9,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Administration — Assistant de création de compte mail par fournisseur
+
+- **Sélecteur de fournisseur avant le formulaire** ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : au clic sur **+ Nouveau compte** dans *Administration → Comptes mail*, l'admin choisit d'abord le type de boîte (**Outlook / Microsoft 365**, **Gmail**, **Yahoo Mail**, **iCloud Mail**, **O2Switch**, ou **IMAP / SMTP (autre)**) avec logo et description, puis le formulaire s'adapte automatiquement :
+  - **Hôtes et ports pré-remplis et verrouillés** pour les fournisseurs publics (Outlook `outlook.office365.com:993` + `smtp.office365.com:587`, Gmail `imap.gmail.com:993` + `smtp.gmail.com:465`, Yahoo `imap.mail.yahoo.com:993` + `smtp.mail.yahoo.com:465`, iCloud `imap.mail.me.com:993` + `smtp.mail.me.com:587`) — champs serveur/port masqués, résumé affiché en lecture seule.
+  - **Identifiant automatique = adresse e-mail** pour les fournisseurs publics, champ `Identifiant` séparé uniquement pour le mode IMAP générique.
+  - **Bandeau d'avertissement contextuel** rappelant qu'un mot de passe d'application est nécessaire quand le MFA/2FA est actif (Google, Apple, Yahoo, Microsoft 365).
+  - **Couleur de compte pré-remplie** avec la couleur de marque du fournisseur (éditable ensuite).
+  - **Case « Synchronisation O2Switch (CalDAV + CardDAV) »** affichée uniquement pour le fournisseur O2Switch ; les autres fournisseurs n'envoient pas `o2switchAutoSync` au serveur.
+  - **Mode IMAP générique** = formulaire manuel complet identique à l'ancienne version pour tout autre hébergeur.
+  - **Édition d'un compte existant** : le fournisseur est détecté automatiquement depuis `imap_host`, le sélecteur est sauté et le formulaire s'ouvre directement sur les bons champs (un bouton retour ← permet néanmoins de changer de preset).
+- Aucune modification côté serveur — l'endpoint `POST /api/admin/mail-accounts` reçoit exactement les mêmes champs, seule la saisie est guidée.
+
 #### Administration — Gestion globale des appareils connectés
 
 - **Nouvel onglet admin *Appareils*** ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) qui liste toutes les sessions actives de l'instance groupées par utilisateur dans des cartes repliables (collapsed par défaut pour rester lisible avec beaucoup d'utilisateurs).

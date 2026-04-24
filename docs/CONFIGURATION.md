@@ -140,7 +140,22 @@ DEFAULT_SMTP_PORT=465
 
 ## Configuration des comptes mail
 
-Les comptes mail sont configurés par utilisateur via l'interface web : **Paramètres > Comptes mail**.
+Les comptes mail sont créés par l'administrateur via **Administration → Comptes mail → + Nouveau compte**, puis attribués aux utilisateurs.
+
+### Assistant par fournisseur
+
+Au clic sur **+ Nouveau compte**, un sélecteur affiche les fournisseurs pris en charge et pré-remplit automatiquement la configuration :
+
+| Fournisseur | IMAP | SMTP | Remarques |
+|-------------|------|------|-----------|
+| **Outlook / Microsoft 365** | `outlook.office365.com:993` | `smtp.office365.com:587` | Mot de passe d'application si MFA actif |
+| **Gmail** | `imap.gmail.com:993` | `smtp.gmail.com:465` | IMAP doit être activé ; mot de passe d'application requis |
+| **Yahoo Mail** | `imap.mail.yahoo.com:993` | `smtp.mail.yahoo.com:465` | Mot de passe d'application requis |
+| **iCloud Mail** | `imap.mail.me.com:993` | `smtp.mail.me.com:587` | Mot de passe d'application Apple ID requis |
+| **O2Switch** | saisie manuelle | saisie manuelle | Active la synchro CalDAV + CardDAV |
+| **IMAP / SMTP (autre)** | saisie manuelle | saisie manuelle | Configuration libre (OVH, Zoho, Fastmail…) |
+
+Pour les quatre premiers fournisseurs, les champs serveur et port sont masqués (résumé en lecture seule) et l'identifiant est automatiquement l'adresse e-mail. Seul le mot de passe (d'application si nécessaire) reste à saisir.
 
 ### Paramètres IMAP/SMTP pour o2switch
 
