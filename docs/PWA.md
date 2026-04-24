@@ -47,8 +47,21 @@ En complément du cache Workbox (réseau/assets), l'application entretient un **
 - Parcourt chaque **compte mail** → chaque **dossier** (hors `\All` et `\Junk`) :
   1. L'arborescence du compte est stockée dans la store IndexedDB `folders`.
   2. La première page de chaque dossier est récupérée et les messages (sujet, expéditeur, date, snippet, métadonnées pièces jointes) sont stockés dans la store `emails`.
-- L'horodatage de la dernière synchro est persisté dans la store `meta` (clé `lastSync`).
+- L'horodatage de la dernière synchro globale est persisté dans la store `meta` (clé `lastSync`).
 - Les **corps HTML complets** et les **octets de pièces jointes** ne sont pas pré-téléchargés — ils atterrissent en cache uniquement quand l'utilisateur ouvre le message / télécharge la pièce jointe.
+
+### Synchronisation incrémentale
+
+Pour éviter de retélécharger l'intégralité du cache à chaque rafraîchissement de page, le service conserve une empreinte par dossier (`meta` → clé `folder:<accountId>:<path>`) contenant `syncedAt` + un fingerprint basé sur la liste triée `uid:seen:flagged` des messages.
+
+| Situation                                             | Action côté client                                   |
+|-------------------------------------------------------|------------------------------------------------------|
+| Dossier synchronisé depuis moins de **10 min**        | Sauté (aucun appel réseau)                           |
+| Dossier plus ancien mais **empreinte identique**      | Date rafraîchie, aucune écriture IndexedDB           |
+| Dossier plus ancien avec **empreinte différente**     | Messages réécrits dans IndexedDB                     |
+| Appel manuel avec `syncAllCache({ force: true })`     | Toutes les fraîcheurs sont ignorées                  |
+
+La parallélisation est bornée à `FOLDER_CONCURRENCY = 4` dossiers simultanés. Le message de fin résume l'activité (*« Cache mis à jour — N actualisé(s), M inchangé(s) »* ou *« Cache déjà à jour »*).
 
 ### Indicateur visuel
 
