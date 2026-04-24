@@ -196,6 +196,10 @@ export default function MessageList({
   // coloured action backgrounds only for that row — idle rows stay clean so
   // the list remains readable.
   const [activeSwipeUid, setActiveSwipeUid] = useState<number | null>(null);
+  // Direction of the active swipe gesture. Outlook-style rendering shows a
+  // single full-width coloured strip matching the direction being swiped,
+  // with the action icon pinned near the edge that the row is leaving from.
+  const [activeSwipeDir, setActiveSwipeDir] = useState<'left' | 'right' | null>(null);
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => {
@@ -724,6 +728,11 @@ export default function MessageList({
                         dragMomentum: false,
                         dragConstraints: { left: 0, right: 0 },
                         onDragStart: () => setActiveSwipeUid(message.uid),
+                        onDrag: (_e: any, info: { offset: { x: number; y: number } }) => {
+                          const dx = info.offset.x;
+                          if (dx < -4) setActiveSwipeDir('left');
+                          else if (dx > 4) setActiveSwipeDir('right');
+                        },
                         onDragEnd: (_e: any, info: { offset: { x: number; y: number }; velocity: { x: number; y: number } }) => {
                           const dx = info.offset.x;
                           const vx = info.velocity.x;
@@ -746,6 +755,7 @@ export default function MessageList({
                           }
                           // Hide the coloured background once the row snaps back or exits.
                           setActiveSwipeUid((cur) => cur === message.uid ? null : cur);
+                          setActiveSwipeDir(null);
                         },
                       } : {})}
                       style={rowStyle}
@@ -994,29 +1004,22 @@ export default function MessageList({
                     return <div key={message.uid} style={{ display: 'contents' }}>{rowNode}</div>;
                   }
 
+                  // Outlook-style: show a single full-width coloured strip
+                  // that matches the current swipe direction. The icon is
+                  // pinned to the edge from which the row is being pulled —
+                  // swiping LEFT reveals the right edge (icon right), swiping
+                  // RIGHT reveals the left edge (icon left). During the exit
+                  // commit animation we keep showing the committed direction.
+                  const isActiveSwipe = activeSwipeUid === message.uid;
+                  const shownDir: 'left' | 'right' | null = committing ?? (isActiveSwipe ? activeSwipeDir : null);
+                  const shownMeta = shownDir === 'left' ? leftMeta : shownDir === 'right' ? rightMeta : null;
+
                   return (
                     <div key={message.uid} className="relative overflow-hidden select-none">
-                      {/* Background revealed ONLY while this row is being swiped
-                          (or during its exit animation after commit). Rendering
-                          it conditionally keeps idle rows clean and preserves
-                          the normal list readability. */}
-                      {(activeSwipeUid === message.uid || committing) && (
-                        <div className="absolute inset-0 flex pointer-events-none">
-                          <div className={`flex-1 flex items-center justify-start pl-5 ${rightMeta ? rightMeta.bg : 'bg-outlook-bg-primary/40'} ${rightMeta ? rightMeta.fg : 'text-outlook-text-disabled'}`}>
-                            {rightMeta ? (
-                              <div className="flex items-center gap-2 text-sm font-medium">
-                                {rightMeta.icon}
-                                <span>{rightMeta.label}</span>
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className={`flex-1 flex items-center justify-end pr-5 ${leftMeta ? leftMeta.bg : 'bg-outlook-bg-primary/40'} ${leftMeta ? leftMeta.fg : 'text-outlook-text-disabled'}`}>
-                            {leftMeta ? (
-                              <div className="flex items-center gap-2 text-sm font-medium">
-                                <span>{leftMeta.label}</span>
-                                {leftMeta.icon}
-                              </div>
-                            ) : null}
+                      {shownMeta && shownDir && (
+                        <div className={`absolute inset-0 flex items-center pointer-events-none ${shownMeta.bg} ${shownMeta.fg} ${shownDir === 'left' ? 'justify-end pr-6' : 'justify-start pl-6'}`}>
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            {shownMeta.icon}
                           </div>
                         </div>
                       )}
