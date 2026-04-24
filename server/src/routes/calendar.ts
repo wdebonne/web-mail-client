@@ -321,7 +321,7 @@ calendarRouter.post('/:id/migrate', async (req: AuthRequest, res) => {
         `SELECT id, name FROM calendars
           WHERE user_id = $1
             AND id <> $2
-            AND (caldav_url = $3 OR external_id = $3)`,
+            AND (caldav_url = $3::text OR external_id = $3::text)`,
         [req.userId, cal.id, ncUrl]
       );
       const mergedIds: string[] = [];
@@ -344,8 +344,8 @@ calendarRouter.post('/:id/migrate', async (req: AuthRequest, res) => {
 
       await pool.query(
         `UPDATE calendars
-            SET source = 'nextcloud', caldav_url = $1, nc_managed = true, nc_principal_url = $1,
-                external_id = $1, mail_account_id = NULL, updated_at = NOW()
+            SET source = 'nextcloud', caldav_url = $1::text, nc_managed = true, nc_principal_url = $1::text,
+                external_id = $1::text, mail_account_id = NULL, updated_at = NOW()
           WHERE id = $2`,
         [ncUrl, cal.id]
       );

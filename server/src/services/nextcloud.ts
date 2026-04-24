@@ -228,7 +228,7 @@ export class NextCloudService {
           `SELECT id, mail_account_id, source
              FROM calendars
             WHERE user_id = $1
-              AND (caldav_url = $2 OR external_id = $2)
+              AND (caldav_url = $2::text OR external_id = $2::text)
             ORDER BY (source = 'nextcloud') DESC, created_at ASC`,
           [userId, cal.href]
         );
@@ -246,8 +246,8 @@ export class NextCloudService {
                 SET name = $1,
                     color = $2,
                     source = 'nextcloud',
-                    caldav_url = $3,
-                    external_id = $3,
+                    caldav_url = $3::text,
+                    external_id = $3::text,
                     nc_managed = TRUE,
                     nc_principal_url = $4,
                     last_sync_at = NOW(),

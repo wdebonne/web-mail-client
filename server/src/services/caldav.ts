@@ -166,7 +166,7 @@ export class CalDAVService {
         `SELECT id, source, mail_account_id
            FROM calendars
           WHERE user_id = $1
-            AND (caldav_url = $2 OR external_id = $2)
+            AND (caldav_url = $2::text OR external_id = $2::text)
             AND (mail_account_id IS NULL OR mail_account_id = $3)
           ORDER BY (mail_account_id = $3) DESC, created_at ASC`,
         [userId, cal.href, mailAccountId]
@@ -178,8 +178,8 @@ export class CalDAVService {
         await pool.query(
           `UPDATE calendars
               SET mail_account_id = $1,
-                  caldav_url = $2,
-                  external_id = $3,
+                  caldav_url = $2::text,
+                  external_id = $3::text,
                   name = COALESCE(NULLIF($4,''), name),
                   color = COALESCE(color, $5),
                   updated_at = NOW()
@@ -208,8 +208,8 @@ export class CalDAVService {
           `UPDATE calendars
              SET mail_account_id = $1,
                  source = 'caldav',
-                 caldav_url = $2,
-                 external_id = $3,
+                 caldav_url = $2::text,
+                 external_id = $3::text,
                  color = COALESCE(color, $4),
                  updated_at = NOW()
            WHERE id = $5
