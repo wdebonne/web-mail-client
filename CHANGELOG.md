@@ -9,6 +9,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Préférence « Charger automatiquement tous les messages »
+
+- **Nouvelle option `mail.autoLoadAll`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts), [client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) : case à cocher dans **Paramètres → Messagerie** qui, lorsqu'elle est activée, force chaque dossier (et chaque vue unifiée) à enchaîner la pagination automatique dès son ouverture jusqu'à atteindre le dernier message — plafond technique de 500 pages (25 000 messages) par dossier. Désactivée par défaut, le comportement reste celui de la pagination manuelle via les boutons *Charger plus* / *Tout charger* au bas de la liste.
+- **Recherche locale étendue à toute la boîte mail** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : `loadAllActive` est désormais initialisé à partir de la préférence et n'est **plus remis à `false`** lors d'un changement de compte/dossier/vue tant que l'option globale est active. Le composant écoute l'événement `mail-auto-load-all-changed` (déclenché par `setAutoLoadAllEnabled`) ainsi que l'événement `storage` pour propager le réglage entre les onglets en temps réel.
+- **Synchronisée entre appareils** : la clé est ajoutée à `BACKUP_KEYS` ([client/src/utils/backup.ts](client/src/utils/backup.ts)), donc elle est exportée par le système de sauvegarde locale **et** poussée par la synchronisation cloud des préférences vers la table `user_preferences`. Activer l'option sur un PC l'active automatiquement sur le téléphone et la tablette.
+
 #### Synchronisation cloud des préférences entre appareils
 
 - **Nouvelle table `user_preferences`** ([server/src/database/connection.ts](server/src/database/connection.ts)) : un magasin clé/valeur par utilisateur (`UUID user_id`, `VARCHAR(255) key`, `TEXT value`, `TIMESTAMPTZ updated_at`) avec clé primaire composite et index sur `user_id`. Stocke les personnalisations d'interface synchronisables.

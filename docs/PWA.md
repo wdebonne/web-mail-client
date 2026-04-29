@@ -557,6 +557,7 @@ Uniquement des **préférences d'affichage et d'organisation** — jamais le con
 - Thème clair/sombre (`theme.mode`)
 - Signatures, catégories et couleurs (`mail.signatures.v1`, `mail.categories`)
 - Préférences de balayage et confirmations (`mail.swipePrefs`, `mail.deleteConfirmEnabled`)
+- Chargement automatique de tous les messages (`mail.autoLoadAll`)
 - Préférences calendrier et de mise en page
 
 ### Comment ça marche ?
