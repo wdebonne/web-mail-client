@@ -7,7 +7,39 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+#### Vue Agenda dans le calendrier
+
+- **Nouvelle vue « Agenda »** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx), [client/src/components/calendar/CalendarRibbon.tsx](client/src/components/calendar/CalendarRibbon.tsx)) : liste plate de tous les événements groupés par jour, à la manière d'Outlook Mobile. Chaque jour affiche un en-tête (`mardi 25 avril`) — coloré en bleu si c'est aujourd'hui — suivi de ses événements triés (les *Toute la journée* en premier, puis chronologiquement). Pastille colorée du calendrier, heure de début, titre et lieu. Accessible depuis tous les rubans (simplifié + classique, onglets *Accueil* et *Afficher*) et le menu *Vues enregistrées*.
+- **Plage de chargement adaptée** : la vue Agenda charge automatiquement `currentDate − 1 mois` à `+ 2 mois` afin de couvrir le passé récent et les prochaines semaines en une seule requête. La navigation `<` `>` se fait par mois.
+- **Disponible aussi sur mobile** : contrairement aux autres vues qui sont forcées en *Jour* sur petits écrans, la vue Agenda reste utilisable telle quelle (idéale pour un usage tablette / téléphone).
+- État vide explicite avec bouton *Créer un nouvel événement*.
+
+#### Bouton flottant (FAB) sur mobile et tablette
+
+- **Nouveau composant réutilisable** [client/src/components/ui/FloatingActionButton.tsx](client/src/components/ui/FloatingActionButton.tsx) : bouton circulaire `bg-outlook-blue` (icône + label accessible), rendu uniquement en `md:hidden` (mobile/tablette) et masqué automatiquement sur desktop où le ruban suffit.
+- **Branché sur la page Messagerie** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : ouvre la fenêtre de composition (`openCompose()`). Masqué pendant qu'un brouillon est ouvert pour éviter le chevauchement.
+- **Branché sur la page Calendrier** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : ouvre le formulaire *Nouvel événement* pré-rempli sur la date courante.
+
+#### Préférence « Position du bouton flottant » (9 emplacements)
+
+- **Nouvelle clé `ui.fabPosition`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : 9 positions possibles (haut/milieu/bas × gauche/centre/droite) avec validation et événement `fab-position-changed` pour la mise à jour en temps réel sur toutes les pages ouvertes. Valeur par défaut : `bottom-right`.
+- **Sélecteur visuel dans Paramètres → Apparence** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) : grille radio 3×3 montrant l'emplacement actuel d'un coup d'œil ; clic = sauvegarde immédiate avec toast de confirmation et libellé en clair (« Bas droite », « Milieu centre »…).
+- **Synchronisée entre appareils** : la clé est ajoutée à `BACKUP_KEYS` ([client/src/utils/backup.ts](client/src/utils/backup.ts)) — elle est sauvegardée localement et synchronisée vers `user_preferences` côté serveur, ce qui permet à un utilisateur droitier de retrouver son FAB en bas à droite sur tous ses terminaux.
+
+#### Personnalisation de la couleur des comptes (boîtes mail)
+
+- **Nouvelle clé `mail.accountColors`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : surcharge utilisateur de la couleur d'un compte ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)). Helpers `getAccountColor`, `setAccountColorOverride` (avec validation hex `#RRGGBB`), surcharge non-destructive de la couleur fournie par le serveur (`account.color`).
+- **Menu contextuel sur le compte** : nouveau sous-menu *Couleur de la boîte mail* avec les 24 couleurs Outlook standard (`CATEGORY_COLORS`) plus *Réinitialiser la couleur*, identique à ce qui existe déjà pour les dossiers.
+- Toutes les pastilles de couleur du compte (en-tête, dossier dépliable, bouton compact) lisent désormais via `getAccountColor(account)` pour refléter immédiatement la surcharge.
+- **Synchronisée entre appareils** via `BACKUP_KEYS`.
+
 ### Corrigé
+
+#### Mise en cache non-bloquante à l'ouverture des dossiers
+
+- **L'ouverture d'un dossier ne bloque plus l'affichage le temps de remplir le cache** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : `offlineDB.cacheEmails(...)` était appelé avec `await` dans la `queryFn` et dans `handleLoadMore`, ce qui faisait attendre l'écriture IndexedDB (potentiellement plusieurs centaines de messages déjà connus à chaque ouverture) avant de rendre la liste. La mise en cache est désormais *fire-and-forget* (`void offlineDB.cacheEmails(...).catch(() => {})`) — la liste s'affiche dès que les données réseau sont là, et l'écriture du cache se fait en arrière-plan sans impacter le temps perçu d'ouverture.
 
 #### Liste des messages — sélection multiple et dossiers d'envoi
 

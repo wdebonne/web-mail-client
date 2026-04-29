@@ -36,6 +36,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - ✍️ **Signatures multiples (style Outlook Web)** : création / édition / suppression de plusieurs signatures HTML depuis l'onglet **Insérer → Signature** du ruban de rédaction. Choix d'une **valeur par défaut pour les nouveaux messages** et d'une autre pour les **réponses et transferts**, avec possibilité de **surcharger ces défauts par boîte mail** (signature A pour `compte1@…`, signature B pour `compte2@…`). Insertion automatique à l'ouverture du compose, insertion ponctuelle via le menu déroulant. Éditeur WYSIWYG dédié (gras, italique, souligné, barré, couleurs, listes, alignements, liens, **images téléversées depuis l'ordinateur** — embarquées en data URI). Stockage local (`localStorage`), jamais envoyé au serveur.
 - 🖼️ **Images locales dans les mails** : le bouton *Image* du ruban et de la barre d'outils compose ouvre un sélecteur de fichier natif, l'image choisie est embarquée inline dans le HTML du message (data URI, 5 Mo max). Une fois insérée, **cliquez sur l'image** dans l'éditeur pour la redimensionner (poignée d'angle) et accéder à une barre flottante : alignement gauche / centre / droite, largeur 25 / 50 / 75 / 100 %, taille d'origine, suppression — identique dans l'éditeur de signature.
 - 📱 Interface responsive (navigation mobile adaptative) : sur mobile et tablette, cliquer sur un dossier referme automatiquement le panneau latéral et affiche la liste des messages en plein écran — plus besoin de masquer manuellement le panneau.
+- ➕ **Bouton flottant (FAB) sur mobile et tablette** : un bouton circulaire « Nouveau message » (page Messagerie) et « Nouvel événement » (page Calendrier) apparaît automatiquement sur petit écran pour une prise en main à une main. **9 positions configurables** (haut/milieu/bas × gauche/centre/droite) dans **Paramètres → Apparence → Position du bouton flottant** — synchronisée entre appareils.
 - 👉 **Gestes de balayage sur mobile et tablette** : glissez un e-mail vers la **gauche** (Archiver par défaut) ou vers la **droite** (Corbeille par défaut) pour une action rapide à une main. Chaque direction est configurable indépendamment (Archiver, Corbeille, Déplacer, Copier, Drapeau, Lu/Non lu). Pour *Déplacer* / *Copier*, un **dossier par défaut par compte** peut être défini (avec création possible d'un dossier « À trier » depuis le sélecteur). La confirmation avant mise en corbeille peut être désactivée pour un nettoyage éclair. Réglages dans **Paramètres → Messagerie → Balayage**.
 
 ### Interface Outlook Web
@@ -46,6 +47,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
   - Épinglage de n'importe quel dossier via menu contextuel
   - **Réorganisation par glisser-déposer** des dossiers épinglés (les vues unifiées restent fixes en haut)
   - Gestion des comptes inclus depuis le bouton **Boîtes favoris** du ruban (onglet Afficher)
+- 🎨 **Couleur personnalisée par compte** : clic droit sur une boîte mail → *Couleur de la boîte mail* propose la même palette de 24 couleurs Outlook que les dossiers, plus *Réinitialiser la couleur*. Synchronisée entre appareils.
 - 📑 Système d'onglets multi-messages/brouillons (2 modes : brouillons uniquement / tous les mails ouverts)
 - 🔢 Nombre max d'onglets paramétrable (2-20)
 - 🪟 **Vue côte à côte** : clic droit sur un onglet → « Afficher côte à côte », deux messages ouverts en parallèle avec poignée centrale redimensionnable (15 %–85 %)
@@ -76,6 +78,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 
 ### Calendrier
 - 📅 Vue mois/semaine/jour
+- 📋 **Vue Agenda** : liste plate de tous les événements groupés par jour (style Outlook Mobile), idéale sur mobile/tablette pour parcourir rapidement les prochains rendez-vous. Pastille colorée du calendrier, heure de début, titre et lieu.
 - 🎨 Calendriers multiples avec couleurs
 - 📤 Calendriers partagés
 - 👥 Participants aux événements
