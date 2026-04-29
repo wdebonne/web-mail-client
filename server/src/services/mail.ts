@@ -64,11 +64,33 @@ export class MailService {
           accessToken: this.account.access_token,
         }
       : { user: this.account.username, pass: this.account.password };
+
+    // Reconcile the (port, secure) pair to avoid the classic SSL handshake
+    // error "wrong version number" produced by nodemailer when the wrong
+    // mode is forced on a given port:
+    //   - port 465 → implicit TLS (secure=true), MUST NOT use STARTTLS.
+    //   - port 587 / 25 / 2525 → STARTTLS (secure=false + requireTLS=true).
+    // Anything else falls back to the user-provided `smtp_secure` flag.
+    const port = Number(this.account.smtp_port) || 587;
+    const userSecure = this.account.smtp_secure;
+    let secure: boolean;
+    let requireTLS: boolean;
+    if (port === 465) {
+      secure = true;
+      requireTLS = false;
+    } else if (port === 587 || port === 25 || port === 2525) {
+      secure = false;
+      requireTLS = true;
+    } else {
+      secure = userSecure;
+      requireTLS = !userSecure;
+    }
+
     return nodemailer.createTransport({
       host: this.account.smtp_host,
-      port: this.account.smtp_port,
-      secure: this.account.smtp_secure,
-      requireTLS: !this.account.smtp_secure,
+      port,
+      secure,
+      requireTLS,
       auth,
     });
   }
