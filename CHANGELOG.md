@@ -7,6 +7,25 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Corrigé
+
+#### Liste des messages — sélection multiple et dossiers d'envoi
+
+- **Sélection multiple en vue unifiée** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : la sélection était indexée par `uid` seul, or un même UID peut exister dans plusieurs comptes/dossiers à la fois (vues *Boîte de réception unifiée* et *Éléments envoyés unifiés*). Cocher une ligne cochait toutes les lignes ayant le même `uid`, ce qui ressemblait à des doublons. La sélection utilise désormais une clé composite `accountId:folder:uid` (`Set<string>`) — chaque ligne est indépendante.
+- **Affichage du destinataire dans les Éléments envoyés** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : pour un mail envoyé, le champ `from` correspond à l'utilisateur lui-même, ce qui affichait *Inconnu / ?* dans la liste. Un helper `isSentLikeFolder` détecte les dossiers de type Sent (multilingue : `Sent`, `Sent Items`, `Éléments envoyés`, `Gesendet`, `Enviado`, `Inviata`, `Verzonden`, `Skickat`) et la liste affiche alors le **destinataire** (`to[0]`) — nom, initiales et couleur d'avatar — comme Outlook. S'applique aussi au dossier unifié `Sent`.
+
+#### Vues unifiées — chargement bloqué avec « Tout charger »
+
+- **Boîte de réception unifiée qui « tourne en boucle »** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : avec la préférence globale *autoLoadAll* activée, la `queryFn` unifiée bouclait jusqu'à 500 pages × N comptes **avant** de rendre quoi que ce soit. React Query ne pouvait restituer aucun résultat tant que la promesse n'était pas résolue, d'où le squelette permanent ; passer dans un autre dossier laissait la tâche se terminer en arrière-plan, faisant croire que le retour « réparait » la liste.
+  - La queryFn unifiée ne récupère désormais **que la 1re page par compte** (résolution rapide, l'utilisateur voit ses messages dans la seconde).
+  - Un nouvel effet *progressif* charge ensuite les pages 2..N en arrière-plan et les fusionne dans le cache via `queryClient.setQueryData(['virtual-messages', …], …)` avec déduplication par `accountId:folder:uid` et tri par date conservé. La liste s'allonge au fil du temps sans bloquer le rendu.
+  - `loadAllActive` retiré de la queryKey unifiée → plus de refetch complet quand on bascule l'option, et le cache reste valide d'un mode à l'autre.
+  - Annotation `_virtualTotal` portée sur chaque message pour détecter quand un compte a fini de tout charger et arrêter la boucle proprement.
+
+#### Mobile / tablette — navigation panneau de dossiers ↔ liste
+
+- **Le panneau des dossiers se referme automatiquement au clic sur un dossier** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : sur mobile (< 768 px) la vue bascule sur la liste comme avant, et sur tablette (< 1280 px) le panneau latéral se replie pour donner toute la largeur à la liste de messages. Plus besoin de cliquer manuellement sur l'icône *Masquer le panneau*. Un nouvel effet réagit aux changements de `selectedFolder`, `virtualFolder` et `selectedAccount` pour couvrir aussi les favoris (FAVORIS → Boîte de réception) et les boîtes unifiées qui appellent `selectVirtualFolder` directement dans le store. Le comportement desktop (≥ 1280 px) reste inchangé.
+
 ### Ajouté
 
 #### Préférence « Charger automatiquement tous les messages »
