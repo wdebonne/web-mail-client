@@ -58,7 +58,7 @@ export async function initDatabase() {
       -- (folder/account custom names, ordering, colors, calendar prefs,
       --  signatures, swipe prefs, theme, layout, etc.).
       -- Each row is keyed by (user_id, key); the client synchronises values
-      -- using last-write-wins on `updated_at`.
+      -- using last-write-wins on the updated_at timestamp.
       CREATE TABLE IF NOT EXISTS user_preferences (
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         key VARCHAR(255) NOT NULL,
