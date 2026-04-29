@@ -25,6 +25,34 @@ type SortOrder = 'asc' | 'desc';
 type FilterType = 'all' | 'unread' | 'flagged' | 'attachments' | 'tome';
 type DateFilter = 'all' | 'today' | 'yesterday' | 'lastweek' | 'lastmonth' | 'lastyear' | 'custom';
 
+// Detects sent-like folders (Sent, Sent Items, Éléments envoyés, INBOX/Sent, etc.)
+// so the list can show the recipient instead of the sender.
+function isSentLikeFolder(folder?: string | null): boolean {
+  if (!folder) return false;
+  const last = folder.split(/[\/.]/).pop() || folder;
+  return /sent|envoy|gesendet|enviado|inviata|verzonden|skickat/i.test(last);
+}
+
+// Returns the contact to display in the message-list row: the sender for inbox-like
+// folders, the first recipient for sent-like folders. Falls back to the original
+// from address when no recipient is available.
+function getDisplayContact(message: Email, folder?: string | null): { name?: string; address?: string } {
+  const messageFolder = (message as any)._folder || folder;
+  if (isSentLikeFolder(messageFolder)) {
+    const to = message.to && message.to.length > 0 ? message.to[0] : null;
+    if (to && (to.name || to.address)) return { name: to.name || undefined, address: to.address || undefined };
+  }
+  return { name: message.from?.name || undefined, address: message.from?.address || undefined };
+}
+
+// Stable composite key used for multi-selection — prevents the same uid in two
+// different accounts/folders (unified views) from sharing checked state.
+function selectionKey(message: Email, fallbackFolder?: string | null): string {
+  const acc = (message as any)._accountId || '';
+  const fld = (message as any)._folder || fallbackFolder || '';
+  return `${acc}:${fld}:${message.uid}`;
+}
+
 // Visual metadata for the swipe action backgrounds (icon, label, colour).
 function swipeActionMeta(action: SwipeAction): { label: string; icon: JSX.Element; bg: string; fg: string } | null {
   switch (action) {
@@ -163,7 +191,8 @@ export default function MessageList({
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [customDate, setCustomDate] = useState('');
   const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedUids, setSelectedUids] = useState<Set<number>>(new Set());
+  // Composite keys (accountId:folder:uid) so unified views can't share selection.
+  const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
   const attachmentMinVisibleBytes = Math.max(0, attachmentMinVisibleKb) * 1024;
 
   // Categories — subscribe to changes so badges & tint refresh live.
@@ -227,10 +256,10 @@ export default function MessageList({
     });
   };
 
-  const toggleSelection = (uid: number) => {
+  const toggleSelection = (key: string) => {
     setSelectedUids(prev => {
       const next = new Set(prev);
-      next.has(uid) ? next.delete(uid) : next.add(uid);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   };
@@ -692,7 +721,9 @@ export default function MessageList({
                     && (selectedMessage._accountId || '') === (message._accountId || '')
                     && (selectedMessage._folder || '') === (message._folder || '');
                   const isUnread = !message.flags?.seen;
-                  const isChecked = selectedUids.has(message.uid);
+                  const rowKey = selectionKey(message, folder);
+                  const isChecked = selectedUids.has(rowKey);
+                  const displayContact = getDisplayContact(message, folder);
                   const isWide = listDisplayMode === 'wide'
                     ? true
                     : listDisplayMode === 'compact'
@@ -722,7 +753,7 @@ export default function MessageList({
                       transition={{ duration: 0.15, delay: Math.min(msgIndex * 0.02, 0.3), ease: 'easeOut' }}
                       onClick={() => {
                         if (selectionMode) {
-                          toggleSelection(message.uid);
+                          toggleSelection(rowKey);
                         } else {
                           onSelectMessage(message);
                         }
@@ -807,7 +838,7 @@ export default function MessageList({
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={() => toggleSelection(message.uid)}
+                            onChange={() => toggleSelection(rowKey)}
                             className="w-4 h-4 rounded border-gray-300 text-outlook-blue focus:ring-outlook-blue cursor-pointer"
                             onClick={e => e.stopPropagation()}
                           />
@@ -815,18 +846,18 @@ export default function MessageList({
                       ) : (
                         <div
                           className={`rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0 ${isWide ? 'w-7 h-7 text-2xs' : 'w-10 h-10 text-xs mt-0.5'}`}
-                          style={{ backgroundColor: getAvatarColor(message.from?.name, message.from?.address) }}
+                          style={{ backgroundColor: getAvatarColor(displayContact.name, displayContact.address) }}
                         >
-                          {getInitials(message.from?.name, message.from?.address)}
+                          {getInitials(displayContact.name, displayContact.address)}
                         </div>
                       )}
 
                       {isWide ? (
                         /* ===== Wide mode: single-line row with columns ===== */
                         <>
-                          {/* From */}
+                          {/* From or recipient (in sent-like folders) */}
                           <span className={`w-28 flex-shrink-0 text-xs truncate ${isUnread ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
-                            {message.from?.name || message.from?.address || 'Inconnu'}
+                            {displayContact.name || displayContact.address || 'Inconnu'}
                           </span>
 
                           {/* Subject + snippet */}
@@ -913,7 +944,7 @@ export default function MessageList({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 min-h-[22px]">
                             <span className={`text-sm truncate ${isUnread ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}>
-                              {message.from?.name || message.from?.address || 'Inconnu'}
+                              {displayContact.name || displayContact.address || 'Inconnu'}
                             </span>
 
                             {/* Date — shown normally, hidden on hover */}
