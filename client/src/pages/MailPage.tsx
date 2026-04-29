@@ -190,11 +190,13 @@ export default function MailPage() {
   }, []);
   const { data: messagesData, isLoading: loadingMessages } = useQuery({
     queryKey: virtualFolder
-      ? ['virtual-messages', virtualFolder, prefsVersion, accounts.map((a) => a.id).join(','), loadAllActive ? 'all' : 'first']
+      ? ['virtual-messages', virtualFolder, prefsVersion, accounts.map((a) => a.id).join(',')]
       : ['messages', selectedAccount?.id, selectedFolder],
     queryFn: async () => {
       if (virtualFolder) {
-        // Aggregate across all accounts included in unified views
+        // Aggregate the FIRST page for each included account so the user sees
+        // results within seconds. Additional pages are fetched progressively
+        // by a separate effect (see below) when "Tout charger" is active.
         const unifiedIds = getUnifiedAccountIds();
         const included = accounts.filter((a) =>
           !unifiedIds.length ? true : unifiedIds.includes(a.id),
@@ -214,27 +216,14 @@ export default function MailPage() {
                 virtualFolder === 'unified-inbox'
                   ? findInboxFolderPath(accFolders)
                   : findSentFolderPath(accFolders);
-              if (!target) return [];
-              // Fetch the first page; if "Tout charger" is active, keep paging
-              // through this account's folder until every message has been retrieved.
-              const aggregated: any[] = [];
-              let page = 1;
-              // Safety cap to avoid runaway loops on huge mailboxes.
-              const MAX_PAGES = loadAllActive ? 500 : 1;
-              while (page <= MAX_PAGES) {
-                const res = await api.getMessages(acct.id, target, page);
-                const batch = res.messages || [];
-                for (const m of batch) {
-                  aggregated.push({ ...m, _accountId: acct.id, _folder: target });
-                }
-                const total = res.total ?? 0;
-                if (!loadAllActive) break;
-                if (aggregated.length >= total || batch.length === 0) break;
-                page += 1;
-              }
-              return aggregated;
+              if (!target) return [] as any[];
+              const res = await api.getMessages(acct.id, target, 1);
+              return (res.messages || []).map((m: any) => ({
+                ...m, _accountId: acct.id, _folder: target,
+                _virtualTotal: res.total ?? 0,
+              }));
             } catch {
-              return [];
+              return [] as any[];
             }
           }),
         );
@@ -359,6 +348,73 @@ export default function MailPage() {
     }
     handleLoadMore();
   }, [loadAllActive, virtualFolder, loadingMessages, loadingMore, hasMoreMessages, handleLoadMore]);
+
+  // Progressive unified-view paginator: when on a unified folder with
+  // "Tout charger" active, fetch page 2..N for each account and merge the
+  // results into the cached query data so the message list grows without
+  // blocking the initial render.
+  useEffect(() => {
+    if (!loadAllActive || !virtualFolder) return;
+    const unifiedIds = getUnifiedAccountIds();
+    const included = accounts.filter((a) =>
+      !unifiedIds.length ? true : unifiedIds.includes(a.id),
+    );
+    if (!included.length) return;
+    const queryKey = ['virtual-messages', virtualFolder, prefsVersion, accounts.map((a) => a.id).join(',')];
+    let cancelled = false;
+    (async () => {
+      for (const acct of included) {
+        if (cancelled) return;
+        try {
+          const accFolders: MailFolder[] =
+            queryClient.getQueryData<MailFolder[]>(['folders', acct.id]) || [];
+          const target =
+            virtualFolder === 'unified-inbox'
+              ? findInboxFolderPath(accFolders)
+              : findSentFolderPath(accFolders);
+          if (!target) continue;
+          // We already fetched page 1 in queryFn — start at page 2.
+          let page = 2;
+          const MAX_PAGES = 500;
+          while (page <= MAX_PAGES) {
+            if (cancelled) return;
+            const current = queryClient.getQueryData<any>(queryKey);
+            const haveForAccount = (current?.messages || []).filter(
+              (m: any) => m._accountId === acct.id && m._folder === target,
+            ).length;
+            const totalForAccount = (current?.messages || []).find(
+              (m: any) => m._accountId === acct.id && m._folder === target,
+            )?._virtualTotal ?? 0;
+            if (totalForAccount && haveForAccount >= totalForAccount) break;
+            const res = await api.getMessages(acct.id, target, page);
+            const batch = res.messages || [];
+            if (!batch.length) break;
+            const tagged = batch.map((m: any) => ({
+              ...m, _accountId: acct.id, _folder: target,
+              _virtualTotal: res.total ?? totalForAccount,
+            }));
+            queryClient.setQueryData<any>(queryKey, (old: any) => {
+              const prev: any[] = old?.messages || [];
+              const seen = new Set(prev.map((m: any) => `${m._accountId}:${m._folder}:${m.uid}`));
+              const merged = [...prev];
+              for (const m of tagged) {
+                const key = `${m._accountId}:${m._folder}:${m.uid}`;
+                if (!seen.has(key)) { seen.add(key); merged.push(m); }
+              }
+              merged.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+              return { messages: merged, total: merged.length, page: 1 };
+            });
+            page += 1;
+          }
+        } catch {
+          /* ignore — keep paging next account */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadAllActive, virtualFolder, prefsVersion, accounts.length]);
 
   // Mark as read mutation
   const markReadMutation = useMutation({
@@ -1133,11 +1189,28 @@ export default function MailPage() {
     document.addEventListener('mouseup', onMouseUp);
   }, []);
 
-  // When selecting a folder on mobile, switch to list view
+  // When selecting a folder on mobile, switch to list view. On tablet
+  // (md..lg, where the folder pane is shown alongside the message list),
+  // also collapse the folder pane so the message list gets the full width.
   const handleSelectFolder = (folder: string) => {
     selectFolder(folder);
     setMobileView('list');
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+      setShowFolderPane(false);
+    }
   };
+
+  // Mirror the mobile/tablet auto-collapse behaviour for folder/virtual-folder
+  // selections triggered from inside FolderPane (favorites + unified pseudo
+  // entries call selectVirtualFolder / selectFolder on the store directly).
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setMobileView('list');
+    }
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+      setShowFolderPane(false);
+    }
+  }, [selectedFolder, virtualFolder, selectedAccount?.id]);
 
   // Clear split pairing if that tab is closed.
   useEffect(() => {
@@ -1172,6 +1245,9 @@ export default function MailPage() {
     }
     selectFolder(folder);
     setMobileView('list');
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+      setShowFolderPane(false);
+    }
   }, [selectedAccount, selectAccount, selectFolder]);
 
   // When selecting a message on mobile, switch to message view
