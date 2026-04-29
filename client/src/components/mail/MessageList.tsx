@@ -44,18 +44,18 @@ interface MessageListProps {
   selectedMessage: Email | null;
   loading: boolean;
   onSelectMessage: (message: Email) => void;
-  onToggleFlag: (uid: number, flagged: boolean) => void;
-  onDelete: (uid: number) => void;
+  onToggleFlag: (uid: number, flagged: boolean, accountId?: string, folder?: string) => void;
+  onDelete: (uid: number, accountId?: string, folder?: string) => void;
   folder: string;
   draggable?: boolean;
   onReply?: (message: Email) => void;
   onReplyAll?: (message: Email) => void;
   onForward?: (message: Email) => void;
-  onMarkRead?: (uid: number, isRead: boolean) => void;
-  onMove?: (uid: number, toFolder: string) => void;
-  onCopy?: (uid: number, toFolder: string) => void;
+  onMarkRead?: (uid: number, isRead: boolean, accountId?: string, folder?: string) => void;
+  onMove?: (uid: number, toFolder: string, accountId?: string, folder?: string) => void;
+  onCopy?: (uid: number, toFolder: string, accountId?: string, folder?: string) => void;
   /** Archive a message into the configured dated archive folder tree. */
-  onArchive?: (uid: number) => void;
+  onArchive?: (uid: number, accountId?: string, folder?: string) => void;
   folders?: MailFolder[];
   onToggleFolderPane?: () => void;
   showFolderPane?: boolean;
@@ -82,7 +82,17 @@ interface MessageListProps {
   /** Action triggered when swiping a row to the right. */
   swipeRightAction?: SwipeAction;
   /** Called when a row is fully swiped past the threshold. Parent resolves the action. */
-  onSwipe?: (uid: number, direction: 'left' | 'right') => void;
+  onSwipe?: (uid: number, direction: 'left' | 'right', accountId?: string, folder?: string) => void;
+  /** When true, more messages can be fetched from the server (paginated). */
+  hasMore?: boolean;
+  /** True while a "load more" request is in flight. */
+  loadingMore?: boolean;
+  /** Called when the user clicks the "Charger plus" button at the end of the list. */
+  onLoadMore?: () => void;
+  /** True when the auto-load-everything mode is active. */
+  loadAllActive?: boolean;
+  /** Toggles the auto-load-everything mode. */
+  onToggleLoadAll?: () => void;
 }
 
 interface MessageGroup {
@@ -128,6 +138,11 @@ export default function MessageList({
   swipeLeftAction = 'archive',
   swipeRightAction = 'trash',
   onSwipe,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+  loadAllActive = false,
+  onToggleLoadAll,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -669,7 +684,10 @@ export default function MessageList({
                   const message = item.msg;
                   const isThreadRoot = item.role === 'root';
                   const isThreadChild = item.role === 'child';
-                  const isSelected = selectedMessage?.uid === message.uid;
+                  const isSelected = !!selectedMessage
+                    && selectedMessage.uid === message.uid
+                    && (selectedMessage._accountId || '') === (message._accountId || '')
+                    && (selectedMessage._folder || '') === (message._folder || '');
                   const isUnread = !message.flags?.seen;
                   const isChecked = selectedUids.has(message.uid);
                   const isWide = listDisplayMode === 'wide'
@@ -743,13 +761,13 @@ export default function MessageList({
                             setCommittingSwipe({ uid: message.uid, dir: 'left' });
                             // Give the exit animation a moment before delegating.
                             setTimeout(() => {
-                              onSwipe?.(message.uid, 'left');
+                              onSwipe?.(message.uid, 'left', message._accountId, message._folder);
                               setCommittingSwipe((cur) => cur?.uid === message.uid ? null : cur);
                             }, 160);
                           } else if ((dx >= threshold || (fastFlick && dx > 0)) && rightMeta) {
                             setCommittingSwipe({ uid: message.uid, dir: 'right' });
                             setTimeout(() => {
-                              onSwipe?.(message.uid, 'right');
+                              onSwipe?.(message.uid, 'right', message._accountId, message._folder);
                               setCommittingSwipe((cur) => cur?.uid === message.uid ? null : cur);
                             }, 160);
                           }
@@ -864,7 +882,7 @@ export default function MessageList({
                           <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
                             {onMarkRead && (
                               <button
-                                onClick={(e) => { e.stopPropagation(); onMarkRead(message.uid, !message.flags?.seen); }}
+                                onClick={(e) => { e.stopPropagation(); onMarkRead(message.uid, !message.flags?.seen, message._accountId, message._folder); }}
                                 className="p-1 rounded hover:bg-gray-200 text-outlook-text-secondary hover:text-outlook-blue transition-colors"
                                 title={message.flags?.seen ? 'Marquer comme non lu' : 'Marquer comme lu'}
                               >
@@ -872,14 +890,14 @@ export default function MessageList({
                               </button>
                             )}
                             <button
-                              onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged); }}
+                              onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged, message._accountId, message._folder); }}
                               className={`p-1 rounded hover:bg-gray-200 transition-colors ${message.flags?.flagged ? 'text-outlook-warning' : 'text-outlook-text-secondary hover:text-outlook-warning'}`}
                               title={message.flags?.flagged ? 'Retirer le drapeau' : 'Marquer d\'un drapeau'}
                             >
                               <Flag size={12} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); onDelete(message.uid); }}
+                              onClick={(e) => { e.stopPropagation(); onDelete(message.uid, message._accountId, message._folder); }}
                               className="p-1 rounded hover:bg-red-100 text-outlook-text-secondary hover:text-red-600 transition-colors"
                               title="Supprimer"
                             >
@@ -907,7 +925,7 @@ export default function MessageList({
                             <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
                               {onMarkRead && (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); onMarkRead(message.uid, !message.flags?.seen); }}
+                                  onClick={(e) => { e.stopPropagation(); onMarkRead(message.uid, !message.flags?.seen, message._accountId, message._folder); }}
                                   className="p-1 rounded hover:bg-gray-200 text-outlook-text-secondary hover:text-outlook-blue transition-colors"
                                   title={message.flags?.seen ? 'Marquer comme non lu' : 'Marquer comme lu'}
                                 >
@@ -915,7 +933,7 @@ export default function MessageList({
                                 </button>
                               )}
                               <button
-                                onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged); }}
+                                onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged, message._accountId, message._folder); }}
                                 className={`p-1 rounded hover:bg-gray-200 transition-colors
                                   ${message.flags?.flagged ? 'text-outlook-warning' : 'text-outlook-text-secondary hover:text-outlook-warning'}`}
                                 title={message.flags?.flagged ? 'Retirer le drapeau' : 'Marquer d\'un drapeau'}
@@ -923,7 +941,7 @@ export default function MessageList({
                                 <Flag size={14} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
                               </button>
                               <button
-                                onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged); }}
+                                onClick={(e) => { e.stopPropagation(); onToggleFlag(message.uid, !message.flags?.flagged, message._accountId, message._folder); }}
                                 className={`p-1 rounded hover:bg-gray-200 transition-colors
                                   ${message.flags?.flagged ? 'text-outlook-warning' : 'text-outlook-text-secondary hover:text-outlook-warning'}`}
                                 title={message.flags?.flagged ? 'Retirer le favori' : 'Marquer comme favori'}
@@ -931,7 +949,7 @@ export default function MessageList({
                                 <Star size={14} fill={message.flags?.flagged ? 'currentColor' : 'none'} />
                               </button>
                               <button
-                                onClick={(e) => { e.stopPropagation(); onDelete(message.uid); }}
+                                onClick={(e) => { e.stopPropagation(); onDelete(message.uid, message._accountId, message._folder); }}
                                 className="p-1 rounded hover:bg-red-100 text-outlook-text-secondary hover:text-red-600 transition-colors"
                                 title="Supprimer"
                               >
@@ -1032,6 +1050,19 @@ export default function MessageList({
             );
           })
         )}
+        {/* Load more — fetch the next page of older messages from the server. */}
+        {filteredMessages.length > 0 && (hasMore || loadingMore) && onLoadMore && (
+          <div className="flex justify-center py-3 border-t border-outlook-border">
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+              className="text-xs px-4 py-1.5 rounded-md border border-outlook-border bg-white hover:bg-outlook-bg-hover text-outlook-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {loadingMore ? 'Chargement…' : 'Charger plus de messages'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Context menu */}
@@ -1077,14 +1108,14 @@ export default function MessageList({
       items.push({
         label: message.flags?.seen ? 'Marquer comme non lu' : 'Marquer comme lu',
         icon: message.flags?.seen ? <Mail size={14} /> : <MailOpen size={14} />,
-        onClick: () => onMarkRead(message.uid, !message.flags?.seen),
+        onClick: () => onMarkRead(message.uid, !message.flags?.seen, message._accountId, message._folder),
       });
     }
 
     items.push({
       label: message.flags?.flagged ? 'Retirer le drapeau' : 'Marquer d\'un drapeau',
       icon: <Flag size={14} />,
-      onClick: () => onToggleFlag(message.uid, !message.flags?.flagged),
+      onClick: () => onToggleFlag(message.uid, !message.flags?.flagged, message._accountId, message._folder),
     });
 
     if (onOpenCategoryPicker) {
@@ -1112,7 +1143,7 @@ export default function MessageList({
         submenu: moveableFolders.map(f => ({
           label: getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name,
           icon: <FolderIcon size={14} />,
-          onClick: () => onMove(message.uid, f.path),
+          onClick: () => onMove(message.uid, f.path, message._accountId, message._folder),
         })),
       });
     }
@@ -1128,7 +1159,7 @@ export default function MessageList({
         submenu: copyableFolders.map(f => ({
           label: getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name,
           icon: <FolderIcon size={14} />,
-          onClick: () => onCopy(message.uid, f.path),
+          onClick: () => onCopy(message.uid, f.path, message._accountId, message._folder),
         })),
       });
     }
@@ -1137,7 +1168,7 @@ export default function MessageList({
       items.push({
         label: 'Archiver',
         icon: <Archive size={14} />,
-        onClick: () => onArchive(message.uid),
+        onClick: () => onArchive(message.uid, message._accountId, message._folder),
       });
     } else if (onMove) {
       const archiveFolder = folders?.find(f => f.specialUse === '\\Archive' || f.name.toLowerCase().includes('archive'));
@@ -1145,7 +1176,7 @@ export default function MessageList({
         items.push({
           label: 'Archiver',
           icon: <Archive size={14} />,
-          onClick: () => onMove(message.uid, archiveFolder.path),
+          onClick: () => onMove(message.uid, archiveFolder.path, message._accountId, message._folder),
         });
       }
     }
@@ -1155,7 +1186,7 @@ export default function MessageList({
     items.push({
       label: 'Supprimer',
       icon: <Trash2 size={14} />,
-      onClick: () => onDelete(message.uid),
+      onClick: () => onDelete(message.uid, message._accountId, message._folder),
       danger: true,
     });
 

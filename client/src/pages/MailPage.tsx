@@ -44,12 +44,13 @@ export default function MailPage() {
     accounts, selectedAccount, selectedFolder, folders, messages, selectedMessage,
     isComposing, composeData,
     setAccounts, selectAccount, setFolders, selectFolder,
-    setMessages, selectMessage, openCompose, closeCompose,
+    setMessages, appendMessages, selectMessage, openCompose, closeCompose,
     updateMessageFlags, removeMessage,
     openTabs, activeTabId, openMessageTab, switchTab, closeTab,
     tabMode, maxTabs, setTabMode, setMaxTabs,
     virtualFolder, selectVirtualFolder,
     categoryFilter, setCategoryFilter,
+    totalMessages, currentPage,
   } = useMailStore();
 
   // Bump to re-render when preferences change (favorites etc.)
@@ -68,6 +69,23 @@ export default function MailPage() {
     return originOf(m);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, selectedAccount, selectedFolder]);
+
+  /** Resolve the origin from a row callback. When the MessageList forwards
+   *  the message's `_accountId`/`_folder` (unified view) we trust those tags;
+   *  otherwise we fall back to scanning `messages` by uid. This avoids the
+   *  bug where two messages from different accounts share the same IMAP UID
+   *  and `find()` would otherwise return the wrong row. */
+  const resolveOrigin = useCallback((
+    uid: number, accountId?: string, folder?: string,
+  ): { accountId?: string; folder: string } => {
+    if (accountId || folder) {
+      return {
+        accountId: accountId || selectedAccount?.id,
+        folder: folder || selectedFolder,
+      };
+    }
+    return originByUid(uid);
+  }, [originByUid, selectedAccount, selectedFolder]);
 
   // Load accounts
   const { data: accountsData } = useQuery({
@@ -142,9 +160,10 @@ export default function MailPage() {
   }, [foldersData]);
 
   // Load messages (single-folder OR aggregated unified view)
+  const [loadAllActive, setLoadAllActive] = useState(false);
   const { data: messagesData, isLoading: loadingMessages } = useQuery({
     queryKey: virtualFolder
-      ? ['virtual-messages', virtualFolder, prefsVersion, accounts.map((a) => a.id).join(',')]
+      ? ['virtual-messages', virtualFolder, prefsVersion, accounts.map((a) => a.id).join(','), loadAllActive ? 'all' : 'first']
       : ['messages', selectedAccount?.id, selectedFolder],
     queryFn: async () => {
       if (virtualFolder) {
@@ -169,12 +188,24 @@ export default function MailPage() {
                   ? findInboxFolderPath(accFolders)
                   : findSentFolderPath(accFolders);
               if (!target) return [];
-              const res = await api.getMessages(acct.id, target);
-              return (res.messages || []).map((m: any) => ({
-                ...m,
-                _accountId: acct.id,
-                _folder: target,
-              }));
+              // Fetch the first page; if "Tout charger" is active, keep paging
+              // through this account's folder until every message has been retrieved.
+              const aggregated: any[] = [];
+              let page = 1;
+              // Safety cap to avoid runaway loops on huge mailboxes.
+              const MAX_PAGES = loadAllActive ? 500 : 1;
+              while (page <= MAX_PAGES) {
+                const res = await api.getMessages(acct.id, target, page);
+                const batch = res.messages || [];
+                for (const m of batch) {
+                  aggregated.push({ ...m, _accountId: acct.id, _folder: target });
+                }
+                const total = res.total ?? 0;
+                if (!loadAllActive) break;
+                if (aggregated.length >= total || batch.length === 0) break;
+                page += 1;
+              }
+              return aggregated;
             } catch {
               return [];
             }
@@ -211,6 +242,56 @@ export default function MailPage() {
       setMessages(messagesData.messages || [], messagesData.total || 0, messagesData.page || 1);
     }
   }, [messagesData]);
+
+  // Pagination — "Charger plus de messages" appends the next page from the server
+  // (the IMAP listing returns 50 messages per page, newest first).
+  const [loadingMore, setLoadingMore] = useState(false);
+  const hasMoreMessages = !virtualFolder && messages.length < totalMessages;
+  const handleLoadMore = useCallback(async () => {
+    if (loadingMore || !hasMoreMessages || !selectedAccount) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = (currentPage || 1) + 1;
+      const res = await api.getMessages(selectedAccount.id, selectedFolder, nextPage);
+      const fetched = res.messages || [];
+      if (fetched.length > 0) {
+        await offlineDB.cacheEmails(fetched.map((m: any) => ({
+          ...m,
+          id: `${selectedAccount.id}-${m.uid}`,
+          accountId: selectedAccount.id,
+          folder: selectedFolder,
+        })));
+      }
+      appendMessages(fetched, res.total ?? totalMessages, nextPage);
+    } catch (err) {
+      console.error('Load more messages error:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMoreMessages, selectedAccount, selectedFolder, currentPage, totalMessages, appendMessages]);
+
+  // "Tout charger" — auto-fetch every remaining page so the user can search across
+  // the full mailbox/folder. Works for both single-folder and unified views; the
+  // unified case is handled inside the React Query queryFn (see above).
+  const handleToggleLoadAll = useCallback(() => {
+    setLoadAllActive((v) => !v);
+  }, []);
+  // Reset the auto-load flag when the user navigates to a different folder/account/view
+  // so we don't accidentally trigger a heavy fetch in the new context.
+  useEffect(() => {
+    setLoadAllActive(false);
+  }, [selectedAccount?.id, selectedFolder, virtualFolder]);
+  // Drive the single-folder auto-load loop: while active, kick off the next page
+  // as soon as the previous one resolves.
+  useEffect(() => {
+    if (!loadAllActive || virtualFolder) return;
+    if (loadingMessages || loadingMore) return;
+    if (!hasMoreMessages) {
+      setLoadAllActive(false);
+      return;
+    }
+    handleLoadMore();
+  }, [loadAllActive, virtualFolder, loadingMessages, loadingMore, hasMoreMessages, handleLoadMore]);
 
   // Mark as read mutation
   const markReadMutation = useMutation({
@@ -254,8 +335,17 @@ export default function MailPage() {
       await api.deleteMessage(accId, uid, fld);
       return { moved: false };
     },
-    onSuccess: (data: any, { uid, accountId }) => {
-      removeMessage(uid);
+    // Optimistic removal: take the row out of the list immediately so the UI
+    // feels instant (the IMAP round-trip can take a few seconds). Rollback on
+    // error by restoring the snapshot.
+    onMutate: ({ uid, accountId, folder }) => {
+      const accId = accountId || selectedAccount?.id;
+      const fld = folder || selectedFolder;
+      const prev = useMailStore.getState().messages;
+      removeMessage(uid, accId, fld);
+      return { prev };
+    },
+    onSuccess: (data: any, { accountId }) => {
       if (data?.moved) {
         toast.success('Message envoyé dans la corbeille');
         // The trash folder count changed — refresh folders list for the account.
@@ -264,7 +354,8 @@ export default function MailPage() {
         toast.success('Message supprimé');
       }
     },
-    onError: (err: any) => {
+    onError: (err: any, _vars, ctx: any) => {
+      if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
       toast.error(err?.message || 'Erreur lors de la suppression');
     },
   });
@@ -387,9 +478,19 @@ export default function MailPage() {
       const src = fromFolder || selectedFolder;
       return accId ? api.moveMessage(accId, uid, src, toFolder) : Promise.resolve();
     },
-    onSuccess: (_, { uid }) => {
-      removeMessage(uid);
+    onMutate: ({ uid, accountId, fromFolder }) => {
+      const accId = accountId || selectedAccount?.id;
+      const src = fromFolder || selectedFolder;
+      const prev = useMailStore.getState().messages;
+      removeMessage(uid, accId, src);
+      return { prev };
+    },
+    onSuccess: () => {
       toast.success('Message déplacé');
+    },
+    onError: (err: any, _vars, ctx: any) => {
+      if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
+      toast.error(err?.message || 'Erreur lors du déplacement');
     },
   });
 
@@ -402,13 +503,20 @@ export default function MailPage() {
       if (!accId) return Promise.resolve({ success: false, destFolder: '' });
       return api.archiveMessage(accId, uid, src);
     },
-    onSuccess: (data: any, { uid }) => {
-      removeMessage(uid);
+    onMutate: ({ uid, accountId, fromFolder }) => {
+      const accId = accountId || selectedAccount?.id;
+      const src = fromFolder || selectedFolder;
+      const prev = useMailStore.getState().messages;
+      removeMessage(uid, accId, src);
+      return { prev };
+    },
+    onSuccess: (data: any) => {
       const where = data?.destFolder ? ` (${data.destFolder})` : '';
       toast.success(`Message archivé${where}`);
       queryClient.invalidateQueries({ queryKey: ['folders'] });
     },
-    onError: (err: any) => {
+    onError: (err: any, _vars, ctx: any) => {
+      if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
       toast.error(err?.message || 'Erreur d\'archivage');
     },
   });
@@ -999,7 +1107,7 @@ export default function MailPage() {
     onSuccess: (_result, params) => {
       if (params.mode === 'move') {
         if (selectedAccount?.id === params.srcAccountId && selectedFolder === params.srcFolder) {
-          removeMessage(params.uid);
+          removeMessage(params.uid, params.srcAccountId, params.srcFolder);
         }
         queryClient.invalidateQueries({ queryKey: ['messages', params.srcAccountId, params.srcFolder] });
         toast.success('Message déplacé');
@@ -1178,9 +1286,9 @@ export default function MailPage() {
   // Resolves a swipe direction to a concrete IMAP operation. For 'move'/'copy'
   // this respects the per-account default folder; when missing, we open the
   // folder picker dialog so the user can choose and optionally memorise it.
-  const handleSwipeAction = (uid: number, action: SwipeAction) => {
+  const handleSwipeAction = (uid: number, action: SwipeAction, accountId?: string, folder?: string) => {
     if (action === 'none') return;
-    const o = originByUid(uid);
+    const o = resolveOrigin(uid, accountId, folder);
     const accId = o.accountId;
     if (!accId) return;
 
@@ -1234,9 +1342,9 @@ export default function MailPage() {
     }
   };
 
-  const handleSwipe = (uid: number, direction: 'left' | 'right') => {
+  const handleSwipe = (uid: number, direction: 'left' | 'right', accountId?: string, folder?: string) => {
     const action = direction === 'left' ? swipePrefs.leftAction : swipePrefs.rightAction;
-    handleSwipeAction(uid, action);
+    handleSwipeAction(uid, action, accountId, folder);
   };
 
   return (
@@ -1401,16 +1509,16 @@ export default function MailPage() {
             loading={loadingMessages}
             onSelectMessage={handleSelectMessageMobile}
             onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
-            onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
-            onDelete={(uid) => { const o = originByUid(uid); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
+            onToggleFlag={(uid, flagged, aId, fld) => { const o = resolveOrigin(uid, aId, fld); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
+            onDelete={(uid, aId, fld) => { const o = resolveOrigin(uid, aId, fld); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
             folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
             onReply={(msg) => handleReply(msg)}
             onReplyAll={(msg) => handleReply(msg, true)}
             onForward={(msg) => handleForward(msg)}
-            onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
-            onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-            onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-            onArchive={(uid) => { const o = originByUid(uid); archiveMutation.mutate({ uid, accountId: o.accountId, fromFolder: o.folder }); }}
+            onMarkRead={(uid, isRead, aId, fld) => { const o = resolveOrigin(uid, aId, fld); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
+            onMove={(uid, toFolder, aId, fld) => { const o = resolveOrigin(uid, aId, fld); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+            onCopy={(uid, toFolder, aId, fld) => { const o = resolveOrigin(uid, aId, fld); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+            onArchive={(uid, aId, fld) => { const o = resolveOrigin(uid, aId, fld); archiveMutation.mutate({ uid, accountId: o.accountId, fromFolder: o.folder }); }}
             folders={folders}
             onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
             showFolderPane={showFolderPane}
@@ -1424,6 +1532,9 @@ export default function MailPage() {
             swipeLeftAction={swipePrefs.leftAction}
             swipeRightAction={swipePrefs.rightAction}
             onSwipe={handleSwipe}
+            hasMore={hasMoreMessages}
+            loadingMore={loadingMore}
+            onLoadMore={handleLoadMore}
           />
         </div>
 
@@ -1486,16 +1597,16 @@ export default function MailPage() {
                   loading={loadingMessages}
                   onSelectMessage={handleSelectMessageMobile}
                   onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
-                  onToggleFlag={(uid, flagged) => { const o = originByUid(uid); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
-                  onDelete={(uid) => { const o = originByUid(uid); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
+                  onToggleFlag={(uid, flagged, aId, fld) => { const o = resolveOrigin(uid, aId, fld); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
+                  onDelete={(uid, aId, fld) => { const o = resolveOrigin(uid, aId, fld); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
                   folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
                   onReply={(msg) => handleReply(msg)}
                   onReplyAll={(msg) => handleReply(msg, true)}
                   onForward={(msg) => handleForward(msg)}
-                  onMarkRead={(uid, isRead) => { const o = originByUid(uid); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
-                  onMove={(uid, toFolder) => { const o = originByUid(uid); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-                  onCopy={(uid, toFolder) => { const o = originByUid(uid); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
-                  onArchive={(uid) => { const o = originByUid(uid); archiveMutation.mutate({ uid, accountId: o.accountId, fromFolder: o.folder }); }}
+                  onMarkRead={(uid, isRead, aId, fld) => { const o = resolveOrigin(uid, aId, fld); markReadMutation.mutate({ uid, isRead, accountId: o.accountId, folder: o.folder }); }}
+                  onMove={(uid, toFolder, aId, fld) => { const o = resolveOrigin(uid, aId, fld); moveMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+                  onCopy={(uid, toFolder, aId, fld) => { const o = resolveOrigin(uid, aId, fld); copyMutation.mutate({ uid, toFolder, accountId: o.accountId, fromFolder: o.folder }); }}
+                  onArchive={(uid, aId, fld) => { const o = resolveOrigin(uid, aId, fld); archiveMutation.mutate({ uid, accountId: o.accountId, fromFolder: o.folder }); }}
                   folders={folders}
                   onToggleFolderPane={() => setShowFolderPane(!showFolderPane)}
                   showFolderPane={showFolderPane}
@@ -1510,6 +1621,9 @@ export default function MailPage() {
                   swipeLeftAction={swipePrefs.leftAction}
                   swipeRightAction={swipePrefs.rightAction}
                   onSwipe={handleSwipe}
+                  hasMore={hasMoreMessages}
+                  loadingMore={loadingMore}
+                  onLoadMore={handleLoadMore}
                 />
               )}
             </div>

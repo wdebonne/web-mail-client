@@ -43,11 +43,12 @@ interface MailState {
   selectVirtualFolder: (v: VirtualFolder) => void;
   setCategoryFilter: (id: string | null) => void;
   setMessages: (messages: Email[], total: number, page: number) => void;
+  appendMessages: (messages: Email[], total: number, page: number) => void;
   selectMessage: (message: Email | null) => void;
   openCompose: (data?: Partial<ComposeData>) => void;
   closeCompose: () => void;
   updateMessageFlags: (uid: number, flags: Partial<Email['flags']>) => void;
-  removeMessage: (uid: number) => void;
+  removeMessage: (uid: number, accountId?: string, folder?: string) => void;
 
   // Tab actions
   openMessageTab: (message: Email) => void;
@@ -135,6 +136,23 @@ export const useMailStore = create<MailState>((set, get) => ({
 
   setMessages: (messages, total, page) => set({ messages, totalMessages: total, currentPage: page }),
 
+  appendMessages: (newMessages, total, page) => set((state) => {
+    // De-duplicate by uid+folder origin so unified views stay consistent.
+    const seen = new Set(
+      state.messages.map((m: any) => `${m._accountId || ''}:${m._folder || ''}:${m.uid}`),
+    );
+    const merged = [...state.messages];
+    for (const m of newMessages) {
+      const key = `${(m as any)._accountId || ''}:${(m as any)._folder || ''}:${m.uid}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(m);
+      }
+    }
+    merged.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return { messages: merged, totalMessages: total, currentPage: page };
+  }),
+
   selectMessage: (message) => set({ selectedMessage: message }),
 
   openCompose: (data) => {
@@ -181,10 +199,22 @@ export const useMailStore = create<MailState>((set, get) => ({
     }));
   },
 
-  removeMessage: (uid) => {
+  removeMessage: (uid, accountId, folder) => {
+    // Match by uid AND (when provided) the message origin tags. This is critical
+    // for the unified inbox where messages from different accounts can share
+    // the same IMAP UID — without this scoping we would wipe duplicates from
+    // other accounts when the user only deleted one message.
+    const matches = (m: Email): boolean => {
+      if (m.uid !== uid) return false;
+      if (accountId && m._accountId && m._accountId !== accountId) return false;
+      if (folder && m._folder && m._folder !== folder) return false;
+      return true;
+    };
     set((state) => ({
-      messages: state.messages.filter(m => m.uid !== uid),
-      selectedMessage: state.selectedMessage?.uid === uid ? null : state.selectedMessage,
+      messages: state.messages.filter(m => !matches(m)),
+      selectedMessage: state.selectedMessage && matches(state.selectedMessage)
+        ? null
+        : state.selectedMessage,
     }));
   },
 
