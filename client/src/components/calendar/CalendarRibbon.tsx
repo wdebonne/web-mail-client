@@ -4,10 +4,10 @@ import {
   CalendarPlus, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock,
   Share2, Printer, ChevronDown, Filter, Columns2, Columns3, Clock,
   Settings, PanelLeftOpen, PanelLeftClose, RefreshCw,
-  Save, HelpCircle, Info, Keyboard, Users, Sparkles,
+  Save, HelpCircle, Info, Keyboard, Users, Sparkles, List,
 } from 'lucide-react';
 
-export type CalendarViewMode = 'day' | 'workweek' | 'week' | 'month';
+export type CalendarViewMode = 'day' | 'workweek' | 'week' | 'month' | 'agenda';
 export type CalendarRibbonMode = 'classic' | 'simplified';
 export type CalendarRibbonTab = 'accueil' | 'afficher' | 'aide';
 
@@ -344,13 +344,13 @@ export default function CalendarRibbon({
           <div className="fixed inset-0 z-[9998]" onClick={() => setSavedMenuOpen(false)} />
           <div className="fixed z-[9999] bg-white border border-outlook-border rounded-md shadow-lg py-1 w-56" style={{ top: savedMenuPos.top, left: savedMenuPos.left }}>
             <div className="px-3 py-1 text-[10px] uppercase text-outlook-text-disabled">Vues enregistrées</div>
-            {(['day', 'workweek', 'week', 'month'] as const).map(v => (
+            {(['day', 'workweek', 'week', 'month', 'agenda'] as const).map(v => (
               <button
                 key={v}
                 onClick={() => { onChangeView(v); setSavedMenuOpen(false); }}
                 className={`w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover ${view === v ? 'text-outlook-blue' : ''}`}
               >
-                {v === 'day' ? 'Jour' : v === 'workweek' ? 'Semaine de travail' : v === 'week' ? 'Semaine' : 'Mois'}
+                {v === 'day' ? 'Jour' : v === 'workweek' ? 'Semaine de travail' : v === 'week' ? 'Semaine' : v === 'month' ? 'Mois' : 'Agenda'}
               </button>
             ))}
             <div className="h-px bg-outlook-border my-1" />
@@ -381,6 +381,7 @@ export default function CalendarRibbon({
               <SimplifiedButton icon={CalendarDays} label="Semaine travail" onClick={() => onChangeView('workweek')} active={view === 'workweek'} />
               <SimplifiedButton icon={CalendarRange} label="Semaine" onClick={() => onChangeView('week')} active={view === 'week'} />
               <SimplifiedButton icon={CalendarClock} label="Mois" onClick={() => onChangeView('month')} active={view === 'month'} />
+              <SimplifiedButton icon={List} label="Agenda" onClick={() => onChangeView('agenda')} active={view === 'agenda'} />
               <SimplifiedSep />
               <SimplifiedButton icon={Columns2} label="Fractionné" onClick={onToggleSplitView} active={splitView} />
               <button
@@ -412,6 +413,7 @@ export default function CalendarRibbon({
               <SimplifiedButton icon={CalendarDays} label="Semaine travail" onClick={() => onChangeView('workweek')} active={view === 'workweek'} />
               <SimplifiedButton icon={CalendarRange} label="Semaine" onClick={() => onChangeView('week')} active={view === 'week'} />
               <SimplifiedButton icon={CalendarClock} label="Mois" onClick={() => onChangeView('month')} active={view === 'month'} />
+              <SimplifiedButton icon={List} label="Agenda" onClick={() => onChangeView('agenda')} active={view === 'agenda'} />
               <button
                 ref={savedMenuBtnRef}
                 onClick={(e) => openMenu(savedMenuBtnRef, setSavedMenuPos, setSavedMenuOpen, e)}
@@ -495,6 +497,7 @@ export default function CalendarRibbon({
               <ViewButton icon={CalendarDays} label="Semaine de travail" onClick={() => onChangeView('workweek')} active={view === 'workweek'} />
               <ViewButton icon={CalendarRange} label="Semaine" onClick={() => onChangeView('week')} active={view === 'week'} />
               <ViewButton icon={CalendarClock} label="Mois" onClick={() => onChangeView('month')} active={view === 'month'} />
+              <ViewButton icon={List} label="Agenda" onClick={() => onChangeView('agenda')} active={view === 'agenda'} />
               <ViewButton icon={Columns2} label="Mode Fractionné" onClick={onToggleSplitView} active={splitView} />
             </RibbonGroup>
             <RibbonSeparator />
@@ -551,6 +554,7 @@ export default function CalendarRibbon({
               <ViewButton icon={CalendarDays} label="Semaine de travail" onClick={() => onChangeView('workweek')} active={view === 'workweek'} />
               <ViewButton icon={CalendarRange} label="Semaine" onClick={() => onChangeView('week')} active={view === 'week'} />
               <ViewButton icon={CalendarClock} label="Mois" onClick={() => onChangeView('month')} active={view === 'month'} />
+              <ViewButton icon={List} label="Agenda" onClick={() => onChangeView('agenda')} active={view === 'agenda'} />
               <button
                 ref={savedMenuBtnRef}
                 onClick={(e) => openMenu(savedMenuBtnRef, setSavedMenuPos, setSavedMenuOpen, e)}

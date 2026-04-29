@@ -26,6 +26,7 @@ import MigrateCalendarDialog from '../components/calendar/MigrateCalendarDialog'
 import EventModal from '../components/calendar/EventModal';
 import ShareCalendarDialog from '../components/calendar/ShareCalendarDialog';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
+import FloatingActionButton from '../components/ui/FloatingActionButton';
 import {
   getCalendarView, setCalendarView,
   getRibbonMode, setRibbonMode,
@@ -131,7 +132,7 @@ export default function CalendarPage() {
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
-  const effView: CalendarViewMode = isCompact ? 'day' : view;
+  const effView: CalendarViewMode = isCompact && view !== 'agenda' ? 'day' : view;
   const effDayCount = isCompact ? 1 : dayCount;
 
   const { rangeStart, rangeEnd } = useMemo(() => {
@@ -139,6 +140,11 @@ export default function CalendarPage() {
     if (effView === 'month') {
       s = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
       e = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
+    } else if (effView === 'agenda') {
+      // Agenda view: load a wide window centred on currentDate so the user
+      // can scroll through both upcoming and recently past events.
+      s = subMonths(startOfMonth(currentDate), 1);
+      e = endOfMonth(addMonths(currentDate, 2));
     } else if (effView === 'week') {
       s = startOfWeek(currentDate, { weekStartsOn: 1 });
       e = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -273,12 +279,12 @@ export default function CalendarPage() {
     colorOverrides[ev.calendar_id] || ev.calendar_color || '#0078D4';
 
   const goPrev = () => {
-    if (effView === 'month') setCurrentDate(subMonths(currentDate, 1));
+    if (effView === 'month' || effView === 'agenda') setCurrentDate(subMonths(currentDate, 1));
     else if (effView === 'day') setCurrentDate(subDays(currentDate, Math.max(1, effDayCount)));
     else setCurrentDate(subDays(currentDate, 7));
   };
   const goNext = () => {
-    if (effView === 'month') setCurrentDate(addMonths(currentDate, 1));
+    if (effView === 'month' || effView === 'agenda') setCurrentDate(addMonths(currentDate, 1));
     else if (effView === 'day') setCurrentDate(addDays(currentDate, Math.max(1, effDayCount)));
     else setCurrentDate(addDays(currentDate, 7));
   };
@@ -286,6 +292,7 @@ export default function CalendarPage() {
 
   const periodLabel = useMemo(() => {
     if (effView === 'month') return format(currentDate, 'MMMM yyyy', { locale: fr });
+    if (effView === 'agenda') return format(currentDate, 'MMMM yyyy', { locale: fr });
     if (effView === 'week' || effView === 'workweek') {
       const s = startOfWeek(currentDate, { weekStartsOn: 1 });
       const e = effView === 'workweek' ? addDays(s, 4) : addDays(s, 6);
@@ -531,6 +538,18 @@ export default function CalendarPage() {
                 columnSizing={columnSizing}
               />
             )}
+            {effView === 'agenda' && (
+              <AgendaView
+                events={filteredEvents}
+                rangeStart={rangeStart}
+                rangeEnd={rangeEnd}
+                onEventClick={(ev) => setSelectedEvent(ev)}
+                onEventContextMenu={handleEventContextMenu}
+                onCreateEvent={(d) => openCreateEvent(d)}
+                eventColor={eventColor}
+                userTz={userTz}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -650,6 +669,130 @@ export default function CalendarPage() {
           onClose={() => setShareCalendarTarget(null)}
         />
       )}
+
+      {/* Floating action button — mobile/tablet only */}
+      <FloatingActionButton
+        onClick={() => openCreateEvent(new Date())}
+        label="Nouvel événement"
+        icon={<Plus size={24} />}
+      />
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// AgendaView — flat list of events grouped by day, similar to the Outlook
+// Mobile "Agenda" view. Each day shows its date header followed by the events
+// occurring that day, sorted chronologically. All-day events display "Toute
+// la journée"; timed events show start–end. Clicking an event opens its
+// detail card; right-click triggers the standard event context menu.
+// -----------------------------------------------------------------------------
+function AgendaView({
+  events, rangeStart, rangeEnd, onEventClick, onEventContextMenu,
+  onCreateEvent, eventColor, userTz,
+}: {
+  events: CalendarEvent[];
+  rangeStart: Date;
+  rangeEnd: Date;
+  onEventClick: (ev: CalendarEvent) => void;
+  onEventContextMenu: (e: React.MouseEvent, ev: CalendarEvent) => void;
+  onCreateEvent: (date: Date) => void;
+  eventColor: (ev: CalendarEvent) => string;
+  userTz: string;
+}) {
+  // Build a map: ymd → events on that day, including multi-day events
+  // expanded across each day they intersect with the visible range.
+  const grouped = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    const days = eachDayOfInterval({ start: startOfDay(rangeStart), end: startOfDay(rangeEnd) });
+    for (const day of days) {
+      const dayKey = format(day, 'yyyy-MM-dd');
+      const dayEvents = events.filter((ev) => {
+        const s = parseISO(ev.start_date);
+        const e = parseISO(ev.end_date);
+        return isSameDay(s, day) || (day >= startOfDay(s) && day <= e);
+      });
+      if (dayEvents.length > 0) {
+        // Sort: all-day first, then by start time
+        dayEvents.sort((a, b) => {
+          if (a.all_day && !b.all_day) return -1;
+          if (!a.all_day && b.all_day) return 1;
+          return parseISO(a.start_date).getTime() - parseISO(b.start_date).getTime();
+        });
+        map.set(dayKey, dayEvents);
+      }
+    }
+    return Array.from(map.entries());
+  }, [events, rangeStart, rangeEnd]);
+
+  if (grouped.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-outlook-text-secondary p-8">
+        <p className="text-sm">Aucun événement sur cette période.</p>
+        <button
+          onClick={() => onCreateEvent(new Date())}
+          className="mt-3 text-outlook-blue hover:underline text-sm"
+        >
+          Créer un nouvel événement
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-2 sm:px-4 py-2 max-w-3xl mx-auto">
+      {grouped.map(([dayKey, dayEvents]) => {
+        const day = parseISO(dayKey);
+        const today = isToday(day);
+        return (
+          <div key={dayKey} className="mb-4">
+            <div className={`sticky top-0 z-10 bg-white py-1.5 mb-1 flex items-baseline gap-2 border-b border-outlook-border ${today ? 'text-outlook-blue' : 'text-outlook-text-primary'}`}>
+              <span className="text-xs uppercase tracking-wide font-semibold">
+                {format(day, 'EEEE', { locale: fr })}
+              </span>
+              <span className="text-base font-bold">{format(day, 'd', { locale: fr })}</span>
+              <span className="text-xs text-outlook-text-secondary">
+                {format(day, 'MMMM', { locale: fr })}
+              </span>
+              {today && <span className="ml-auto text-[10px] uppercase font-semibold">Aujourd'hui</span>}
+            </div>
+            <div className="space-y-1">
+              {dayEvents.map((ev) => {
+                const color = eventColor(ev);
+                const sameStartDay = isSameDay(parseISO(ev.start_date), day);
+                return (
+                  <button
+                    key={`${ev.id}-${dayKey}`}
+                    onClick={() => onEventClick(ev)}
+                    onContextMenu={(e) => onEventContextMenu(e, ev)}
+                    className="w-full flex items-start gap-3 text-left px-3 py-2 rounded-md hover:bg-outlook-bg-hover transition-colors"
+                  >
+                    <span
+                      className="w-1 self-stretch rounded flex-shrink-0 mt-0.5"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="flex-shrink-0 w-20 text-xs text-outlook-text-secondary pt-0.5">
+                      {ev.all_day || !sameStartDay
+                        ? 'Toute la journée'
+                        : formatInTimeZone(parseISO(ev.start_date), userTz, 'HH:mm')}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-medium text-outlook-text-primary truncate">
+                        {ev.title || '(Sans titre)'}
+                      </span>
+                      {ev.location && (
+                        <span className="block text-xs text-outlook-text-secondary truncate">
+                          {ev.location}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

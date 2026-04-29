@@ -15,6 +15,7 @@ import {
   getSwipePrefs, setSwipePrefs, getDeleteConfirmEnabled, setDeleteConfirmEnabled,
   getAutoLoadAllEnabled, setAutoLoadAllEnabled,
   setSwipeMoveTarget, setSwipeCopyTarget, type SwipeAction,
+  getFabPosition, setFabPosition, type FabPosition,
 } from '../utils/mailPreferences';
 import type { MailAccount, MailFolder } from '../types';
 import {
@@ -583,7 +584,62 @@ function AppearanceSettings() {
             <option value="Europe/London">Europe/London (UTC+0/+1)</option>
           </select>
         </div>
+        <FabPositionPicker />
       </div>
+    </div>
+  );
+}
+
+// 9-cell radio grid letting the user pick where the floating action button
+// (Nouveau message / Nouvel événement) should appear on mobile and tablet.
+function FabPositionPicker() {
+  const [pos, setPos] = useState<FabPosition>(() => getFabPosition());
+  const cells: FabPosition[] = [
+    'top-left', 'top-center', 'top-right',
+    'middle-left', 'middle-center', 'middle-right',
+    'bottom-left', 'bottom-center', 'bottom-right',
+  ];
+  const labels: Record<FabPosition, string> = {
+    'top-left': 'Haut gauche', 'top-center': 'Haut centre', 'top-right': 'Haut droite',
+    'middle-left': 'Milieu gauche', 'middle-center': 'Milieu centre', 'middle-right': 'Milieu droite',
+    'bottom-left': 'Bas gauche', 'bottom-center': 'Bas centre', 'bottom-right': 'Bas droite',
+  };
+  const choose = (p: FabPosition) => {
+    setPos(p);
+    setFabPosition(p);
+    toast.success('Position du bouton mise à jour');
+  };
+  return (
+    <div>
+      <label className="text-sm text-outlook-text-secondary block">
+        Position du bouton flottant (mobile / tablette)
+      </label>
+      <p className="text-xs text-outlook-text-disabled mt-1 mb-2">
+        Bouton « Nouveau message » et « Nouvel événement » sur mobile et tablette.
+      </p>
+      <div className="grid grid-cols-3 gap-2 max-w-xs">
+        {cells.map((cell) => {
+          const active = pos === cell;
+          return (
+            <button
+              key={cell}
+              type="button"
+              onClick={() => choose(cell)}
+              title={labels[cell]}
+              className={`relative aspect-square border rounded-md flex items-center justify-center transition-colors ${
+                active
+                  ? 'border-outlook-blue bg-outlook-blue/10'
+                  : 'border-outlook-border hover:bg-outlook-bg-hover'
+              }`}
+            >
+              <span
+                className={`w-4 h-4 rounded-full ${active ? 'bg-outlook-blue' : 'bg-outlook-text-disabled/40'}`}
+              />
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-outlook-text-secondary mt-2">{labels[pos]}</p>
     </div>
   );
 }

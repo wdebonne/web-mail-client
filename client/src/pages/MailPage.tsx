@@ -15,8 +15,9 @@ import EmojiPanel from '../components/mail/EmojiPanel';
 import GifPanel from '../components/mail/GifPanel';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import FloatingActionButton from '../components/ui/FloatingActionButton';
 import toast from 'react-hot-toast';
-import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil, Columns2 } from 'lucide-react';
+import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil, Columns2, Plus } from 'lucide-react';
 import { getAccountDisplayName } from '../utils/mailPreferences';
 import {
   getUnifiedAccountIds, getUnifiedInboxEnabled, getUnifiedSentEnabled,
@@ -2215,6 +2216,14 @@ export default function MailPage() {
         }}
         onCancel={() => setFolderPicker(null)}
       />
+      {/* Floating action button — mobile/tablet only */}
+      {!isComposing && !composeExpanded && (
+        <FloatingActionButton
+          onClick={() => openCompose()}
+          label="Nouveau message"
+          icon={<Plus size={24} />}
+        />
+      )}
     </div>
   );
 }

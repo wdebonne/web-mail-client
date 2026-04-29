@@ -321,6 +321,39 @@ export function setAutoLoadAllEnabled(enabled: boolean) {
   } catch { /* noop */ }
 }
 
+// --- Floating action button position (mobile/tablet) ---
+//
+// 9-cell grid (top/middle/bottom × left/center/right) used to position the
+// floating "Nouveau message" / "Nouvel événement" buttons that appear on
+// mobile and tablet. The same setting is shared by every page so the user
+// has muscle memory for where to tap.
+export type FabPosition =
+  | 'top-left' | 'top-center' | 'top-right'
+  | 'middle-left' | 'middle-center' | 'middle-right'
+  | 'bottom-left' | 'bottom-center' | 'bottom-right';
+
+const KEY_FAB_POSITION = 'ui.fabPosition';
+const FAB_POSITION_EVENT = 'fab-position-changed';
+
+export function getFabPosition(): FabPosition {
+  const raw = localStorage.getItem(KEY_FAB_POSITION);
+  const allowed: FabPosition[] = [
+    'top-left', 'top-center', 'top-right',
+    'middle-left', 'middle-center', 'middle-right',
+    'bottom-left', 'bottom-center', 'bottom-right',
+  ];
+  return (allowed.includes(raw as FabPosition) ? raw : 'bottom-right') as FabPosition;
+}
+
+export function setFabPosition(position: FabPosition) {
+  localStorage.setItem(KEY_FAB_POSITION, position);
+  try {
+    window.dispatchEvent(new CustomEvent(FAB_POSITION_EVENT, { detail: { position } }));
+  } catch { /* noop */ }
+}
+
+export const FAB_POSITION_CHANGED_EVENT = FAB_POSITION_EVENT;
+
 // --- Swipe gesture preferences (mobile / tablet) ---
 /**
  * Actions qui peuvent être déclenchées par un balayage horizontal sur un

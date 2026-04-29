@@ -45,6 +45,8 @@ export const BACKUP_KEYS: string[] = [
   'mail.deleteConfirmEnabled',
   'mail.swipePrefs',
   'mail.autoLoadAll',
+  // Personnalisation interface
+  'ui.fabPosition',
   // Vues / mise en page
   'readingPaneMode',
   'listDensity',
