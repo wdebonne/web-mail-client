@@ -26,17 +26,81 @@ import { pool } from '../database/connection';
 
 const CHALLENGE_TTL_MINUTES = 5;
 
+/**
+ * Extract the hostname from a URL-ish string. Tolerates inputs that the user
+ * copy-pasted with `https://`, a port, a trailing slash, or even just a bare
+ * hostname. Returns null when nothing usable can be derived.
+ */
+function hostnameOf(input: string | undefined | null): string | null {
+  if (!input) return null;
+  const trimmed = input.trim().replace(/\/+$/, '');
+  if (!trimmed) return null;
+  // Try parsing as URL first (handles http://, https://, with/without port).
+  try {
+    const u = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+    return u.hostname || null;
+  } catch {
+    // Fallback: strip scheme/path/port manually.
+    return trimmed
+      .replace(/^[a-z]+:\/\//i, '')
+      .split('/')[0]
+      .split(':')[0] || null;
+  }
+}
+
+/**
+ * Effective RP ID. Priority:
+ *   1. `WEBAUTHN_RP_ID` env var (sanitized — scheme/port/slash stripped).
+ *   2. Hostname derived from `WEBAUTHN_ORIGIN` (first entry).
+ *   3. Hostname derived from `APP_URL`.
+ *   4. `localhost` as last resort.
+ */
 function rpID(): string {
-  return process.env.WEBAUTHN_RP_ID || 'localhost';
+  const explicit = hostnameOf(process.env.WEBAUTHN_RP_ID);
+  if (explicit) return explicit;
+  const fromOrigin = hostnameOf((process.env.WEBAUTHN_ORIGIN || '').split(',')[0]);
+  if (fromOrigin) return fromOrigin;
+  const fromAppUrl = hostnameOf(process.env.APP_URL);
+  if (fromAppUrl) return fromAppUrl;
+  return 'localhost';
 }
 
 function rpName(): string {
   return process.env.WEBAUTHN_RP_NAME || 'Web Mail';
 }
 
+/** Diagnostic snapshot of the resolved WebAuthn config. */
+export function getWebAuthnConfig(): { rpID: string; rpName: string; origins: string[] } {
+  const o = origin();
+  return {
+    rpID: rpID(),
+    rpName: rpName(),
+    origins: Array.isArray(o) ? o : [o],
+  };
+}
+
+/**
+ * Build the list of accepted origins for verification. We always include both
+ * `WEBAUTHN_ORIGIN` (comma-separated allowed) and `APP_URL`, plus the bare
+ * `https://<rpID>` form so a user who only configured `WEBAUTHN_RP_ID` still
+ * gets a working setup.
+ */
 function origin(): string | string[] {
-  const raw = process.env.WEBAUTHN_ORIGIN || process.env.APP_URL || 'http://localhost:5173';
-  return raw.split(',').map((s) => s.trim());
+  const candidates = new Set<string>();
+  const add = (raw: string | undefined | null) => {
+    if (!raw) return;
+    raw.split(',').forEach((s) => {
+      const v = s.trim().replace(/\/+$/, '');
+      if (v) candidates.add(v);
+    });
+  };
+  add(process.env.WEBAUTHN_ORIGIN);
+  add(process.env.APP_URL);
+  // Synthesize https://<rpID> as a fallback when only RP_ID was provided.
+  const id = rpID();
+  if (id && id !== 'localhost') candidates.add(`https://${id}`);
+  if (candidates.size === 0) candidates.add('http://localhost:5173');
+  return Array.from(candidates);
 }
 
 async function storeChallenge(userId: string | null, challenge: string, kind: 'register' | 'authenticate'): Promise<void> {

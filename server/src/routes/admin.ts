@@ -83,11 +83,17 @@ adminRouter.post('/users', async (req: AuthRequest, res) => {
   try {
     const { email, password, displayName, role, isAdmin, groupIds } = req.body;
     const passwordHash = await bcrypt.hash(password, 12);
+    // Keep `is_admin` and `role` consistent: any user with role='admin'
+    // automatically gets `is_admin=true` (the menu and ACLs are gated on
+    // the boolean column). The explicit `isAdmin` field, when provided,
+    // wins over the role-derived value.
+    const effectiveRole = role || 'user';
+    const effectiveIsAdmin = typeof isAdmin === 'boolean' ? isAdmin : effectiveRole === 'admin';
 
     const result = await pool.query(
       `INSERT INTO users (email, password_hash, display_name, role, is_admin)
        VALUES ($1, $2, $3, $4, $5) RETURNING id, email, display_name, role, is_admin`,
-      [email, passwordHash, displayName, role || 'user', isAdmin || false]
+      [email, passwordHash, displayName, effectiveRole, effectiveIsAdmin]
     );
 
     const userId = result.rows[0].id;
@@ -127,6 +133,14 @@ adminRouter.put('/users/:id', async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const { email, displayName, role, isAdmin, groupIds } = req.body;
+    // When the caller updates `role`, mirror it to `is_admin` unless an
+    // explicit boolean was also provided. This keeps both columns in sync
+    // and avoids the case where role='admin' but is_admin=false (which
+    // would hide the admin menu in the UI).
+    let effectiveIsAdmin: boolean | undefined = isAdmin;
+    if (typeof effectiveIsAdmin !== 'boolean' && typeof role === 'string') {
+      effectiveIsAdmin = role === 'admin';
+    }
 
     const result = await pool.query(
       `UPDATE users SET 
@@ -136,7 +150,7 @@ adminRouter.put('/users/:id', async (req: AuthRequest, res) => {
         is_admin = COALESCE($4, is_admin),
         updated_at = NOW()
        WHERE id = $5 RETURNING id, email, display_name, role, is_admin`,
-      [email, displayName, role, isAdmin, id]
+      [email, displayName, role, effectiveIsAdmin, id]
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });

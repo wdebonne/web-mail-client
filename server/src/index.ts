@@ -29,6 +29,7 @@ import { PluginManager } from './plugins/manager';
 import { initPushService } from './services/push';
 import { startNewMailPoller } from './services/newMailPoller';
 import { startNextCloudSyncPoller } from './services/nextcloudSyncPoller';
+import { getWebAuthnConfig } from './services/webauthn';
 
 const app = express();
 const server = createServer(app);
@@ -165,6 +166,13 @@ async function start() {
 
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
+      const wa = getWebAuthnConfig();
+      logger.info(
+        { rpID: wa.rpID, origins: wa.origins },
+        'WebAuthn effective config — the browser hostname MUST match rpID and ' +
+        'the page URL MUST be one of the listed origins, otherwise passkeys ' +
+        "will fail with 'rp.id cannot be used with the current origin'."
+      );
     });
   } catch (error) {
     logger.error(error as Error, 'Failed to start server');

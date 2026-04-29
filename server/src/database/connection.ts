@@ -581,6 +581,17 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_expires ON webauthn_challenges(expires_at);
     `);
 
+    // One-shot data fix: keep `is_admin` aligned with `role`. Older builds
+    // of the admin UI submitted `role='admin'` without setting `is_admin`,
+    // which left users with admin role but `is_admin=false`, hiding the
+    // admin menu in the client. Re-syncing here is idempotent.
+    const syncRes = await client.query(
+      `UPDATE users SET is_admin = true WHERE role = 'admin' AND is_admin = false`
+    );
+    if (syncRes.rowCount && syncRes.rowCount > 0) {
+      logger.info(`Synced is_admin=true for ${syncRes.rowCount} user(s) with role='admin'`);
+    }
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();
