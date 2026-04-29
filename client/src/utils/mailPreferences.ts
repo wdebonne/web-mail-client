@@ -2,6 +2,7 @@ import { MailAccount, MailFolder } from '../types';
 
 // --- LocalStorage keys ---
 const KEY_ACCOUNT_NAMES = 'mail.accountDisplayNames';
+const KEY_ACCOUNT_COLORS = 'mail.accountColors';
 const KEY_ACCOUNT_ORDER = 'mail.accountOrder';
 const KEY_FOLDER_ORDER = 'mail.folderOrder'; // { [accountId]: string[] of folder paths }
 const KEY_EXPANDED_ACCOUNTS = 'mail.expandedAccounts';
@@ -50,6 +51,29 @@ export function setAccountDisplayOverride(accountId: string, name: string | null
 export function getAccountDisplayName(account: MailAccount): string {
   const overrides = getAccountDisplayOverrides();
   return overrides[account.id] || account.assigned_display_name || account.name;
+}
+
+// --- Account colors ---
+// Per-user colour override applied to the dot/avatar shown next to each
+// account in FolderPane (and anywhere `account.color` is rendered). Falls
+// back to the server-assigned `account.color` when no override is set.
+export function getAccountColorOverrides(): Record<string, string> {
+  return readJSON<Record<string, string>>(KEY_ACCOUNT_COLORS, {});
+}
+
+export function setAccountColorOverride(accountId: string, color: string | null) {
+  const map = getAccountColorOverrides();
+  if (color && /^#[0-9a-fA-F]{6}$/.test(color)) {
+    map[accountId] = color;
+  } else {
+    delete map[accountId];
+  }
+  writeJSON(KEY_ACCOUNT_COLORS, map);
+}
+
+export function getAccountColor(account: MailAccount): string | undefined {
+  const overrides = getAccountColorOverrides();
+  return overrides[account.id] || (account as any).color || undefined;
 }
 
 // --- Account ordering ---

@@ -238,14 +238,17 @@ export default function MailPage() {
       try {
         const result = await api.getMessages(selectedAccount.id, selectedFolder);
         if (result.messages) {
-          await offlineDB.cacheEmails(result.messages.map((m: any) => ({
+          // Fire-and-forget: writing to IndexedDB must never block the UI.
+          // The list is rendered as soon as the network response arrives;
+          // the cache update happens in the background.
+          void offlineDB.cacheEmails(result.messages.map((m: any) => ({
             ...m,
             // Composite id: account + folder + uid avoids cross-folder collisions
             // (the same UID can exist in multiple folders).
             id: `${selectedAccount.id}-${selectedFolder}-${m.uid}`,
             accountId: selectedAccount.id,
             folder: selectedFolder,
-          })));
+          }))).catch(() => { /* cache failure is non-fatal */ });
         }
         return result;
       } catch {
@@ -309,12 +312,13 @@ export default function MailPage() {
       const res = await api.getMessages(selectedAccount.id, selectedFolder, nextPage);
       const fetched = res.messages || [];
       if (fetched.length > 0) {
-        await offlineDB.cacheEmails(fetched.map((m: any) => ({
+        // Non-blocking cache write — do not delay appending messages to the UI.
+        void offlineDB.cacheEmails(fetched.map((m: any) => ({
           ...m,
           id: `${selectedAccount.id}-${selectedFolder}-${m.uid}`,
           accountId: selectedAccount.id,
           folder: selectedFolder,
-        })));
+        }))).catch(() => { /* cache failure is non-fatal */ });
       }
       appendMessages(fetched, res.total ?? totalMessages, nextPage);
     } catch (err) {
@@ -1644,6 +1648,14 @@ export default function MailPage() {
                   queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
                 }}
                 externalPrefsVersion={prefsVersion}
+                onAfterSelect={() => {
+                  if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                    setMobileView('list');
+                  }
+                  if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+                    setShowFolderPane(false);
+                  }
+                }}
               />
             </div>
             {/* Folder resize handle — desktop only */}

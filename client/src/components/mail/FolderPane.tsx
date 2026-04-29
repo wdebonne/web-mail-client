@@ -1,7 +1,7 @@
 import {
   Inbox, Send, FileText, Trash2, Archive, Star, AlertTriangle,
   ChevronDown, ChevronRight, Plus, FolderIcon, FolderPlus, Pencil,
-  Trash, Copy, GripVertical, RotateCcw, Tag,
+  Trash, Copy, GripVertical, RotateCcw, Tag, Palette,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
@@ -9,11 +9,13 @@ import { api } from '../../api';
 import { MailAccount, MailFolder } from '../../types';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
 import {
-  getCategories, subscribeCategories, MailCategory,
+  getCategories, subscribeCategories, MailCategory, CATEGORY_COLORS,
 } from '../../utils/categories';
 import {
   getAccountDisplayName,
   setAccountDisplayOverride,
+  getAccountColor,
+  setAccountColorOverride,
   setAccountOrder,
   sortAccounts,
   setFolderOrder,
@@ -60,6 +62,9 @@ interface FolderPaneProps {
   ) => void;
   onMoveFolder?: (accountId: string, oldPath: string, newPath: string) => void;
   onPreferencesChanged?: () => void;
+  /** Called after any folder/virtual-folder selection so the parent can close the
+   *  pane on mobile/tablet without duplicating the breakpoint logic in here. */
+  onAfterSelect?: () => void;
   /** External signal that mail preferences (favorites, unified selection…) changed elsewhere. */
   externalPrefsVersion?: number;
 }
@@ -128,7 +133,7 @@ export default function FolderPane({
   accounts, selectedAccount, folders, selectedFolder,
   onSelectAccount, onSelectFolderInAccount, onCompose,
   onDropMessage, onCreateFolder, onRenameFolder, onDeleteFolder,
-  onCopyFolderBetweenAccounts, onMoveFolder, onPreferencesChanged,
+  onCopyFolderBetweenAccounts, onMoveFolder, onPreferencesChanged, onAfterSelect,
   externalPrefsVersion,
 }: FolderPaneProps) {
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => {
@@ -281,10 +286,11 @@ export default function FolderPane({
           virtualFolder={virtualFolder}
           selectedAccountId={selectedAccount?.id || null}
           selectedFolder={selectedFolder}
-          onSelectVirtual={(v) => selectVirtualFolder(v)}
+          onSelectVirtual={(v) => { selectVirtualFolder(v); onAfterSelect?.(); }}
           onSelectFavorite={(fav) => {
             const account = accounts.find((a) => a.id === fav.accountId);
             if (account) onSelectFolderInAccount(account, fav.path);
+            onAfterSelect?.();
           }}
           onFavoriteContextMenu={(fav, x, y) => setFavoriteContextMenu({ x, y, fav })}
           categoryFilter={categoryFilter}
@@ -350,7 +356,7 @@ export default function FolderPane({
                 </button>
                 <div
                   className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: account.color }}
+                  style={{ backgroundColor: getAccountColor(account) }}
                 />
                 <span className="truncate flex-1 text-left">{getAccountDisplayName(account)}</span>
               </div>
@@ -718,6 +724,32 @@ function buildAccountContextMenu(
     },
   });
 
+  items.push({ label: '', separator: true, onClick: () => {} });
+  items.push({
+    label: 'Couleur de la boîte mail',
+    icon: <Palette size={14} />,
+    onClick: () => {},
+    submenu: [
+      ...CATEGORY_COLORS.map((color) => ({
+        label: color,
+        icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />,
+        onClick: () => {
+          setAccountColorOverride(account.id, color);
+          onChange?.();
+        },
+      })),
+      { label: '', separator: true, onClick: () => {} },
+      {
+        label: 'Réinitialiser la couleur',
+        icon: <RotateCcw size={14} />,
+        onClick: () => {
+          setAccountColorOverride(account.id, null);
+          onChange?.();
+        },
+      },
+    ],
+  });
+
   if (onCreateFolder) {
     items.push({ label: '', separator: true, onClick: () => {} });
     items.push({
@@ -791,7 +823,7 @@ function buildFolderContextMenu(
       onClick: () => {},
       submenu: allAccounts.map((target) => ({
         label: getAccountDisplayName(target),
-        icon: <div className="w-2 h-2 rounded-full" style={{ backgroundColor: target.color }} />,
+        icon: <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getAccountColor(target) }} />,
         onClick: () => {
           const baseName = folder.name.includes('.') ? folder.name.split('.').pop()! : folder.name;
           const suggested = target.id === account.id ? `${baseName}-copie` : baseName;
@@ -1019,7 +1051,7 @@ function FavoritesSection({
                   <span className="truncate flex-1 text-left">{label}</span>
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0 opacity-70"
-                    style={{ backgroundColor: account.color }}
+                    style={{ backgroundColor: getAccountColor(account) }}
                     title={getAccountDisplayName(account)}
                   />
                 </button>

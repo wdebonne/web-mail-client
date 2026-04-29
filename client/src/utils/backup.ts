@@ -33,6 +33,7 @@ export const BACKUP_KEYS: string[] = [
   'mail.messageCategories',
   // Organisation des comptes et dossiers
   'mail.accountDisplayNames',
+  'mail.accountColors',
   'mail.accountOrder',
   'mail.folderOrder',
   'mail.expandedAccounts',
