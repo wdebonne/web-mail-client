@@ -118,9 +118,21 @@ function parseIso(iso: unknown): Date | null {
   return Number.isNaN(t) ? null : new Date(t);
 }
 
+/** Normalise a value coming back from `pg` (which may yield either a `Date`
+ *  object or a raw string depending on driver config) into an ISO 8601 string. */
+function toIso(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') {
+    const t = Date.parse(value);
+    if (!Number.isNaN(t)) return new Date(t).toISOString();
+    return value;
+  }
+  return new Date().toISOString();
+}
+
 settingsRouter.get('/preferences', async (req: AuthRequest, res) => {
   try {
-    const result = await pool.query<{ key: string; value: string | null; updated_at: Date }>(
+    const result = await pool.query<{ key: string; value: string | null; updated_at: unknown }>(
       'SELECT key, value, updated_at FROM user_preferences WHERE user_id = $1',
       [req.userId]
     );
@@ -128,7 +140,7 @@ settingsRouter.get('/preferences', async (req: AuthRequest, res) => {
     for (const row of result.rows) {
       items[row.key] = {
         value: row.value,
-        updatedAt: row.updated_at.toISOString(),
+        updatedAt: toIso(row.updated_at),
       };
     }
     res.json({ items });
@@ -177,7 +189,7 @@ settingsRouter.put('/preferences', async (req: AuthRequest, res) => {
     try {
       await client.query('BEGIN');
       for (const item of valid) {
-        const result = await client.query<{ value: string | null; updated_at: Date }>(
+        const result = await client.query<{ value: string | null; updated_at: unknown }>(
           `INSERT INTO user_preferences (user_id, key, value, updated_at)
              VALUES ($1, $2, $3, $4)
            ON CONFLICT (user_id, key) DO UPDATE
@@ -190,7 +202,7 @@ settingsRouter.put('/preferences', async (req: AuthRequest, res) => {
         if (result.rows[0]) {
           accepted[item.key] = {
             value: result.rows[0].value,
-            updatedAt: result.rows[0].updated_at.toISOString(),
+            updatedAt: toIso(result.rows[0].updated_at),
           };
         }
       }
