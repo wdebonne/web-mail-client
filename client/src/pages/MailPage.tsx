@@ -24,6 +24,7 @@ import {
   findTrashFolderPath, isTrashFolderPath,
   getDeleteConfirmEnabled,
   getSwipePrefs, getSwipeMoveTarget, getSwipeCopyTarget, setSwipeMoveTarget, setSwipeCopyTarget,
+  getAutoLoadAllEnabled,
   type SwipeAction,
 } from '../utils/mailPreferences';
 import {
@@ -160,7 +161,33 @@ export default function MailPage() {
   }, [foldersData]);
 
   // Load messages (single-folder OR aggregated unified view)
-  const [loadAllActive, setLoadAllActive] = useState(false);
+  const [loadAllActive, setLoadAllActive] = useState(() => getAutoLoadAllEnabled());
+
+  // Track the global "auto-load all messages" preference. When the user
+  // enables it from Settings, every newly-opened folder automatically pages
+  // through every remaining message so client-side search covers the whole
+  // mailbox. When disabled, only the current folder's manual toggle remains.
+  const [autoLoadAll, setAutoLoadAll] = useState(() => getAutoLoadAllEnabled());
+  useEffect(() => {
+    const onChange = (e: any) => {
+      const enabled = !!e?.detail?.enabled;
+      setAutoLoadAll(enabled);
+      if (enabled) setLoadAllActive(true);
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'mail.autoLoadAll') {
+        const enabled = getAutoLoadAllEnabled();
+        setAutoLoadAll(enabled);
+        if (enabled) setLoadAllActive(true);
+      }
+    };
+    window.addEventListener('mail-auto-load-all-changed', onChange as EventListener);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('mail-auto-load-all-changed', onChange as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
   const { data: messagesData, isLoading: loadingMessages } = useQuery({
     queryKey: virtualFolder
       ? ['virtual-messages', virtualFolder, prefsVersion, accounts.map((a) => a.id).join(','), loadAllActive ? 'all' : 'first']
@@ -315,10 +342,12 @@ export default function MailPage() {
     setLoadAllActive((v) => !v);
   }, []);
   // Reset the auto-load flag when the user navigates to a different folder/account/view
-  // so we don't accidentally trigger a heavy fetch in the new context.
+  // so we don't accidentally trigger a heavy fetch in the new context — unless the
+  // global "auto-load all messages" preference is enabled, in which case every folder
+  // should keep paging until the end.
   useEffect(() => {
-    setLoadAllActive(false);
-  }, [selectedAccount?.id, selectedFolder, virtualFolder]);
+    setLoadAllActive(autoLoadAll);
+  }, [selectedAccount?.id, selectedFolder, virtualFolder, autoLoadAll]);
   // Drive the single-folder auto-load loop: while active, kick off the next page
   // as soon as the previous one resolves.
   useEffect(() => {

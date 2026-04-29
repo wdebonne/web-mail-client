@@ -276,6 +276,27 @@ export function setDeleteConfirmEnabled(enabled: boolean) {
   localStorage.setItem(KEY_DELETE_CONFIRM, String(enabled));
 }
 
+// --- Auto-load all messages preference ---
+//
+// When enabled, every folder (and unified view) automatically pages through
+// every remaining message after opening it, so client-side search covers the
+// entire mailbox instead of only the first 50 messages. When disabled
+// (default), the user keeps the manual « Charger plus » / « Tout charger »
+// buttons at the bottom of the list.
+const KEY_AUTO_LOAD_ALL = 'mail.autoLoadAll';
+
+export function getAutoLoadAllEnabled(): boolean {
+  const raw = localStorage.getItem(KEY_AUTO_LOAD_ALL);
+  return raw === null ? false : raw === 'true';
+}
+
+export function setAutoLoadAllEnabled(enabled: boolean) {
+  localStorage.setItem(KEY_AUTO_LOAD_ALL, String(enabled));
+  try {
+    window.dispatchEvent(new CustomEvent('mail-auto-load-all-changed', { detail: { enabled } }));
+  } catch { /* noop */ }
+}
+
 // --- Swipe gesture preferences (mobile / tablet) ---
 /**
  * Actions qui peuvent être déclenchées par un balayage horizontal sur un

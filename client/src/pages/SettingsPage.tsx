@@ -13,6 +13,7 @@ import CacheSettings from '../components/CacheSettings';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import {
   getSwipePrefs, setSwipePrefs, getDeleteConfirmEnabled, setDeleteConfirmEnabled,
+  getAutoLoadAllEnabled, setAutoLoadAllEnabled,
   setSwipeMoveTarget, setSwipeCopyTarget, type SwipeAction,
 } from '../utils/mailPreferences';
 import type { MailAccount, MailFolder } from '../types';
@@ -158,6 +159,7 @@ const SWIPE_ACTIONS: { value: SwipeAction; label: string }[] = [
 function SwipeSettings() {
   const [prefs, setPrefs] = useState(() => getSwipePrefs());
   const [deleteConfirm, setDeleteConfirmLocal] = useState(() => getDeleteConfirmEnabled());
+  const [autoLoadAll, setAutoLoadAllLocal] = useState(() => getAutoLoadAllEnabled());
 
   const { data: accounts = [] } = useQuery<MailAccount[]>({
     queryKey: ['mail-accounts'],
@@ -284,6 +286,26 @@ function SwipeSettings() {
           <span className="block text-[11px] text-outlook-text-disabled">
             Désactivez cette option pour nettoyer vos mails très rapidement d'une seule main.
             (Cette préférence s'applique aussi au ruban et au menu contextuel.)
+          </span>
+        </span>
+      </label>
+
+      {/* Auto-load all messages — bypass the 50-messages-per-page limit on
+          every folder so client-side search covers the entire mailbox. */}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={autoLoadAll}
+          onChange={(e) => { setAutoLoadAllLocal(e.target.checked); setAutoLoadAllEnabled(e.target.checked); }}
+          className="w-4 h-4 mt-0.5"
+        />
+        <span>
+          Charger automatiquement <strong>tous</strong> les messages de chaque dossier
+          <span className="block text-[11px] text-outlook-text-disabled">
+            Active la pagination automatique jusqu'à la fin du dossier dès son ouverture.
+            La recherche locale couvre alors l'intégralité de la boîte mail (toutes les années,
+            tous les dossiers) au lieu de la première page seulement. Désactivez si vous préférez
+            le bouton manuel <em>Charger plus / Tout charger</em> au bas de la liste.
           </span>
         </span>
       </label>
