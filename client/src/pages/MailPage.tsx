@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api } from '../api';
 import { useMailStore, ComposeData } from '../stores/mailStore';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
@@ -217,12 +217,16 @@ export default function MailPage() {
       }
 
       if (!selectedAccount) return { messages: [], total: 0, page: 1 };
+      // Try the network first; if it fails (offline / server hiccup), fall back
+      // to IndexedDB so the UI keeps working with whatever has been cached.
       try {
         const result = await api.getMessages(selectedAccount.id, selectedFolder);
         if (result.messages) {
           await offlineDB.cacheEmails(result.messages.map((m: any) => ({
             ...m,
-            id: `${selectedAccount.id}-${m.uid}`,
+            // Composite id: account + folder + uid avoids cross-folder collisions
+            // (the same UID can exist in multiple folders).
+            id: `${selectedAccount.id}-${selectedFolder}-${m.uid}`,
             accountId: selectedAccount.id,
             folder: selectedFolder,
           })));
@@ -235,6 +239,12 @@ export default function MailPage() {
     },
     enabled: virtualFolder ? accounts.length > 0 : !!selectedAccount,
     refetchInterval: isOnline ? 30000 : false,
+    // Keep the previous folder's messages visible during refetch so navigation
+    // feels instantaneous instead of flashing an empty list.
+    placeholderData: keepPreviousData,
+    // Within 2 minutes, navigating back to a folder reuses the cached React-Query
+    // result and skips the network round-trip entirely.
+    staleTime: 1000 * 60 * 2,
   });
 
   useEffect(() => {
@@ -242,6 +252,34 @@ export default function MailPage() {
       setMessages(messagesData.messages || [], messagesData.total || 0, messagesData.page || 1);
     }
   }, [messagesData]);
+
+  // Hydrate the message list from IndexedDB the instant the user switches to a
+  // folder, without waiting for the network round-trip. The React-Query refetch
+  // will overwrite the list once the server replies; until then the user sees
+  // the cached messages immediately. This is what gives the app its "instant"
+  // feel after a reload or when navigating between folders.
+  useEffect(() => {
+    if (virtualFolder || !selectedAccount) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cached = await offlineDB.getEmails(selectedAccount.id, selectedFolder);
+        if (cancelled) return;
+        // Only inject the cache if React-Query hasn't already produced data for
+        // this folder (otherwise we'd clobber the freshly fetched list).
+        const existing = queryClient.getQueryData<any>(['messages', selectedAccount.id, selectedFolder]);
+        if (existing && Array.isArray(existing.messages) && existing.messages.length) return;
+        if (cached.length) {
+          setMessages(cached as any, cached.length, 1);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAccount?.id, selectedFolder, virtualFolder]);
 
   // Pagination — "Charger plus de messages" appends the next page from the server
   // (the IMAP listing returns 50 messages per page, newest first).
@@ -257,7 +295,7 @@ export default function MailPage() {
       if (fetched.length > 0) {
         await offlineDB.cacheEmails(fetched.map((m: any) => ({
           ...m,
-          id: `${selectedAccount.id}-${m.uid}`,
+          id: `${selectedAccount.id}-${selectedFolder}-${m.uid}`,
           accountId: selectedAccount.id,
           folder: selectedFolder,
         })));

@@ -63,6 +63,21 @@ Pour éviter de retélécharger l'intégralité du cache à chaque rafraîchisse
 
 La parallélisation est bornée à `FOLDER_CONCURRENCY = 4` dossiers simultanés. Le message de fin résume l'activité (*« Cache mis à jour — N actualisé(s), M inchangé(s) »* ou *« Cache déjà à jour »*).
 
+### Hydratation instantanée de la liste
+
+Lors d'un changement de dossier (ou au rechargement de la page), [`MailPage.tsx`](../client/src/pages/MailPage.tsx) lit synchroniquement `offlineDB.getEmails(accountId, folder)` et peuple le store `mailStore` **avant même que la requête réseau ne démarre**. L'utilisateur voit donc instantanément les messages déjà connus ; la requête React Query se déclenche en parallèle et ne fait que rafraîchir la liste si le serveur renvoie autre chose. Trois optimisations s'ajoutent :
+
+- `placeholderData: keepPreviousData` côté React Query — la liste précédente reste affichée pendant le rafraîchissement au lieu de clignoter en état vide ;
+- `staleTime: 2 min` — naviguer entre dossiers récemment consultés ne déclenche aucun appel réseau ;
+- les identifiants IndexedDB sont **toujours** au format composite `{accountId}-{folder}-{uid}` (côté `MailPage` et `cacheService`) afin d'éviter les collisions inter-dossiers (un même UID peut exister dans Boîte de réception et Brouillons).
+
+### Pagination & chargement complet d'une boîte mail
+
+Le serveur IMAP renvoie 50 messages par page. La liste expose deux contrôles en bas pour naviguer au-delà :
+
+- **Charger plus** — récupère la page suivante et l'ajoute au store via `appendMessages` (déduplication par triplet `_accountId:_folder:uid`, re-tri par date). Les messages sont aussi indexés en IndexedDB pour la recherche hors-ligne.
+- **Tout charger** — bascule en mode auto : le client enchaîne les pages jusqu'à ce que tous les messages du dossier soient chargés (plafond de sécurité 500 pages = 25 000 messages). C'est le moyen privilégié pour faire de la **recherche sur plusieurs années** d'historique. Re-cliquer pour interrompre. Le mode est automatiquement désactivé lors d'un changement de compte/dossier/vue. Pour les vues unifiées (Boîte de réception/Envoyés unifiés), le mode pagine de la même façon chaque compte agrégé.
+
 ### Indicateur visuel
 
 Un anneau SVG circulaire est affiché dans la barre supérieure, juste à gauche de l'avatar ([`CacheIndicator.tsx`](../client/src/components/CacheIndicator.tsx)). Il reflète en direct :
