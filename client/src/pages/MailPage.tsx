@@ -384,6 +384,24 @@ export default function MailPage() {
     },
   });
 
+  /** Surgically drop a message from every cached `virtual-messages` query so
+   *  the unified inbox / unified sent / favourites views update immediately
+   *  after a delete/move/archive — without triggering a full re-pagination
+   *  (which would be expensive when the « Tout charger » mode is active). */
+  const removeMessageFromVirtualCaches = useCallback((uid: number, accountId?: string, folder?: string) => {
+    queryClient.setQueriesData<any>({ queryKey: ['virtual-messages'] }, (old: any) => {
+      if (!old || !Array.isArray(old.messages)) return old;
+      const filtered = old.messages.filter((m: any) => {
+        if (m?.uid !== uid) return true;
+        if (accountId && m?._accountId && m._accountId !== accountId) return true;
+        if (folder && m?._folder && m._folder !== folder) return true;
+        return false;
+      });
+      if (filtered.length === old.messages.length) return old;
+      return { ...old, messages: filtered, total: Math.max(0, (old.total ?? filtered.length) - 1) };
+    });
+  }, [queryClient]);
+
   // Delete mutation — either moves a message to the Trash folder (safe
   // delete, recoverable) or performs an IMAP permanent delete when
   // toTrash=false or when a Trash folder cannot be located.
@@ -412,7 +430,7 @@ export default function MailPage() {
       removeMessage(uid, accId, fld);
       return { prev };
     },
-    onSuccess: (data: any, { accountId }) => {
+    onSuccess: (data: any, { accountId, uid, folder }) => {
       if (data?.moved) {
         toast.success('Message envoyé dans la corbeille');
         // The trash folder count changed — refresh folders list for the account.
@@ -420,6 +438,10 @@ export default function MailPage() {
       } else {
         toast.success('Message supprimé');
       }
+      // Unified inbox / Sent / favourite folder views aggregate across accounts —
+      // patch every cached `virtual-messages` query so the deleted row also
+      // disappears there without triggering a costly full re-pagination.
+      removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, folder || selectedFolder);
     },
     onError: (err: any, _vars, ctx: any) => {
       if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
@@ -552,8 +574,9 @@ export default function MailPage() {
       removeMessage(uid, accId, src);
       return { prev };
     },
-    onSuccess: () => {
+    onSuccess: (_data, { uid, accountId, fromFolder }) => {
       toast.success('Message déplacé');
+      removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, fromFolder || selectedFolder);
     },
     onError: (err: any, _vars, ctx: any) => {
       if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
@@ -577,10 +600,11 @@ export default function MailPage() {
       removeMessage(uid, accId, src);
       return { prev };
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data: any, { uid, accountId, fromFolder }) => {
       const where = data?.destFolder ? ` (${data.destFolder})` : '';
       toast.success(`Message archivé${where}`);
       queryClient.invalidateQueries({ queryKey: ['folders'] });
+      removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, fromFolder || selectedFolder);
     },
     onError: (err: any, _vars, ctx: any) => {
       if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
@@ -1600,8 +1624,10 @@ export default function MailPage() {
             swipeRightAction={swipePrefs.rightAction}
             onSwipe={handleSwipe}
             hasMore={hasMoreMessages}
+            totalMessages={totalMessages}
             loadingMore={loadingMore}
             onLoadMore={handleLoadMore}
+            loadAllActive={loadAllActive}
           />
         </div>
 
@@ -1689,8 +1715,10 @@ export default function MailPage() {
                   swipeRightAction={swipePrefs.rightAction}
                   onSwipe={handleSwipe}
                   hasMore={hasMoreMessages}
+                  totalMessages={totalMessages}
                   loadingMore={loadingMore}
                   onLoadMore={handleLoadMore}
+                  loadAllActive={loadAllActive}
                 />
               )}
             </div>

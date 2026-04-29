@@ -85,6 +85,8 @@ interface MessageListProps {
   onSwipe?: (uid: number, direction: 'left' | 'right', accountId?: string, folder?: string) => void;
   /** When true, more messages can be fetched from the server (paginated). */
   hasMore?: boolean;
+  /** Total number of messages on the server side (used for the auto-load progress label). */
+  totalMessages?: number;
   /** True while a "load more" request is in flight. */
   loadingMore?: boolean;
   /** Called when the user clicks the "Charger plus" button at the end of the list. */
@@ -139,6 +141,7 @@ export default function MessageList({
   swipeRightAction = 'trash',
   onSwipe,
   hasMore = false,
+  totalMessages = 0,
   loadingMore = false,
   onLoadMore,
   loadAllActive = false,
@@ -1050,17 +1053,27 @@ export default function MessageList({
             );
           })
         )}
-        {/* Load more — fetch the next page of older messages from the server. */}
+        {/* Load more — fetch the next page of older messages from the server.
+            When the global "Tout charger" toggle is active (loadAllActive),
+            the page is fetched automatically by the parent so we just show a
+            progress label instead of a clickable button. */}
         {filteredMessages.length > 0 && (hasMore || loadingMore) && onLoadMore && (
           <div className="flex justify-center py-3 border-t border-outlook-border">
-            <button
-              type="button"
-              onClick={onLoadMore}
-              disabled={loadingMore}
-              className="text-xs px-4 py-1.5 rounded-md border border-outlook-border bg-white hover:bg-outlook-bg-hover text-outlook-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {loadingMore ? 'Chargement…' : 'Charger plus de messages'}
-            </button>
+            {loadAllActive ? (
+              <span className="text-xs text-outlook-text-secondary inline-flex items-center gap-2">
+                <span className="w-3 h-3 border-2 border-outlook-blue border-t-transparent rounded-full animate-spin" />
+                Chargement de tous les messages… ({filteredMessages.length}{totalMessages ? ` / ${totalMessages}` : ''})
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={loadingMore}
+                className="text-xs px-4 py-1.5 rounded-md border border-outlook-border bg-white hover:bg-outlook-bg-hover text-outlook-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loadingMore ? 'Chargement…' : 'Charger plus de messages'}
+              </button>
+            )}
           </div>
         )}
       </div>

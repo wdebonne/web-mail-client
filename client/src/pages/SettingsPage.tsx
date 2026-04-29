@@ -296,7 +296,14 @@ function SwipeSettings() {
         <input
           type="checkbox"
           checked={autoLoadAll}
-          onChange={(e) => { setAutoLoadAllLocal(e.target.checked); setAutoLoadAllEnabled(e.target.checked); }}
+          onChange={(e) => {
+            const next = e.target.checked;
+            setAutoLoadAllLocal(next);
+            setAutoLoadAllEnabled(next);
+            toast.success(next
+              ? 'Chargement automatique activé — les dossiers seront paginés jusqu\'à la fin'
+              : 'Chargement automatique désactivé');
+          }}
           className="w-4 h-4 mt-0.5"
         />
         <span>
