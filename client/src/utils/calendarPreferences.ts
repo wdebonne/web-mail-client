@@ -166,10 +166,10 @@ export function setShowSidebar(v: boolean) {
 }
 
 // ── View ──────────────────────────────────────────────────────
-export type CalendarView = 'day' | 'workweek' | 'week' | 'month';
+export type CalendarView = 'day' | 'workweek' | 'week' | 'month' | 'agenda';
 export function getCalendarView(): CalendarView {
   const v = localStorage.getItem(KEY_VIEW);
-  return (v === 'day' || v === 'workweek' || v === 'week' || v === 'month') ? v : 'week';
+  return (v === 'day' || v === 'workweek' || v === 'week' || v === 'month' || v === 'agenda') ? v : 'week';
 }
 export function setCalendarView(v: CalendarView) {
   localStorage.setItem(KEY_VIEW, v);
