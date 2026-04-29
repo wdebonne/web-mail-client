@@ -433,6 +433,17 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) =>
     request('/settings/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) }),
 
+  // Per-user preferences (cross-device sync of localStorage settings).
+  getPreferences: () =>
+    request<{ items: Record<string, { value: string | null; updatedAt: string }> }>('/settings/preferences'),
+  putPreferences: (items: Record<string, { value: string | null; updatedAt: string }>) =>
+    request<{ accepted: number; items: Record<string, { value: string | null; updatedAt: string }> }>(
+      '/settings/preferences',
+      { method: 'PUT', body: JSON.stringify({ items }) }
+    ),
+  deletePreference: (key: string) =>
+    request<{ success: boolean }>(`/settings/preferences/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+
   // Admin
   getAdminSettings: () => request<any>('/admin/settings'),
   updateAdminSettings: (data: any) =>

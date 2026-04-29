@@ -21,7 +21,7 @@
 /** Liste blanche des clés localStorage sauvegardées.
  *  Un préfixe terminant par ":*" inclut toutes les clés débutant par ce préfixe.
  *  Les clés techniques (auth_token, backup.*) sont volontairement exclues. */
-const BACKUP_KEYS: string[] = [
+export const BACKUP_KEYS: string[] = [
   // Thème / apparence
   'theme.mode',
   // Signatures
@@ -71,7 +71,7 @@ const BACKUP_KEYS: string[] = [
 ];
 
 /** Préfixes sauvegardés (toutes les clés débutant par ceux-ci). */
-const BACKUP_PREFIXES: string[] = [
+export const BACKUP_PREFIXES: string[] = [
   // Rien pour l'instant — placeholder pour futures familles de clés.
 ];
 
@@ -157,6 +157,12 @@ function isBackupableKey(key: string): boolean {
   if (BACKUP_KEYS.includes(key)) return true;
   return BACKUP_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
+
+/** Public alias for the same predicate (used by other modules like prefsSync). */
+export const isSyncableKey = isBackupableKey;
+
+/** Event name fired whenever a backupable localStorage key changes (set or removed). */
+export const LOCAL_SETTINGS_CHANGED_EVENT = 'local-settings-changed';
 
 /** Assemble un objet contenant toutes les valeurs locales à sauvegarder. */
 export function collectBackup(): BackupPayload {

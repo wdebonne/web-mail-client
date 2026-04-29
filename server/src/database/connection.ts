@@ -54,6 +54,20 @@ export async function initDatabase() {
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS attachment_action_mode VARCHAR(20) DEFAULT 'preview';
 
+      -- Per-user UI/preferences key/value store for cross-device sync
+      -- (folder/account custom names, ordering, colors, calendar prefs,
+      --  signatures, swipe prefs, theme, layout, etc.).
+      -- Each row is keyed by (user_id, key); the client synchronises values
+      -- using last-write-wins on `updated_at`.
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        key VARCHAR(255) NOT NULL,
+        value TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, key)
+      );
+      CREATE INDEX IF NOT EXISTS user_preferences_user_idx ON user_preferences(user_id);
+
       -- User groups
       CREATE TABLE IF NOT EXISTS groups (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

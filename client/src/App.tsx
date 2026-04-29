@@ -18,6 +18,7 @@ import SecurityPage from './pages/SecurityPage';
 import AdminPage from './pages/AdminPage';
 import { listenForNotificationClicks } from './pwa/push';
 import { syncAllCache, refreshCacheStats } from './services/cacheService';
+import { startPrefsSync } from './services/prefsSync';
 
 function App() {
   const { user, token, checkAuth, isLoading } = useAuthStore();
@@ -77,6 +78,13 @@ function App() {
     }, 4000);
     return () => window.clearTimeout(t);
   }, [user, isOnline]);
+
+  // Synchronise UI customisations (renames, ordering, colours, layout, signatures…)
+  // across the user's devices via the per-user `user_preferences` table.
+  useEffect(() => {
+    if (!user) return;
+    startPrefsSync();
+  }, [user]);
 
   if (isLoading && token) {
     return (

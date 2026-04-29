@@ -9,6 +9,22 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Synchronisation cloud des préférences entre appareils
+
+- **Nouvelle table `user_preferences`** ([server/src/database/connection.ts](server/src/database/connection.ts)) : un magasin clé/valeur par utilisateur (`UUID user_id`, `VARCHAR(255) key`, `TEXT value`, `TIMESTAMPTZ updated_at`) avec clé primaire composite et index sur `user_id`. Stocke les personnalisations d'interface synchronisables.
+- **Endpoints `/api/settings/preferences`** ([server/src/routes/settings.ts](server/src/routes/settings.ts)) :
+  - `GET` retourne la map complète `{ items: { [key]: { value, updatedAt } } }` du compte courant.
+  - `PUT` accepte un batch `{ items: { [key]: { value, updatedAt } } }` et fait un *upsert* `ON CONFLICT (user_id, key) DO UPDATE … WHERE user_preferences.updated_at < EXCLUDED.updated_at` — garantie **last-write-wins** stricte au niveau base de données. Toute la requête est dans une transaction (`BEGIN/COMMIT/ROLLBACK`). Validation : clés filtrées par `^[a-zA-Z0-9_.\-:]{1,255}$`, max 64 KiB par valeur, max 500 entrées par requête. La réponse renvoie uniquement les clés dont la mise à jour a effectivement été acceptée, ce qui permet au client de détecter les conflits.
+  - `DELETE /:key` supprime une préférence individuelle.
+- **Service client `prefsSync`** ([client/src/services/prefsSync.ts](client/src/services/prefsSync.ts)) : 
+  - démarré automatiquement après connexion ([client/src/App.tsx](client/src/App.tsx)) ;
+  - liste blanche partagée avec le système de sauvegarde locale (`BACKUP_KEYS` / `BACKUP_PREFIXES` exportés depuis [client/src/utils/backup.ts](client/src/utils/backup.ts)) — synchronise notamment : noms personnalisés des comptes (`mail.accountDisplayNames`), ordre des comptes et des dossiers (`mail.accountOrder`, `mail.folderOrder`), comptes/dossiers déplié·e·s et favoris (`mail.expandedAccounts`, `mail.favoriteFolders`), regroupements de boîtes unifiées (`mail.unifiedAccounts`), thème (`theme.mode`), signatures (`mail.signatures.v1`), catégories et couleurs (`mail.categories`), préférences de balayage et confirmations (`mail.swipePrefs`, `mail.deleteConfirmEnabled`), préférences calendrier et de mise en page ;
+  - traque deux maps d'horodatages locaux (`prefsSync.local`, `prefsSync.remote`) pour ne pousser que les clés modifiées et n'appliquer un changement distant que s'il est strictement plus récent que la copie locale ;
+  - boucle complète **pull → push → pull** au démarrage et à chaque modification (debounce 1,5 s), plus un *poll* toutes les 5 minutes pour les changements faits sur d'autres appareils pendant que l'app reste ouverte ;
+  - écoute l'événement existant `local-settings-changed` (déjà émis par le watcher `localStorage` de `backup.ts`) et l'événement `storage` pour la synchronisation entre onglets ;
+  - tente un dernier *push* sur `beforeunload`.
+- **Section UI dans Paramètres → Sauvegarde** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) : nouvelle sous-section *« Synchronisation cloud des préférences »* avec interrupteur d'activation, bouton **Synchroniser maintenant**, indicateur d'état (récupération / envoi / erreur) et horodatage de la dernière synchronisation réussie.
+
 #### Pagination de la liste des messages — accès aux anciens e-mails
 
 - **Bouton « Charger plus de messages »** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx), [client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : la liste des e-mails ne se limitait plus à la première page renvoyée par le serveur (50 messages les plus récents). Un bouton apparaît au bas de la liste tant que `messages.length < totalMessages` et déclenche `api.getMessages(accountId, folder, page + 1)`. Les nouveaux messages sont fusionnés sans doublon (par triplet `_accountId:_folder:uid`) puis re-triés par date dans le store via la nouvelle action `appendMessages` ([client/src/stores/mailStore.ts](client/src/stores/mailStore.ts)). Les messages chargés sont aussi indexés en IndexedDB pour la recherche hors-ligne.

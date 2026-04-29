@@ -24,6 +24,10 @@ import {
   clearBackupDirectory, getBackupDirLabel,
   getLastBackupAt, getLastBackupError, runAutoBackup, subscribeBackupStatus,
 } from '../utils/backup';
+import {
+  isPrefsSyncEnabled, setPrefsSyncEnabled, getLastSyncAt as getLastPrefsSyncAt,
+  getLastSyncError as getLastPrefsSyncError, triggerPrefsSyncNow, PREFS_SYNC_EVENT,
+} from '../services/prefsSync';
 
 type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
 
@@ -997,7 +1001,117 @@ function BackupSettings() {
           </div>
         </div>
       </section>
+
+      <CloudSyncSection />
     </div>
+  );
+}
+
+/**
+ * Cross-device synchronisation of UI customisations (renamed accounts/folders,
+ * ordering, colours, layout, signatures, swipe actions, calendar prefs, theme…).
+ *
+ * Sits inside the "Sauvegarde" tab because it shares the same conceptual goal
+ * as the local backup — making sure user settings are not lost — but applies
+ * automatically to every device the user signs in on, using the per-user
+ * `user_preferences` server table with last-write-wins reconciliation.
+ */
+function CloudSyncSection() {
+  const [enabled, setEnabled] = useState<boolean>(() => isPrefsSyncEnabled());
+  const [lastAt, setLastAt] = useState<string | null>(() => getLastPrefsSyncAt());
+  const [lastError, setLastError] = useState<string | null>(() => getLastPrefsSyncError());
+  const [status, setStatus] = useState<'idle' | 'pulling' | 'pushing' | 'error'>('idle');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      const next = e?.detail?.status;
+      if (next) setStatus(next);
+      setLastAt(getLastPrefsSyncAt());
+      setLastError(getLastPrefsSyncError());
+    };
+    window.addEventListener(PREFS_SYNC_EVENT, handler as EventListener);
+    return () => window.removeEventListener(PREFS_SYNC_EVENT, handler as EventListener);
+  }, []);
+
+  const onToggle = (next: boolean) => {
+    setEnabled(next);
+    setPrefsSyncEnabled(next);
+    if (next) toast.success('Synchronisation cloud activée');
+    else toast('Synchronisation cloud désactivée');
+  };
+
+  const onSyncNow = async () => {
+    setBusy(true);
+    try {
+      await triggerPrefsSyncNow();
+      toast.success('Préférences synchronisées');
+    } catch (e: any) {
+      toast.error(e?.message || 'Échec de la synchronisation');
+    } finally {
+      setBusy(false);
+      setLastAt(getLastPrefsSyncAt());
+      setLastError(getLastPrefsSyncError());
+    }
+  };
+
+  const lastDate = lastAt ? new Date(lastAt) : null;
+
+  return (
+    <section className="mt-8 border-t border-outlook-border pt-6">
+      <h3 className="text-base font-semibold mb-1">Synchronisation cloud des préférences</h3>
+      <p className="text-xs text-outlook-text-secondary mb-4">
+        Vos personnalisations (renommage des comptes/dossiers, ordre, couleurs, mise en page,
+        signatures, catégories, actions de balayage, thème…) sont synchronisées automatiquement
+        entre tous vos appareils connectés au même compte. La règle de fusion est « la dernière
+        modification gagne ».
+      </p>
+
+      <div className="space-y-3">
+        <label className="flex items-center justify-between gap-2 text-sm">
+          <span>Activer la synchronisation entre appareils</span>
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => onToggle(e.target.checked)}
+            className="h-4 w-4"
+          />
+        </label>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onSyncNow}
+            disabled={!enabled || busy}
+            className="px-3 py-1.5 text-sm rounded-md border border-outlook-border hover:bg-outlook-bg-hover disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            <RefreshCw size={14} className={busy ? 'animate-spin' : ''} />
+            Synchroniser maintenant
+          </button>
+          <span className="text-xs text-outlook-text-secondary">
+            {status === 'pulling' && 'Récupération…'}
+            {status === 'pushing' && 'Envoi…'}
+          </span>
+        </div>
+
+        <div className="text-xs space-y-1">
+          {lastDate && !lastError && (
+            <div className="flex items-center gap-1 text-outlook-text-secondary">
+              <CheckCircle2 size={12} className="text-green-600" />
+              Dernière synchronisation : {lastDate.toLocaleString()}
+            </div>
+          )}
+          {lastError && (
+            <div className="flex items-center gap-1 text-red-600">
+              <AlertCircle size={12} />
+              Dernière erreur : {lastError}
+            </div>
+          )}
+          {!lastAt && !lastError && (
+            <div className="text-outlook-text-disabled">Aucune synchronisation effectuée pour l'instant.</div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

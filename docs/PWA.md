@@ -541,3 +541,51 @@ Le fichier manifest est généré automatiquement par `vite-plugin-pwa` avec :
 - Vérifiez que l'événement `online` est bien détecté
 - Consultez les logs réseau (F12 → Network) au retour de la connexion
 - Vérifiez les emails en attente : F12 → Application → IndexedDB → outbox
+
+## Synchronisation cloud des préférences
+
+Depuis la version courante, l'application synchronise automatiquement les **personnalisations d'interface** entre tous vos appareils connectés au même compte (PC, téléphone, tablette).
+
+### Que synchronise-t-on ?
+
+Uniquement des **préférences d'affichage et d'organisation** — jamais le contenu des e-mails, des contacts, des calendriers ou des clés cryptographiques. Les clés synchronisées sont la liste blanche partagée avec le système de sauvegarde locale (`BACKUP_KEYS` / `BACKUP_PREFIXES` dans [client/src/utils/backup.ts](../client/src/utils/backup.ts)) :
+
+- Renommages de comptes et de dossiers (`mail.accountDisplayNames`)
+- Ordre des comptes et des dossiers (`mail.accountOrder`, `mail.folderOrder`)
+- Comptes dépliés et favoris (`mail.expandedAccounts`, `mail.favoriteFolders`)
+- Vues unifiées (`mail.unifiedAccounts`)
+- Thème clair/sombre (`theme.mode`)
+- Signatures, catégories et couleurs (`mail.signatures.v1`, `mail.categories`)
+- Préférences de balayage et confirmations (`mail.swipePrefs`, `mail.deleteConfirmEnabled`)
+- Préférences calendrier et de mise en page
+
+### Comment ça marche ?
+
+La table serveur `user_preferences` (`(user_id, key) → (value, updated_at)`) stocke pour chaque utilisateur la valeur la plus récente de chaque clé. Côté client, le service [client/src/services/prefsSync.ts](../client/src/services/prefsSync.ts) :
+
+1. effectue un **pull** initial juste après la connexion ;
+2. compare l'horodatage local et l'horodatage distant pour chaque clé ;
+3. **applique** la version distante si elle est strictement plus récente ;
+4. **pousse** vers le serveur les clés modifiées localement (debounce 1,5 s après le dernier changement) ;
+5. relance un **pull → push** complet toutes les 5 minutes pour capter les modifications faites sur d'autres appareils pendant que l'app reste ouverte ;
+6. tente une dernière poussée sur `beforeunload`.
+
+La résolution de conflit est **last-write-wins** sur `updated_at`, appliquée à la fois côté client (avant écriture en localStorage) et côté serveur (avec une clause SQL `WHERE user_preferences.updated_at < EXCLUDED.updated_at` dans le `ON CONFLICT` du `INSERT`).
+
+### Endpoints REST
+
+- `GET /api/settings/preferences` → `{ items: { [key]: { value, updatedAt } } }`
+- `PUT /api/settings/preferences` body `{ items: { [key]: { value, updatedAt } } }` → renvoie uniquement les clés effectivement acceptées (les autres avaient un horodatage serveur plus récent et seront récupérées au pull suivant)
+- `DELETE /api/settings/preferences/:key`
+
+Limites : 64 KiB par valeur, 500 entrées max par requête PUT, clés filtrées par `/^[a-zA-Z0-9_.\-:]{1,255}$/`.
+
+### Activer / désactiver
+
+Depuis **Paramètres → Sauvegarde → Synchronisation cloud des préférences** :
+
+- interrupteur d'activation (activé par défaut) ;
+- bouton **Synchroniser maintenant** pour forcer un cycle complet ;
+- horodatage de la dernière synchronisation réussie et message d'erreur le cas échéant.
+
+Désactiver la synchronisation conserve les préférences localement mais arrête tout aller-retour avec le serveur jusqu'à réactivation.
