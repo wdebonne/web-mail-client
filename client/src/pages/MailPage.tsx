@@ -2226,7 +2226,7 @@ export default function MailPage() {
       {/* Floating action button — mobile/tablet only */}
       {!isComposing && !composeExpanded && (
         <FloatingActionButton
-          onClick={() => openCompose()}
+          onClick={() => { setMobileView('message'); openCompose(); }}
           label="Nouveau message"
           icon={<Plus size={24} />}
         />
