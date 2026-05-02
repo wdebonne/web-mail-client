@@ -744,4 +744,68 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  // Auto-responder admin endpoints
+  adminListAutoResponders: (activeOnly = false) =>
+    request<Array<{
+      id: string;
+      accountId: string;
+      accountEmail: string;
+      accountName: string;
+      userId: string;
+      userEmail: string;
+      userDisplayName: string | null;
+      enabled: boolean;
+      subject: string;
+      scheduled: boolean;
+      startAt: string | null;
+      endAt: string | null;
+      onlyContacts: boolean;
+      createdAt: string | null;
+      updatedAt: string | null;
+    }>>(`/admin/auto-responders${activeOnly ? '?activeOnly=1' : ''}`),
+
+  adminListAutoResponderCandidates: (q?: string) =>
+    request<Array<{
+      accountId: string;
+      accountEmail: string;
+      accountName: string;
+      userId: string;
+      userEmail: string;
+      userDisplayName: string | null;
+    }>>(`/admin/auto-responders/candidates${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+
+  adminGetAutoResponder: (accountId: string) =>
+    request<{
+      accountId: string;
+      enabled: boolean;
+      subject: string;
+      bodyHtml: string;
+      bodyText: string;
+      scheduled: boolean;
+      startAt: string | null;
+      endAt: string | null;
+      onlyContacts: boolean;
+      updatedAt: string | null;
+    }>(`/admin/auto-responders/account/${accountId}`),
+
+  adminSaveAutoResponder: (accountId: string, data: {
+    enabled: boolean;
+    subject: string;
+    bodyHtml: string;
+    bodyText?: string;
+    scheduled: boolean;
+    startAt: string | null;
+    endAt: string | null;
+    onlyContacts: boolean;
+  }) =>
+    request<{ success: boolean }>(`/admin/auto-responders/account/${accountId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  adminDisableAutoResponder: (accountId: string) =>
+    request<{ success: boolean }>(`/admin/auto-responders/account/${accountId}`, {
+      method: 'DELETE',
+    }),
 };

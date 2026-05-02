@@ -28,7 +28,7 @@ async function getAccountForUser(accountId: string, userId: string) {
   return result.rows[0] || null;
 }
 
-const upsertSchema = z.object({
+export const upsertSchema = z.object({
   enabled: z.boolean(),
   subject: z.string().trim().min(1).max(255),
   bodyHtml: z.string().max(50_000),
@@ -39,7 +39,7 @@ const upsertSchema = z.object({
   onlyContacts: z.boolean().default(false),
 });
 
-const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+export const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
     'p', 'br', 'b', 'i', 'u', 's', 'strong', 'em', 'strike', 'del', 'ins',
     'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code',
@@ -59,7 +59,7 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedSchemes: ['http', 'https', 'mailto'],
 };
 
-function plainTextFromHtml(html: string): string {
+export function plainTextFromHtml(html: string): string {
   return html
     .replace(/<\s*br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n\n')
@@ -128,60 +128,79 @@ autoResponderRouter.put('/account/:accountId', async (req: AuthRequest, res) => 
     const account = await getAccountForUser(accountId, req.userId!);
     if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
 
-    const data = upsertSchema.parse(req.body);
-
-    if (data.scheduled) {
-      if (!data.startAt) {
-        return res.status(400).json({ error: 'Date de début requise' });
-      }
-      if (data.endAt && new Date(data.endAt) <= new Date(data.startAt)) {
-        return res.status(400).json({ error: 'La date de fin doit être après la date de début' });
-      }
+    const result = await upsertAutoResponderForAccount(accountId, req.body);
+    if ('error' in result) {
+      return res.status(result.status).json({ error: result.error, ...(result.details ? { details: result.details } : {}) });
     }
-
-    const cleanHtml = sanitizeHtml(data.bodyHtml || '', SANITIZE_OPTIONS);
-    const fallbackText = (data.bodyText && data.bodyText.trim())
-      ? data.bodyText
-      : plainTextFromHtml(cleanHtml);
-
-    if (data.enabled && !cleanHtml.trim() && !fallbackText.trim()) {
-      return res.status(400).json({ error: 'Le message du répondeur ne peut pas être vide' });
-    }
-
-    await pool.query(
-      `INSERT INTO auto_responders (
-          account_id, enabled, subject, body_html, body_text,
-          scheduled, start_at, end_at, only_contacts, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-        ON CONFLICT (account_id) DO UPDATE SET
-          enabled = EXCLUDED.enabled,
-          subject = EXCLUDED.subject,
-          body_html = EXCLUDED.body_html,
-          body_text = EXCLUDED.body_text,
-          scheduled = EXCLUDED.scheduled,
-          start_at = EXCLUDED.start_at,
-          end_at = EXCLUDED.end_at,
-          only_contacts = EXCLUDED.only_contacts,
-          updated_at = NOW()`,
-      [
-        accountId,
-        data.enabled,
-        data.subject,
-        cleanHtml,
-        fallbackText,
-        data.scheduled,
-        data.scheduled ? data.startAt : null,
-        data.scheduled ? data.endAt ?? null : null,
-        data.onlyContacts,
-      ],
-    );
-
     res.json({ success: true });
   } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Données invalides', details: error.errors });
-    }
     logger.error(error, 'auto-responder PUT failed');
     res.status(500).json({ error: error.message || 'Erreur' });
   }
 });
+
+/**
+ * Shared upsert used by both the per-user route and the admin route.
+ * Returns either `{ success: true }` or `{ status, error, details? }`.
+ */
+export async function upsertAutoResponderForAccount(accountId: string, body: unknown):
+  Promise<{ success: true } | { status: number; error: string; details?: any }>
+{
+  let data: z.infer<typeof upsertSchema>;
+  try {
+    data = upsertSchema.parse(body);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return { status: 400, error: 'Données invalides', details: err.errors };
+    }
+    throw err;
+  }
+
+  if (data.scheduled) {
+    if (!data.startAt) {
+      return { status: 400, error: 'Date de début requise' };
+    }
+    if (data.endAt && new Date(data.endAt) <= new Date(data.startAt)) {
+      return { status: 400, error: 'La date de fin doit être après la date de début' };
+    }
+  }
+
+  const cleanHtml = sanitizeHtml(data.bodyHtml || '', SANITIZE_OPTIONS);
+  const fallbackText = (data.bodyText && data.bodyText.trim())
+    ? data.bodyText
+    : plainTextFromHtml(cleanHtml);
+
+  if (data.enabled && !cleanHtml.trim() && !fallbackText.trim()) {
+    return { status: 400, error: 'Le message du répondeur ne peut pas être vide' };
+  }
+
+  await pool.query(
+    `INSERT INTO auto_responders (
+        account_id, enabled, subject, body_html, body_text,
+        scheduled, start_at, end_at, only_contacts, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      ON CONFLICT (account_id) DO UPDATE SET
+        enabled = EXCLUDED.enabled,
+        subject = EXCLUDED.subject,
+        body_html = EXCLUDED.body_html,
+        body_text = EXCLUDED.body_text,
+        scheduled = EXCLUDED.scheduled,
+        start_at = EXCLUDED.start_at,
+        end_at = EXCLUDED.end_at,
+        only_contacts = EXCLUDED.only_contacts,
+        updated_at = NOW()`,
+    [
+      accountId,
+      data.enabled,
+      data.subject,
+      cleanHtml,
+      fallbackText,
+      data.scheduled,
+      data.scheduled ? data.startAt : null,
+      data.scheduled ? data.endAt ?? null : null,
+      data.onlyContacts,
+    ],
+  );
+
+  return { success: true };
+}

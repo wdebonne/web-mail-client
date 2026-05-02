@@ -13,6 +13,7 @@ import {
   revokeAllUserDeviceSessions,
   adminRevokeDeviceSession,
 } from '../services/deviceSessions';
+import { upsertAutoResponderForAccount } from './autoResponder';
 
 export const adminRouter = Router();
 
@@ -1985,6 +1986,195 @@ adminRouter.delete('/users/:userId/devices', async (req: AuthRequest, res) => {
     res.json({ success: true, revoked: count });
   } catch (error: any) {
     logger.error(error as Error, 'Admin revoke all devices failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// Auto-Responders (admin)
+// ========================================
+
+/**
+ * List every auto-responder row, joined with the owning mail account and user.
+ * Used by the Admin > Répondeurs tab. Supports `?activeOnly=1` to return only
+ * responders that are enabled AND currently within their schedule window.
+ */
+adminRouter.get('/auto-responders', async (req: AuthRequest, res) => {
+  try {
+    const activeOnly = req.query.activeOnly === '1' || req.query.activeOnly === 'true';
+
+    const filterSql = activeOnly
+      ? `WHERE ar.enabled = true
+           AND (NOT ar.scheduled OR (
+             (ar.start_at IS NULL OR ar.start_at <= NOW())
+             AND (ar.end_at IS NULL OR ar.end_at > NOW())
+           ))`
+      : '';
+
+    const result = await pool.query(
+      `SELECT ar.id, ar.account_id, ar.enabled, ar.subject, ar.scheduled,
+              ar.start_at, ar.end_at, ar.only_contacts, ar.created_at, ar.updated_at,
+              ma.email AS account_email, ma.name AS account_name, ma.user_id,
+              u.email AS user_email, u.display_name AS user_display_name
+         FROM auto_responders ar
+         JOIN mail_accounts ma ON ma.id = ar.account_id
+         JOIN users u ON u.id = ma.user_id
+         ${filterSql}
+        ORDER BY ar.enabled DESC, ar.updated_at DESC`,
+    );
+
+    res.json(result.rows.map(r => ({
+      id: r.id,
+      accountId: r.account_id,
+      accountEmail: r.account_email,
+      accountName: r.account_name,
+      userId: r.user_id,
+      userEmail: r.user_email,
+      userDisplayName: r.user_display_name,
+      enabled: r.enabled,
+      subject: r.subject,
+      scheduled: r.scheduled,
+      startAt: r.start_at,
+      endAt: r.end_at,
+      onlyContacts: r.only_contacts,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    })));
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin list auto-responders failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * List candidate (user, mail-account) pairs for the admin "new responder"
+ * autocomplete. Returns at most 50 rows so we don't ship the entire database
+ * to the browser when the admin opens the picker.
+ */
+adminRouter.get('/auto-responders/candidates', async (req: AuthRequest, res) => {
+  try {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const params: any[] = [];
+    let where = '';
+    if (q) {
+      params.push(`%${q}%`);
+      where = `WHERE LOWER(u.email) LIKE $1
+                  OR LOWER(COALESCE(u.display_name, '')) LIKE $1
+                  OR LOWER(ma.email) LIKE $1
+                  OR LOWER(COALESCE(ma.name, '')) LIKE $1`;
+    }
+    const result = await pool.query(
+      `SELECT ma.id AS account_id, ma.email AS account_email, ma.name AS account_name,
+              u.id AS user_id, u.email AS user_email, u.display_name AS user_display_name
+         FROM mail_accounts ma
+         JOIN users u ON u.id = ma.user_id
+         ${where}
+        ORDER BY u.display_name NULLS LAST, u.email, ma.email
+        LIMIT 50`,
+      params,
+    );
+    res.json(result.rows.map(r => ({
+      accountId: r.account_id,
+      accountEmail: r.account_email,
+      accountName: r.account_name,
+      userId: r.user_id,
+      userEmail: r.user_email,
+      userDisplayName: r.user_display_name,
+    })));
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin auto-responder candidates failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** Read a single account's auto-responder (admin can target any account). */
+adminRouter.get('/auto-responders/account/:accountId', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const exists = await pool.query('SELECT 1 FROM mail_accounts WHERE id = $1', [accountId]);
+    if (exists.rowCount === 0) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const result = await pool.query(
+      `SELECT account_id, enabled, subject, body_html, body_text,
+              scheduled, start_at, end_at, only_contacts, created_at, updated_at
+         FROM auto_responders WHERE account_id = $1`,
+      [accountId],
+    );
+    if (result.rowCount === 0) {
+      return res.json({
+        accountId,
+        enabled: false,
+        subject: 'Réponse automatique',
+        bodyHtml: '',
+        bodyText: '',
+        scheduled: false,
+        startAt: null,
+        endAt: null,
+        onlyContacts: false,
+        updatedAt: null,
+      });
+    }
+    const row = result.rows[0];
+    res.json({
+      accountId: row.account_id,
+      enabled: row.enabled,
+      subject: row.subject,
+      bodyHtml: row.body_html,
+      bodyText: row.body_text,
+      scheduled: row.scheduled,
+      startAt: row.start_at,
+      endAt: row.end_at,
+      onlyContacts: row.only_contacts,
+      updatedAt: row.updated_at,
+    });
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin get auto-responder failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** Upsert an account's auto-responder on behalf of an admin. */
+adminRouter.put('/auto-responders/account/:accountId', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const exists = await pool.query('SELECT id, user_id, email FROM mail_accounts WHERE id = $1', [accountId]);
+    if (exists.rowCount === 0) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const result = await upsertAutoResponderForAccount(accountId, req.body);
+    if ('error' in result) {
+      return res.status(result.status).json({ error: result.error, ...(result.details ? { details: result.details } : {}) });
+    }
+    await addLog(
+      req.userId,
+      'auto_responder.admin_save',
+      'admin',
+      req,
+      { accountId, accountEmail: exists.rows[0].email, targetUserId: exists.rows[0].user_id, enabled: req.body?.enabled },
+      'mail_account',
+      accountId,
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin save auto-responder failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** Quickly disable an account's auto-responder (admin shortcut). */
+adminRouter.delete('/auto-responders/account/:accountId', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const result = await pool.query(
+      `UPDATE auto_responders SET enabled = false, updated_at = NOW() WHERE account_id = $1`,
+      [accountId],
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Aucun répondeur configuré pour ce compte' });
+    }
+    await addLog(req.userId, 'auto_responder.admin_disable', 'admin', req, { accountId }, 'mail_account', accountId);
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin disable auto-responder failed');
     res.status(500).json({ error: error.message });
   }
 });

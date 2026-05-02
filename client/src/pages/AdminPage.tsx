@@ -6,14 +6,15 @@ import {
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
-  ChevronDown, ChevronRight, LogOut,
+  ChevronDown, ChevronRight, LogOut, Coffee,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
 
 import AdminCalendarManagement from '../components/admin/AdminCalendarManagement';
+import AdminAutoResponders from '../components/admin/AdminAutoResponders';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices';
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('dashboard');
@@ -32,6 +33,7 @@ export default function AdminPage() {
     { id: 'users' as const, icon: Users, label: 'Utilisateurs' },
     { id: 'groups' as const, icon: Shield, label: 'Groupes' },
     { id: 'mailaccounts' as const, icon: Mail, label: 'Comptes mail' },
+    { id: 'autoresponders' as const, icon: Coffee, label: 'Répondeurs' },
     { id: 'calendars' as const, icon: Calendar, label: 'Calendriers' },
     { id: 'o2switch' as const, icon: Server, label: 'O2Switch' },
     { id: 'plugins' as const, icon: Plug, label: 'Plugins' },
@@ -91,6 +93,7 @@ export default function AdminPage() {
             {tab === 'users' && <UserManagement />}
             {tab === 'groups' && <GroupManagement />}
             {tab === 'mailaccounts' && <MailAccountManagement />}
+            {tab === 'autoresponders' && <AdminAutoResponders />}
             {tab === 'calendars' && <AdminCalendarManagement />}
             {tab === 'o2switch' && <O2SwitchManagement />}
             {tab === 'plugins' && <PluginManagement />}

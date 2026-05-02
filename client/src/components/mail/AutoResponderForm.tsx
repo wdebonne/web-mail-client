@@ -15,6 +15,14 @@ interface AutoResponderFormProps {
   onSaved?: () => void;
   /** When true, render in a more compact layout (used inside the Settings panel). */
   compact?: boolean;
+  /**
+   * When true, the form targets the admin endpoints and edits *any* account,
+   * skipping the writable-accounts filter. The single account to edit must be
+   * provided through `accountId`, and `adminAccountLabel` is shown instead of
+   * the account picker.
+   */
+  adminMode?: boolean;
+  adminAccountLabel?: string;
 }
 
 interface ResponderState {
@@ -54,28 +62,30 @@ function localInputToIso(local: string): string | null {
   return d.toISOString();
 }
 
-export default function AutoResponderForm({ accountId: initialId, accounts, onSaved, compact }: AutoResponderFormProps) {
+export default function AutoResponderForm({ accountId: initialId, accounts, onSaved, compact, adminMode, adminAccountLabel }: AutoResponderFormProps) {
   const writableAccounts = useMemo(
     () => accounts.filter(a => a.send_permission !== 'none'),
     [accounts],
   );
 
   const [accountId, setAccountId] = useState<string>(() => {
-    if (initialId && writableAccounts.some(a => a.id === initialId)) return initialId;
+    if (initialId) return initialId;
+    if (adminMode) return '';
     return writableAccounts[0]?.id || '';
   });
 
   useEffect(() => {
+    if (adminMode) return;
     if (!accountId && writableAccounts.length > 0) setAccountId(writableAccounts[0].id);
-  }, [accountId, writableAccounts]);
+  }, [accountId, writableAccounts, adminMode]);
 
   const [state, setState] = useState<ResponderState>(DEFAULT_STATE);
   const editorRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['auto-responder', accountId],
-    queryFn: () => api.getAutoResponder(accountId),
+    queryKey: [adminMode ? 'admin-auto-responder' : 'auto-responder', accountId],
+    queryFn: () => (adminMode ? api.adminGetAutoResponder(accountId) : api.getAutoResponder(accountId)),
     enabled: !!accountId,
   });
 
@@ -99,7 +109,7 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
   const saveMutation = useMutation({
     mutationFn: () => {
       const html = editorRef.current?.innerHTML ?? state.bodyHtml;
-      return api.saveAutoResponder(accountId, {
+      const payload = {
         enabled: state.enabled,
         subject: state.subject.trim() || 'Réponse automatique',
         bodyHtml: html,
@@ -107,11 +117,15 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
         startAt: state.scheduled ? localInputToIso(state.startAt) : null,
         endAt: state.scheduled && state.endAt ? localInputToIso(state.endAt) : null,
         onlyContacts: state.onlyContacts,
-      });
+      };
+      return adminMode
+        ? api.adminSaveAutoResponder(accountId, payload)
+        : api.saveAutoResponder(accountId, payload);
     },
     onSuccess: () => {
       toast.success('Répondeur enregistré');
-      queryClient.invalidateQueries({ queryKey: ['auto-responder', accountId] });
+      queryClient.invalidateQueries({ queryKey: [adminMode ? 'admin-auto-responder' : 'auto-responder', accountId] });
+      if (adminMode) queryClient.invalidateQueries({ queryKey: ['admin-auto-responders'] });
       onSaved?.();
     },
     onError: (err: any) => {
@@ -135,7 +149,14 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
   return (
     <div className={`flex flex-col gap-4 ${compact ? '' : 'p-1'}`}>
       {/* Account picker (only when multiple writable accounts). */}
-      {writableAccounts.length > 1 && (
+      {adminMode ? (
+        adminAccountLabel ? (
+          <div className="flex items-center gap-2 text-sm text-outlook-text-secondary">
+            <span className="min-w-[80px]">Compte</span>
+            <span className="font-medium text-outlook-text-primary">{adminAccountLabel}</span>
+          </div>
+        ) : null
+      ) : writableAccounts.length > 1 && (
         <div className="flex items-center gap-2">
           <label className="text-sm text-outlook-text-secondary min-w-[80px]">Compte</label>
           <select
