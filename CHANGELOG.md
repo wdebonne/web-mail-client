@@ -9,6 +9,17 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Sélecteur de vue calendrier et recherche unifiée sur mobile / tablette
+
+- **Sélecteur de vue style Outlook** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : sur mobile et tablette (`< lg`, 1024 px), un bouton dédié situé en haut à droite du panneau calendrier (à côté de l'icône loupe) permet de basculer librement entre les vues **Jour**, **Semaine de travail**, **Semaine**, **Mois** et **Agenda**. L'icône reflète la vue active (`Calendar`, `CalendarRange`, `CalendarDays`, `List`) et un menu déroulant met en surbrillance la vue courante avec une coche. Le verrouillage automatique en vue *Jour* sur petits écrans a été supprimé : seul `dayCount` reste forcé à 1 pour préserver la lisibilité. Sur desktop (`lg+`), le ruban classique reste l'unique point d'accès aux vues.
+- **Boîte de dialogue de recherche unifiée** ([client/src/components/calendar/UnifiedSearchDialog.tsx](client/src/components/calendar/UnifiedSearchDialog.tsx)) : nouvelle icône loupe en haut à droite de la page calendrier (mobile/tablette uniquement) qui ouvre une recherche **transverse à tous les agendas et toutes les boîtes mail** de l'utilisateur, en s'appuyant sur l'endpoint serveur existant `GET /api/search`. Champ de saisie avec debounce de 250 ms, indicateur de chargement, fermeture par `ESC` ou clic en dehors. Résultats regroupés en deux sections : **Événements** (pastille couleur du calendrier, date/heure formatées en français, lieu, calendrier d'origine) et **E-mails** (objet, expéditeur, snippet, date). Cliquer un événement bascule la page calendrier en vue *Jour* à la date de l'événement ; cliquer un e-mail navigue vers `/mail?search=…`.
+
+### Corrigé
+
+#### Synchronisation des signatures avec images embarquées
+
+- **Limite de taille par préférence augmentée pour les clés contenant du contenu riche** ([server/src/routes/settings.ts](server/src/routes/settings.ts)) : la limite globale de 64 Ko empêchait la synchronisation des signatures contenant des images base64 (erreur `413 Content Too Large` sur `mail.signatures.v1`). Une nouvelle fonction `maxBytesForKey(key)` étend la limite à **4 Mo** pour les clés préfixées `mail.signatures.` et `mail.templates.`, tout en conservant le plafond historique de 64 Ko pour les autres préférences (couleurs, layout, swipe, etc.). Le message d'erreur 413 indique désormais la limite réelle qui s'applique à la clé concernée.
+
 #### Notifications push pour les rappels d'événements calendrier
 
 - **Nouveau service serveur `calendarReminderPoller`** ([server/src/services/calendarReminderPoller.ts](server/src/services/calendarReminderPoller.ts)) : tourne toutes les 60 s (configurable via `CALENDAR_REMINDER_POLL_INTERVAL_MS`) et envoie une notification Web Push + WebSocket à l'utilisateur dès que `start_date - reminder_minutes ≤ NOW()` pour un événement à venir. Le payload contient le titre (préfixé ⏰), la date formatée en français, une indication relative (« dans 15 min »), et le lieu s'il est renseigné. Cliquer la notification ouvre `/calendar?event=<id>`.
