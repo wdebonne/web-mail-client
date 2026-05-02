@@ -21,30 +21,58 @@ interface Props {
   ctx: NotificationContext;
 }
 
+/**
+ * Limite réelle d'actions affichées par l'OS courant.
+ * - Sur Chromium (desktop ET Android), `Notification.maxActions` est
+ *   exposé dynamiquement (2 sur Android, 2 sur Windows, jusqu'à 5 ailleurs).
+ * - Sur les WebViews iOS/Safari, la propriété n'existe pas → on retombe
+ *   sur des plafonds prudents (2 desktop / 2 mobile / 3 tablet) qui
+ *   correspondent à ce que ces plateformes affichent réellement dans la
+ *   bannière collapsed (vue par défaut sur l'écran de verrouillage).
+ */
+function getRealMaxActions(platform: NotificationPlatform): number {
+  const fallback = platform === 'desktop' ? 2 : platform === 'mobile' ? 2 : 3;
+  try {
+    const N: any = (globalThis as any).Notification;
+    if (N && typeof N.maxActions === 'number' && N.maxActions > 0) {
+      return Math.min(N.maxActions, platform === 'desktop' ? 2 : 3);
+    }
+  } catch { /* noop */ }
+  return fallback;
+}
+
 /** Rendu commun : liste les boutons d'action selon la plateforme. */
 function ActionRow({
   prefs, platform,
 }: { prefs: NotificationPrefs; platform: NotificationPlatform }) {
   const actions = prefs[platform].actions;
   if (!actions.length) return null;
-  // Mobile/tablet limitent à 3 boutons visibles ; desktop à 2.
-  const max = platform === 'desktop' ? 2 : 3;
+  // On reflète exactement ce que l'OS affichera (Notification.maxActions).
+  const max = getRealMaxActions(platform);
   const visible = actions.slice(0, max);
+  const hidden = actions.length - visible.length;
   return (
-    <div
-      className="grid"
-      style={{ gridTemplateColumns: `repeat(${visible.length}, 1fr)` }}
-    >
-      {visible.map((a, i) => (
-        <button
-          key={a.id + i}
-          type="button"
-          className="px-3 py-2 text-[13px] text-center text-white/90 hover:bg-white/10 transition-colors border-l border-white/10 first:border-l-0"
-        >
-          {a.label || a.id}
-        </button>
-      ))}
-    </div>
+    <>
+      <div
+        className="grid"
+        style={{ gridTemplateColumns: `repeat(${visible.length}, 1fr)` }}
+      >
+        {visible.map((a, i) => (
+          <button
+            key={a.id + i}
+            type="button"
+            className="px-3 py-2 text-[13px] text-center text-white/90 hover:bg-white/10 transition-colors border-l border-white/10 first:border-l-0"
+          >
+            {a.label || a.id}
+          </button>
+        ))}
+      </div>
+      {hidden > 0 && (
+        <div className="px-3 py-1.5 text-[10.5px] text-amber-300/80 bg-amber-500/10 border-t border-amber-500/20 text-center">
+          +{hidden} action{hidden > 1 ? 's' : ''} masquée{hidden > 1 ? 's' : ''} par l'OS (limite Notification.maxActions = {max})
+        </div>
+      )}
+    </>
   );
 }
 
