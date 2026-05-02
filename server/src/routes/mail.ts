@@ -445,6 +445,10 @@ mailRouter.post('/accounts/:accountId/messages/:uid/move', async (req: AuthReque
     const { accountId, uid } = req.params;
     const { fromFolder, toFolder } = req.body;
 
+    if (!fromFolder || !toFolder) {
+      return res.status(400).json({ error: 'fromFolder et toFolder sont requis' });
+    }
+
     const account = await getAccountForUser(accountId, req.userId!);
     if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
 
@@ -459,7 +463,18 @@ mailRouter.post('/accounts/:accountId/messages/:uid/move', async (req: AuthReque
 
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[mail] Move error', {
+      accountId: req.params.accountId,
+      uid: req.params.uid,
+      fromFolder: req.body?.fromFolder,
+      toFolder: req.body?.toFolder,
+      message: error?.message,
+      code: error?.code,
+      response: error?.response,
+    });
+    res.status(500).json({
+      error: error?.message || 'Erreur lors du déplacement du message',
+    });
   }
 });
 

@@ -485,9 +485,33 @@ export class MailService {
     const client = this.createImapClient();
     try {
       await client.connect();
+
+      // Ensure the destination mailbox exists. Some IMAP servers (e.g. o2switch
+      // / Dovecot) return a vague NO/BAD when moving to a missing folder; we
+      // pre-create it (no-op if it already exists) so the move can proceed.
+      // mailboxCreate throws "ALREADYEXISTS" when the path is already there —
+      // which we silently swallow.
+      try {
+        await client.mailboxCreate(toFolder);
+      } catch (e: any) {
+        const msg = String(e?.message || e?.code || '').toLowerCase();
+        if (!msg.includes('exist')) {
+          // Not an "already exists" error — log and continue; the move will
+          // surface the real reason if the folder genuinely cannot be used.
+          console.warn(`[mail] mailboxCreate(${toFolder}) failed before move:`, e?.message || e);
+        }
+      }
+
       const lock = await client.getMailboxLock(fromFolder);
       try {
-        await client.messageMove(`${uid}`, toFolder, { uid: true });
+        const result: any = await client.messageMove(`${uid}`, toFolder, { uid: true });
+        // ImapFlow returns an object with `uidMap` on success. When the source
+        // UID does not exist, some servers respond with success + empty map
+        // instead of an error, so we detect the no-op and surface a useful
+        // message to the client.
+        if (result && typeof result === 'object' && 'uidMap' in result && result.uidMap?.size === 0) {
+          throw new Error(`Le message UID ${uid} est introuvable dans ${fromFolder}`);
+        }
       } finally {
         lock.release();
       }
