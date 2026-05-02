@@ -9,6 +9,11 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Pages Contacts, Paramètres et Administration responsives (mobile / tablette)
+
+- **Pages *Paramètres* et *Administration* adaptées aux petits écrans** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx), [client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : la barre latérale verticale `w-56` (qui amputait l'espace de contenu sur mobile/tablette) est remplacée en `< md` (768 px) par une **barre d'onglets horizontale défilable** (`overflow-x-auto`) collée en haut. Chaque onglet conserve son icône et son libellé et bascule sur la pastille bleue Outlook lorsqu'il est actif. En `md+`, la disposition historique (sidebar verticale + contenu à droite) est préservée. Le padding du conteneur passe à `p-3 sm:p-4 md:p-6` pour récupérer de la place sur petit écran.
+- **Page *Contacts* en vue maître/détail responsive** ([client/src/pages/ContactsPage.tsx](client/src/pages/ContactsPage.tsx)) : sur mobile/tablette (`< md`), la liste des contacts occupe toute la largeur tant qu'aucun contact n'est sélectionné ; en cliquant sur un contact, la fiche détaillée prend le relais en plein écran avec un bouton **« Retour »** (icône `ChevronLeft`) en barre supérieure pour revenir à la liste. La poignée de redimensionnement de la barre latérale est masquée (`hidden md:block`) sur petits écrans. La largeur fixe (`sidebarWidth`) n'est appliquée qu'à partir de 768 px ; en dessous, la liste utilise `w-full`. Le comportement côte-à-côte historique est conservé sur desktop (`md+`).
+
 #### Vue Agenda dans le calendrier
 
 - **Nouvelle vue « Agenda »** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx), [client/src/components/calendar/CalendarRibbon.tsx](client/src/components/calendar/CalendarRibbon.tsx)) : liste plate de tous les événements groupés par jour, à la manière d'Outlook Mobile. Chaque jour affiche un en-tête (`mardi 25 avril`) — coloré en bleu si c'est aujourd'hui — suivi de ses événements triés (les *Toute la journée* en premier, puis chronologiquement). Pastille colorée du calendrier, heure de début, titre et lieu. Accessible depuis tous les rubans (simplifié + classique, onglets *Accueil* et *Afficher*) et le menu *Vues enregistrées*.
