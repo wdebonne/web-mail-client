@@ -16,6 +16,7 @@ import { maybeSendAutoReply } from './autoResponderService';
 
 const lastSeenUid = new Map<string, number>(); // accountId -> highest UID
 const lastCheckedAt = new Map<string, number>(); // userId -> ms epoch of last check
+const lastCatchUpAt = new Map<string, number>(); // accountId -> ms epoch of responder.updated_at last catch-up
 // Base tick frequency. The actual per-user check frequency is gated by the
 // `mail.newMailPollMinutes` user preference (0=jamais, 1/5/15/30/60).
 const INTERVAL_MS = Math.max(15_000, Number(process.env.NEW_MAIL_POLL_INTERVAL_MS) || 30_000);
@@ -94,35 +95,54 @@ async function checkAccount(row: any) {
   const maxUid = Math.max(...uids);
   const prev = lastSeenUid.get(row.id);
 
-  if (prev === undefined) {
-    // First observation for this account in this process. Normally we just
-    // record the baseline so we don't notify on existing mail. BUT if an
-    // auto-responder is active for this account, we ALSO need to process any
-    // messages that arrived since the responder was enabled — otherwise the
-    // baseline silently swallows the very mail the user is trying to test.
-    lastSeenUid.set(row.id, maxUid);
-
-    try {
-      const r = await pool.query(
-        `SELECT enabled, scheduled, start_at, end_at, updated_at
-           FROM auto_responders WHERE account_id = $1`,
-        [row.id],
-      );
-      if (r.rowCount === 0) return;
+  // ------------------------------------------------------------------
+  // Auto-responder catch-up. Runs whenever:
+  //   (a) we have never observed this account in this process (prev === undefined), OR
+  //   (b) an active auto-responder exists whose updated_at is newer than the
+  //       last catch-up we ran for it (covers the case where the user/admin
+  //       creates or edits a responder AFTER the baseline was taken).
+  // The catch-up scans messages received since max(updated_at, start_at) and
+  // calls maybeSendAutoReply for each, capped to 20 messages / 7 days.
+  // ------------------------------------------------------------------
+  let shouldRunCatchUp = prev === undefined;
+  let responderUpdatedAtMs = 0;
+  let catchUpResponder: any = null;
+  try {
+    const r = await pool.query(
+      `SELECT enabled, scheduled, start_at, end_at, updated_at
+         FROM auto_responders WHERE account_id = $1`,
+      [row.id],
+    );
+    if (r.rowCount! > 0) {
       const ar = r.rows[0];
-      if (!ar.enabled) return;
       const now = Date.now();
-      if (ar.scheduled) {
-        if (ar.start_at && new Date(ar.start_at).getTime() > now) return;
-        if (ar.end_at && new Date(ar.end_at).getTime() <= now) return;
+      const scheduleOk = !ar.scheduled
+        || ((!ar.start_at || new Date(ar.start_at).getTime() <= now)
+          && (!ar.end_at || new Date(ar.end_at).getTime() > now));
+      if (ar.enabled && scheduleOk) {
+        responderUpdatedAtMs = ar.updated_at ? new Date(ar.updated_at).getTime() : 0;
+        const lastCatch = lastCatchUpAt.get(row.id) ?? 0;
+        if (responderUpdatedAtMs > lastCatch) shouldRunCatchUp = true;
+        catchUpResponder = ar;
       }
+    }
+  } catch (err) {
+    logger.debug({ err, accountId: row.id }, 'auto-responder catch-up: load failed');
+  }
 
-      // Take the most recent activation/edit, or fall back to start_at.
+  if (prev === undefined) {
+    // Always baseline so we don't notify on existing mail in the regular path.
+    lastSeenUid.set(row.id, maxUid);
+  }
+
+  if (shouldRunCatchUp && catchUpResponder) {
+    try {
+      const ar = catchUpResponder;
+      const now = Date.now();
       const activatedAt = ar.updated_at ? new Date(ar.updated_at) : null;
       const startedAt = ar.start_at ? new Date(ar.start_at) : null;
       const sinceCandidates = [activatedAt, startedAt]
         .filter((d): d is Date => !!d && !Number.isNaN(d.getTime()));
-      // Don't go further than 7 days back to avoid spamming on first run.
       const minSince = new Date(now - 7 * 24 * 60 * 60 * 1000);
       let since = sinceCandidates.length
         ? new Date(Math.max(...sinceCandidates.map((d) => d.getTime())))
@@ -133,28 +153,30 @@ async function checkAccount(row: any) {
         logger.debug({ err, accountId: row.id }, 'auto-responder catch-up: listFolderUidsSince failed');
         return [] as number[];
       });
-      if (!recent || recent.length === 0) return;
-      const sorted = [...recent].sort((a, b) => a - b);
-      // Cap to avoid an avalanche if the inbox is huge.
-      const tail = sorted.slice(-20);
-      logger.info(`auto-responder catch-up for ${row.email}: ${tail.length} candidate(s) since ${since.toISOString()}`);
-      for (const uid of tail) {
-        try {
-          const msg = await service.getMessage('INBOX', uid);
-          await maybeSendAutoReply(
-            { id: row.id, user_id: row.user_id, email: row.email, name: row.name },
-            msg,
-            service,
-          );
-        } catch (err) {
-          logger.debug({ err, uid, accountId: row.id }, 'auto-responder catch-up: getMessage failed');
+      if (recent && recent.length > 0) {
+        const sorted = [...recent].sort((a, b) => a - b);
+        const tail = sorted.slice(-20);
+        logger.info(`auto-responder catch-up for ${row.email}: ${tail.length} candidate(s) since ${since.toISOString()}`);
+        for (const uid of tail) {
+          try {
+            const msg = await service.getMessage('INBOX', uid);
+            await maybeSendAutoReply(
+              { id: row.id, user_id: row.user_id, email: row.email, name: row.name },
+              msg,
+              service,
+            );
+          } catch (err) {
+            logger.debug({ err, uid, accountId: row.id }, 'auto-responder catch-up: getMessage failed');
+          }
         }
       }
+      lastCatchUpAt.set(row.id, responderUpdatedAtMs || Date.now());
     } catch (err) {
       logger.debug({ err, accountId: row.id }, 'auto-responder catch-up failed');
     }
-    return;
   }
+
+  if (prev === undefined) return;
 
   if (maxUid <= prev) {
     return;
@@ -282,12 +304,21 @@ async function tick() {
 
     if (eligibleUserIds.length === 0) return;
 
+    // Fetch every mail account belonging to the eligible users — including
+    // shared mailboxes attached via `mailbox_assignments` (where
+    // `mail_accounts.user_id` is NULL but the user has access).
     const result = await pool.query(
-      `SELECT * FROM mail_accounts WHERE user_id = ANY($1::uuid[])`,
+      `SELECT DISTINCT ma.*, COALESCE(ma.user_id, mba.user_id) AS user_id
+         FROM mail_accounts ma
+         LEFT JOIN mailbox_assignments mba ON mba.mail_account_id = ma.id
+        WHERE ma.user_id = ANY($1::uuid[])
+           OR mba.user_id = ANY($1::uuid[])`,
       [eligibleUserIds]
     );
 
     if (result.rowCount === 0) return;
+
+    logger.debug(`new-mail poll tick: ${eligibleUserIds.length} user(s), ${result.rowCount} account(s)`);
 
     // Limit concurrency — process accounts sequentially to avoid hammering IMAP.
     const checkedUserIds = new Set<string>();
