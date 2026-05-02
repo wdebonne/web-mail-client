@@ -6,7 +6,7 @@ import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
   Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
-  Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder
+  Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder, Menu,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CacheSettings from '../components/CacheSettings';
@@ -36,6 +36,10 @@ type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'b
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
+  // On mobile/tablet (< md), `mobileDetail` toggles between the list of
+  // sections (false) and the selected section's content (true). On desktop
+  // both are visible at the same time so the flag is ignored.
+  const [mobileDetail, setMobileDetail] = useState(false);
 
   const tabs = [
     { id: 'profile' as const, icon: User, label: 'Profil' },
@@ -48,26 +52,30 @@ export default function SettingsPage() {
     { id: 'backup' as const, icon: HardDrive, label: 'Sauvegarde' },
     { id: 'cache' as const, icon: Database, label: 'Cache local' },
   ];
+  const currentTab = tabs.find(t => t.id === tab);
 
   return (
     <div className="h-full flex flex-col md:flex-row">
-      {/* Mobile/tablet horizontal tab strip */}
-      <div className="md:hidden border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0 overflow-x-auto">
-        <div className="flex gap-1 px-2 py-2 w-max">
-          {tabs.map(t => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-md transition-colors flex-shrink-0
-                  ${tab === t.id ? 'bg-outlook-blue text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-              >
-                <Icon size={14} /> {t.label}
-              </button>
-            );
-          })}
-        </div>
+      {/* Mobile/tablet vertical list (master view) — full width when no
+          section is selected. Hidden once the user picks one (the hamburger
+          icon at the top of the detail brings it back). */}
+      <div
+        className={`md:hidden ${mobileDetail ? 'hidden' : 'flex'} flex-col flex-1 overflow-y-auto bg-outlook-bg-primary`}
+      >
+        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">Paramètres</h2>
+        {tabs.map(t => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              onClick={() => { setTab(t.id); setMobileDetail(true); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
+                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+            >
+              <Icon size={18} /> {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Desktop sidebar */}
@@ -88,18 +96,39 @@ export default function SettingsPage() {
         })}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
-        <div className="max-w-2xl">
-          {tab === 'profile' && <ProfileSettings />}
-          {tab === 'accounts' && <AccountSettings />}
-          {tab === 'mail' && <MailBehaviorSettings />}
-          {tab === 'appearance' && <AppearanceSettings />}
-          {tab === 'notifications' && <NotificationSettings />}
-          {tab === 'cache' && <CacheSettings />}
-          {tab === 'devices' && <DevicesSettings />}
-          {tab === 'security' && <SecuritySettings />}
-          {tab === 'backup' && <BackupSettings />}
+      {/* Content (detail view). Hidden on mobile until the user picks a
+          section — then it takes the whole screen. Always visible on desktop. */}
+      <div
+        className={`flex-1 ${mobileDetail ? 'flex' : 'hidden'} md:flex flex-col min-h-0`}
+      >
+        {/* Mobile header bar with hamburger to go back to the list */}
+        <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0">
+          <button
+            onClick={() => setMobileDetail(false)}
+            className="p-2 -ml-1 rounded-md hover:bg-outlook-bg-hover text-outlook-text-primary"
+            aria-label="Afficher la liste des paramètres"
+          >
+            <Menu size={20} />
+          </button>
+          {currentTab && (
+            <span className="font-medium text-outlook-text-primary flex items-center gap-2">
+              <currentTab.icon size={16} /> {currentTab.label}
+            </span>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+          <div className="max-w-2xl">
+            {tab === 'profile' && <ProfileSettings />}
+            {tab === 'accounts' && <AccountSettings />}
+            {tab === 'mail' && <MailBehaviorSettings />}
+            {tab === 'appearance' && <AppearanceSettings />}
+            {tab === 'notifications' && <NotificationSettings />}
+            {tab === 'cache' && <CacheSettings />}
+            {tab === 'devices' && <DevicesSettings />}
+            {tab === 'security' && <SecuritySettings />}
+            {tab === 'backup' && <BackupSettings />}
+          </div>
         </div>
       </div>
     </div>

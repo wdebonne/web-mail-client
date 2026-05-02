@@ -6,7 +6,7 @@ import {
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
-  ChevronDown, ChevronRight, LogOut,
+  ChevronDown, ChevronRight, LogOut, Menu,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -16,6 +16,8 @@ type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'o2
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('dashboard');
+  // Master/detail toggle for mobile/tablet (< md). Ignored on desktop.
+  const [mobileDetail, setMobileDetail] = useState(false);
 
   const tabs = [
     { id: 'dashboard' as const, icon: LayoutDashboard, label: 'Tableau de bord' },
@@ -31,26 +33,28 @@ export default function AdminPage() {
     { id: 'devices' as const, icon: Monitor, label: 'Appareils' },
     { id: 'system' as const, icon: Settings, label: 'Système' },
   ];
+  const currentTab = tabs.find(t => t.id === tab);
 
   return (
     <div className="h-full flex flex-col md:flex-row">
-      {/* Mobile/tablet horizontal tab strip */}
-      <div className="md:hidden border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0 overflow-x-auto">
-        <div className="flex gap-1 px-2 py-2 w-max">
-          {tabs.map(t => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-md transition-colors flex-shrink-0
-                  ${tab === t.id ? 'bg-outlook-blue text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-              >
-                <Icon size={14} /> {t.label}
-              </button>
-            );
-          })}
-        </div>
+      {/* Mobile/tablet vertical list (master view) */}
+      <div
+        className={`md:hidden ${mobileDetail ? 'hidden' : 'flex'} flex-col flex-1 overflow-y-auto bg-outlook-bg-primary`}
+      >
+        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">Administration</h2>
+        {tabs.map(t => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              onClick={() => { setTab(t.id); setMobileDetail(true); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
+                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+            >
+              <Icon size={18} /> {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Desktop sidebar */}
@@ -71,20 +75,40 @@ export default function AdminPage() {
         })}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
-        <div className="max-w-5xl">
-          {tab === 'dashboard' && <DashboardPanel />}
-          {tab === 'users' && <UserManagement />}
-          {tab === 'groups' && <GroupManagement />}
-          {tab === 'mailaccounts' && <MailAccountManagement />}
-          {tab === 'calendars' && <AdminCalendarManagement />}
-          {tab === 'o2switch' && <O2SwitchManagement />}
-          {tab === 'plugins' && <PluginManagement />}
-          {tab === 'nextcloud' && <NextCloudSettings />}
-          {tab === 'logs' && <LogsPanel />}
-          {tab === 'loginAppearance' && <LoginAppearanceSettings />}
-          {tab === 'devices' && <DeviceSessionsManagement />}
-          {tab === 'system' && <SystemSettings />}
+      <div
+        className={`flex-1 ${mobileDetail ? 'flex' : 'hidden'} md:flex flex-col min-h-0`}
+      >
+        {/* Mobile header bar with hamburger */}
+        <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0">
+          <button
+            onClick={() => setMobileDetail(false)}
+            className="p-2 -ml-1 rounded-md hover:bg-outlook-bg-hover text-outlook-text-primary"
+            aria-label="Afficher la liste des sections d'administration"
+          >
+            <Menu size={20} />
+          </button>
+          {currentTab && (
+            <span className="font-medium text-outlook-text-primary flex items-center gap-2">
+              <currentTab.icon size={16} /> {currentTab.label}
+            </span>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+          <div className="max-w-5xl">
+            {tab === 'dashboard' && <DashboardPanel />}
+            {tab === 'users' && <UserManagement />}
+            {tab === 'groups' && <GroupManagement />}
+            {tab === 'mailaccounts' && <MailAccountManagement />}
+            {tab === 'calendars' && <AdminCalendarManagement />}
+            {tab === 'o2switch' && <O2SwitchManagement />}
+            {tab === 'plugins' && <PluginManagement />}
+            {tab === 'nextcloud' && <NextCloudSettings />}
+            {tab === 'logs' && <LogsPanel />}
+            {tab === 'loginAppearance' && <LoginAppearanceSettings />}
+            {tab === 'devices' && <DeviceSessionsManagement />}
+            {tab === 'system' && <SystemSettings />}
+          </div>
         </div>
       </div>
     </div>
