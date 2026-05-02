@@ -5,7 +5,7 @@ import { CalendarEvent, Calendar } from '../types';
 import {
   ChevronLeft, ChevronRight, Plus, X, Clock, MapPin, Users,
   Briefcase, Pencil, Trash2, Repeat, Copy, FolderOpen, FolderInput,
-  CalendarDays, CalendarRange, CalendarClock, Calendar as CalendarIcon, List, Check,
+  CalendarDays, CalendarRange, Calendar as CalendarIcon, List, Check, Search,
 } from 'lucide-react';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -26,6 +26,7 @@ import { AddCalendarUrlDialog } from '../components/calendar/AddCalendarUrlDialo
 import MigrateCalendarDialog from '../components/calendar/MigrateCalendarDialog';
 import EventModal from '../components/calendar/EventModal';
 import ShareCalendarDialog from '../components/calendar/ShareCalendarDialog';
+import UnifiedSearchDialog from '../components/calendar/UnifiedSearchDialog';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import FloatingActionButton from '../components/ui/FloatingActionButton';
 import {
@@ -71,6 +72,7 @@ export default function CalendarPage() {
   const [newCalendarOpen, setNewCalendarOpen] = useState(false);
   const [mobileViewMenuOpen, setMobileViewMenuOpen] = useState(false);
   const mobileViewBtnRef = useRef<HTMLButtonElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [addCalendarUrlOpen, setAddCalendarUrlOpen] = useState(false);
   const [migrateTarget, setMigrateTarget] = useState<{ cal: Calendar; target: 'nextcloud' | 'local' } | null>(null);
@@ -504,7 +506,27 @@ export default function CalendarPage() {
         <div className="flex-1 flex flex-col bg-white rounded-md shadow-sm overflow-hidden min-w-0">
           <div className="flex items-center justify-between px-3 py-2 border-b border-outlook-border flex-shrink-0">
             <div className="flex items-center gap-2">
-              {/* Mobile/tablet view switcher (Outlook-style) */}
+              <button onClick={goToday} className="text-xs border border-outlook-border rounded px-2.5 py-1 hover:bg-outlook-bg-hover flex items-center gap-1">
+                <Briefcase size={12} /> Aujourd'hui
+              </button>
+              <button onClick={goPrev} className="p-1 hover:bg-outlook-bg-hover rounded" title="Précédent">
+                <ChevronLeft size={16} />
+              </button>
+              <button onClick={goNext} className="p-1 hover:bg-outlook-bg-hover rounded" title="Suivant">
+                <ChevronRight size={16} />
+              </button>
+              <span className="text-sm font-semibold capitalize">{periodLabel}</span>
+            </div>
+            <div className="flex items-center gap-1 lg:gap-2">
+              {/* Mobile/tablet only: unified search loupe + Outlook-style view switcher */}
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="lg:hidden p-1.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary"
+                title="Rechercher"
+                aria-label="Rechercher"
+              >
+                <Search size={18} />
+              </button>
               <div className="relative lg:hidden">
                 <button
                   ref={mobileViewBtnRef}
@@ -528,7 +550,7 @@ export default function CalendarPage() {
                       onClick={() => setMobileViewMenuOpen(false)}
                     />
                     <div
-                      className="absolute left-0 top-full mt-1 z-50 bg-white border border-outlook-border rounded-md shadow-lg py-1 min-w-[180px]"
+                      className="absolute right-0 top-full mt-1 z-50 bg-white border border-outlook-border rounded-md shadow-lg py-1 min-w-[200px]"
                       role="menu"
                     >
                       {([
@@ -553,19 +575,8 @@ export default function CalendarPage() {
                   </>
                 )}
               </div>
-              <button onClick={goToday} className="text-xs border border-outlook-border rounded px-2.5 py-1 hover:bg-outlook-bg-hover flex items-center gap-1">
-                <Briefcase size={12} /> Aujourd'hui
-              </button>
-              <button onClick={goPrev} className="p-1 hover:bg-outlook-bg-hover rounded" title="Précédent">
-                <ChevronLeft size={16} />
-              </button>
-              <button onClick={goNext} className="p-1 hover:bg-outlook-bg-hover rounded" title="Suivant">
-                <ChevronRight size={16} />
-              </button>
-              <span className="text-sm font-semibold capitalize">{periodLabel}</span>
-            </div>
-            <div className="hidden lg:flex items-center gap-2">
-              <button onClick={() => openCreateEvent(currentDate)} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md px-3 py-1 text-xs font-medium flex items-center gap-1.5">
+              {/* Desktop: keep the "New event" CTA */}
+              <button onClick={() => openCreateEvent(currentDate)} className="hidden lg:flex bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md px-3 py-1 text-xs font-medium items-center gap-1.5">
                 <Plus size={12} /> Nouvel événement
               </button>
             </div>
@@ -750,6 +761,15 @@ export default function CalendarPage() {
         onClick={() => openCreateEvent(new Date())}
         label="Nouvel événement"
         icon={<Plus size={24} />}
+      />
+
+      <UnifiedSearchDialog
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectEvent={(_id, startDate) => {
+          setCurrentDate(startDate);
+          setView('day');
+        }}
       />
     </div>
   );
