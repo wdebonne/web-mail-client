@@ -2226,10 +2226,16 @@ export default function MailPage() {
         }}
         onCancel={() => setFolderPicker(null)}
       />
-      {/* Floating action button — mobile/tablet only */}
-      {!isComposing && !composeExpanded && (
+      {/* Floating action button — mobile/tablet only.
+       *  Visible whenever the user is browsing the folder/list views, even if
+       *  a draft compose tab is open in the background — tapping it then
+       *  brings them back to the in-progress draft instead of dropping it. */}
+      {!composeExpanded && mobileView !== 'message' && (
         <FloatingActionButton
-          onClick={() => { setMobileView('message'); openCompose(); }}
+          onClick={() => {
+            setMobileView('message');
+            if (!isComposing) openCompose();
+          }}
           label="Nouveau message"
           icon={<Plus size={24} />}
         />
