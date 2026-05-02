@@ -19,7 +19,7 @@ export const nextcloudFilesRouter = Router();
 // whether to show the "Save to NextCloud" affordance.
 nextcloudFilesRouter.get('/status', async (req: AuthRequest, res) => {
   try {
-    const client = await getUserClient(req.user!.userId);
+    const client = await getUserClient(req.userId!);
     res.json({ linked: !!client });
   } catch (e) {
     logger.error(e as Error, 'nextcloud-files status error');
@@ -30,7 +30,7 @@ nextcloudFilesRouter.get('/status', async (req: AuthRequest, res) => {
 // GET /api/nextcloud/files/list?path=/foo — list immediate children.
 nextcloudFilesRouter.get('/list', async (req: AuthRequest, res) => {
   try {
-    const client = await getUserClient(req.user!.userId);
+    const client = await getUserClient(req.userId!);
     if (!client) return res.status(409).json({ error: 'NextCloud not linked' });
     const rawPath = typeof req.query.path === 'string' ? req.query.path : '/';
     // Defence-in-depth: strip any traversal sequences.
@@ -52,7 +52,7 @@ nextcloudFilesRouter.post('/mkdir', async (req: AuthRequest, res) => {
   try {
     const parse = mkdirSchema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: 'Invalid path' });
-    const client = await getUserClient(req.user!.userId);
+    const client = await getUserClient(req.userId!);
     if (!client) return res.status(409).json({ error: 'NextCloud not linked' });
     const safe = parse.data.path.replace(/\\/g, '/').replace(/\.\.+/g, '').replace(/\/{2,}/g, '/');
     await client.createFolderRecursive(safe);
@@ -84,7 +84,7 @@ nextcloudFilesRouter.post('/upload', async (req: AuthRequest, res) => {
     if (!parse.success) return res.status(400).json({ error: 'Invalid payload' });
     const { folderPath, filename, contentType, contentBase64, overwrite, ensureFolder } = parse.data;
 
-    const client = await getUserClient(req.user!.userId);
+    const client = await getUserClient(req.userId!);
     if (!client) return res.status(409).json({ error: 'NextCloud not linked' });
 
     let buffer: Buffer;

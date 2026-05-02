@@ -1212,7 +1212,6 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
   const [password, setPassword] = useState('');
   const [isShared, setIsShared] = useState(account?.is_shared || false);
   const [color, setColor] = useState(account?.color || '#0078D4');
-  const [signatureHtml, setSignatureHtml] = useState(account?.signature_html || '');
   const [o2switchAutoSync, setO2switchAutoSync] = useState<boolean>(
     account ? !!account.caldav_sync_enabled : true,
   );
@@ -1275,7 +1274,6 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
       oauthPendingId: oauthPendingId || undefined,
       isShared,
       color,
-      signatureHtml,
       o2switchAutoSync: provider?.isO2Switch ? o2switchAutoSync : false,
     });
   };
@@ -1505,10 +1503,6 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
               </span>
             </label>
           )}
-          <div>
-            <label className="text-xs text-outlook-text-secondary">Signature (HTML)</label>
-            <textarea value={signatureHtml} onChange={(e) => setSignatureHtml(e.target.value)} rows={3} placeholder="<p>Cordialement,<br/>Nom</p>" className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm resize-none font-mono" />
-          </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Annuler</button>
             <button type="submit" disabled={mutation.isPending} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50">
