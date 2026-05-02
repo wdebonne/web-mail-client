@@ -128,11 +128,10 @@ export async function maybeSendAutoReply(
       if (Number.isFinite(last) && Date.now() - last < REPLY_COOLDOWN_MS) return;
     }
 
-    const subjectIn = String(msg?.subject || '').trim();
-    const subjectOut = responder.subject?.trim() || 'Réponse automatique';
-    const replySubject = subjectIn
-      ? (/^re\s*:/i.test(subjectIn) ? subjectIn : `Re: ${subjectIn}`)
-      : subjectOut;
+    const subjectOut = (responder.subject && responder.subject.trim())
+      ? responder.subject.trim()
+      : 'Réponse automatique';
+    const replySubject = subjectOut;
 
     const inReplyTo: string | undefined = msg?.messageId;
     const refsHeader: string | undefined = msg?.headers?.references;
