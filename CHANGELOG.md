@@ -9,6 +9,24 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Mode d'affichage du corps des mails (natif / étiré)
+
+- **Nouvelle préférence globale `mail.displayMode`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : deux valeurs `native` (défaut, largeur de lecture ~820 px centrée à la Outlook) ou `stretched` (occupe toute la largeur disponible du volet de lecture). Événement `mail-display-mode-changed` pour synchroniser ruban, page Mail et vue message en temps réel.
+- **Bouton *Affichage mail* dans le ruban → onglet *Afficher*** ([client/src/components/mail/Ribbon.tsx](client/src/components/mail/Ribbon.tsx)) : présent en ruban classique et simplifié, l'icône bascule entre `Minimize2` (natif) et `Maximize2` (étiré). Menu déroulant avec les deux options et libellés explicites *Natif (largeur de lecture)* / *Étiré (toute la largeur)*.
+- **Override par message dans la vue message** ([client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : état local `localDisplayMode` (réinitialisé à chaque changement de message) qui prime sur la préférence globale, permettant d'inverser ponctuellement l'affichage d'un mail particulier.
+- **Classe CSS `.email-body-native`** ([client/src/index.css](client/src/index.css)) : applique `max-width: 820px` + `margin: auto` pour reproduire le rendu Outlook desktop centré.
+
+### Corrigé
+
+#### Affichage des mails sur mobile (parité Outlook)
+
+- **Plus aucun débordement horizontal sur mobile** ([client/src/index.css](client/src/index.css), [client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : les newsletters HTML (typiquement `<table width="600">`) sortaient du viewport et imposaient un défilement horizontal. Deux corrections combinées :
+  - **CSS `@media (max-width: 767px)`** : toutes les `table / tbody / tr / td / th` du `.email-body` passent en `display: block !important; width: 100% !important;` — les colonnes des newsletters s'empilent verticalement, exactement comme dans l'app mobile Outlook / Gmail. `min-width: 0 !important` + `max-width: 100% !important` + `box-sizing: border-box` sur **tous** les descendants neutralisent les `width:600` / `min-width:600` inline. `word-break: break-word` + `overflow-wrap: anywhere` cassent les longues URL de tracking.
+  - **Conteneurs flex shrinkables** : ajout de `min-w-0` sur le wrapper racine `motion.div` et sur les deux conteneurs scrollables du corps (mode thread + mode message simple). Sans cela, la valeur par défaut `min-width: auto` des flex items refusait de réduire les tableaux de largeur fixe sous leur taille de contenu intrinsèque.
+- **Barre d'objet masquée sur mobile en vue message simple** ([client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : doublon avec l'objet déjà visible à droite du bouton retour. Conditionnée par `${isThreadMode ? '' : 'hidden md:block'}` — gain de hauteur appréciable sur petit écran. Reste visible en mode conversation (où plusieurs messages partagent la barre).
+- **Informations de l'expéditeur repliables sur mobile** ([client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : nouvel état `mobileSenderExpanded` (défaut `false`, réinitialisé à chaque changement de message). Un bouton mobile affiche le nom + chevron (`ChevronRight` / `ChevronDown`) ; replié, seul le nom apparaît, déplié on retrouve l'email entre `< >`, les destinataires (`À :` / `Cc :`) et la date. Sur desktop (`md+`) la disposition originale reste affichée intégralement.
+- **Centrage du corps de mail sur desktop** ([client/src/index.css](client/src/index.css)) : auparavant collé à gauche, le corps est désormais centré (`margin-left: auto; margin-right: auto`) avec une largeur de lecture confortable de 820 px en mode natif, parité avec Outlook desktop. Les tables centrées des newsletters (`<center><table>`) restent correctement centrées (la règle `width: auto` qui collapsait les tables 600 px à leur contenu a été retirée).
+
 #### Répondeur d'absence (vacation auto-responder)
 
 - **Configuration utilisateur par boîte mail** ([client/src/components/mail/AutoResponderForm.tsx](client/src/components/mail/AutoResponderForm.tsx), [client/src/components/mail/AutoResponderModal.tsx](client/src/components/mail/AutoResponderModal.tsx)) : nouveau formulaire dédié pour activer / désactiver une réponse automatique par compte, choisir l'objet, le corps en HTML (éditeur riche réutilisé), une plage de dates `start_at` / `end_at` optionnelle, et limiter à *une seule réponse par expéditeur sur N jours* pour éviter le spam de retour.

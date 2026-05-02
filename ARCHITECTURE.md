@@ -470,6 +470,7 @@ Basculement automatique via `ResizeObserver`. Basculement manuel via chevron ▲
 L'onglet **Afficher** contient :
 - Volet Dossiers (afficher/masquer)
 - **Disposition** : Volet de lecture (droite / bas / plein écran), Liste mail (auto / colonnes / multi-lignes), Densité (spacieux / confortable / compacte), **Conversations** (menu dédié : regrouper par conversation / par branches / ne pas regrouper, et *afficher tous les messages / uniquement le sélectionné* dans le volet de lecture)
+- **Affichage mail** : bascule globale entre *Natif* (largeur de lecture ~820 px centrée à la Outlook desktop) et *Étiré* (toute la largeur du volet). Préférence `mail.displayMode` (clé localStorage), événement `mail-display-mode-changed` propagé en temps réel à toutes les `MessageView` ouvertes. Override par message disponible dans la vue de lecture (state local éphémère, réinitialisé au changement de message).
 - **Côte à côte** (Dossiers / Liste / Réponse)
 - **Boîtes favoris** (comptes inclus dans les vues unifiées)
 - **Paramètres d'onglets** (mode d'ouverture + nombre max)
