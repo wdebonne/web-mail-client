@@ -602,7 +602,7 @@ export default function MessageView({
                           </div>
                         </div>
                       )}
-                      <div className="px-5 py-3">
+                      <div className="px-3 sm:px-5 py-3">
                         {bodyHtml ? (
                           <div className="email-body" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
                         ) : (
@@ -635,7 +635,7 @@ export default function MessageView({
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
           <SecurityBanner verdict={verdict} />
           {securePlaintext ? (
             <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">

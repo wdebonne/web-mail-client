@@ -119,6 +119,12 @@ html, body, #root {
   line-height: 1.6;
   color: var(--outlook-text);
   word-break: break-word;
+  /* Prevent wide HTML emails (fixed-width tables, large images, long
+     inline content) from forcing the message column to scroll
+     horizontally on mobile / tablet. The container itself can scroll
+     vertically; horizontal overflow inside the body is contained. */
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .email-body img {
@@ -126,9 +132,39 @@ html, body, #root {
   height: auto;
 }
 
+/* Marketing emails frequently use <table width="600"> with inline
+   widths or absolute pixel values. Force them to behave responsively:
+   they may shrink below their declared width but never push past the
+   viewport. */
+.email-body table {
+  max-width: 100% !important;
+  width: auto !important;
+  height: auto !important;
+  table-layout: auto !important;
+}
+
+.email-body td,
+.email-body th {
+  max-width: 100% !important;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Long unbroken strings (URLs, tracking pixels references, etc.) must
+   not stretch the layout. */
+.email-body pre,
+.email-body code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
 .email-body a {
   color: rgb(var(--outlook-blue));
   text-decoration: none;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .email-body a:hover {
