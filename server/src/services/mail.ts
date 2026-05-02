@@ -817,6 +817,29 @@ export class MailService {
       await client.logout();
     }
   }
+
+  /**
+   * Returns UIDs of messages whose INTERNALDATE is on or after `since`.
+   * Used by the auto-responder to recover messages that arrived between the
+   * moment the responder was activated and the poller's first observation
+   * for this account (otherwise the baseline-only logic in newMailPoller
+   * would silently swallow them).
+   */
+  async listFolderUidsSince(folder: string, since: Date): Promise<number[]> {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const uids = await client.search({ since }, { uid: true });
+        return Array.isArray(uids) ? uids.map((u) => Number(u)) : [];
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
 }
 
 // French month names used by the archive subfolder pattern.

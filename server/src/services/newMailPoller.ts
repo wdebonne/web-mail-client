@@ -67,8 +67,64 @@ async function checkAccount(row: any) {
   const prev = lastSeenUid.get(row.id);
 
   if (prev === undefined) {
-    // First run: baseline only, no notification
+    // First observation for this account in this process. Normally we just
+    // record the baseline so we don't notify on existing mail. BUT if an
+    // auto-responder is active for this account, we ALSO need to process any
+    // messages that arrived since the responder was enabled — otherwise the
+    // baseline silently swallows the very mail the user is trying to test.
     lastSeenUid.set(row.id, maxUid);
+
+    try {
+      const r = await pool.query(
+        `SELECT enabled, scheduled, start_at, end_at, updated_at
+           FROM auto_responders WHERE account_id = $1`,
+        [row.id],
+      );
+      if (r.rowCount === 0) return;
+      const ar = r.rows[0];
+      if (!ar.enabled) return;
+      const now = Date.now();
+      if (ar.scheduled) {
+        if (ar.start_at && new Date(ar.start_at).getTime() > now) return;
+        if (ar.end_at && new Date(ar.end_at).getTime() <= now) return;
+      }
+
+      // Take the most recent activation/edit, or fall back to start_at.
+      const activatedAt = ar.updated_at ? new Date(ar.updated_at) : null;
+      const startedAt = ar.start_at ? new Date(ar.start_at) : null;
+      const sinceCandidates = [activatedAt, startedAt]
+        .filter((d): d is Date => !!d && !Number.isNaN(d.getTime()));
+      // Don't go further than 7 days back to avoid spamming on first run.
+      const minSince = new Date(now - 7 * 24 * 60 * 60 * 1000);
+      let since = sinceCandidates.length
+        ? new Date(Math.max(...sinceCandidates.map((d) => d.getTime())))
+        : minSince;
+      if (since < minSince) since = minSince;
+
+      const recent = await service.listFolderUidsSince('INBOX', since).catch((err) => {
+        logger.debug({ err, accountId: row.id }, 'auto-responder catch-up: listFolderUidsSince failed');
+        return [] as number[];
+      });
+      if (!recent || recent.length === 0) return;
+      const sorted = [...recent].sort((a, b) => a - b);
+      // Cap to avoid an avalanche if the inbox is huge.
+      const tail = sorted.slice(-20);
+      logger.info(`auto-responder catch-up for ${row.email}: ${tail.length} candidate(s) since ${since.toISOString()}`);
+      for (const uid of tail) {
+        try {
+          const msg = await service.getMessage('INBOX', uid);
+          await maybeSendAutoReply(
+            { id: row.id, user_id: row.user_id, email: row.email, name: row.name },
+            msg,
+            service,
+          );
+        } catch (err) {
+          logger.debug({ err, uid, accountId: row.id }, 'auto-responder catch-up: getMessage failed');
+        }
+      }
+    } catch (err) {
+      logger.debug({ err, accountId: row.id }, 'auto-responder catch-up failed');
+    }
     return;
   }
 
