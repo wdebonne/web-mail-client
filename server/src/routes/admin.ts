@@ -2014,11 +2014,21 @@ adminRouter.get('/auto-responders', async (req: AuthRequest, res) => {
     const result = await pool.query(
       `SELECT ar.id, ar.account_id, ar.enabled, ar.subject, ar.scheduled,
               ar.start_at, ar.end_at, ar.only_contacts, ar.created_at, ar.updated_at,
-              ma.email AS account_email, ma.name AS account_name, ma.user_id,
-              u.email AS user_email, u.display_name AS user_display_name
+              ma.email AS account_email, ma.name AS account_name,
+              COALESCE(u.id, asg.user_id) AS user_id,
+              COALESCE(u.email, asg.user_email) AS user_email,
+              COALESCE(u.display_name, asg.user_display_name) AS user_display_name
          FROM auto_responders ar
          JOIN mail_accounts ma ON ma.id = ar.account_id
-         JOIN users u ON u.id = ma.user_id
+         LEFT JOIN users u ON u.id = ma.user_id
+         LEFT JOIN LATERAL (
+            SELECT u2.id AS user_id, u2.email AS user_email, u2.display_name AS user_display_name
+              FROM mailbox_assignments mba
+              JOIN users u2 ON u2.id = mba.user_id
+             WHERE mba.mail_account_id = ma.id
+             ORDER BY mba.created_at ASC
+             LIMIT 1
+         ) asg ON true
          ${filterSql}
         ORDER BY ar.enabled DESC, ar.updated_at DESC`,
     );
@@ -2058,19 +2068,27 @@ adminRouter.get('/auto-responders/candidates', async (req: AuthRequest, res) => 
     let where = '';
     if (q) {
       params.push(`%${q}%`);
-      where = `WHERE LOWER(u.email) LIKE $1
-                  OR LOWER(COALESCE(u.display_name, '')) LIKE $1
-                  OR LOWER(ma.email) LIKE $1
-                  OR LOWER(COALESCE(ma.name, '')) LIKE $1`;
+      where = `WHERE LOWER(COALESCE(t.user_email, '')) LIKE $1
+                  OR LOWER(COALESCE(t.user_display_name, '')) LIKE $1
+                  OR LOWER(COALESCE(t.account_email, '')) LIKE $1
+                  OR LOWER(COALESCE(t.account_name, '')) LIKE $1`;
     }
     const result = await pool.query(
-      `SELECT ma.id AS account_id, ma.email AS account_email, ma.name AS account_name,
-              u.id AS user_id, u.email AS user_email, u.display_name AS user_display_name
-         FROM mail_accounts ma
-         JOIN users u ON u.id = ma.user_id
-         ${where}
-        ORDER BY u.display_name NULLS LAST, u.email, ma.email
-        LIMIT 50`,
+      `SELECT * FROM (
+         SELECT ma.id AS account_id, ma.email AS account_email, ma.name AS account_name,
+                u.id AS user_id, u.email AS user_email, u.display_name AS user_display_name
+           FROM mail_accounts ma
+           JOIN users u ON u.id = ma.user_id
+         UNION
+         SELECT ma.id AS account_id, ma.email AS account_email, ma.name AS account_name,
+                u.id AS user_id, u.email AS user_email, u.display_name AS user_display_name
+           FROM mail_accounts ma
+           JOIN mailbox_assignments mba ON mba.mail_account_id = ma.id
+           JOIN users u ON u.id = mba.user_id
+       ) t
+       ${where}
+       ORDER BY user_display_name NULLS LAST, user_email, account_email
+       LIMIT 50`,
       params,
     );
     res.json(result.rows.map(r => ({
