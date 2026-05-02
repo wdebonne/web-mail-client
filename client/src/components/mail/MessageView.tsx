@@ -333,7 +333,7 @@ export default function MessageView({
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="flex-1 flex flex-col bg-white overflow-hidden">
+      className="flex-1 flex flex-col bg-white overflow-hidden min-w-0">
       {/* Subject bar (shared across the whole conversation when in thread mode).
           Hidden on mobile in single-message mode — the subject is already
           shown in the mobile back-button bar above, so this would be a
@@ -556,7 +556,7 @@ export default function MessageView({
 
       {/* Message body — in thread mode, render a vertical stack of collapsible cards */}
       {isThreadMode ? (
-        <div className="flex-1 overflow-y-auto bg-outlook-bg-primary/20">
+        <div className="flex-1 overflow-y-auto bg-outlook-bg-primary/20 min-w-0">
           <div className="flex flex-col gap-2 p-3">
             {sortedThread.map((m, idx) => {
               const key = threadKeyOf(m);
@@ -684,7 +684,7 @@ export default function MessageView({
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 min-w-0">
           <SecurityBanner verdict={verdict} />
           {/* Inline display-mode toggle — lets the user override the global
               "natif/étiré" preference just for the message currently shown. */}

@@ -167,34 +167,47 @@ html, body, #root {
    the original centering (<center>, align="center", margin:0 auto) is
    preserved on large screens. */
 @media (max-width: 767px) {
-  .email-body table,
-  .email-body table[width] {
-    width: 100% !important;
+  .email-body,
+  .email-body * {
+    /* Allow flex/table descendants to shrink below their content width.
+       Without this, a fixed-width <table width="600"> inside a flex
+       chain still pushes its ancestors past the viewport. */
+    min-width: 0 !important;
     max-width: 100% !important;
-    table-layout: fixed !important;
+    box-sizing: border-box;
   }
-  .email-body td[width],
-  .email-body th[width] {
-    width: auto !important;
-    max-width: 100% !important;
+  .email-body {
+    overflow-x: hidden;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  /* Outlook-mobile-style rendering: collapse every email table (and its
+     rows / cells) to block-level so multi-column newsletter layouts
+     stack vertically and naturally fit the viewport. This is the same
+     trick Gmail and the Outlook mobile webview use to neutralise the
+     `<table width="600">` patterns shipped by marketing emails. */
+  .email-body table,
+  .email-body tbody,
+  .email-body thead,
+  .email-body tfoot,
+  .email-body tr,
+  .email-body td,
+  .email-body th {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    float: none !important;
   }
   .email-body img {
     width: auto !important;
     max-width: 100% !important;
     height: auto !important;
   }
-  /* Final safety net — any descendant of the email body (divs with
-     inline width="600", buttons, inline blocks, hr, etc.) must never
-     exceed the container width on mobile. word-break ensures any
-     unbreakable string (long URL, tracking pixel ref) wraps. */
-  .email-body *,
-  .email-body *[width],
-  .email-body *[style*="width"] {
-    max-width: 100% !important;
-    box-sizing: border-box;
-  }
-  .email-body {
-    overflow-x: hidden;
+  /* Long unbreakable strings (URLs, tracking refs) must wrap. */
+  .email-body a,
+  .email-body p,
+  .email-body span,
+  .email-body div {
     word-break: break-word;
     overflow-wrap: anywhere;
   }
