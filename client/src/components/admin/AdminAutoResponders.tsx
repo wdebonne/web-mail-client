@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Coffee, Plus, Search, X, Edit2, Power, Loader2, AlertCircle, CheckCircle2, Settings,
+  Coffee, Plus, Search, X, Edit2, Power, Loader2, AlertCircle, CheckCircle2, Settings, RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../../api';
@@ -41,6 +41,15 @@ export default function AdminAutoResponders() {
     mutationFn: (accountId: string) => api.adminDisableAutoResponder(accountId),
     onSuccess: () => {
       toast.success('Répondeur désactivé');
+      queryClient.invalidateQueries({ queryKey: ['admin-auto-responders'] });
+    },
+    onError: (e: any) => toast.error(e?.message || 'Échec'),
+  });
+
+  const resetOneMutation = useMutation({
+    mutationFn: (accountId: string) => api.adminResetAutoResponderCounters(accountId),
+    onSuccess: () => {
+      toast.success('Compteur réinitialisé');
       queryClient.invalidateQueries({ queryKey: ['admin-auto-responders'] });
     },
     onError: (e: any) => toast.error(e?.message || 'Échec'),
@@ -174,6 +183,18 @@ export default function AdminAutoResponders() {
                           title="Modifier"
                         >
                           <Edit2 size={14} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Réinitialiser le compteur de cooldown pour ${r.accountEmail} ?\n\nLes prochains expéditeurs déjà notifiés recevront à nouveau une réponse au prochain mail reçu.`)) {
+                              resetOneMutation.mutate(r.accountId);
+                            }
+                          }}
+                          disabled={resetOneMutation.isPending}
+                          className="p-1.5 hover:bg-outlook-bg-hover rounded text-outlook-text-secondary"
+                          title="Réinitialiser le compteur"
+                        >
+                          <RotateCcw size={14} />
                         </button>
                         {r.enabled && (
                           <button
@@ -388,6 +409,15 @@ function FeatureSettingsModal({ onClose }: { onClose: () => void }) {
     onError: (e: any) => toast.error(e?.message || 'Échec'),
   });
 
+  const resetCounters = useMutation({
+    mutationFn: () => api.adminResetAutoResponderCounters(),
+    onSuccess: (r) => {
+      toast.success(`Compteurs réinitialisés (${r.affected} répondeur${r.affected > 1 ? 's' : ''})`);
+      queryClient.invalidateQueries({ queryKey: ['admin-auto-responders'] });
+    },
+    onError: (e: any) => toast.error(e?.message || 'Échec de la réinitialisation'),
+  });
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto"
@@ -475,6 +505,31 @@ function FeatureSettingsModal({ onClose }: { onClose: () => void }) {
                   à utiliser avec prudence (risque de boucle si le destinataire
                   est lui-même un répondeur).
                 </p>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2 border-t border-outlook-border">
+                <label className="text-sm text-outlook-text-primary font-medium">
+                  Compteurs de cooldown
+                </label>
+                <p className="text-xs text-outlook-text-secondary">
+                  Réinitialise l'historique des expéditeurs déjà notifiés sur
+                  <strong> tous les répondeurs</strong>. Au prochain mail reçu,
+                  une nouvelle réponse sera envoyée même si l'expéditeur avait
+                  déjà été notifié dans la fenêtre de cooldown.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Réinitialiser les compteurs de tous les répondeurs ?\n\nLes prochains mails reçus déclencheront une nouvelle réponse, même pour les expéditeurs déjà notifiés récemment.')) {
+                      resetCounters.mutate();
+                    }
+                  }}
+                  disabled={resetCounters.isPending}
+                  className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-outlook-border hover:bg-outlook-bg-hover disabled:opacity-50"
+                >
+                  {resetCounters.isPending && <Loader2 size={14} className="animate-spin" />}
+                  Réinitialiser tous les compteurs
+                </button>
               </div>
             </>
           )}

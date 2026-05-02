@@ -37,6 +37,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
   - **Toujours répondre** : envoie une réponse à **chaque mail** reçu, sans aucune fenêtre de cooldown. À utiliser avec prudence (risque de boucle si le destinataire est lui-même un répondeur — les garde-fous d'en-têtes `Auto-Submitted` / `List-Unsubscribe` / `Precedence` restent actifs).
 - **Stockage** : `admin_settings.auto_responder_cooldown_days` (`0` = toujours, `1`-`4` = jours), valeur lue à chaque tentative d'envoi par `getCooldownDays()` dans `autoResponderService.ts` — modification immédiate sans redémarrage.
 
+#### Réinitialisation des compteurs de cooldown (admin)
+
+- **Bouton global dans la modale Paramètres du Répondeur** ([client/src/components/admin/AdminAutoResponders.tsx](client/src/components/admin/AdminAutoResponders.tsx)) : nouveau bouton *« Réinitialiser tous les compteurs »* en bas de la modale, avec confirmation. Vide `replied_log` (la table d'historique des expéditeurs déjà notifiés) sur **tous les répondeurs** en une opération. Au prochain mail reçu, une nouvelle réponse sera envoyée même pour les expéditeurs qui étaient encore dans la fenêtre de cooldown.
+- **Bouton par ligne dans la liste des répondeurs** ([client/src/components/admin/AdminAutoResponders.tsx](client/src/components/admin/AdminAutoResponders.tsx)) : icône `RotateCcw` à côté de *Modifier* / *Désactiver* — réinitialise le compteur **d'un seul compte** ciblé.
+- **Endpoint serveur** ([server/src/routes/admin.ts](server/src/routes/admin.ts)) : `POST /api/admin/auto-responders/reset-counters` accepte un body optionnel `{ accountId }` (sinon réinitialisation globale), met `replied_log = '{}'::jsonb` + `updated_at = NOW()`, journalisé via `addLog('auto_responder.reset_counters', …)`.
+
 ### Ajouté
 
 #### Taille du texte du volet « Dossiers » personnalisable

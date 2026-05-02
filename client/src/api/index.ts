@@ -821,4 +821,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  adminResetAutoResponderCounters: (accountId?: string) =>
+    request<{ success: boolean; affected: number }>(`/admin/auto-responders/reset-counters`, {
+      method: 'POST',
+      body: JSON.stringify(accountId ? { accountId } : {}),
+    }),
 };

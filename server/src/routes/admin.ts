@@ -2080,6 +2080,36 @@ adminRouter.put('/auto-responders/feature-settings', async (req: AuthRequest, re
 });
 
 /**
+ * Reset cooldown counters (replied_log) for all auto-responders, or for a
+ * specific account when ?accountId=<uuid> is provided. Useful when an admin
+ * changes the cooldown policy and wants to allow immediate replies again.
+ */
+adminRouter.post('/auto-responders/reset-counters', async (req: AuthRequest, res) => {
+  try {
+    const accountId = typeof req.body?.accountId === 'string' ? req.body.accountId : null;
+    let result;
+    if (accountId) {
+      result = await pool.query(
+        `UPDATE auto_responders SET replied_log = '{}'::jsonb, updated_at = NOW()
+          WHERE account_id = $1`,
+        [accountId],
+      );
+    } else {
+      result = await pool.query(
+        `UPDATE auto_responders SET replied_log = '{}'::jsonb, updated_at = NOW()`,
+      );
+    }
+    await addLog(req.userId, 'auto_responder.reset_counters', 'admin', req, {
+      accountId, affected: result.rowCount,
+    });
+    res.json({ success: true, affected: result.rowCount });
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin reset auto-responder counters failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * List every auto-responder row, joined with the owning mail account and user.
  * Used by the Admin > Répondeurs tab. Supports `?activeOnly=1` to return only
  * responders that are enabled AND currently within their schedule window.
