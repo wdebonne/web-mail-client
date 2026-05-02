@@ -930,6 +930,53 @@ export default function MailPage() {
     });
   }, [mobileSidebarSignal]);
 
+  // Mobile/tablet OS "back" button: intercept and map to in-app navigation
+  // (message view → list, list → folder pane). The default browser/OS back
+  // would otherwise leave the app entirely. We push a single sentinel history
+  // entry on mount, and re-push it after consuming a back press so subsequent
+  // back presses keep being captured. When the user is already on the folder
+  // view (top of the in-app stack), we let the back press propagate normally
+  // so they can leave the page.
+  const mobileViewRef = useRef(mobileView);
+  useEffect(() => { mobileViewRef.current = mobileView; }, [mobileView]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Only intercept on mobile widths — md+ shows all panes simultaneously.
+    const mq = window.matchMedia('(max-width: 767px)');
+    if (!mq.matches) return;
+
+    const SENTINEL = '__mailMobileBack';
+    try {
+      window.history.pushState({ [SENTINEL]: true }, '');
+    } catch { /* ignore */ }
+
+    const onPop = () => {
+      const v = mobileViewRef.current;
+      if (v === 'message') {
+        try { window.history.pushState({ [SENTINEL]: true }, ''); } catch { /* ignore */ }
+        setMobileView('list');
+        selectMessage(null);
+      } else if (v === 'list') {
+        try { window.history.pushState({ [SENTINEL]: true }, ''); } catch { /* ignore */ }
+        setShowFolderPane(true);
+        setMobileView('folders');
+      }
+      // 'folders' → don't re-push, allow normal back navigation.
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      // Clean up our sentinel entry if it's still on top, so leaving the page
+      // doesn't require an extra back press.
+      try {
+        if (window.history.state && (window.history.state as any)[SENTINEL]) {
+          window.history.back();
+        }
+      } catch { /* ignore */ }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Reading pane mode — matches Outlook's "Volet de lecture" setting.
   // 'right'  : list on the left, reading pane on the right (default)
   // 'bottom' : list on top, reading pane below (stacked vertically)
