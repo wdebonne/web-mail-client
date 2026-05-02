@@ -197,6 +197,8 @@ export default function NotificationPreferencesEditor({
         </div>
       </div>
 
+      <AppBadgeSection value={value} onChange={onChange} />
+
       {/* Sélecteur de plateforme */}
       <div className="flex flex-wrap gap-2">
         {PLATFORMS.map(({ id, label, Icon }) => (
@@ -553,6 +555,118 @@ export default function NotificationPreferencesEditor({
               le test serveur déclenche un véritable Web Push.
             </p>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Section « Pastille d'application » (Web App Badging API)
+// ─────────────────────────────────────────────────────────────────────────
+
+interface AppBadgeProps {
+  value: NotificationPrefs;
+  onChange: (next: NotificationPrefs) => void;
+}
+
+const BADGE_SOURCES: { id: 'inbox-unread' | 'inbox-recent' | 'inbox-total'; label: string; help: string }[] = [
+  { id: 'inbox-unread', label: 'Mails non lus (Boîte de réception)', help: 'Compte les messages UNSEEN — comportement Outlook par défaut.' },
+  { id: 'inbox-recent', label: 'Nouveaux mails reçus', help: 'Compte uniquement les messages marqués RECENT par le serveur (dernier batch).' },
+  { id: 'inbox-total',  label: 'Total des mails dans la boîte de réception', help: 'Affiche le nombre total de messages, lus ou non.' },
+];
+
+function AppBadgeSection({ value, onChange }: AppBadgeProps) {
+  const badge = value.appBadge;
+  const supported = typeof navigator !== 'undefined' && 'setAppBadge' in navigator;
+  const update = (patch: Partial<typeof badge>) => onChange({ ...value, appBadge: { ...badge, ...patch } });
+
+  return (
+    <div className="p-4 border border-outlook-border rounded-md bg-outlook-bg-secondary/30 space-y-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-sm font-semibold flex items-center gap-2">
+            <BellRing size={16} /> Pastille de l'application
+          </div>
+          <div className="text-xs text-outlook-text-secondary">
+            Affiche un compteur sur l'icône PWA, comme Outlook (24).
+          </div>
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={badge.enabled}
+            onChange={(e) => update({ enabled: e.target.checked })}
+            disabled={!supported}
+          />
+          {badge.enabled ? 'Activée' : 'Désactivée'}
+        </label>
+      </div>
+
+      {!supported && (
+        <div className="text-xs text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1.5">
+          Cette fonctionnalité requiert une PWA installée sur Chrome / Edge (Windows, macOS, Android).
+          Sur Safari / iOS, les pastilles d'icône ne sont pas exposées aux applications Web.
+        </div>
+      )}
+
+      <div className={`grid gap-3 ${badge.enabled ? '' : 'opacity-50 pointer-events-none'} sm:grid-cols-2`}>
+        <div>
+          <label className="text-xs text-outlook-text-secondary">Type d'information affichée</label>
+          <select
+            value={badge.source}
+            onChange={(e) => update({ source: e.target.value as any })}
+            className="w-full mt-1 px-2 py-1.5 text-sm border border-outlook-border rounded bg-outlook-bg-primary"
+          >
+            {BADGE_SOURCES.map((s) => (
+              <option key={s.id} value={s.id}>{s.label}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-outlook-text-secondary">
+            {BADGE_SOURCES.find((s) => s.id === badge.source)?.help}
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs text-outlook-text-secondary">Comptes pris en compte</label>
+          <select
+            value={badge.scope}
+            onChange={(e) => update({ scope: e.target.value as any })}
+            className="w-full mt-1 px-2 py-1.5 text-sm border border-outlook-border rounded bg-outlook-bg-primary"
+          >
+            <option value="all">Tous mes comptes (cumulé)</option>
+            <option value="default">Compte par défaut uniquement</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs text-outlook-text-secondary">Rafraîchissement (minutes)</label>
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={badge.refreshIntervalMinutes}
+            onChange={(e) => update({ refreshIntervalMinutes: Math.max(1, Math.min(60, Number(e.target.value) || 5)) })}
+            className="w-full mt-1 px-2 py-1.5 text-sm border border-outlook-border rounded bg-outlook-bg-primary"
+          />
+          <p className="mt-1 text-[11px] text-outlook-text-secondary">
+            La pastille est aussi mise à jour à chaque retour au premier plan et à la réception d'une notification push.
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs text-outlook-text-secondary">Plafond d'affichage</label>
+          <input
+            type="number"
+            min={1}
+            max={99999}
+            value={badge.maxCount}
+            onChange={(e) => update({ maxCount: Math.max(1, Math.min(99999, Number(e.target.value) || 999)) })}
+            className="w-full mt-1 px-2 py-1.5 text-sm border border-outlook-border rounded bg-outlook-bg-primary"
+          />
+          <p className="mt-1 text-[11px] text-outlook-text-secondary">
+            Au-delà, le système d'exploitation peut afficher « 99+ ».
+          </p>
         </div>
       </div>
     </div>

@@ -196,6 +196,15 @@ export const api = {
   getFolders: (accountId: string) =>
     request<any[]>(`/mail/accounts/${accountId}/folders`),
 
+  /** Pastille (Web App Badging API). `source` = type d'information remontée. */
+  getBadgeCount: (
+    source: 'inbox-unread' | 'inbox-recent' | 'inbox-total' = 'inbox-unread',
+    scope: 'all' | 'default' = 'all',
+  ) =>
+    request<{ source: string; scope: string; count: number; perAccount: Array<{ accountId: string; count: number }>; cached?: boolean }>(
+      `/mail/badge?source=${encodeURIComponent(source)}&scope=${encodeURIComponent(scope)}`,
+    ),
+
   createFolder: (accountId: string, path: string) =>
     request(`/mail/accounts/${accountId}/folders`, {
       method: 'POST',

@@ -19,6 +19,7 @@ import AdminPage from './pages/AdminPage';
 import { listenForNotificationClicks } from './pwa/push';
 import { syncAllCache, refreshCacheStats } from './services/cacheService';
 import { startPrefsSync } from './services/prefsSync';
+import { startAppBadgeService, requestAppBadgeRefresh } from './services/appBadgeService';
 
 function App() {
   const { user, token, checkAuth, isLoading } = useAuthStore();
@@ -84,6 +85,28 @@ function App() {
   useEffect(() => {
     if (!user) return;
     startPrefsSync();
+  }, [user]);
+
+  // Pastille (Web App Badging API) — démarre dès la connexion utilisateur,
+  // se reconfigure dynamiquement si les préférences changent.
+  useEffect(() => {
+    if (!user) return;
+    startAppBadgeService();
+  }, [user]);
+
+  // Rafraîchir la pastille quand le SW signale un nouveau mail (push reçu)
+  // ou un clic sur action depuis la notif (archive/delete/markRead).
+  useEffect(() => {
+    if (!user) return;
+    if (!('serviceWorker' in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      const t = (event.data || {}).type;
+      if (t === 'notification-click' || t === 'play-notification-sound') {
+        requestAppBadgeRefresh();
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [user]);
 
   if (isLoading && token) {

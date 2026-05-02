@@ -101,6 +101,30 @@ export class MailService {
     });
   }
 
+  /**
+   * Renvoie un instantané léger d'un dossier IMAP via la commande STATUS,
+   * sans avoir à ouvrir/parser les messages. Utilisé pour calculer la
+   * pastille (badge) de l'application (Web App Badging API).
+   */
+  async getMailboxStatus(folder: string): Promise<{ messages: number; unseen: number; recent: number }> {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const s: any = await client.status(folder, {
+        messages: true,
+        recent: true,
+        unseen: true,
+      });
+      return {
+        messages: Number(s?.messages) || 0,
+        unseen: Number(s?.unseen) || 0,
+        recent: Number(s?.recent) || 0,
+      };
+    } finally {
+      await client.logout();
+    }
+  }
+
   async getFolders() {
     const client = this.createImapClient();
     try {

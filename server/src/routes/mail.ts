@@ -679,6 +679,76 @@ mailRouter.post('/folders/copy', async (req: AuthRequest, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// App badge — agrégation légère d'un compteur cross-comptes pour la
+// pastille d'application (Web App Badging API). Utilise IMAP STATUS,
+// très peu coûteux, et met en cache 30 s par utilisateur+source.
+// ─────────────────────────────────────────────────────────────────────────
+type BadgeSource = 'inbox-unread' | 'inbox-recent' | 'inbox-total';
+const BADGE_TTL_MS = 30_000;
+const badgeCache = new Map<string, { value: { count: number; perAccount: Array<{ accountId: string; count: number }> }; at: number }>();
+
+mailRouter.get('/badge', async (req: AuthRequest, res) => {
+  try {
+    const sourceRaw = String(req.query.source || 'inbox-unread');
+    const source: BadgeSource =
+      sourceRaw === 'inbox-recent' || sourceRaw === 'inbox-total' ? sourceRaw : 'inbox-unread';
+    const scope = String(req.query.scope || 'all') === 'default' ? 'default' : 'all';
+    const cacheKey = `${req.userId}:${source}:${scope}`;
+    const cached = badgeCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < BADGE_TTL_MS) {
+      return res.json({ source, scope, ...cached.value, cached: true });
+    }
+
+    const accountsResult = await pool.query(
+      `SELECT ma.id, ma.is_default
+         FROM mail_accounts ma
+         JOIN mailbox_assignments mba ON mba.mail_account_id = ma.id
+        WHERE mba.user_id = $1
+        UNION
+       SELECT ma.id, ma.is_default
+         FROM mail_accounts ma
+        WHERE ma.user_id = $1
+          AND NOT EXISTS (SELECT 1 FROM mailbox_assignments mba2 WHERE mba2.mail_account_id = ma.id AND mba2.user_id = $1)`,
+      [req.userId],
+    );
+    let accountIds: string[] = accountsResult.rows.map((r: any) => r.id);
+    if (scope === 'default') {
+      const def = accountsResult.rows.find((r: any) => r.is_default);
+      accountIds = def ? [def.id] : accountIds.slice(0, 1);
+    }
+
+    const perAccount: Array<{ accountId: string; count: number }> = [];
+    let total = 0;
+    await Promise.all(
+      accountIds.map(async (accountId) => {
+        try {
+          const account = await getAccountForUser(accountId, req.userId!);
+          if (!account) return;
+          const service = new MailService(account);
+          const status = await service.getMailboxStatus('INBOX');
+          const c =
+            source === 'inbox-recent' ? status.recent
+            : source === 'inbox-total' ? status.messages
+            : status.unseen;
+          perAccount.push({ accountId, count: c });
+          total += c;
+        } catch (err) {
+          // Per-account failure shouldn't break the global badge.
+          logger.debug({ err, accountId }, 'badge: account status failed');
+        }
+      }),
+    );
+
+    const value = { count: total, perAccount };
+    badgeCache.set(cacheKey, { value, at: Date.now() });
+    res.json({ source, scope, ...value });
+  } catch (error: any) {
+    console.error('Badge route error:', error);
+    res.status(500).json({ error: error.message || 'Erreur calcul pastille' });
+  }
+});
+
 // Helper functions
 async function getAccountForUser(accountId: string, userId: string) {
   // Check via mailbox_assignments first

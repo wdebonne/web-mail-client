@@ -110,6 +110,27 @@ export interface NotificationPrefs {
   desktop: PlatformNotificationPrefs;
   mobile: PlatformNotificationPrefs;
   tablet: PlatformNotificationPrefs;
+  /** Pastille (badge) sur l'icône PWA — Web App Badging API. */
+  appBadge: AppBadgePrefs;
+}
+
+/** Configuration de la pastille type Outlook (compteur sur l'icône PWA). */
+export type AppBadgeSource = 'inbox-unread' | 'inbox-recent' | 'inbox-total';
+export type AppBadgeScope = 'all' | 'default';
+
+export interface AppBadgePrefs {
+  /** Active la mise à jour de la pastille de l'icône PWA. */
+  enabled: boolean;
+  /** Information remontée par la pastille. */
+  source: AppBadgeSource;
+  /** Comptes pris en compte : tous (assignés et possédés) ou uniquement le compte par défaut. */
+  scope: AppBadgeScope;
+  /** Cadence de rafraîchissement en arrière-plan (1 à 60 minutes). */
+  refreshIntervalMinutes: number;
+  /** Quand l'utilisateur lit/archive un mail dans l'app, on tente une mise à jour immédiate. */
+  liveUpdate: boolean;
+  /** Plafond d'affichage : au-delà, l'OS affichera "+" (la spec gère 99+ tout seul mais on peut limiter). */
+  maxCount: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -164,6 +185,14 @@ export function getDefaultNotificationPrefs(): NotificationPrefs {
     desktop: { ...BASE_PLATFORM, actions: READ_DISMISS_ACTIONS.map((a) => ({ ...a })) },
     mobile: { ...BASE_PLATFORM, actions: OUTLOOK_ACTIONS.map((a) => ({ ...a })), vibrate: 'standard' },
     tablet: { ...BASE_PLATFORM, actions: OUTLOOK_ACTIONS.map((a) => ({ ...a })), vibrate: 'short' },
+    appBadge: {
+      enabled: true,
+      source: 'inbox-unread',
+      scope: 'all',
+      refreshIntervalMinutes: 5,
+      liveUpdate: true,
+      maxCount: 999,
+    },
   };
 }
 
@@ -185,6 +214,12 @@ export function mergeNotificationPrefs(
     out[k] = { ...base[k], ...(patch[k] || {}) } as PlatformNotificationPrefs;
     if (patch[k]?.actions) out[k].actions = patch[k]!.actions!.map((a) => ({ ...a }));
     if (patch[k]?.customVibratePattern) out[k].customVibratePattern = [...patch[k]!.customVibratePattern!];
+  }
+  if (patch.appBadge) {
+    out.appBadge = { ...base.appBadge, ...patch.appBadge };
+    // Bornes de sécurité
+    out.appBadge.refreshIntervalMinutes = Math.max(1, Math.min(60, Number(out.appBadge.refreshIntervalMinutes) || 5));
+    out.appBadge.maxCount = Math.max(1, Math.min(99999, Number(out.appBadge.maxCount) || 999));
   }
   return out;
 }
