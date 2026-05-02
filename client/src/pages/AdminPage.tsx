@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import {
@@ -6,9 +6,10 @@ import {
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
-  ChevronDown, ChevronRight, LogOut, Menu,
+  ChevronDown, ChevronRight, LogOut,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useUIStore } from '../stores/uiStore';
 
 import AdminCalendarManagement from '../components/admin/AdminCalendarManagement';
 
@@ -18,6 +19,13 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('dashboard');
   // Master/detail toggle for mobile/tablet (< md). Ignored on desktop.
   const [mobileDetail, setMobileDetail] = useState(false);
+  // Toggle from the shared header hamburger.
+  const mobileSidebarSignal = useUIStore((s) => s.mobileSidebarSignal);
+  const firstSignal = useRef(mobileSidebarSignal);
+  useEffect(() => {
+    if (mobileSidebarSignal === firstSignal.current) return;
+    setMobileDetail((v) => !v);
+  }, [mobileSidebarSignal]);
 
   const tabs = [
     { id: 'dashboard' as const, icon: LayoutDashboard, label: 'Tableau de bord' },
@@ -33,7 +41,6 @@ export default function AdminPage() {
     { id: 'devices' as const, icon: Monitor, label: 'Appareils' },
     { id: 'system' as const, icon: Settings, label: 'Système' },
   ];
-  const currentTab = tabs.find(t => t.id === tab);
 
   return (
     <div className="h-full flex flex-col md:flex-row">
@@ -78,22 +85,6 @@ export default function AdminPage() {
       <div
         className={`flex-1 ${mobileDetail ? 'flex' : 'hidden'} md:flex flex-col min-h-0`}
       >
-        {/* Mobile header bar with hamburger */}
-        <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0">
-          <button
-            onClick={() => setMobileDetail(false)}
-            className="p-2 -ml-1 rounded-md hover:bg-outlook-bg-hover text-outlook-text-primary"
-            aria-label="Afficher la liste des sections d'administration"
-          >
-            <Menu size={20} />
-          </button>
-          {currentTab && (
-            <span className="font-medium text-outlook-text-primary flex items-center gap-2">
-              <currentTab.icon size={16} /> {currentTab.label}
-            </span>
-          )}
-        </div>
-
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
           <div className="max-w-5xl">
             {tab === 'dashboard' && <DashboardPanel />}

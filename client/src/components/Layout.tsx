@@ -57,10 +57,14 @@ export default function Layout({ children }: LayoutProps) {
   ];
 
   // The hamburger button only makes sense on pages that expose a contextual
-  // sidebar (mail folder list, calendar list). Hide it elsewhere to avoid
-  // suggesting an action that does nothing.
+  // sidebar / master list (mail folders, calendar list, settings sections,
+  // admin sections). Hide it elsewhere to avoid suggesting an action that
+  // does nothing.
   const hamburgerActive =
-    location.pathname.startsWith('/mail') || location.pathname.startsWith('/calendar');
+    location.pathname.startsWith('/mail')
+    || location.pathname.startsWith('/calendar')
+    || location.pathname.startsWith('/settings')
+    || location.pathname.startsWith('/admin');
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useAuthStore } from '../stores/authStore';
+import { useUIStore } from '../stores/uiStore';
 import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
   Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
-  Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder, Menu,
+  Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CacheSettings from '../components/CacheSettings';
@@ -40,6 +41,14 @@ export default function SettingsPage() {
   // sections (false) and the selected section's content (true). On desktop
   // both are visible at the same time so the flag is ignored.
   const [mobileDetail, setMobileDetail] = useState(false);
+  // The shared header hamburger increments this counter — toggle the master
+  // list on each press so the user can come back to it from anywhere.
+  const mobileSidebarSignal = useUIStore((s) => s.mobileSidebarSignal);
+  const firstSignal = useRef(mobileSidebarSignal);
+  useEffect(() => {
+    if (mobileSidebarSignal === firstSignal.current) return;
+    setMobileDetail((v) => !v);
+  }, [mobileSidebarSignal]);
 
   const tabs = [
     { id: 'profile' as const, icon: User, label: 'Profil' },
@@ -52,7 +61,6 @@ export default function SettingsPage() {
     { id: 'backup' as const, icon: HardDrive, label: 'Sauvegarde' },
     { id: 'cache' as const, icon: Database, label: 'Cache local' },
   ];
-  const currentTab = tabs.find(t => t.id === tab);
 
   return (
     <div className="h-full flex flex-col md:flex-row">
@@ -97,26 +105,11 @@ export default function SettingsPage() {
       </div>
 
       {/* Content (detail view). Hidden on mobile until the user picks a
-          section — then it takes the whole screen. Always visible on desktop. */}
+          section — then it takes the whole screen. Always visible on desktop.
+          The header hamburger in <Layout> brings the master list back. */}
       <div
         className={`flex-1 ${mobileDetail ? 'flex' : 'hidden'} md:flex flex-col min-h-0`}
       >
-        {/* Mobile header bar with hamburger to go back to the list */}
-        <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0">
-          <button
-            onClick={() => setMobileDetail(false)}
-            className="p-2 -ml-1 rounded-md hover:bg-outlook-bg-hover text-outlook-text-primary"
-            aria-label="Afficher la liste des paramètres"
-          >
-            <Menu size={20} />
-          </button>
-          {currentTab && (
-            <span className="font-medium text-outlook-text-primary flex items-center gap-2">
-              <currentTab.icon size={16} /> {currentTab.label}
-            </span>
-          )}
-        </div>
-
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
           <div className="max-w-2xl">
             {tab === 'profile' && <ProfileSettings />}
