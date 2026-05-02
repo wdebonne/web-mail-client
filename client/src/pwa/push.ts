@@ -157,10 +157,8 @@ export function listenForNotificationClicks(onNavigate: (url: string) => void) {
       // Le service worker ne peut pas jouer de son fiable sur Chrome —
       // on le fait depuis l'app au premier plan via Web Audio.
       import('../utils/notificationPrefs').then(({ playNotificationSound }) => {
-        playNotificationSound(data.sound, {
-          customUrl: data.customSoundUrl,
-          volume: data.volume,
-        }).catch(() => { /* ignore */ });
+        playNotificationSound(data.sound, data.volume ?? 0.6, data.customSoundUrl ?? '')
+          .catch(() => { /* ignore */ });
       }).catch(() => { /* ignore */ });
     }
   });
