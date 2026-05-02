@@ -161,13 +161,17 @@ html, body, #root {
    marketing tables (e.g. width="600") still overflow even with
    max-width:100% applied to the outer table, because nested tables
    inherit pixel widths via inline styles. Force every table inside the
-   email body to shrink-fit on mobile so the message never causes
-   horizontal scrolling. We keep declared widths on desktop so the
-   original centering (<center>, align="center", margin:0 auto) is
+   email body to expand to the full container width on mobile so the
+   message fills the reading pane (no horizontal scrolling, no awkward
+   left-aligned shrunk-fit block). We keep declared widths on desktop so
+   the original centering (<center>, align="center", margin:0 auto) is
    preserved on large screens. */
 @media (max-width: 767px) {
   .email-body table,
-  .email-body table[width],
+  .email-body table[width] {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
   .email-body td[width],
   .email-body th[width] {
     width: auto !important;
