@@ -508,7 +508,7 @@ export default function CalendarPage() {
               </button>
               <span className="text-sm font-semibold capitalize">{periodLabel}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-2">
               <button onClick={() => openCreateEvent(currentDate)} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md px-3 py-1 text-xs font-medium flex items-center gap-1.5">
                 <Plus size={12} /> Nouvel événement
               </button>
