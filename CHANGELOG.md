@@ -18,6 +18,14 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+#### Bouton retour matériel/navigateur sur mobile (parité app native)
+
+- **Le bouton retour OS reste désormais dans l'application** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : auparavant, sur mobile (Android/iOS) ou dans un navigateur, le geste / bouton retour quittait directement la page Courrier et renvoyait vers le bureau ou l'application précédente. La page intercepte désormais l'événement `popstate` (uniquement sous le breakpoint `md`, `max-width: 767px`) et le mappe sur la pile de navigation interne :
+  - vue d'un message → retour à la **liste des mails** (`setMobileView('list')` + `selectMessage(null)`),
+  - liste des mails → ouverture du **panneau des boîtes/dossiers** (`setMobileView('folders')` + `setShowFolderPane(true)`),
+  - panneau des boîtes (sommet de la pile interne) → comportement par défaut conservé, l'utilisateur peut quitter l'app/page normalement.
+- **Implémentation** : une entrée d'historique sentinelle (`history.state.__mailMobileBack = true`) est poussée au montage et re-poussée après chaque retour consommé, garantissant que les appuis successifs continuent d'être capturés. Une `mobileViewRef` synchronisée évite les fermetures obsolètes dans le handler `popstate`. Au démontage, la sentinelle est consommée si elle est encore en haut de la pile, pour ne pas exiger un appui retour supplémentaire en quittant la page Courrier. Sur tablette/desktop (`md+`), tous les panneaux étant visibles simultanément, l'interception n'est pas activée — le retour OS conserve son comportement par défaut.
+
 #### Affichage des mails sur mobile (parité Outlook)
 
 - **Plus aucun débordement horizontal sur mobile** ([client/src/index.css](client/src/index.css), [client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : les newsletters HTML (typiquement `<table width="600">`) sortaient du viewport et imposaient un défilement horizontal. Deux corrections combinées :
