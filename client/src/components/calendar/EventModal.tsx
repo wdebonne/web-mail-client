@@ -391,8 +391,9 @@ export default function EventModal({
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-outlook-border px-4 flex-shrink-0">
+        {/* Tabs — horizontally scrollable on narrow viewports so every tab
+            (notably "Pièces jointes") stays reachable on mobile. */}
+        <div className="flex border-b border-outlook-border px-2 sm:px-4 flex-shrink-0 overflow-x-auto whitespace-nowrap">
           <TabBtn active={tab === 'summary'} onClick={() => setTab('summary')} icon={<FileText size={14} />}>Résumé</TabBtn>
           <TabBtn active={tab === 'recurrence'} onClick={() => setTab('recurrence')} icon={<Repeat size={14} />}>Récurrence</TabBtn>
           <TabBtn active={tab === 'attendees'} onClick={() => setTab('attendees')} icon={<Users size={14} />}>
@@ -760,7 +761,7 @@ function TabBtn({ active, onClick, children, icon }: {
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
+      className={`flex items-center gap-1.5 px-2 sm:px-4 py-2 text-sm border-b-2 -mb-px transition-colors flex-shrink-0 ${
         active
           ? 'border-outlook-blue text-outlook-blue font-medium'
           : 'border-transparent text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover'
