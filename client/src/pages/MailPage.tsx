@@ -1015,6 +1015,9 @@ export default function MailPage() {
   // The source message shown next to the compose pane (when side-by-side compose is active).
   const [composeAlongsideMessage, setComposeAlongsideMessage] = useState<any | null>(null);
   useEffect(() => { if (!isComposing && composeAlongsideMessage) setComposeAlongsideMessage(null); }, [isComposing, composeAlongsideMessage]);
+  // Reset the local "expanded compose" flag whenever composition ends so the
+  // mobile FAB (which is hidden while composing/expanded) reappears.
+  useEffect(() => { if (!isComposing && composeExpanded) setComposeExpanded(false); }, [isComposing, composeExpanded]);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isDraggingSplit = useRef(false);
