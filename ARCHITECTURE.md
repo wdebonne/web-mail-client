@@ -197,6 +197,10 @@ newMailPoller (60 s, IMAP)        calendarReminderPoller (60 s, SQL)
 
 Le poller calendrier marque `reminder_sent_at = NOW()` après envoi pour éviter les doublons ; un trigger PostgreSQL réinitialise ce champ si `start_date` ou `reminder_minutes` est modifié, afin qu'un rappel reprogrammé refire.
 
+#### Personnalisation par plateforme (PC / mobile / tablette)
+
+Le payload Web Push est désormais construit **par-abonnement** : `sendPushToUser(userId, builder)` itère sur tous les `push_subscriptions` actifs de l'utilisateur et appelle `builder({ platform, userAgent })` pour chaque appareil. La fonction `buildPlatformPayload` (`server/src/services/notificationPrefs.ts`) résout la plateforme cible (`desktop` / `mobile` / `tablet`), applique les templates configurés (`{sender}`, `{subject}`, `{appName}`, …), assemble le bon set d'actions (max 2 desktop / 3 mobile-tablette, presets *Outlook : Archiver/Supprimer/Répondre*, *Lecture seule*, *Minimal*, ou personnalisé), choisit le son et la vibration. Cache mémoire 60 s, invalidé à la sauvegarde des préférences (utilisateur ou admin). Voir [docs/PWA.md](docs/PWA.md#personnalisation-par-plateforme-pc--mobile--tablette).
+
 ### Auto-enregistrement des expéditeurs
 
 ```

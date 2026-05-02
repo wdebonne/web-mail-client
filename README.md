@@ -95,6 +95,7 @@ Client de messagerie web complet avec interface Outlook-like, intégration NextC
 - 💾 Cache IndexedDB (emails, contacts, calendrier) — **hydratation instantanée** : les messages cachés s'affichent immédiatement au changement de dossier, sans attendre le réseau
 - 📜 **Pagination « Charger plus » / « Tout charger »** : la liste des e-mails ne se limite plus à la première page. *Tout charger* enchaîne automatiquement toutes les pages d'un dossier (ou de chaque compte d'une vue unifiée) pour permettre la recherche sur l'intégralité de la boîte mail — années précédentes incluses. Une option *Paramètres → Messagerie → Charger automatiquement tous les messages* applique ce comportement à **tous les dossiers dès leur ouverture** (synchronisé entre vos appareils).
 - 🔔 **Notifications push natives** (Web Push / VAPID) sur Windows, macOS, Android et iOS 16.4+ (PWA installée), même application fermée — nouveaux mails **et rappels de rendez-vous calendrier** ⏰. Activation depuis Paramètres → Notifications
+- 🎛️ **Personnalisation par plateforme (PC / mobile / tablette)** : titre, corps, actions de type Outlook (*Archiver / Supprimer / Répondre*), son (5 sons synthétiques + URL custom), volume, vibration, regroupement, visibilité de l'expéditeur/aperçu/image. Aperçu live multi-supports + bouton *Tester*. Configurable côté **utilisateur** (Paramètres → Notifications) et **admin** (valeurs par défaut globales).
 
 ### Système de Plugins
 - 🔌 Architecture extensible

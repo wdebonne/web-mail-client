@@ -313,6 +313,34 @@ Pour **iOS / iPadOS** : l'application doit d'abord être installée (Safari → 
 
 Les **rappels de rendez-vous** s'appuient sur la même souscription : il suffit que les notifications push soient activées et que l'événement ait un rappel configuré (champ *Rappel* du formulaire de création / modification d'un événement → `5 min`, `15 min`, `1 h`, `1 jour`, etc.). Aucun réglage supplémentaire n'est requis.
 
+### Personnalisation par plateforme (PC / mobile / tablette)
+
+Depuis **Paramètres → Notifications → Personnalisation**, chaque utilisateur peut configurer indépendamment le rendu des notifications **bureau**, **mobile** et **tablette** (onglets séparés, avec auto-détection de l'appareil courant) :
+
+- **Templates titre / corps** : variables `{sender}`, `{senderEmail}`, `{accountEmail}`, `{accountName}`, `{appName}`, `{siteUrl}`, `{subject}`, `{preview}`.
+- **Visibilité** : afficher l'expéditeur, l'aperçu, l'image, le compte, l'icône d'app, l'horodatage.
+- **Actions de type Outlook** : presets *Outlook* (**Archiver / Supprimer / Répondre**), *Lecture seule* (Marquer comme lu / Drapeau), *Minimal* (Ouvrir / Ignorer), ou personnalisé. Les limites Web Push sont respectées : **2 actions max sur desktop**, **3 sur mobile/tablette**.
+- **Son** : 5 sons synthétisés via Web Audio (ding, chime, pop, whistle, system) ou URL custom + slider de volume. Bouton **Écouter**.
+- **Vibration** : aucun / court / standard / long / motif personnalisé. Bouton **Tester la vibration**.
+- **Regroupement** : un tag par message / par compte / global (`renotify` est synchronisé en conséquence).
+- **Aperçu live** côté client : maquettes Windows 11 / Android / iOS qui se mettent à jour pendant l'édition.
+- **Bouton *Tester le rendu sur cet appareil*** : déclenche `registration.showNotification()` localement.
+- **Bouton *Test serveur*** : déclenche `POST /api/push/test` qui passe par le pipeline Web Push réel — la notification est livrée par le service push du navigateur, donc fidèle à 100 %.
+
+Les préférences sont stockées sous la clé localStorage `notifications.prefs.v1` et synchronisées multi-appareil via `BACKUP_KEYS` → `user_preferences`.
+
+#### Valeurs par défaut admin
+
+Le menu **Admin → Notifications** permet de définir les **valeurs par défaut globales** appliquées aux utilisateurs n'ayant pas encore édité leurs préférences personnelles. Stockées dans `admin_settings.notification_defaults` (JSONB).
+
+#### Pipeline serveur par-abonnement
+
+Le serveur charge les préférences au moment de l'envoi (cache mémoire 60 s, invalidé à la sauvegarde) et construit un payload **distinct par abonnement push** en fonction de sa plateforme détectée (colonne `push_subscriptions.platform` + `User-Agent`). Voir [server/src/services/notificationPrefs.ts](../server/src/services/notificationPrefs.ts) (`buildPlatformPayload`) et [server/src/services/push.ts](../server/src/services/push.ts) (`sendPushToUser` accepte une fonction *builder*).
+
+#### Actions Outlook → URL profonde
+
+Quand l'utilisateur clique sur une action Outlook dans la notification, le Service Worker mappe l'action vers une URL profonde du type `/mail/{accountId}/INBOX?notifAction=archive&notifUid=1234`. La page **Courrier** détecte ces paramètres au chargement, exécute la mutation correspondante (déplacement vers Archive, suppression vers Corbeille, marquage comme lu, drapeau, ou ouverture du composer en mode réponse), puis nettoie l'URL via `history.replaceState`. **Aucun clic supplémentaire n'est requis**.
+
 ### Options du payload
 
 Le Service Worker (`client/src/sw.ts`) et le type `PushPayload` (`server/src/services/push.ts`) prennent en charge les propriétés suivantes :
