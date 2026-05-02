@@ -103,12 +103,28 @@ settingsRouter.put('/avatar', async (req: AuthRequest, res) => {
 //
 // Values are kept as plain strings — they are already JSON-encoded by the
 // client (the `localStorage` API only stores strings). Length is capped
-// to 64 KB per key to keep one user's payload bounded.
+// per key to keep one user's payload bounded. Keys that legitimately store
+// large rich content (e.g. signatures with embedded base64 images) get a
+// higher budget via `LARGE_PREF_KEYS`.
 // ─────────────────────────────────────────────────────────────────────────
 
 const MAX_PREF_VALUE_BYTES = 64 * 1024;
+const MAX_LARGE_PREF_VALUE_BYTES = 4 * 1024 * 1024; // 4 MB
 const MAX_PREFS_PER_USER = 500;
 const KEY_REGEX = /^[a-zA-Z0-9_.\-:]{1,255}$/;
+
+/** Prefixes/keys allowed to carry large payloads (rich HTML, base64 images, …). */
+const LARGE_PREF_KEY_PREFIXES = [
+  'mail.signatures.',
+  'mail.templates.',
+];
+
+function maxBytesForKey(key: string): number {
+  for (const prefix of LARGE_PREF_KEY_PREFIXES) {
+    if (key.startsWith(prefix)) return MAX_LARGE_PREF_VALUE_BYTES;
+  }
+  return MAX_PREF_VALUE_BYTES;
+}
 
 type IncomingPrefItem = { value: string | null; updatedAt?: string };
 
@@ -175,8 +191,11 @@ settingsRouter.put('/preferences', async (req: AuthRequest, res) => {
       if (value !== null && typeof value !== 'string') {
         return res.status(400).json({ error: `Valeur non-string pour ${key}` });
       }
-      if (typeof value === 'string' && Buffer.byteLength(value, 'utf8') > MAX_PREF_VALUE_BYTES) {
-        return res.status(413).json({ error: `Valeur trop volumineuse pour ${key} (max ${MAX_PREF_VALUE_BYTES} octets)` });
+      if (typeof value === 'string') {
+        const max = maxBytesForKey(key);
+        if (Buffer.byteLength(value, 'utf8') > max) {
+          return res.status(413).json({ error: `Valeur trop volumineuse pour ${key} (max ${max} octets)` });
+        }
       }
       const updatedAt = parseIso(raw.updatedAt) || new Date();
       valid.push({ key, value: value ?? null, updatedAt });
