@@ -171,6 +171,7 @@ html, body, #root {
   .email-body table[width] {
     width: 100% !important;
     max-width: 100% !important;
+    table-layout: fixed !important;
   }
   .email-body td[width],
   .email-body th[width] {
@@ -181,6 +182,21 @@ html, body, #root {
     width: auto !important;
     max-width: 100% !important;
     height: auto !important;
+  }
+  /* Final safety net — any descendant of the email body (divs with
+     inline width="600", buttons, inline blocks, hr, etc.) must never
+     exceed the container width on mobile. word-break ensures any
+     unbreakable string (long URL, tracking pixel ref) wraps. */
+  .email-body *,
+  .email-body *[width],
+  .email-body *[style*="width"] {
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+  .email-body {
+    overflow-x: hidden;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 }
 

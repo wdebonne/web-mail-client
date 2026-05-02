@@ -57,6 +57,10 @@ export default function MessageView({
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachmentState | null>(null);
   const [previewLoadingName, setPreviewLoadingName] = useState<string | null>(null);
   const [activeAttachmentMenuIndex, setActiveAttachmentMenuIndex] = useState<number | null>(null);
+  // Mobile only — collapsed by default to save vertical space; tap the
+  // sender row to expand and reveal the full address/recipients/cc/date.
+  const [mobileSenderExpanded, setMobileSenderExpanded] = useState(false);
+  useEffect(() => { setMobileSenderExpanded(false); }, [message?.uid, message?._accountId]);
 
   // Per-message override of the global mailDisplayMode. `null` means « follow the
   // global preference »; once the user toggles the local button, this stores the
@@ -330,8 +334,11 @@ export default function MessageView({
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="flex-1 flex flex-col bg-white overflow-hidden">
-      {/* Subject bar (shared across the whole conversation when in thread mode) */}
-      <div className="px-3 sm:px-6 py-3 border-b border-outlook-border flex-shrink-0">
+      {/* Subject bar (shared across the whole conversation when in thread mode).
+          Hidden on mobile in single-message mode — the subject is already
+          shown in the mobile back-button bar above, so this would be a
+          duplicate that wastes vertical space. */}
+      <div className={`px-3 sm:px-6 py-3 border-b border-outlook-border flex-shrink-0 ${isThreadMode ? '' : 'hidden md:block'}`}>
         <div className="flex items-center gap-2 min-w-0">
           {isThreadMode && (
             <div className="flex items-center gap-1 text-outlook-blue flex-shrink-0" title="Vue conversation">
@@ -357,8 +364,24 @@ export default function MessageView({
           </div>
 
           <div className="flex-1 min-w-0">
-            {/* Sender name + email — wraps on mobile to avoid overlap */}
-            <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0 min-w-0">
+            {/* Mobile: collapsed view — only the sender name, tap to expand. */}
+            <button
+              type="button"
+              onClick={() => setMobileSenderExpanded(v => !v)}
+              className="md:hidden w-full flex items-center gap-1 min-w-0 text-left"
+              aria-expanded={mobileSenderExpanded}
+              aria-label={mobileSenderExpanded ? 'Réduire les informations de l’expéditeur' : 'Afficher toutes les informations de l’expéditeur'}
+            >
+              <span className="font-semibold text-sm text-outlook-text-primary truncate flex-1 min-w-0">
+                {message.from?.name || message.from?.address || 'Inconnu'}
+              </span>
+              {mobileSenderExpanded
+                ? <ChevronDown size={14} className="text-outlook-text-secondary flex-shrink-0" />
+                : <ChevronRight size={14} className="text-outlook-text-secondary flex-shrink-0" />}
+            </button>
+
+            {/* Desktop: full sender name + email always visible. */}
+            <div className="hidden md:flex flex-wrap items-baseline gap-x-1 gap-y-0 min-w-0">
               <span className="font-semibold text-sm text-outlook-text-primary truncate max-w-full">
                 {message.from?.name || message.from?.address || 'Inconnu'}
               </span>
@@ -368,7 +391,16 @@ export default function MessageView({
                 </span>
               )}
             </div>
-            <div className="text-xs text-outlook-text-secondary mt-0.5 truncate">
+
+            {/* Mobile expanded — sender email shown only when the user opens it. */}
+            {mobileSenderExpanded && message.from?.name && (
+              <div className="md:hidden text-xs text-outlook-text-secondary truncate mt-0.5">
+                &lt;{message.from.address}&gt;
+              </div>
+            )}
+
+            {/* Recipients/cc/date — always visible on desktop, hidden by default on mobile. */}
+            <div className={`text-xs text-outlook-text-secondary mt-0.5 truncate ${mobileSenderExpanded ? '' : 'hidden md:block'}`}>
               <span>À : </span>
               {message.to?.map((addr, i) => (
                 <span key={i}>
@@ -378,7 +410,7 @@ export default function MessageView({
               ))}
             </div>
             {message.cc && message.cc.length > 0 && (
-              <div className="text-xs text-outlook-text-secondary truncate">
+              <div className={`text-xs text-outlook-text-secondary truncate ${mobileSenderExpanded ? '' : 'hidden md:block'}`}>
                 <span>Cc : </span>
                 {message.cc.map((addr, i) => (
                   <span key={i}>
@@ -388,10 +420,12 @@ export default function MessageView({
                 ))}
               </div>
             )}
-            {/* Date — visible inline on mobile (where the action column is hidden) */}
-            <div className="md:hidden text-2xs text-outlook-text-secondary mt-1">
-              {format(new Date(message.date), "EEE dd/MM/yyyy HH:mm", { locale: fr })}
-            </div>
+            {/* Date — visible inline on mobile only when expanded (where the action column is hidden) */}
+            {mobileSenderExpanded && (
+              <div className="md:hidden text-2xs text-outlook-text-secondary mt-1">
+                {format(new Date(message.date), "EEE dd/MM/yyyy HH:mm", { locale: fr })}
+              </div>
+            )}
           </div>
 
           {/* Right side: action buttons + date — desktop / large tablets only */}
