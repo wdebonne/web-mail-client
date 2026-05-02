@@ -811,12 +811,12 @@ export const api = {
 
   // Auto-responder feature settings (read for any user, write admin-only)
   getAutoResponderFeatureSettings: () =>
-    request<{ enabled: boolean; defaultIntervalMinutes: number }>(`/auto-responder/feature-settings`),
+    request<{ enabled: boolean; defaultIntervalMinutes: number; cooldownDays?: number }>(`/auto-responder/feature-settings`),
 
   adminGetAutoResponderFeatureSettings: () =>
-    request<{ enabled: boolean; defaultIntervalMinutes: number }>(`/admin/auto-responders/feature-settings`),
+    request<{ enabled: boolean; defaultIntervalMinutes: number; cooldownDays: number }>(`/admin/auto-responders/feature-settings`),
 
-  adminSaveAutoResponderFeatureSettings: (data: { enabled?: boolean; defaultIntervalMinutes?: number }) =>
+  adminSaveAutoResponderFeatureSettings: (data: { enabled?: boolean; defaultIntervalMinutes?: number; cooldownDays?: number }) =>
     request<{ success: boolean }>(`/admin/auto-responders/feature-settings`, {
       method: 'PUT',
       body: JSON.stringify(data),

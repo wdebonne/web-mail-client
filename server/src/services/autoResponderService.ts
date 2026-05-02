@@ -2,8 +2,11 @@ import { pool } from '../database/connection';
 import { MailService } from './mail';
 import { logger } from '../utils/logger';
 
-/** Cooldown between two replies to the same sender (ms). 4 days, RFC 3834-friendly. */
-const REPLY_COOLDOWN_MS = 4 * 24 * 60 * 60 * 1000;
+/** Default cooldown between two replies to the same sender (days), used when
+ *  the admin has not explicitly configured a value. RFC 3834-friendly. */
+const DEFAULT_COOLDOWN_DAYS = 4;
+/** Valid choices for the admin cooldown setting. 0 = always reply (no cooldown). */
+export const VALID_RESPONDER_COOLDOWN_DAYS = new Set([0, 1, 2, 3, 4]);
 
 interface AutoResponderRow {
   account_id: string;
@@ -41,6 +44,24 @@ async function isFeatureEnabled(): Promise<boolean> {
     return raw !== 'false';
   } catch {
     return true;
+  }
+}
+
+/** Reads the admin-configured cooldown (in days) between two replies to the
+ *  same sender. 0 = always reply (no cooldown). Falls back to
+ *  `DEFAULT_COOLDOWN_DAYS` if missing or invalid. */
+async function getCooldownDays(): Promise<number> {
+  try {
+    const r = await pool.query(
+      `SELECT value FROM admin_settings WHERE key = 'auto_responder_cooldown_days'`,
+    );
+    if (r.rowCount === 0) return DEFAULT_COOLDOWN_DAYS;
+    const raw = String(r.rows[0].value || '').replace(/^"|"$/g, '').trim();
+    const n = Number(raw);
+    if (Number.isFinite(n) && VALID_RESPONDER_COOLDOWN_DAYS.has(n)) return n;
+    return DEFAULT_COOLDOWN_DAYS;
+  } catch {
+    return DEFAULT_COOLDOWN_DAYS;
   }
 }
 
@@ -121,11 +142,15 @@ export async function maybeSendAutoReply(
     }
 
     // Per-recipient cooldown.
+    const cooldownDays = await getCooldownDays();
     const log = responder.replied_log || {};
-    const lastIso = log[fromLower];
-    if (lastIso) {
-      const last = new Date(lastIso).getTime();
-      if (Number.isFinite(last) && Date.now() - last < REPLY_COOLDOWN_MS) return;
+    if (cooldownDays > 0) {
+      const lastIso = log[fromLower];
+      if (lastIso) {
+        const last = new Date(lastIso).getTime();
+        const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+        if (Number.isFinite(last) && Date.now() - last < cooldownMs) return;
+      }
     }
 
     const subjectOut = (responder.subject && responder.subject.trim())

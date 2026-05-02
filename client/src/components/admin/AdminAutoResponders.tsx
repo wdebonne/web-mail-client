@@ -362,12 +362,14 @@ function FeatureSettingsModal({ onClose }: { onClose: () => void }) {
 
   const [enabled, setEnabled] = useState(true);
   const [interval, setIntervalMin] = useState<number>(5);
+  const [cooldownDays, setCooldownDays] = useState<number>(4);
 
   // Hydrate when data arrives.
   useEffect(() => {
     if (data) {
       setEnabled(data.enabled);
       setIntervalMin(data.defaultIntervalMinutes || 5);
+      setCooldownDays(typeof data.cooldownDays === 'number' ? data.cooldownDays : 4);
     }
   }, [data]);
 
@@ -375,6 +377,7 @@ function FeatureSettingsModal({ onClose }: { onClose: () => void }) {
     mutationFn: () => api.adminSaveAutoResponderFeatureSettings({
       enabled,
       defaultIntervalMinutes: interval,
+      cooldownDays,
     }),
     onSuccess: () => {
       toast.success('Paramètres enregistrés');
@@ -444,6 +447,33 @@ function FeatureSettingsModal({ onClose }: { onClose: () => void }) {
                 <p className="text-xs text-outlook-text-secondary">
                   S'applique aux utilisateurs qui n'ont pas explicitement réglé
                   la fréquence dans leurs paramètres de messagerie.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm text-outlook-text-primary">
+                  Délai entre deux réponses au même expéditeur
+                </label>
+                <select
+                  value={cooldownDays}
+                  onChange={(e) => setCooldownDays(Number(e.target.value))}
+                  className="px-2 py-1.5 text-sm border border-outlook-border rounded bg-white"
+                >
+                  <option value={0}>Toujours répondre (aucun délai)</option>
+                  <option value={1}>1 jour</option>
+                  <option value={2}>2 jours</option>
+                  <option value={3}>3 jours</option>
+                  <option value={4}>4 jours (recommandé)</option>
+                </select>
+                <p className="text-xs text-outlook-text-secondary">
+                  Avec un délai de X&nbsp;jours, après une première réponse à un expéditeur,
+                  les mails suivants reçus dans la fenêtre de X&nbsp;jours sont ignorés.
+                  Le compteur n'est relancé qu'à la réception d'un nouveau message
+                  après expiration du délai (les mails arrivés pendant la période
+                  d'attente ne déclenchent jamais d'envoi).
+                  «&nbsp;Toujours répondre&nbsp;» envoie une réponse à chaque mail reçu —
+                  à utiliser avec prudence (risque de boucle si le destinataire
+                  est lui-même un répondeur).
                 </p>
               </div>
             </>

@@ -1995,16 +1995,19 @@ adminRouter.delete('/users/:userId/devices', async (req: AuthRequest, res) => {
 // ========================================
 
 const VALID_RESPONDER_INTERVALS = new Set([1, 5, 15, 30, 60]);
+/** 0 = always reply (no cooldown), 1-4 = days between two replies to same sender. */
+const VALID_RESPONDER_COOLDOWN_DAYS = new Set([0, 1, 2, 3, 4]);
 
 /** Read the auto-responder feature flags from admin_settings. */
 adminRouter.get('/auto-responders/feature-settings', async (_req: AuthRequest, res) => {
   try {
     const r = await pool.query(
       `SELECT key, value FROM admin_settings
-        WHERE key IN ('auto_responder_enabled', 'auto_responder_default_interval_minutes')`,
+        WHERE key IN ('auto_responder_enabled', 'auto_responder_default_interval_minutes', 'auto_responder_cooldown_days')`,
     );
     let enabled = true;
     let defaultIntervalMinutes = 5;
+    let cooldownDays = 4;
     for (const row of r.rows) {
       const raw = String(row.value || '').replace(/^"|"$/g, '').trim();
       if (row.key === 'auto_responder_enabled') {
@@ -2012,9 +2015,12 @@ adminRouter.get('/auto-responders/feature-settings', async (_req: AuthRequest, r
       } else if (row.key === 'auto_responder_default_interval_minutes') {
         const n = Number(raw);
         if (Number.isFinite(n) && VALID_RESPONDER_INTERVALS.has(n)) defaultIntervalMinutes = n;
+      } else if (row.key === 'auto_responder_cooldown_days') {
+        const n = Number(raw);
+        if (Number.isFinite(n) && VALID_RESPONDER_COOLDOWN_DAYS.has(n)) cooldownDays = n;
       }
     }
-    res.json({ enabled, defaultIntervalMinutes });
+    res.json({ enabled, defaultIntervalMinutes, cooldownDays });
   } catch (error: any) {
     logger.error(error as Error, 'Admin get auto-responder feature settings failed');
     res.status(500).json({ error: error.message });
@@ -2027,6 +2033,7 @@ adminRouter.put('/auto-responders/feature-settings', async (req: AuthRequest, re
     const schema = z.object({
       enabled: z.boolean().optional(),
       defaultIntervalMinutes: z.number().optional(),
+      cooldownDays: z.number().optional(),
     });
     const data = schema.parse(req.body);
 
@@ -2047,6 +2054,17 @@ adminRouter.put('/auto-responders/feature-settings', async (req: AuthRequest, re
          VALUES ('auto_responder_default_interval_minutes', $1, NOW())
          ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
         [JSON.stringify(data.defaultIntervalMinutes)],
+      );
+    }
+    if (typeof data.cooldownDays === 'number') {
+      if (!VALID_RESPONDER_COOLDOWN_DAYS.has(data.cooldownDays)) {
+        return res.status(400).json({ error: 'Délai invalide (0=Toujours, 1, 2, 3 ou 4 jours)' });
+      }
+      await pool.query(
+        `INSERT INTO admin_settings (key, value, updated_at)
+         VALUES ('auto_responder_cooldown_days', $1, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+        [JSON.stringify(data.cooldownDays)],
       );
     }
 

@@ -29,6 +29,14 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **Boîtes mail partagées (`mailbox_assignments`) prises en compte par le poller** ([server/src/services/newMailPoller.ts](server/src/services/newMailPoller.ts)) : la requête `SELECT * FROM mail_accounts WHERE user_id = ANY(...)` ratait les comptes provisionnés/partagés où `mail_accounts.user_id IS NULL`. Remplacée par `LEFT JOIN mailbox_assignments` + `WHERE ma.user_id = ANY(...) OR mba.user_id = ANY(...)`, avec `COALESCE(ma.user_id, mba.user_id)` comme `user_id` effectif passé à `maybeSendAutoReply`.
 - **Objet de la réponse automatique respecte la configuration** ([server/src/services/autoResponderService.ts](server/src/services/autoResponderService.ts)) : auparavant, la réponse était envoyée avec `Re: <objet du message reçu>` (préfixe automatique inspiré de la rédaction classique), ce qui faisait apparaître l'ancien objet dans la boîte du destinataire au lieu du libellé configuré (ex. *« Réponse automatique - Absence »*). La logique utilise désormais **directement** `responder.subject` (ou *« Réponse automatique »* en repli si vide). Les en-têtes `In-Reply-To` / `References` sont conservés pour préserver le chaînage côté client mail du destinataire.
 
+#### Délai entre deux réponses au même expéditeur configurable par l'administrateur
+
+- **Nouveau réglage côté admin** ([client/src/components/admin/AdminAutoResponders.tsx](client/src/components/admin/AdminAutoResponders.tsx), [server/src/routes/admin.ts](server/src/routes/admin.ts), [server/src/services/autoResponderService.ts](server/src/services/autoResponderService.ts)) : la modale **Paramètres du Répondeur** propose désormais un sélecteur *« Délai entre deux réponses au même expéditeur »* avec les valeurs `Toujours répondre / 1 / 2 / 3 / 4 jours` (défaut `4 jours`, cohérent avec RFC 3834). Auparavant, ce délai était une constante codée en dur (`REPLY_COOLDOWN_MS = 4 * 24h`).
+- **Comportement précis** :
+  - **X jours** (1 à 4) : après une première réponse à un expéditeur, les mails suivants reçus de lui dans la fenêtre de X jours sont **ignorés** (aucune réponse). Le compteur n'est relancé qu'à la **réception d'un nouveau message après expiration du délai** — les mails arrivés pendant la période d'attente ne déclenchent jamais d'envoi rétroactif (anti-rafale).
+  - **Toujours répondre** : envoie une réponse à **chaque mail** reçu, sans aucune fenêtre de cooldown. À utiliser avec prudence (risque de boucle si le destinataire est lui-même un répondeur — les garde-fous d'en-têtes `Auto-Submitted` / `List-Unsubscribe` / `Precedence` restent actifs).
+- **Stockage** : `admin_settings.auto_responder_cooldown_days` (`0` = toujours, `1`-`4` = jours), valeur lue à chaque tentative d'envoi par `getCooldownDays()` dans `autoResponderService.ts` — modification immédiate sans redémarrage.
+
 ### Ajouté
 
 #### Taille du texte du volet « Dossiers » personnalisable
