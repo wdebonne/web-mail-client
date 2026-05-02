@@ -5,6 +5,7 @@ import { CalendarEvent, Calendar } from '../types';
 import {
   ChevronLeft, ChevronRight, Plus, X, Clock, MapPin, Users,
   Briefcase, Pencil, Trash2, Repeat, Copy, FolderOpen, FolderInput,
+  CalendarDays, CalendarRange, CalendarClock, Calendar as CalendarIcon, List, Check,
 } from 'lucide-react';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -68,6 +69,8 @@ export default function CalendarPage() {
   const [confirmDelete, setConfirmDelete] = useState<Calendar | null>(null);
   const [shareCalendarTarget, setShareCalendarTarget] = useState<Calendar | null>(null);
   const [newCalendarOpen, setNewCalendarOpen] = useState(false);
+  const [mobileViewMenuOpen, setMobileViewMenuOpen] = useState(false);
+  const mobileViewBtnRef = useRef<HTMLButtonElement>(null);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [addCalendarUrlOpen, setAddCalendarUrlOpen] = useState(false);
   const [migrateTarget, setMigrateTarget] = useState<{ cal: Calendar; target: 'nextcloud' | 'local' } | null>(null);
@@ -132,7 +135,11 @@ export default function CalendarPage() {
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
-  const effView: CalendarViewMode = isCompact && view !== 'agenda' ? 'day' : view;
+  // Users can now switch freely between views even on mobile/tablet via the
+  // dedicated view-switcher button (top-left of the calendar pane). We still
+  // collapse multi-day day-view to a single column on compact screens to
+  // preserve readability.
+  const effView: CalendarViewMode = view;
   const effDayCount = isCompact ? 1 : dayCount;
 
   const { rangeStart, rangeEnd } = useMemo(() => {
@@ -431,7 +438,7 @@ export default function CalendarPage() {
           onPrint={() => window.print()}
           onSync={() => syncAllMutation.mutate()}
           view={effView}
-          onChangeView={(v) => { if (!isCompact) setView(v); }}
+          onChangeView={(v) => setView(v)}
           dayCount={effDayCount}
           onChangeDayCount={(n) => { if (!isCompact) setDayCount(n); }}
           splitView={splitView}
@@ -497,6 +504,55 @@ export default function CalendarPage() {
         <div className="flex-1 flex flex-col bg-white rounded-md shadow-sm overflow-hidden min-w-0">
           <div className="flex items-center justify-between px-3 py-2 border-b border-outlook-border flex-shrink-0">
             <div className="flex items-center gap-2">
+              {/* Mobile/tablet view switcher (Outlook-style) */}
+              <div className="relative lg:hidden">
+                <button
+                  ref={mobileViewBtnRef}
+                  onClick={() => setMobileViewMenuOpen(v => !v)}
+                  className="p-1.5 rounded hover:bg-outlook-bg-hover text-outlook-blue flex items-center gap-1"
+                  title="Changer la vue"
+                  aria-label="Changer la vue"
+                  aria-haspopup="menu"
+                  aria-expanded={mobileViewMenuOpen}
+                >
+                  {effView === 'day' && <CalendarIcon size={18} />}
+                  {effView === 'workweek' && <CalendarRange size={18} />}
+                  {effView === 'week' && <CalendarRange size={18} />}
+                  {effView === 'month' && <CalendarDays size={18} />}
+                  {effView === 'agenda' && <List size={18} />}
+                </button>
+                {mobileViewMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setMobileViewMenuOpen(false)}
+                    />
+                    <div
+                      className="absolute left-0 top-full mt-1 z-50 bg-white border border-outlook-border rounded-md shadow-lg py-1 min-w-[180px]"
+                      role="menu"
+                    >
+                      {([
+                        { v: 'day' as CalendarViewMode, label: 'Jour', Icon: CalendarIcon },
+                        { v: 'workweek' as CalendarViewMode, label: 'Semaine de travail', Icon: CalendarRange },
+                        { v: 'week' as CalendarViewMode, label: 'Semaine', Icon: CalendarRange },
+                        { v: 'month' as CalendarViewMode, label: 'Mois', Icon: CalendarDays },
+                        { v: 'agenda' as CalendarViewMode, label: 'Agenda', Icon: List },
+                      ]).map(({ v, label, Icon }) => (
+                        <button
+                          key={v}
+                          onClick={() => { setView(v); setMobileViewMenuOpen(false); }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-outlook-bg-hover ${effView === v ? 'text-outlook-blue font-medium' : ''}`}
+                          role="menuitem"
+                        >
+                          <Icon size={16} />
+                          <span className="flex-1">{label}</span>
+                          {effView === v && <Check size={14} />}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
               <button onClick={goToday} className="text-xs border border-outlook-border rounded px-2.5 py-1 hover:bg-outlook-bg-hover flex items-center gap-1">
                 <Briefcase size={12} /> Aujourd'hui
               </button>
