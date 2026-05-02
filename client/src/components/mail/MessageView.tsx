@@ -316,7 +316,7 @@ export default function MessageView({
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="flex-1 flex flex-col bg-white overflow-hidden">
       {/* Subject bar (shared across the whole conversation when in thread mode) */}
-      <div className="px-6 py-3 border-b border-outlook-border flex-shrink-0">
+      <div className="px-3 sm:px-6 py-3 border-b border-outlook-border flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {isThreadMode && (
             <div className="flex items-center gap-1 text-outlook-blue flex-shrink-0" title="Vue conversation">
@@ -332,7 +332,7 @@ export default function MessageView({
 
       {/* Message header — sender info left, actions right (single-message mode only) */}
       {!isThreadMode && (
-      <div className="px-6 py-3 border-b border-outlook-border flex-shrink-0">
+      <div className="px-3 sm:px-6 py-3 border-b border-outlook-border flex-shrink-0">
         <div className="flex items-start gap-3">
           <div
             className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
@@ -340,19 +340,20 @@ export default function MessageView({
           >
             {getInitials(message.from?.name, message.from?.address)}
           </div>
-          
+
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1">
-              <span className="font-semibold text-sm text-outlook-text-primary">
+            {/* Sender name + email — wraps on mobile to avoid overlap */}
+            <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0 min-w-0">
+              <span className="font-semibold text-sm text-outlook-text-primary truncate max-w-full">
                 {message.from?.name || message.from?.address || 'Inconnu'}
               </span>
               {message.from?.name && (
-                <span className="text-xs text-outlook-text-secondary">
+                <span className="text-xs text-outlook-text-secondary truncate max-w-full">
                   &lt;{message.from.address}&gt;
                 </span>
               )}
             </div>
-            <div className="text-xs text-outlook-text-secondary mt-0.5">
+            <div className="text-xs text-outlook-text-secondary mt-0.5 truncate">
               <span>À : </span>
               {message.to?.map((addr, i) => (
                 <span key={i}>
@@ -362,7 +363,7 @@ export default function MessageView({
               ))}
             </div>
             {message.cc && message.cc.length > 0 && (
-              <div className="text-xs text-outlook-text-secondary">
+              <div className="text-xs text-outlook-text-secondary truncate">
                 <span>Cc : </span>
                 {message.cc.map((addr, i) => (
                   <span key={i}>
@@ -372,10 +373,14 @@ export default function MessageView({
                 ))}
               </div>
             )}
+            {/* Date — visible inline on mobile (where the action column is hidden) */}
+            <div className="md:hidden text-2xs text-outlook-text-secondary mt-1">
+              {format(new Date(message.date), "EEE dd/MM/yyyy HH:mm", { locale: fr })}
+            </div>
           </div>
 
-          {/* Right side: action buttons + date */}
-          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          {/* Right side: action buttons + date — desktop / large tablets only */}
+          <div className="hidden md:flex flex-col items-end gap-1 flex-shrink-0">
             <div className="flex items-center gap-0.5">
               <ActionButton icon={Reply} label="Répondre" onClick={onReply} />
               <ActionButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} />
@@ -411,6 +416,43 @@ export default function MessageView({
             <span className="text-2xs text-outlook-text-secondary">
               {format(new Date(message.date), "EEE dd/MM/yyyy HH:mm", { locale: fr })}
             </span>
+          </div>
+        </div>
+
+        {/* Mobile / small tablet action bar — full-width row below sender info */}
+        <div className="md:hidden mt-2 -mx-1 flex items-center justify-between border-t border-outlook-border pt-2">
+          <div className="flex items-center gap-0.5 overflow-x-auto">
+            <ActionButton icon={Reply} label="Répondre" onClick={onReply} />
+            <ActionButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} />
+            <ActionButton icon={Forward} label="Transférer" onClick={onForward} />
+          </div>
+          <div className="flex items-center gap-0.5">
+            <ActionButton
+              icon={Star}
+              label={message.flags?.flagged ? 'Retirer' : 'Indicateur'}
+              onClick={onToggleFlag}
+              active={message.flags?.flagged}
+            />
+            <ActionButton icon={Trash2} label="Supprimer" onClick={onDelete} danger />
+            <div className="relative">
+              <ActionButton icon={MoreHorizontal} label="Plus" onClick={() => setShowMore(!showMore)} />
+              {showMore && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowMore(false)} />
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
+                    <button onClick={() => { (onArchive ? onArchive() : onMove('Archive')); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                      <Archive size={14} /> Archiver
+                    </button>
+                    <button onClick={() => { onMove('Junk'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                      <Flag size={14} /> Marquer comme indésirable
+                    </button>
+                    <button onClick={() => { onMove('INBOX'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                      <FolderInput size={14} /> Déplacer vers...
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
