@@ -9,6 +9,24 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Pastille (badge) sur l'icône PWA — type Outlook
+
+- **Compteur visible sur l'icône d'application** ([client/src/services/appBadgeService.ts](client/src/services/appBadgeService.ts)) : utilise la **Web App Badging API** (`navigator.setAppBadge` / `clearAppBadge`) pour afficher un nombre directement sur l'icône de la PWA installée — exactement comme Outlook (24). Mise à jour automatique au démarrage, à chaque retour au premier plan (`visibilitychange`), au retour de connexion (`online`), à la réception d'une notification push (message du Service Worker) et à intervalle configurable.
+- **Personnalisation utilisateur** ([client/src/components/notifications/NotificationPreferencesEditor.tsx](client/src/components/notifications/NotificationPreferencesEditor.tsx), [client/src/utils/notificationPrefs.ts](client/src/utils/notificationPrefs.ts)) : nouvelle section *Pastille de l'application* dans **Réglages → Notifications**. Options exposées :
+  - **Activer/désactiver** la pastille ;
+  - **Type d'information** : *mails non lus* (UNSEEN — défaut Outlook), *nouveaux mails reçus* (RECENT) ou *total des mails dans la boîte de réception* ;
+  - **Comptes pris en compte** : *tous mes comptes (cumulé)* ou *compte par défaut uniquement* ;
+  - **Cadence de rafraîchissement** (1 à 60 minutes) ;
+  - **Plafond d'affichage** (au-delà l'OS affiche « 99+ »).
+  Les valeurs sont stockées dans `notifications.prefs.v1.appBadge` et synchronisées multi-appareil via le mécanisme `prefsSync` existant.
+- **Endpoint serveur léger** ([server/src/routes/mail.ts](server/src/routes/mail.ts), [server/src/services/mail.ts](server/src/services/mail.ts)) : nouvelle route `GET /api/mail/badge?source=…&scope=…` qui interroge IMAP via `STATUS` (très peu coûteux — pas de fetch de messages) et agrège le compteur sur tous les comptes assignés et possédés de l'utilisateur. Cache mémoire de 30 s par utilisateur+source pour limiter les connexions IMAP.
+- **Compatibilité documentée** : ✅ Chrome / Edge desktop (PWA installée), ✅ Chrome Android (PWA installée). ⚠️ Non disponible sur Safari / iOS PWA — l'éditeur affiche un bandeau ambre explicite quand l'API n'est pas exposée par le navigateur.
+
+#### Aperçu de notification fidèle à la limite OS d'actions
+
+- **Respect dynamique de `Notification.maxActions`** ([client/src/components/notifications/NotificationPreview.tsx](client/src/components/notifications/NotificationPreview.tsx)) : l'aperçu mobile affichait jusqu'à 3 boutons d'action alors qu'Android Chrome n'expose que `Notification.maxActions = 2` dans la bannière collapsed (lock screen / volet). Le composant lit désormais cette propriété au runtime et masque les actions excédentaires, garantissant une parité visuelle 1:1 avec la vraie notif.
+- **Bandeau d'avertissement** : quand des actions configurées sont effectivement coupées par l'OS, un bandeau ambre *« +N action(s) masquée(s) par l'OS (limite Notification.maxActions = X) »* s'affiche sous les boutons — l'utilisateur sait immédiatement pourquoi son 3ᵉ bouton n'apparaît pas dans la notification réelle.
+
 #### Personnalisation avancée des notifications push (par plateforme : PC / mobile / tablette)
 
 - **Schéma de préférences unifié** ([client/src/utils/notificationPrefs.ts](client/src/utils/notificationPrefs.ts)) : nouvelle clé `notifications.prefs.v1` avec trois sous-blocs indépendants `desktop`, `mobile`, `tablet`. Chaque plateforme définit son propre titre/corps templatisés (`{sender}`, `{senderEmail}`, `{accountEmail}`, `{accountName}`, `{appName}`, `{siteUrl}`, `{subject}`, `{preview}`), ses booléens de visibilité (afficher l'expéditeur, l'aperçu, l'image, le compte, l'icône d'app, l'horodatage), son lot d'actions (preset *Outlook* avec **Archiver / Supprimer / Répondre**, *Lecture seule*, *Minimal*, ou personnalisé), son son (5 sons synthétiques via Web Audio + URL custom), son volume, son pattern de vibration et sa stratégie de regroupement (`per-message` / `per-account` / `global`). Synchronisé multi-appareil via `BACKUP_KEYS`.

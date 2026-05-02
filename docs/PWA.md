@@ -341,6 +341,61 @@ Le serveur charge les préférences au moment de l'envoi (cache mémoire 60 s, i
 
 Quand l'utilisateur clique sur une action Outlook dans la notification, le Service Worker mappe l'action vers une URL profonde du type `/mail/{accountId}/INBOX?notifAction=archive&notifUid=1234`. La page **Courrier** détecte ces paramètres au chargement, exécute la mutation correspondante (déplacement vers Archive, suppression vers Corbeille, marquage comme lu, drapeau, ou ouverture du composer en mode réponse), puis nettoie l'URL via `history.replaceState`. **Aucun clic supplémentaire n'est requis**.
 
+#### Limite OS du nombre d'actions affichées
+
+Tous les systèmes d'exploitation ne rendent pas le même nombre de boutons d'action dans la bannière collapsed (lock screen, volet de notifications). Chrome expose dynamiquement la limite réelle via `Notification.maxActions` :
+
+| Plateforme | `Notification.maxActions` | Conséquence |
+|------------|---------------------------|-------------|
+| Chrome / Edge desktop | typiquement `2` | Le 3ᵉ bouton (par ex. *Répondre*) n'apparaît pas — l'utilisateur peut le voir uniquement après expansion. |
+| Chrome Android | `2` | Idem ci-dessus. |
+| Firefox desktop | `5` (rarement supporté) | Tous les boutons sont visibles. |
+| iOS / Safari | actions ignorées | Aucun bouton dans la bannière. |
+
+L'aperçu live du panneau **Réglages → Notifications** lit cette valeur au runtime et tronque l'aperçu en conséquence — ce qui est affiché correspond exactement à ce que l'OS rendra. Quand des actions configurées sont coupées, un bandeau ambre *« +N action(s) masquée(s) par l'OS »* est affiché pour rendre la cause évidente.
+
+### Pastille (badge) sur l'icône PWA — Web App Badging API
+
+Une pastille type Outlook (24 sur l'icône d'application) peut être activée et personnalisée depuis **Paramètres → Notifications → Pastille de l'application**.
+
+#### Options exposées à l'utilisateur
+
+| Option | Valeurs | Description |
+|--------|---------|-------------|
+| Activer/désactiver | toggle | Coupe entièrement la pastille (`navigator.clearAppBadge()` est appelé immédiatement). |
+| Type d'information | `inbox-unread` (défaut, comme Outlook) / `inbox-recent` / `inbox-total` | Source agrégée par le serveur via IMAP `STATUS`. |
+| Comptes pris en compte | `all` / `default` | Cumule sur tous les comptes assignés et possédés, ou ne tient compte que du compte par défaut. |
+| Cadence de rafraîchissement | 1 à 60 minutes | Polling en arrière-plan (suspendu quand l'onglet est masqué). |
+| Plafond d'affichage | 1 à 99 999 | Au-delà, l'OS affiche typiquement « 99+ ». |
+
+Les préférences sont stockées dans `notifications.prefs.v1.appBadge` et synchronisées multi-appareil via `BACKUP_KEYS` → `user_preferences`.
+
+#### Mécanisme de mise à jour
+
+Le service [client/src/services/appBadgeService.ts](../client/src/services/appBadgeService.ts) appelle `navigator.setAppBadge(count)` / `clearAppBadge()` aux moments suivants :
+
+- **Démarrage** dès la connexion utilisateur (idempotent).
+- **Polling** à la cadence configurée — uniquement si l'onglet est visible (`document.visibilityState === 'visible'`).
+- **`visibilitychange`** : rafraîchissement immédiat dès le retour au premier plan.
+- **`online`** : rafraîchissement au retour de connexion réseau.
+- **Notification push reçue** : le Service Worker (`sw.ts`) poste un message `notification-click` ou `play-notification-sound`, qui déclenche un refresh.
+- **Changement de préférences** : l'événement custom `notification-prefs-changed` reconfigure le service en direct.
+
+#### Endpoint serveur léger
+
+`GET /api/mail/badge?source=…&scope=…` interroge IMAP via `STATUS` (commande très peu coûteuse — pas de fetch de messages) et agrège le compteur sur tous les comptes joignables de l'utilisateur. Cache mémoire de 30 s par couple `(userId, source, scope)` pour limiter le nombre de connexions IMAP. Voir [API.md → GET /api/mail/badge](../API.md).
+
+#### Compatibilité
+
+| Plateforme | Support |
+|------------|---------|
+| Chrome / Edge desktop (PWA installée) | ✅ |
+| Chrome Android (PWA installée) | ✅ |
+| Firefox | ❌ (API non implémentée) |
+| Safari / iOS PWA | ❌ (API non exposée) |
+
+L'éditeur affiche un bandeau ambre explicite *« Cette fonctionnalité requiert une PWA installée sur Chrome / Edge (Windows, macOS, Android). »* lorsque `'setAppBadge' in navigator` est faux.
+
 ### Options du payload
 
 Le Service Worker (`client/src/sw.ts`) et le type `PushPayload` (`server/src/services/push.ts`) prennent en charge les propriétés suivantes :

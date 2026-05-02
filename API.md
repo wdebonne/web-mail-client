@@ -263,6 +263,33 @@ Teste la connexion IMAP/SMTP d'un compte.
 
 > 🔒 Authentification requise
 
+### GET /api/mail/badge
+
+Renvoie le compteur agrégé pour la **pastille (badge) de l'icône PWA** — alimente la Web App Badging API côté client.
+
+**Query :**
+- `source` (optionnel, défaut `inbox-unread`) : `inbox-unread` (mails non lus, défaut Outlook) | `inbox-recent` (nouveaux mails marqués RECENT) | `inbox-total` (total des mails dans la Boîte de réception).
+- `scope` (optionnel, défaut `all`) : `all` (cumul sur tous les comptes assignés et possédés par l'utilisateur) | `default` (compte par défaut uniquement).
+
+**Réponse 200 :**
+```json
+{
+  "source": "inbox-unread",
+  "scope": "all",
+  "count": 24,
+  "perAccount": [
+    { "accountId": "uuid-a", "count": 18 },
+    { "accountId": "uuid-b", "count": 6 }
+  ],
+  "cached": false
+}
+```
+
+**Notes :**
+- Implémenté via IMAP `STATUS` — n'ouvre pas les messages (très peu coûteux).
+- Cache mémoire serveur de 30 s par couple `(userId, source, scope)`.
+- Les comptes en erreur (IMAP indisponible) sont silencieusement ignorés et n'apparaissent pas dans `perAccount` ; le total reste cohérent avec les comptes joignables.
+
 ### GET /api/mail/:accountId/folders
 
 Liste les dossiers d'un compte mail.
