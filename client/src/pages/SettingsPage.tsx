@@ -54,11 +54,21 @@ export default function SettingsPage() {
     setMobileDetail((v) => !v);
   }, [mobileSidebarSignal]);
 
+  const { data: arFeature } = useQuery({
+    queryKey: ['auto-responder-feature-settings'],
+    queryFn: api.getAutoResponderFeatureSettings,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  });
+  const autoResponderFeatureEnabled = arFeature?.enabled !== false;
+
   const tabs = [
     { id: 'profile' as const, icon: User, label: 'Profil' },
     { id: 'accounts' as const, icon: Mail, label: 'Mes boîtes mail' },
     { id: 'mail' as const, icon: Paperclip, label: 'Messagerie' },
-    { id: 'autoresponder' as const, icon: Coffee, label: 'Répondeur' },
+    ...(autoResponderFeatureEnabled
+      ? [{ id: 'autoresponder' as const, icon: Coffee, label: 'Répondeur' }]
+      : []),
     { id: 'appearance' as const, icon: Palette, label: 'Apparence' },
     { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
     { id: 'devices' as const, icon: Monitor, label: 'Mes appareils' },

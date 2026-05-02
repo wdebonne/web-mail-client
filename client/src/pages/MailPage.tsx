@@ -1421,10 +1421,17 @@ export default function MailPage() {
   const [contextCategoryPicker, setContextCategoryPicker] = useState<{ message: any; x: number; y: number } | null>(null);
   // Auto-responder modal (vacation responder).
   const [autoResponderOpen, setAutoResponderOpen] = useState(false);
+  const { data: autoResponderFeature } = useQuery({
+    queryKey: ['auto-responder-feature-settings'],
+    queryFn: api.getAutoResponderFeatureSettings,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  });
+  const autoResponderFeatureEnabled = autoResponderFeature?.enabled !== false;
   const { data: autoResponderStatus } = useQuery({
     queryKey: ['auto-responder', selectedAccount?.id, 'status'],
     queryFn: () => selectedAccount ? api.getAutoResponder(selectedAccount.id) : Promise.resolve(null),
-    enabled: !!selectedAccount,
+    enabled: !!selectedAccount && autoResponderFeatureEnabled,
     refetchOnWindowFocus: false,
   });
   // Bump to force re-render when categories or assignments change.
@@ -1642,7 +1649,7 @@ export default function MailPage() {
           onNewCategory={() => setCategoryCreateOpen(true)}
           onManageCategories={() => setCategoryManageOpen(true)}
           messageCategoryIds={selectedMessageCategoryIds}
-          onOpenAutoResponder={() => setAutoResponderOpen(true)}
+          onOpenAutoResponder={autoResponderFeatureEnabled ? () => setAutoResponderOpen(true) : undefined}
           autoResponderEnabled={!!autoResponderStatus?.enabled}
         />
       </div>

@@ -19,8 +19,36 @@ const lastCheckedAt = new Map<string, number>(); // userId -> ms epoch of last c
 // Base tick frequency. The actual per-user check frequency is gated by the
 // `mail.newMailPollMinutes` user preference (0=jamais, 1/5/15/30/60).
 const INTERVAL_MS = Math.max(15_000, Number(process.env.NEW_MAIL_POLL_INTERVAL_MS) || 30_000);
-const DEFAULT_POLL_MINUTES = Math.max(0, Number(process.env.NEW_MAIL_POLL_DEFAULT_MINUTES) || 5);
+const FALLBACK_DEFAULT_MINUTES = Math.max(0, Number(process.env.NEW_MAIL_POLL_DEFAULT_MINUTES) || 5);
 const VALID_POLL_MINUTES = new Set([0, 1, 5, 15, 30, 60]);
+
+/** Cache for admin-configured defaults (refreshed at every tick). */
+let cachedDefaultMinutes = FALLBACK_DEFAULT_MINUTES;
+let cachedFeatureEnabled = true;
+
+async function refreshAdminDefaults(): Promise<void> {
+  try {
+    const r = await pool.query(
+      `SELECT key, value FROM admin_settings
+        WHERE key IN ('auto_responder_enabled', 'auto_responder_default_interval_minutes')`,
+    );
+    let enabled = true;
+    let minutes = FALLBACK_DEFAULT_MINUTES;
+    for (const row of r.rows) {
+      const raw = String(row.value || '').replace(/^"|"$/g, '').trim();
+      if (row.key === 'auto_responder_enabled') {
+        enabled = raw !== 'false';
+      } else if (row.key === 'auto_responder_default_interval_minutes') {
+        const n = Number(raw);
+        if (Number.isFinite(n) && VALID_POLL_MINUTES.has(n)) minutes = n;
+      }
+    }
+    cachedFeatureEnabled = enabled;
+    cachedDefaultMinutes = minutes;
+  } catch {
+    /* keep previous cached values on error */
+  }
+}
 
 function stripHtml(s: string | null | undefined): string {
   if (!s) return '';
@@ -189,19 +217,30 @@ async function checkAccount(row: any) {
 
 async function tick() {
   try {
+    await refreshAdminDefaults();
+
     // Pull the per-user `mail.newMailPollMinutes` preference for everyone who
-    // has at least one enabled push subscription OR at least one mail account
-    // with an enabled auto-responder (the responder runs on the same poller
-    // because both depend on detecting new INBOX UIDs). Users without the
-    // preference fall back to DEFAULT_POLL_MINUTES.
-    const prefRows = await pool.query(
-      `WITH eligible AS (
-         SELECT user_id FROM push_subscriptions WHERE enabled = true
+    // has at least one enabled push subscription OR (when the auto-responder
+    // feature is globally enabled) at least one mail account with an enabled
+    // auto-responder. Users without the preference fall back to the
+    // admin-configured default minutes.
+    const eligibilityUnion = cachedFeatureEnabled
+      ? `SELECT user_id FROM push_subscriptions WHERE enabled = true
          UNION
          SELECT ma.user_id
            FROM auto_responders ar
            JOIN mail_accounts ma ON ma.id = ar.account_id
           WHERE ar.enabled = true AND ma.user_id IS NOT NULL
+         UNION
+         SELECT mba.user_id
+           FROM auto_responders ar
+           JOIN mailbox_assignments mba ON mba.mail_account_id = ar.account_id
+          WHERE ar.enabled = true AND mba.user_id IS NOT NULL`
+      : `SELECT user_id FROM push_subscriptions WHERE enabled = true`;
+
+    const prefRows = await pool.query(
+      `WITH eligible AS (
+         ${eligibilityUnion}
        )
        SELECT DISTINCT e.user_id,
               COALESCE(up.value, '') AS pref_value
@@ -217,7 +256,7 @@ async function tick() {
     const eligibleUserIds: string[] = [];
 
     for (const row of prefRows.rows) {
-      let minutes = DEFAULT_POLL_MINUTES;
+      let minutes = cachedDefaultMinutes;
       // Pref values are JSON-encoded by the client (always wrapped in quotes for strings).
       const raw = String(row.pref_value || '').replace(/^"|"$/g, '').trim();
       if (raw) {
@@ -273,7 +312,7 @@ let timer: NodeJS.Timeout | null = null;
 
 export function startNewMailPoller() {
   if (timer) return;
-  logger.info(`New-mail poller started (base tick ${INTERVAL_MS}ms, default user interval ${DEFAULT_POLL_MINUTES}min)`);
+  logger.info(`New-mail poller started (base tick ${INTERVAL_MS}ms, default user interval ${FALLBACK_DEFAULT_MINUTES}min)`);
   // Delay first run slightly so the server finishes startup
   setTimeout(() => { tick(); }, 10_000);
   timer = setInterval(tick, INTERVAL_MS);

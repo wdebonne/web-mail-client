@@ -1994,6 +1994,73 @@ adminRouter.delete('/users/:userId/devices', async (req: AuthRequest, res) => {
 // Auto-Responders (admin)
 // ========================================
 
+const VALID_RESPONDER_INTERVALS = new Set([1, 5, 15, 30, 60]);
+
+/** Read the auto-responder feature flags from admin_settings. */
+adminRouter.get('/auto-responders/feature-settings', async (_req: AuthRequest, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT key, value FROM admin_settings
+        WHERE key IN ('auto_responder_enabled', 'auto_responder_default_interval_minutes')`,
+    );
+    let enabled = true;
+    let defaultIntervalMinutes = 5;
+    for (const row of r.rows) {
+      const raw = String(row.value || '').replace(/^"|"$/g, '').trim();
+      if (row.key === 'auto_responder_enabled') {
+        enabled = raw !== 'false';
+      } else if (row.key === 'auto_responder_default_interval_minutes') {
+        const n = Number(raw);
+        if (Number.isFinite(n) && VALID_RESPONDER_INTERVALS.has(n)) defaultIntervalMinutes = n;
+      }
+    }
+    res.json({ enabled, defaultIntervalMinutes });
+  } catch (error: any) {
+    logger.error(error as Error, 'Admin get auto-responder feature settings failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** Update the auto-responder feature flags. */
+adminRouter.put('/auto-responders/feature-settings', async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      enabled: z.boolean().optional(),
+      defaultIntervalMinutes: z.number().optional(),
+    });
+    const data = schema.parse(req.body);
+
+    if (typeof data.enabled === 'boolean') {
+      await pool.query(
+        `INSERT INTO admin_settings (key, value, updated_at)
+         VALUES ('auto_responder_enabled', $1, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+        [JSON.stringify(data.enabled)],
+      );
+    }
+    if (typeof data.defaultIntervalMinutes === 'number') {
+      if (!VALID_RESPONDER_INTERVALS.has(data.defaultIntervalMinutes)) {
+        return res.status(400).json({ error: 'Intervalle invalide (1, 5, 15, 30 ou 60 minutes)' });
+      }
+      await pool.query(
+        `INSERT INTO admin_settings (key, value, updated_at)
+         VALUES ('auto_responder_default_interval_minutes', $1, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+        [JSON.stringify(data.defaultIntervalMinutes)],
+      );
+    }
+
+    await addLog(req.userId, 'auto_responder.feature_settings', 'admin', req, data);
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides', details: error.errors });
+    }
+    logger.error(error as Error, 'Admin save auto-responder feature settings failed');
+    res.status(500).json({ error: error.message });
+  }
+});
+
 /**
  * List every auto-responder row, joined with the owning mail account and user.
  * Used by the Admin > Répondeurs tab. Supports `?activeOnly=1` to return only

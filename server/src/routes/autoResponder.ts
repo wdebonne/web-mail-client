@@ -7,6 +7,44 @@ import { logger } from '../utils/logger';
 
 export const autoResponderRouter = Router();
 
+/** Read-only feature flags for the user UI (controls visibility of the
+ *  ribbon button and settings tab). */
+autoResponderRouter.get('/feature-settings', async (_req: AuthRequest, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT key, value FROM admin_settings
+        WHERE key IN ('auto_responder_enabled', 'auto_responder_default_interval_minutes')`,
+    );
+    let enabled = true;
+    let defaultIntervalMinutes = 5;
+    for (const row of r.rows) {
+      const raw = String(row.value || '').replace(/^"|"$/g, '').trim();
+      if (row.key === 'auto_responder_enabled') enabled = raw !== 'false';
+      else if (row.key === 'auto_responder_default_interval_minutes') {
+        const n = Number(raw);
+        if (Number.isFinite(n)) defaultIntervalMinutes = n;
+      }
+    }
+    res.json({ enabled, defaultIntervalMinutes });
+  } catch (error: any) {
+    logger.error(error, 'auto-responder feature-settings GET failed');
+    res.status(500).json({ error: error.message || 'Erreur' });
+  }
+});
+
+async function isFeatureEnabledForUsers(): Promise<boolean> {
+  try {
+    const r = await pool.query(
+      `SELECT value FROM admin_settings WHERE key = 'auto_responder_enabled'`,
+    );
+    if (r.rowCount === 0) return true;
+    const raw = String(r.rows[0].value || '').replace(/^"|"$/g, '').trim();
+    return raw !== 'false';
+  } catch {
+    return true;
+  }
+}
+
 /** Returns the mail-account row when the user owns it (directly) or has been
  *  assigned the mailbox with `send_as` / `send_on_behalf` permission. Auto-
  *  responder settings are user-bound so we require at least visibility. */
@@ -124,6 +162,9 @@ autoResponderRouter.get('/account/:accountId', async (req: AuthRequest, res) => 
 /** PUT (upsert) settings for an account. */
 autoResponderRouter.put('/account/:accountId', async (req: AuthRequest, res) => {
   try {
+    if (!(await isFeatureEnabledForUsers())) {
+      return res.status(403).json({ error: 'La fonctionnalité Répondeur est désactivée par l\'administrateur' });
+    }
     const { accountId } = req.params;
     const account = await getAccountForUser(accountId, req.userId!);
     if (!account) return res.status(404).json({ error: 'Compte non trouvé' });

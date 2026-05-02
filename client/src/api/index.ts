@@ -808,4 +808,17 @@ export const api = {
     request<{ success: boolean }>(`/admin/auto-responders/account/${accountId}`, {
       method: 'DELETE',
     }),
+
+  // Auto-responder feature settings (read for any user, write admin-only)
+  getAutoResponderFeatureSettings: () =>
+    request<{ enabled: boolean; defaultIntervalMinutes: number }>(`/auto-responder/feature-settings`),
+
+  adminGetAutoResponderFeatureSettings: () =>
+    request<{ enabled: boolean; defaultIntervalMinutes: number }>(`/admin/auto-responders/feature-settings`),
+
+  adminSaveAutoResponderFeatureSettings: (data: { enabled?: boolean; defaultIntervalMinutes?: number }) =>
+    request<{ success: boolean }>(`/admin/auto-responders/feature-settings`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 };

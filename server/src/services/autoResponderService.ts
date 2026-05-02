@@ -30,6 +30,20 @@ async function loadResponder(accountId: string): Promise<AutoResponderRow | null
   return result.rows[0] as AutoResponderRow;
 }
 
+/** Returns true when the admin globally enabled the auto-responder feature. */
+async function isFeatureEnabled(): Promise<boolean> {
+  try {
+    const r = await pool.query(
+      `SELECT value FROM admin_settings WHERE key = 'auto_responder_enabled'`,
+    );
+    if (r.rowCount === 0) return true;
+    const raw = String(r.rows[0].value || '').replace(/^"|"$/g, '').trim();
+    return raw !== 'false';
+  } catch {
+    return true;
+  }
+}
+
 /** Whether the responder is active right now according to its schedule. */
 function isActive(row: AutoResponderRow, now: Date = new Date()): boolean {
   if (!row.enabled) return false;
@@ -86,6 +100,7 @@ export async function maybeSendAutoReply(
   mailService: MailService,
 ): Promise<void> {
   try {
+    if (!(await isFeatureEnabled())) return;
     const responder = await loadResponder(accountRow.id);
     if (!responder || !isActive(responder)) return;
 

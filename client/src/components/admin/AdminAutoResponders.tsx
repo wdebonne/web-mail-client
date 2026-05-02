@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Coffee, Plus, Search, X, Edit2, Power, Loader2, AlertCircle, CheckCircle2,
+  Coffee, Plus, Search, X, Edit2, Power, Loader2, AlertCircle, CheckCircle2, Settings,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../../api';
@@ -17,6 +17,7 @@ export default function AdminAutoResponders() {
   const [activeOnly, setActiveOnly] = useState(true);
   const [edit, setEdit] = useState<{ accountId: string; label: string } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -61,12 +62,21 @@ export default function AdminAutoResponders() {
           <Coffee size={20} className="text-outlook-blue" />
           <h2 className="text-lg font-semibold text-outlook-text-primary">Répondeurs automatiques</h2>
         </div>
-        <button
-          onClick={() => setPickerOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-outlook-blue text-white hover:bg-outlook-blue-hover"
-        >
-          <Plus size={14} /> Nouveau répondeur
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-outlook-border bg-white hover:bg-outlook-bg-hover text-outlook-text-primary"
+            title="Paramètres de la fonctionnalité"
+          >
+            <Settings size={14} /> Paramètres
+          </button>
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-outlook-blue text-white hover:bg-outlook-blue-hover"
+          >
+            <Plus size={14} /> Nouveau répondeur
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -209,6 +219,8 @@ export default function AdminAutoResponders() {
           onClose={() => setEdit(null)}
         />
       )}
+
+      {settingsOpen && <FeatureSettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
@@ -332,6 +344,126 @@ function EditModal({
             onSaved={onClose}
             compact
           />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Feature settings modal: enable/disable globally + default check interval.
+// ----------------------------------------------------------------------------
+function FeatureSettingsModal({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-auto-responder-feature-settings'],
+    queryFn: api.adminGetAutoResponderFeatureSettings,
+  });
+
+  const [enabled, setEnabled] = useState(true);
+  const [interval, setIntervalMin] = useState<number>(5);
+
+  // Hydrate when data arrives.
+  useEffect(() => {
+    if (data) {
+      setEnabled(data.enabled);
+      setIntervalMin(data.defaultIntervalMinutes || 5);
+    }
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () => api.adminSaveAutoResponderFeatureSettings({
+      enabled,
+      defaultIntervalMinutes: interval,
+    }),
+    onSuccess: () => {
+      toast.success('Paramètres enregistrés');
+      queryClient.invalidateQueries({ queryKey: ['admin-auto-responder-feature-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['auto-responder-feature-settings'] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e?.message || 'Échec'),
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-md mt-16"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-outlook-border">
+          <h3 className="text-base font-semibold">Paramètres du Répondeur</h3>
+          <button onClick={onClose} className="p-1 hover:bg-outlook-bg-hover rounded"><X size={16} /></button>
+        </div>
+        <div className="p-4 space-y-4">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-outlook-text-secondary">
+              <Loader2 size={14} className="animate-spin" /> Chargement…
+            </div>
+          ) : (
+            <>
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={enabled}
+                  onClick={() => setEnabled(v => !v)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-outlook-blue' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+                <span className="text-sm">
+                  Fonction Répondeur {enabled ? 'activée' : 'désactivée'}
+                </span>
+              </label>
+              <p className="text-xs text-outlook-text-secondary -mt-2 pl-14">
+                Lorsqu'elle est désactivée, le bouton « Répondeur » du ruban et l'onglet
+                « Répondeur » des paramètres utilisateur sont masqués, et aucune
+                réponse automatique n'est envoyée.
+              </p>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm text-outlook-text-primary">
+                  Durée par défaut entre chaque vérification
+                </label>
+                <select
+                  value={interval}
+                  onChange={(e) => setIntervalMin(Number(e.target.value))}
+                  className="px-2 py-1.5 text-sm border border-outlook-border rounded bg-white"
+                >
+                  <option value={1}>1 minute</option>
+                  <option value={5}>5 minutes (recommandé)</option>
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={60}>1 heure</option>
+                </select>
+                <p className="text-xs text-outlook-text-secondary">
+                  S'applique aux utilisateurs qui n'ont pas explicitement réglé
+                  la fréquence dans leurs paramètres de messagerie.
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-outlook-border">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm rounded border border-outlook-border hover:bg-outlook-bg-hover"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => save.mutate()}
+            disabled={save.isPending || isLoading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-outlook-blue text-white hover:bg-outlook-blue-hover disabled:opacity-50"
+          >
+            {save.isPending && <Loader2 size={14} className="animate-spin" />}
+            Enregistrer
+          </button>
         </div>
       </div>
     </div>

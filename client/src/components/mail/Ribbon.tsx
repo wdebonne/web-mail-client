@@ -818,13 +818,17 @@ export default function Ribbon({
                 <ChevronDown size={10} />
               </button>
               <SimplifiedSep />
-              <SimplifiedButton
-                icon={Coffee}
-                label="Répondeur"
-                onClick={() => onOpenAutoResponder && onOpenAutoResponder()}
-                active={autoResponderEnabled}
-              />
-              <SimplifiedSep />
+              {onOpenAutoResponder && (
+                <>
+                  <SimplifiedButton
+                    icon={Coffee}
+                    label="Répondeur"
+                    onClick={() => onOpenAutoResponder()}
+                    active={autoResponderEnabled}
+                  />
+                  <SimplifiedSep />
+                </>
+              )}
               <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
               <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
               <SimplifiedButton icon={Paperclip} label="Pièce jointe" onClick={() => {/* no-op in simplified */}} />
@@ -1134,15 +1138,19 @@ export default function Ribbon({
               <RibbonSeparator />
 
               {/* Répondeur (vacation responder) */}
-              <RibbonGroup label="Absence">
-                <RibbonButton
-                  icon={Coffee}
-                  label="Répondeur"
-                  onClick={() => onOpenAutoResponder && onOpenAutoResponder()}
-                  active={autoResponderEnabled}
-                />
-              </RibbonGroup>
-              <RibbonSeparator />
+              {onOpenAutoResponder && (
+                <>
+                  <RibbonGroup label="Absence">
+                    <RibbonButton
+                      icon={Coffee}
+                      label="Répondeur"
+                      onClick={() => onOpenAutoResponder()}
+                      active={autoResponderEnabled}
+                    />
+                  </RibbonGroup>
+                  <RibbonSeparator />
+                </>
+              )}
 
               {/* Pièces jointes */}
               <RibbonGroup label="Pièce jointe">
