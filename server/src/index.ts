@@ -28,6 +28,7 @@ import { setupWebSocket } from './services/websocket';
 import { PluginManager } from './plugins/manager';
 import { initPushService } from './services/push';
 import { startNewMailPoller } from './services/newMailPoller';
+import { startCalendarReminderPoller } from './services/calendarReminderPoller';
 import { startNextCloudSyncPoller } from './services/nextcloudSyncPoller';
 import { getWebAuthnConfig } from './services/webauthn';
 
@@ -160,6 +161,9 @@ async function start() {
 
     // Start periodic new-mail poller (only polls accounts whose owner subscribed to push)
     startNewMailPoller();
+
+    // Start periodic calendar reminder poller (sends Web Push when an event's VALARM is due)
+    startCalendarReminderPoller();
 
     // Start periodic NextCloud sync (pulls calendars + contacts for provisioned users)
     startNextCloudSyncPoller().catch((err) => logger.error(err, 'Failed to start NextCloud sync poller'));

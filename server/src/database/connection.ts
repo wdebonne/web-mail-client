@@ -406,6 +406,30 @@ export async function initDatabase() {
       ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS nc_etag VARCHAR(255);
       ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS nc_uri VARCHAR(512);
 
+      -- Reminder push delivery tracking (avoids re-sending the same VALARM)
+      ALTER TABLE IF EXISTS calendar_events ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_events_reminder_pending
+        ON calendar_events(start_date)
+        WHERE reminder_minutes IS NOT NULL AND reminder_sent_at IS NULL;
+
+      -- Reset reminder_sent_at when the user reschedules the event or
+      -- changes the VALARM offset, so the rescheduled reminder fires again.
+      CREATE OR REPLACE FUNCTION reset_reminder_sent_at() RETURNS TRIGGER AS $$
+      BEGIN
+        IF NEW.start_date IS DISTINCT FROM OLD.start_date
+           OR NEW.reminder_minutes IS DISTINCT FROM OLD.reminder_minutes THEN
+          NEW.reminder_sent_at := NULL;
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_reset_reminder_sent_at ON calendar_events;
+      CREATE TRIGGER trg_reset_reminder_sent_at
+        BEFORE UPDATE ON calendar_events
+        FOR EACH ROW
+        EXECUTE FUNCTION reset_reminder_sent_at();
+
       -- Unique partial indexes required by NextCloud sync ON CONFLICT clauses.
       -- Predicates MUST match exactly the WHERE clause used in ON CONFLICT ... WHERE ...
       -- Drop any previous versions of these indexes that may have been created with a
