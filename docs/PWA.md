@@ -275,6 +275,8 @@ listenForNotificationClicks((url) => navigate(url));
 
 ### Déclenchement des notifications
 
+#### Nouveaux mails — `newMailPoller`
+
 Le module [`server/src/services/newMailPoller.ts`](../server/src/services/newMailPoller.ts) sonde l'INBOX IMAP de chaque compte mail **dont l'utilisateur possède au moins un abonnement push actif** :
 
 - Intervalle configurable via `NEW_MAIL_POLL_INTERVAL_MS` (défaut 60 s, minimum 30 s).
@@ -282,6 +284,23 @@ Le module [`server/src/services/newMailPoller.ts`](../server/src/services/newMai
 - Pour chaque nouvel UID, une notification contient : **nom de l'expéditeur**, **adresse email du compte**, **objet** et un **aperçu** de 160 caractères.
 - Anti-flood : **max 5 notifications** par compte et par cycle.
 - Envoi via le helper `notifyWithPush(userId, event, data, pushPayload, mode)` qui combine **WebSocket** (onglet ouvert) et **Web Push** (autres appareils).
+
+#### Rappels de rendez-vous — `calendarReminderPoller`
+
+Le module [`server/src/services/calendarReminderPoller.ts`](../server/src/services/calendarReminderPoller.ts) déclenche une notification push lorsqu'un événement avec `reminder_minutes` (VALARM) approche :
+
+- Intervalle configurable via `CALENDAR_REMINDER_POLL_INTERVAL_MS` (défaut 60 s, minimum 30 s).
+- À chaque tick, sélectionne jusqu'à 50 événements remplissant **toutes** les conditions suivantes :
+  - `reminder_minutes IS NOT NULL`
+  - `reminder_sent_at IS NULL` (jamais notifié)
+  - `recurrence_rule IS NULL` (les événements récurrents ne sont pas gérés en v1)
+  - `start_date - reminder_minutes` ≤ `NOW()` (le moment du rappel est arrivé)
+  - `start_date ≥ NOW() - GRACE` (fenêtre de grâce, par défaut 1 h, configurable via `CALENDAR_REMINDER_GRACE_MS`) — évite de spammer au démarrage du serveur pour des événements anciens.
+- Le payload affiche le **titre** précédé de ⏰, la date formatée en français (`mardi 6 mai 14:30`), une indication relative (`dans 15 min`), et le **lieu** s'il est renseigné. Cliquer la notification ouvre `/calendar?event=<id>`.
+- Après envoi réussi, `reminder_sent_at` est positionné à `NOW()` pour empêcher les doublons.
+- Un **trigger PostgreSQL** (`trg_reset_reminder_sent_at`) remet automatiquement `reminder_sent_at` à `NULL` si l'utilisateur modifie ensuite `start_date` ou `reminder_minutes`, de sorte qu'un rappel reprogrammé refire correctement.
+
+> ⚠️ Limitations actuelles : un seul VALARM par événement (correspond au schéma `reminder_minutes` unique) et pas d'expansion RRULE — les rappels ne sont émis que pour les événements non-récurrents.
 
 ### Activer les notifications (utilisateur)
 
@@ -291,6 +310,8 @@ Le module [`server/src/services/newMailPoller.ts`](../server/src/services/newMai
 4. (Facultatif) Cliquer sur **Envoyer une notification de test** pour vérifier.
 
 Pour **iOS / iPadOS** : l'application doit d'abord être installée (Safari → bouton Partager → **Sur l'écran d'accueil**), puis ouverte depuis l'icône installée. Les notifications push n'y fonctionnent **pas** depuis un onglet Safari classique.
+
+Les **rappels de rendez-vous** s'appuient sur la même souscription : il suffit que les notifications push soient activées et que l'événement ait un rappel configuré (champ *Rappel* du formulaire de création / modification d'un événement → `5 min`, `15 min`, `1 h`, `1 jour`, etc.). Aucun réglage supplémentaire n'est requis.
 
 ### Options du payload
 

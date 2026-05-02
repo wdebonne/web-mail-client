@@ -1798,6 +1798,11 @@ Les endpoints ci-dessous permettent de gérer les abonnements **Web Push** (VAPI
 
 Toutes les routes sauf `/api/push/public-key` nécessitent une authentification (elles utilisent le middleware global `/api/push`).
 
+Deux services serveur déclenchent des notifications une fois la souscription active :
+
+- **`newMailPoller`** — sonde IMAP toutes les 60 s et notifie les nouveaux messages.
+- **`calendarReminderPoller`** — émet une notification ⏰ quand un événement avec `reminderMinutes` arrive à son horaire de rappel (`start_date - reminderMinutes ≤ NOW()`). Une colonne `reminder_sent_at` empêche les doublons ; elle est automatiquement réinitialisée si l'utilisateur modifie `startDate` ou `reminderMinutes` (trigger PostgreSQL `trg_reset_reminder_sent_at`). Les événements récurrents (`recurrenceRule`) ne sont pas gérés dans cette version.
+
 ### GET /api/push/public-key
 
 Renvoie la clé publique VAPID nécessaire pour créer une souscription côté navigateur.

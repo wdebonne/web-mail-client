@@ -175,24 +175,27 @@ Serveur IMAP ──► MailService (ImapFlow)
 ### Notifications push natives (Web Push)
 
 ```
-newMailPoller (60 s, IMAP)
-          │
-          ▼
-  Nouveaux UID détectés
-          │
-          ▼
-  notifyWithPush()
-      │         │
-      ▼         ▼
-WebSocket   web-push + VAPID
-(onglet     (Service Worker
- ouvert)    → OS natif)
-      │         │
-      ▼         ▼
-  UI live    Notification système
-             (Windows, macOS,
-              Android, iOS PWA)
+newMailPoller (60 s, IMAP)        calendarReminderPoller (60 s, SQL)
+          │                                  │
+          ▼                                  ▼
+  Nouveaux UID détectés          start_date - reminder_minutes ≤ NOW()
+          │                                  │
+          └────────────┬─────────────────────┘
+                       ▼
+               notifyWithPush()
+                   │         │
+                   ▼         ▼
+             WebSocket   web-push + VAPID
+             (onglet     (Service Worker
+              ouvert)    → OS natif)
+                   │         │
+                   ▼         ▼
+               UI live    Notification système
+                          (Windows, macOS,
+                           Android, iOS PWA)
 ```
+
+Le poller calendrier marque `reminder_sent_at = NOW()` après envoi pour éviter les doublons ; un trigger PostgreSQL réinitialise ce champ si `start_date` ou `reminder_minutes` est modifié, afin qu'un rappel reprogrammé refire.
 
 ### Auto-enregistrement des expéditeurs
 

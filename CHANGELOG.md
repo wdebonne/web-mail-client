@@ -9,6 +9,14 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Notifications push pour les rappels d'événements calendrier
+
+- **Nouveau service serveur `calendarReminderPoller`** ([server/src/services/calendarReminderPoller.ts](server/src/services/calendarReminderPoller.ts)) : tourne toutes les 60 s (configurable via `CALENDAR_REMINDER_POLL_INTERVAL_MS`) et envoie une notification Web Push + WebSocket à l'utilisateur dès que `start_date - reminder_minutes ≤ NOW()` pour un événement à venir. Le payload contient le titre (préfixé ⏰), la date formatée en français, une indication relative (« dans 15 min »), et le lieu s'il est renseigné. Cliquer la notification ouvre `/calendar?event=<id>`.
+- **Migration BD** ([server/src/database/connection.ts](server/src/database/connection.ts)) : ajout de la colonne `reminder_sent_at TIMESTAMPTZ` sur `calendar_events`, d'un index partiel `idx_events_reminder_pending` pour des scans efficaces, et d'un trigger `trg_reset_reminder_sent_at` qui remet `reminder_sent_at` à `NULL` quand l'utilisateur modifie `start_date` ou `reminder_minutes` — ainsi un rappel reprogrammé refire correctement.
+- **Anti-doublon** : `reminder_sent_at = NOW()` après envoi réussi ; fenêtre de grâce de 1 h (configurable via `CALENDAR_REMINDER_GRACE_MS`) pour éviter de spammer au démarrage du serveur sur des événements anciens.
+- **Câblage** : `startCalendarReminderPoller()` lancé au démarrage du serveur ([server/src/index.ts](server/src/index.ts)), à côté de `startNewMailPoller()`.
+- **Limitations** : un seul VALARM par événement (schéma `reminder_minutes` unique) ; les événements récurrents (`recurrence_rule IS NOT NULL`) sont ignorés en v1 — un suivi par occurrence (table `calendar_reminder_deliveries`) sera nécessaire pour les gérer.
+
 #### Pages Contacts, Paramètres et Administration responsives (mobile / tablette)
 
 - **Pages *Paramètres* et *Administration* adaptées aux petits écrans** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx), [client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : la barre latérale verticale `w-56` (qui amputait l'espace de contenu sur mobile/tablette) est remplacée en `< md` (768 px) par une **barre d'onglets horizontale défilable** (`overflow-x-auto`) collée en haut. Chaque onglet conserve son icône et son libellé et bascule sur la pastille bleue Outlook lorsqu'il est actif. En `md+`, la disposition historique (sidebar verticale + contenu à droite) est préservée. Le padding du conteneur passe à `p-3 sm:p-4 md:p-6` pour récupérer de la place sur petit écran.
