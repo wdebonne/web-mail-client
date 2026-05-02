@@ -907,7 +907,14 @@ export default function MailPage() {
   useEffect(() => {
     if (lastSidebarSignalRef.current === mobileSidebarSignal) return;
     lastSidebarSignalRef.current = mobileSidebarSignal;
-    setMobileView((v) => (v === 'folders' ? 'list' : 'folders'));
+    // Switching to the folder pane on mobile/tablet must also force
+    // showFolderPane back on, since selecting a folder auto-collapses it
+    // (see effect on selectedFolder/virtualFolder below).
+    setMobileView((v) => {
+      const next = v === 'folders' ? 'list' : 'folders';
+      if (next === 'folders') setShowFolderPane(true);
+      return next;
+    });
   }, [mobileSidebarSignal]);
 
   // Reading pane mode — matches Outlook's "Volet de lecture" setting.
@@ -1674,7 +1681,7 @@ export default function MailPage() {
         <div className={`${mobileView === 'list' ? 'flex' : 'hidden'} md:hidden flex-col w-full h-full bg-white rounded-md shadow-sm overflow-hidden`}>
           <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border">
             <button
-              onClick={() => setMobileView('folders')}
+              onClick={() => { setShowFolderPane(true); setMobileView('folders'); }}
               className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
             >
               <ArrowLeft size={18} />

@@ -454,25 +454,44 @@ export default function CalendarPage() {
         />
       </div>
 
-      <div className="flex-1 flex overflow-hidden min-h-0 gap-1 px-1.5 pb-1.5">
+      <div className="flex-1 flex overflow-hidden min-h-0 gap-1 px-1.5 pb-1.5 relative">
         {showSidebar && (
-          <CalendarSidebar
-            calendars={calendars}
-            currentDate={currentDate}
-            onChangeCurrentDate={setCurrentDate}
-            selectedRange={selectedRange}
-            onNewCalendar={() => setNewCalendarOpen(true)}
-            onSubscribeCalendar={() => setAddCalendarUrlOpen(true)}
-            onToggleCalendarVisibility={handleToggleVisibility}
-            onRenameCalendar={handleRenameCalendar}
-            onChangeColor={handleChangeColor}
-            onDeleteCalendar={handleDeleteCalendar}
-            onShareCalendar={handleShareCalendar}
-            onMigrateCalendar={(cal, target) => setMigrateTarget({ cal, target })}
-            nextcloudLinked={nextcloudLinked}
-            refreshKey={prefsVersion}
-            onChangeRefreshKey={bumpPrefs}
-          />
+          <>
+            {/* Mobile/tablet backdrop — tap to close the sidebar overlay. */}
+            <div
+              className="lg:hidden absolute inset-0 bg-black/30 z-20"
+              onClick={() => setShowSidebarState(false)}
+            />
+            <div
+              className="
+                absolute inset-y-0 left-0 z-30 max-w-[85%] flex
+                lg:static lg:inset-auto lg:z-auto lg:max-w-none
+              "
+            >
+              <CalendarSidebar
+                calendars={calendars}
+                currentDate={currentDate}
+                onChangeCurrentDate={(d) => {
+                  setCurrentDate(d);
+                  if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                    setShowSidebarState(false);
+                  }
+                }}
+                selectedRange={selectedRange}
+                onNewCalendar={() => setNewCalendarOpen(true)}
+                onSubscribeCalendar={() => setAddCalendarUrlOpen(true)}
+                onToggleCalendarVisibility={handleToggleVisibility}
+                onRenameCalendar={handleRenameCalendar}
+                onChangeColor={handleChangeColor}
+                onDeleteCalendar={handleDeleteCalendar}
+                onShareCalendar={handleShareCalendar}
+                onMigrateCalendar={(cal, target) => setMigrateTarget({ cal, target })}
+                nextcloudLinked={nextcloudLinked}
+                refreshKey={prefsVersion}
+                onChangeRefreshKey={bumpPrefs}
+              />
+            </div>
+          </>
         )}
 
         <div className="flex-1 flex flex-col bg-white rounded-md shadow-sm overflow-hidden min-w-0">
