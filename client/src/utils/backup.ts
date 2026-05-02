@@ -45,6 +45,7 @@ export const BACKUP_KEYS: string[] = [
   'mail.deleteConfirmEnabled',
   'mail.swipePrefs',
   'mail.autoLoadAll',
+  'mail.newMailPollMinutes',
   // Personnalisation interface
   'ui.fabPosition',
   // Vues / mise en page

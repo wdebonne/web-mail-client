@@ -14,7 +14,12 @@ import { logger } from '../utils/logger';
  */
 
 const lastSeenUid = new Map<string, number>(); // accountId -> highest UID
-const INTERVAL_MS = Math.max(30_000, Number(process.env.NEW_MAIL_POLL_INTERVAL_MS) || 60_000);
+const lastCheckedAt = new Map<string, number>(); // userId -> ms epoch of last check
+// Base tick frequency. The actual per-user check frequency is gated by the
+// `mail.newMailPollMinutes` user preference (0=jamais, 1/5/15/30/60).
+const INTERVAL_MS = Math.max(15_000, Number(process.env.NEW_MAIL_POLL_INTERVAL_MS) || 30_000);
+const DEFAULT_POLL_MINUTES = Math.max(0, Number(process.env.NEW_MAIL_POLL_DEFAULT_MINUTES) || 5);
+const VALID_POLL_MINUTES = new Set([0, 1, 5, 15, 30, 60]);
 
 function stripHtml(s: string | null | undefined): string {
   if (!s) return '';
@@ -120,24 +125,71 @@ async function checkAccount(row: any) {
 
 async function tick() {
   try {
-    // Only poll accounts whose owner has at least one enabled push subscription
-    // (keeps IMAP load low — users who don't use push won't trigger polling).
+    // Pull the per-user `mail.newMailPollMinutes` preference for everyone who
+    // has at least one enabled push subscription. Users without the preference
+    // fall back to DEFAULT_POLL_MINUTES.
+    const prefRows = await pool.query(
+      `SELECT DISTINCT ps.user_id,
+              COALESCE(up.value, '') AS pref_value
+         FROM push_subscriptions ps
+         LEFT JOIN user_preferences up
+           ON up.user_id = ps.user_id AND up.key = 'mail.newMailPollMinutes'
+        WHERE ps.enabled = true`
+    );
+
+    if (prefRows.rowCount === 0) return;
+
+    const now = Date.now();
+    const userIntervals = new Map<string, number>(); // userId -> required ms gap
+    const eligibleUserIds: string[] = [];
+
+    for (const row of prefRows.rows) {
+      let minutes = DEFAULT_POLL_MINUTES;
+      // Pref values are JSON-encoded by the client (always wrapped in quotes for strings).
+      const raw = String(row.pref_value || '').replace(/^"|"$/g, '').trim();
+      if (raw) {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed) && VALID_POLL_MINUTES.has(parsed)) {
+          minutes = parsed;
+        }
+      }
+      if (minutes === 0) {
+        // Never poll for this user — drop any in-memory state.
+        lastCheckedAt.delete(row.user_id);
+        continue;
+      }
+
+      const lastAt = lastCheckedAt.get(row.user_id) ?? 0;
+      const requiredGapMs = minutes * 60_000;
+      // Allow a 5s skew to compensate for jittered ticks.
+      if (now - lastAt + 5_000 < requiredGapMs) continue;
+
+      userIntervals.set(row.user_id, requiredGapMs);
+      eligibleUserIds.push(row.user_id);
+    }
+
+    if (eligibleUserIds.length === 0) return;
+
     const result = await pool.query(
-      `SELECT ma.*
-         FROM mail_accounts ma
-        WHERE EXISTS (
-          SELECT 1 FROM push_subscriptions ps
-           WHERE ps.user_id = ma.user_id AND ps.enabled = true
-        )`
+      `SELECT * FROM mail_accounts WHERE user_id = ANY($1::uuid[])`,
+      [eligibleUserIds]
     );
 
     if (result.rowCount === 0) return;
 
     // Limit concurrency — process accounts sequentially to avoid hammering IMAP.
+    const checkedUserIds = new Set<string>();
     for (const row of result.rows) {
       await checkAccount(row).catch((err) => {
         logger.debug({ err, accountId: row.id }, 'checkAccount failed');
       });
+      checkedUserIds.add(row.user_id);
+    }
+
+    // Mark each user as checked at this tick start so the next eligibility test
+    // uses a stable timestamp regardless of how long the IMAP round-trips took.
+    for (const userId of checkedUserIds) {
+      lastCheckedAt.set(userId, now);
     }
   } catch (err) {
     logger.error(err as Error, 'new-mail poll tick failed');
@@ -148,7 +200,7 @@ let timer: NodeJS.Timeout | null = null;
 
 export function startNewMailPoller() {
   if (timer) return;
-  logger.info(`New-mail poller started (interval ${INTERVAL_MS}ms)`);
+  logger.info(`New-mail poller started (base tick ${INTERVAL_MS}ms, default user interval ${DEFAULT_POLL_MINUTES}min)`);
   // Delay first run slightly so the server finishes startup
   setTimeout(() => { tick(); }, 10_000);
   timer = setInterval(tick, INTERVAL_MS);

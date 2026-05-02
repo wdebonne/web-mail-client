@@ -16,6 +16,7 @@ import {
   getAutoLoadAllEnabled, setAutoLoadAllEnabled,
   setSwipeMoveTarget, setSwipeCopyTarget, type SwipeAction,
   getFabPosition, setFabPosition, type FabPosition,
+  getNewMailPollMinutes, setNewMailPollMinutes, type NewMailPollMinutes,
 } from '../utils/mailPreferences';
 import type { MailAccount, MailFolder } from '../types';
 import {
@@ -677,6 +678,7 @@ function NotificationSettings() {
   const [loading, setLoading] = useState<boolean>(true);
   const [sound, setSound] = useState<boolean>(() => localStorage.getItem('notifications.sound') !== 'false');
   const [calendar, setCalendar] = useState<boolean>(() => localStorage.getItem('notifications.calendar') !== 'false');
+  const [pollMinutes, setPollMinutes] = useState<NewMailPollMinutes>(() => getNewMailPollMinutes());
 
   useEffect(() => {
     let mounted = true;
@@ -800,6 +802,43 @@ function NotificationSettings() {
             className="rounded"
           />
         </label>
+
+        <div className="p-3 rounded border border-outlook-border bg-outlook-bg-primary">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Vérification des nouveaux mails</div>
+              <div className="text-xs text-outlook-text-secondary mt-0.5">
+                Le serveur interroge votre boîte IMAP à cette fréquence et envoie une notification push dès qu'un nouveau message arrive.
+              </div>
+            </div>
+            <select
+              value={pollMinutes}
+              onChange={(e) => {
+                const v = Number(e.target.value) as NewMailPollMinutes;
+                setPollMinutes(v);
+                setNewMailPollMinutes(v);
+                toast.success(
+                  v === 0
+                    ? 'Vérification automatique désactivée'
+                    : `Vérification toutes les ${v === 60 ? '1 h' : v + ' min'}`
+                );
+              }}
+              className="text-sm rounded border border-outlook-border bg-outlook-bg-primary px-2 py-1"
+            >
+              <option value={1}>Toutes les 1 minute</option>
+              <option value={5}>Toutes les 5 minutes</option>
+              <option value={15}>Toutes les 15 minutes</option>
+              <option value={30}>Toutes les 30 minutes</option>
+              <option value={60}>Toutes les heures</option>
+              <option value={0}>Jamais (désactivé)</option>
+            </select>
+          </div>
+          {pollMinutes !== 0 && !subscribed && (
+            <div className="mt-2 text-xs text-amber-700">
+              ⚠️ Activez d'abord les notifications push ci-dessus pour recevoir les alertes.
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-6 p-3 rounded border border-outlook-border bg-outlook-bg-secondary/40 text-xs text-outlook-text-secondary space-y-1">

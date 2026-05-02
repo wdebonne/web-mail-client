@@ -321,6 +321,33 @@ export function setAutoLoadAllEnabled(enabled: boolean) {
   } catch { /* noop */ }
 }
 
+// --- New-mail poll interval (server-side) ---
+//
+// Stored in localStorage AND mirrored to user_preferences so the server can
+// read it for each user. The server-side newMailPoller ticks every 30s and
+// only checks an account when its owner's preferred interval has elapsed
+// since the last check. Value 0 = disabled (jamais).
+export type NewMailPollMinutes = 0 | 1 | 5 | 15 | 30 | 60;
+
+const KEY_NEW_MAIL_POLL_MINUTES = 'mail.newMailPollMinutes';
+const VALID_POLL_VALUES: NewMailPollMinutes[] = [0, 1, 5, 15, 30, 60];
+const DEFAULT_POLL_MINUTES: NewMailPollMinutes = 5;
+
+export function getNewMailPollMinutes(): NewMailPollMinutes {
+  const raw = localStorage.getItem(KEY_NEW_MAIL_POLL_MINUTES);
+  if (raw === null) return DEFAULT_POLL_MINUTES;
+  const n = Number(raw);
+  return (VALID_POLL_VALUES as number[]).includes(n) ? (n as NewMailPollMinutes) : DEFAULT_POLL_MINUTES;
+}
+
+export function setNewMailPollMinutes(minutes: NewMailPollMinutes) {
+  if (!(VALID_POLL_VALUES as number[]).includes(minutes)) return;
+  localStorage.setItem(KEY_NEW_MAIL_POLL_MINUTES, String(minutes));
+  try {
+    window.dispatchEvent(new CustomEvent('mail-new-mail-poll-changed', { detail: { minutes } }));
+  } catch { /* noop */ }
+}
+
 // --- Floating action button position (mobile/tablet) ---
 //
 // 9-cell grid (top/middle/bottom × left/center/right) used to position the
