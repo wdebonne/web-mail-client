@@ -488,7 +488,18 @@ export default function MailPage() {
       const accId = accountId || selectedAccount?.id;
       const fld = folder || selectedFolder;
       const prev = useMailStore.getState().messages;
+      // Capture the selection BEFORE removeMessage runs — the store nulls it
+      // out itself when the deleted UID matches, so we need to know the
+      // previous state to decide whether to navigate back to the list.
+      const sel = useMailStore.getState().selectedMessage;
+      const wasViewingDeleted = !!(sel && sel.uid === uid && (!accId || (sel as any)._accountId === accId));
       removeMessage(uid, accId, fld);
+      // On mobile / tablet the message column is shown full-screen; bring the
+      // user back to the message list instead of leaving them on the empty
+      // "Sélectionnez un message" placeholder.
+      if (wasViewingDeleted) {
+        setMobileView('list');
+      }
       return { prev };
     },
     onSuccess: (data: any, { accountId, uid, folder }) => {
