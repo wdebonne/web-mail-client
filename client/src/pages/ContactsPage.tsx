@@ -6,7 +6,7 @@ import {
   Search, Plus, X, Mail, Phone, Building, Edit2, Trash2,
   Users, User, UserCheck, UserX, Star, Upload, Download,
   Camera, Globe, Calendar as CalIcon, MapPin, Briefcase, FileText,
-  Loader2, ChevronDown, SortAsc, CheckCircle2, AlertCircle, Cloud,
+  Loader2, ChevronDown, ChevronLeft, SortAsc, CheckCircle2, AlertCircle, Cloud,
   Palette, Image as ImageIcon, Move, Maximize2, Minimize2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -310,10 +310,10 @@ export default function ContactsPage() {
 
   return (
     <div className="h-full flex bg-outlook-bg">
-      {/* Left sidebar (resizable) */}
+      {/* Left sidebar (resizable on desktop, full-width on mobile) */}
       <div
-        style={{ width: sidebarWidth }}
-        className="border-r border-outlook-border flex flex-col flex-shrink-0 bg-outlook-bg-primary"
+        style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? sidebarWidth : undefined }}
+        className={`${selectedContactId ? 'hidden md:flex' : 'flex'} w-full md:w-auto border-r border-outlook-border flex-col flex-shrink-0 bg-outlook-bg-primary`}
       >
         <div className="p-3 border-b border-outlook-border space-y-2">
           <button
@@ -512,35 +512,48 @@ export default function ContactsPage() {
           localStorage.setItem('contacts-sidebar-width', '320');
         }}
         title="Glisser pour redimensionner — double-clic pour réinitialiser"
-        className="w-1 cursor-col-resize hover:bg-outlook-blue/50 active:bg-outlook-blue transition-colors flex-shrink-0 group relative"
+        className="hidden md:block w-1 cursor-col-resize hover:bg-outlook-blue/50 active:bg-outlook-blue transition-colors flex-shrink-0 group relative"
       >
         <div className="absolute inset-y-0 -left-1 -right-1" />
       </div>
 
       {/* Right panel: detail */}
-      <div className="flex-1 overflow-y-auto">
-        {selectedContact ? (
-          <ContactDetail
-            contact={selectedContact}
-            onEdit={() => { setEditingContact(selectedContact); setShowForm(true); }}
-            onDelete={() => {
-              if (confirm('Supprimer ce contact ?')) deleteMutation.mutate(selectedContact.id);
-            }}
-            onPromote={() => promoteMutation.mutate(selectedContact.id)}
-            onToggleFav={() => favoriteMutation.mutate({
-              id: selectedContact.id,
-              isFavorite: !selectedContact.is_favorite,
-            })}
-            promoting={promoteMutation.isPending}
-          />
-        ) : (
-          <div className="h-full flex items-center justify-center text-outlook-text-disabled">
-            <div className="text-center">
-              <User size={64} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">Sélectionnez un contact pour afficher ses détails</p>
-            </div>
+      <div className={`${selectedContactId ? 'flex' : 'hidden md:flex'} flex-1 flex-col overflow-hidden`}>
+        {selectedContact && (
+          <div className="md:hidden flex items-center px-2 py-1.5 border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0">
+            <button
+              onClick={() => setSelectedContactId(null)}
+              className="flex items-center gap-1 px-2 py-1.5 text-sm text-outlook-text-primary hover:bg-outlook-bg-hover rounded"
+              aria-label="Retour à la liste"
+            >
+              <ChevronLeft size={18} /> Retour
+            </button>
           </div>
         )}
+        <div className="flex-1 overflow-y-auto">
+          {selectedContact ? (
+            <ContactDetail
+              contact={selectedContact}
+              onEdit={() => { setEditingContact(selectedContact); setShowForm(true); }}
+              onDelete={() => {
+                if (confirm('Supprimer ce contact ?')) deleteMutation.mutate(selectedContact.id);
+              }}
+              onPromote={() => promoteMutation.mutate(selectedContact.id)}
+              onToggleFav={() => favoriteMutation.mutate({
+                id: selectedContact.id,
+                isFavorite: !selectedContact.is_favorite,
+              })}
+              promoting={promoteMutation.isPending}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center text-outlook-text-disabled">
+              <div className="text-center">
+                <User size={64} className="mx-auto mb-3 opacity-20" />
+                <p className="text-sm">Sélectionnez un contact pour afficher ses détails</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {showForm && (

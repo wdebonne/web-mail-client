@@ -33,8 +33,28 @@ export default function AdminPage() {
   ];
 
   return (
-    <div className="h-full flex">
-      <div className="w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
+    <div className="h-full flex flex-col md:flex-row">
+      {/* Mobile/tablet horizontal tab strip */}
+      <div className="md:hidden border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0 overflow-x-auto">
+        <div className="flex gap-1 px-2 py-2 w-max">
+          {tabs.map(t => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-md transition-colors flex-shrink-0
+                  ${tab === t.id ? 'bg-outlook-blue text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+              >
+                <Icon size={14} /> {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Desktop sidebar */}
+      <div className="hidden md:block w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
         <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">Administration</h2>
         {tabs.map(t => {
           const Icon = t.icon;
@@ -51,7 +71,7 @@ export default function AdminPage() {
         })}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
         <div className="max-w-5xl">
           {tab === 'dashboard' && <DashboardPanel />}
           {tab === 'users' && <UserManagement />}
