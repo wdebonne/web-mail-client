@@ -271,14 +271,14 @@ export default function FolderPane({
       <div className="p-3">
         <button
           onClick={onCompose}
-          className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md py-2 px-4 text-sm font-medium flex items-center justify-center gap-2 transition-colors shadow-sm"
+          className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md py-3 md:py-2 px-4 text-[15px] md:text-sm font-medium flex items-center justify-center gap-2 transition-colors shadow-sm min-h-[44px] md:min-h-0"
         >
-          <Plus size={16} />
+          <Plus size={18} className="md:w-4 md:h-4" />
           Nouveau message
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-1">
+      <div className="flex-1 overflow-y-auto px-1 pb-4">
         <FavoritesSection
           accounts={orderedAccounts}
           expanded={favoritesExpanded}
@@ -308,7 +308,7 @@ export default function FolderPane({
           return (
             <div
               key={account.id}
-              className="mb-1 relative"
+              className="mb-2 md:mb-1 relative"
               onDragOver={(e) => handleAccountDragOver(e, account)}
               onDragLeave={(e) => {
                 const related = e.relatedTarget as Node | null;
@@ -336,12 +336,12 @@ export default function FolderPane({
                   onSelectAccount(account);
                   if (!expandedAccounts.has(account.id)) toggleAccount(account.id);
                 }}
-                className={`group flex items-center gap-1 px-2 py-1.5 text-sm rounded hover:bg-outlook-bg-hover transition-colors cursor-pointer
+                className={`group flex items-center gap-1.5 md:gap-1 px-2 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 text-[15px] md:text-sm rounded hover:bg-outlook-bg-hover transition-colors cursor-pointer
                   ${selectedAccount?.id === account.id ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}
               >
                 <GripVertical
                   size={12}
-                  className="text-outlook-text-disabled opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                  className="hidden md:block text-outlook-text-disabled opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                   aria-label="Glisser pour réordonner"
                 />
                 <button
@@ -349,13 +349,13 @@ export default function FolderPane({
                     e.stopPropagation();
                     toggleAccount(account.id);
                   }}
-                  className="flex-shrink-0 p-0.5 rounded hover:bg-outlook-bg-selected"
+                  className="flex-shrink-0 p-1.5 md:p-0.5 -m-1 md:m-0 rounded hover:bg-outlook-bg-selected"
                   aria-label={isExpanded ? 'Réduire' : 'Développer'}
                 >
-                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {isExpanded ? <ChevronDown size={16} className="md:w-3 md:h-3" /> : <ChevronRight size={16} className="md:w-3 md:h-3" />}
                 </button>
                 <div
-                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  className="w-2.5 h-2.5 md:w-2 md:h-2 rounded-full flex-shrink-0"
                   style={{ backgroundColor: getAccountColor(account) }}
                 />
                 <span className="truncate flex-1 text-left">{getAccountDisplayName(account)}</span>
@@ -669,7 +669,7 @@ function AccountFolders({
           }}
           onDrop={(e) => handleFolderDrop(e, folder)}
           style={{ paddingLeft: 12 + depth * 16 }}
-          className={`w-full flex items-center gap-2 pr-3 py-1 text-sm rounded transition-colors
+          className={`w-full flex items-center gap-2.5 md:gap-2 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[15px] md:text-sm rounded transition-colors
             ${isDragOver
               ? 'bg-outlook-blue/10 ring-2 ring-outlook-blue ring-inset'
               : isSelected
@@ -677,7 +677,7 @@ function AccountFolders({
                 : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'
             }`}
         >
-          <Icon size={14} className={isSelected || isDragOver ? 'text-outlook-blue' : ''} />
+          <Icon size={16} className={`md:w-3.5 md:h-3.5 flex-shrink-0 ${isSelected || isDragOver ? 'text-outlook-blue' : ''}`} />
           <span className="truncate">{getFolderLabel(folder)}</span>
         </button>
       </div>
@@ -963,10 +963,10 @@ function FavoritesSection({
     <div className="mb-2">
       <button
         onClick={onToggleExpanded}
-        className="w-full flex items-center gap-1 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-outlook-text-secondary hover:bg-outlook-bg-hover rounded"
+        className="w-full flex items-center gap-1.5 md:gap-1 px-2 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 text-xs font-semibold uppercase tracking-wide text-outlook-text-secondary hover:bg-outlook-bg-hover rounded"
       >
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        <Star size={12} className="text-outlook-blue fill-current" />
+        {expanded ? <ChevronDown size={16} className="md:w-3 md:h-3" /> : <ChevronRight size={16} className="md:w-3 md:h-3" />}
+        <Star size={14} className="md:w-3 md:h-3 text-outlook-blue fill-current" />
         <span>Favoris</span>
       </button>
 
@@ -1045,17 +1045,17 @@ function FavoritesSection({
                     e.preventDefault();
                     onFavoriteContextMenu(fav, e.clientX, e.clientY);
                   }}
-                  className={`w-full flex items-center gap-2 pl-3 pr-3 py-1 text-sm rounded transition-colors
+                  className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[15px] md:text-sm rounded transition-colors
                     ${isActive
                       ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
                       : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
                     ${isDragging ? 'opacity-50' : ''}`}
                   title={`${getAccountDisplayName(account)} · ${label}`}
                 >
-                  <Icon size={14} className={isActive ? 'text-outlook-blue' : ''} />
+                  <Icon size={16} className={`md:w-3.5 md:h-3.5 flex-shrink-0 ${isActive ? 'text-outlook-blue' : ''}`} />
                   <span className="truncate flex-1 text-left">{label}</span>
                   <span
-                    className="w-1.5 h-1.5 rounded-full flex-shrink-0 opacity-70"
+                    className="w-2 h-2 md:w-1.5 md:h-1.5 rounded-full flex-shrink-0 opacity-70"
                     style={{ backgroundColor: getAccountColor(account) }}
                     title={getAccountDisplayName(account)}
                   />
@@ -1075,13 +1075,13 @@ function FavoritesSection({
                   <button
                     key={cat.id}
                     onClick={() => onSelectCategoryFilter(active ? null : cat.id)}
-                    className={`w-full flex items-center gap-2 pl-3 pr-3 py-1 text-sm rounded transition-colors
+                    className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[15px] md:text-sm rounded transition-colors
                       ${active
                         ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
                         : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
                     title={`Filtrer par catégorie : ${cat.name}`}
                   >
-                    <Tag size={14} style={{ color: cat.color }} />
+                    <Tag size={16} className="md:w-3.5 md:h-3.5 flex-shrink-0" style={{ color: cat.color }} />
                     <span className="truncate flex-1 text-left">{cat.name}</span>
                   </button>
                 );
@@ -1102,12 +1102,12 @@ function VirtualFolderButton({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 pl-3 pr-3 py-1 text-sm rounded transition-colors
+      className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[15px] md:text-sm rounded transition-colors
         ${active
           ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
           : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
     >
-      <Icon size={14} className={active ? 'text-outlook-blue' : ''} />
+      <Icon size={16} className={`md:w-3.5 md:h-3.5 flex-shrink-0 ${active ? 'text-outlook-blue' : ''}`} />
       <span className="truncate flex-1 text-left">{label}</span>
     </button>
   );

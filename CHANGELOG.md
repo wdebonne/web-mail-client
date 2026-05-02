@@ -7,6 +7,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Modifié
+
+#### Liste des boîtes mail tactile sur mobile / tablette
+
+- **Zones tactiles agrandies** ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)) : tous les éléments cliquables du volet *Dossiers* (en-tête de compte, chevron déplier/replier, en-tête *Favoris*, dossiers virtuels *Boîte de réception / Éléments envoyés unifiés*, favoris, dossiers IMAP, catégories favorites, bouton *Nouveau message*) passent en `min-h-[40px]` à `min-h-[44px]` et `py-2.5` (vs `py-1` historique) en `< md` — ce qui correspond aux recommandations Apple HIG / Material (44 px) pour un usage au doigt sans rater la cible. En `md+` la densité visuelle d'origine est conservée (`min-h-0`, `py-1`).
+- **Texte légèrement agrandi** : libellés des dossiers / comptes / favoris en `text-[15px]` sur mobile (vs `text-sm` = 14 px), plus lisible sur petit écran sans casser l'alignement vertical.
+- **Icônes plus grandes au doigt** : icônes des dossiers et favoris bumpées de 14 → 16 px sur mobile (chevrons : 12 → 16 px ; pastilles couleur : 8 → 10 px), avec override `md:w-3.5 md:h-3.5` pour rester denses sur desktop.
+- **Chevron déplier/replier des comptes plus tolérant** : `p-1.5 -m-1` en mobile (vs `p-0.5`) — la zone cliquable atteint ~28 px sans déplacer le rendu visuel grâce au `negative margin`, ce qui évite d'ouvrir le compte par erreur quand on voulait juste le déplier (et inversement).
+- **Espacement vertical entre comptes** : `mb-2 md:mb-1` pour aérer la liste sur mobile.
+- **`GripVertical` (poignée de glisser-déposer) masqué en `< md`** : invisible et inutile au tactile, il libère un peu d'espace horizontal.
+- **Bouton *Nouveau message* renforcé** : `py-3` + `min-h-[44px]` + icône 18 px sur mobile pour rester la cible la plus évidente du volet.
+
 ### Ajouté
 
 #### Sélecteur de vue calendrier et recherche unifiée sur mobile / tablette
@@ -21,6 +33,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **Liste plein écran à l'ouverture, détail plein écran après sélection** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx), [client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : sur mobile et tablette (`< md`, 768 px), la barre d'onglets horizontale défilable est remplacée par la même logique que les pages Messagerie et Calendrier — à l'arrivée, la **liste verticale** des sections occupe tout l'écran ; cliquer une option masque la liste et affiche le détail en plein écran. Un bouton **hamburger (icône `Menu`) en haut à gauche** de la zone de contenu, accompagné de l'icône + libellé de la section active, permet de revenir à la liste pour choisir une autre option. Le comportement desktop (`md+`) reste inchangé : sidebar verticale 224 px à gauche, contenu à droite, les deux visibles simultanément.
 
 ### Corrigé
+
+#### Affichage de la liste des boîtes mail sur mobile / tablette
+
+- **Bouton « Afficher la liste des dossiers » masqué sur petits écrans** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : l'icône `PanelLeftOpen` / `PanelLeftClose` du header de la liste de messages passe en `hidden md:inline-flex`. Sur mobile/tablette c'est désormais le **hamburger global** (header de [client/src/components/Layout.tsx](client/src/components/Layout.tsx)) qui pilote l'ouverture/fermeture du volet *Dossiers*, en cohérence avec les pages Calendrier, Paramètres et Administration. Le bouton reste affiché en `md+` où il sert à plier le panneau côté desktop.
+- **Titre cohérent quand un favori unifié est ouvert** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : la barre supérieure de la vue liste mobile affichait le nom du dernier compte cliqué (ex. *« Fréd Perso »*) alors que l'utilisateur consultait *Favoris > Boîte de réception unifiée*. Le libellé prend désormais en compte `virtualFolder` et affiche **« Boîte de réception (Favoris) »** ou **« Éléments envoyés (Favoris) »** quand un favori unifié est actif, et bascule sur le nom du compte uniquement quand un dossier réel est sélectionné.
+- **Plus de double sélection dans l'arbre des dossiers** ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)) : ouvrir un favori unifié laissait la précédente paire `(selectedAccount, selectedFolder)` du store côté Zustand, ce qui provoquait une **double surbrillance** (le favori actif **et** un dossier classique comme *Brouillons* dans le compte précédemment ouvert) et générait des erreurs d'affichage de la liste de mails. `AccountFolders` lit désormais `virtualFolder` depuis `useMailStore` et la règle `isSelected` du `renderFolder` exige `!virtualFolder` — un seul élément est en surbrillance à la fois (`FavoritesSection` appliquait déjà cette règle, le bug ne touchait que l'arbre par compte).
 
 #### Déplacement de message vers la corbeille (erreur 500)
 
