@@ -11,6 +11,7 @@ import MessageView from '../components/mail/MessageView';
 import ComposeModal from '../components/mail/ComposeModal';
 import type { ComposeApi } from '../components/mail/ComposeModal';
 import Ribbon from '../components/mail/Ribbon';
+import AutoResponderModal from '../components/mail/AutoResponderModal';
 import EmojiPanel from '../components/mail/EmojiPanel';
 import GifPanel from '../components/mail/GifPanel';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
@@ -1418,6 +1419,14 @@ export default function MailPage() {
   const [categoryEditTarget, setCategoryEditTarget] = useState<any | null>(null);
   const [categoryManageOpen, setCategoryManageOpen] = useState(false);
   const [contextCategoryPicker, setContextCategoryPicker] = useState<{ message: any; x: number; y: number } | null>(null);
+  // Auto-responder modal (vacation responder).
+  const [autoResponderOpen, setAutoResponderOpen] = useState(false);
+  const { data: autoResponderStatus } = useQuery({
+    queryKey: ['auto-responder', selectedAccount?.id, 'status'],
+    queryFn: () => selectedAccount ? api.getAutoResponder(selectedAccount.id) : Promise.resolve(null),
+    enabled: !!selectedAccount,
+    refetchOnWindowFocus: false,
+  });
   // Bump to force re-render when categories or assignments change.
   const [, setCatsTick] = useState(0);
   useEffect(() => subscribeCategories(() => setCatsTick((n) => n + 1)), []);
@@ -1633,6 +1642,8 @@ export default function MailPage() {
           onNewCategory={() => setCategoryCreateOpen(true)}
           onManageCategories={() => setCategoryManageOpen(true)}
           messageCategoryIds={selectedMessageCategoryIds}
+          onOpenAutoResponder={() => setAutoResponderOpen(true)}
+          autoResponderEnabled={!!autoResponderStatus?.enabled}
         />
       </div>
 
@@ -2181,6 +2192,15 @@ export default function MailPage() {
           onClose={() => setCategoryManageOpen(false)}
           onCreate={() => setCategoryCreateOpen(true)}
           onEdit={(cat) => setCategoryEditTarget(cat)}
+        />
+      )}
+
+      {/* Auto-responder (vacation responder) modal triggered from the ribbon. */}
+      {autoResponderOpen && (
+        <AutoResponderModal
+          onClose={() => setAutoResponderOpen(false)}
+          accountId={selectedAccount?.id}
+          accounts={accounts}
         />
       )}
 

@@ -8,15 +8,19 @@ import {
   Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
   Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder,
+  Coffee,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CacheSettings from '../components/CacheSettings';
+import AutoResponderForm from '../components/mail/AutoResponderForm';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import {
   getSwipePrefs, setSwipePrefs, getDeleteConfirmEnabled, setDeleteConfirmEnabled,
   getAutoLoadAllEnabled, setAutoLoadAllEnabled,
   setSwipeMoveTarget, setSwipeCopyTarget, type SwipeAction,
   getFabPosition, setFabPosition, type FabPosition,
+  getFolderPaneFontSize, setFolderPaneFontSize,
+  type FolderPaneFontSize, FOLDER_PANE_FONT_SIZE_LABELS, FOLDER_PANE_FONT_SIZE_PX,
   getNewMailPollMinutes, setNewMailPollMinutes, type NewMailPollMinutes,
 } from '../utils/mailPreferences';
 import type { MailAccount, MailFolder } from '../types';
@@ -33,7 +37,7 @@ import {
   getLastSyncError as getLastPrefsSyncError, triggerPrefsSyncNow, PREFS_SYNC_EVENT,
 } from '../services/prefsSync';
 
-type Tab = 'profile' | 'accounts' | 'mail' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
+type Tab = 'profile' | 'accounts' | 'mail' | 'autoresponder' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
@@ -54,6 +58,7 @@ export default function SettingsPage() {
     { id: 'profile' as const, icon: User, label: 'Profil' },
     { id: 'accounts' as const, icon: Mail, label: 'Mes boîtes mail' },
     { id: 'mail' as const, icon: Paperclip, label: 'Messagerie' },
+    { id: 'autoresponder' as const, icon: Coffee, label: 'Répondeur' },
     { id: 'appearance' as const, icon: Palette, label: 'Apparence' },
     { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
     { id: 'devices' as const, icon: Monitor, label: 'Mes appareils' },
@@ -115,6 +120,7 @@ export default function SettingsPage() {
             {tab === 'profile' && <ProfileSettings />}
             {tab === 'accounts' && <AccountSettings />}
             {tab === 'mail' && <MailBehaviorSettings />}
+            {tab === 'autoresponder' && <AutoResponderSettings />}
             {tab === 'appearance' && <AppearanceSettings />}
             {tab === 'notifications' && <NotificationSettings />}
             {tab === 'cache' && <CacheSettings />}
@@ -541,6 +547,28 @@ function ProfileSettings() {
   );
 }
 
+function AutoResponderSettings() {
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: api.getAccounts,
+  });
+
+  if (accounts.length === 0) {
+    return (
+      <div className="p-4 text-sm text-outlook-text-secondary">
+        Ajoutez d'abord une boîte mail dans « Mes boîtes mail » pour configurer un répondeur automatique.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-base font-semibold text-outlook-text-primary">Répondeur automatique</h3>
+      <AutoResponderForm accounts={accounts as any} compact />
+    </div>
+  );
+}
+
 function AccountSettings() {
   const { data: accounts = [] } = useQuery({
     queryKey: ['accounts'],
@@ -627,6 +655,7 @@ function AppearanceSettings() {
           </select>
         </div>
         <FabPositionPicker />
+        <FolderPaneFontSizePicker />
       </div>
     </div>
   );
@@ -682,6 +711,51 @@ function FabPositionPicker() {
         })}
       </div>
       <p className="text-xs text-outlook-text-secondary mt-2">{labels[pos]}</p>
+    </div>
+  );
+}
+
+// Lets the user pick the font size of the mailbox/folder tree (FolderPane).
+// Helpful on small screens or for users who prefer larger touch targets.
+// Mirrored on desktop in the "Afficher" ribbon.
+function FolderPaneFontSizePicker() {
+  const [size, setSize] = useState<FolderPaneFontSize>(() => getFolderPaneFontSize());
+  const sizes: FolderPaneFontSize[] = ['sm', 'md', 'lg', 'xl'];
+  const choose = (s: FolderPaneFontSize) => {
+    setSize(s);
+    setFolderPaneFontSize(s);
+    toast.success('Taille de la liste mise à jour');
+  };
+  return (
+    <div>
+      <label className="text-sm text-outlook-text-secondary block">
+        Taille du texte de la liste des boîtes mail
+      </label>
+      <p className="text-xs text-outlook-text-disabled mt-1 mb-2">
+        S'applique au volet « Dossiers » (comptes, favoris, boîtes IMAP). Pratique sur petit écran ou pour un usage tactile.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {sizes.map((s) => {
+          const active = size === s;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => choose(s)}
+              className={`px-3 py-2 rounded-md border transition-colors flex items-center gap-2 min-h-[44px] ${
+                active
+                  ? 'border-outlook-blue bg-outlook-blue/10 text-outlook-blue'
+                  : 'border-outlook-border hover:bg-outlook-bg-hover text-outlook-text-primary'
+              }`}
+              style={{ fontSize: `${FOLDER_PANE_FONT_SIZE_PX[s]}px` }}
+              title={`${FOLDER_PANE_FONT_SIZE_LABELS[s]} (${FOLDER_PANE_FONT_SIZE_PX[s]} px)`}
+            >
+              <span>Aa</span>
+              <span className="text-xs">{FOLDER_PANE_FONT_SIZE_LABELS[s]}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

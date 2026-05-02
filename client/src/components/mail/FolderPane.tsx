@@ -35,6 +35,9 @@ import {
   findInboxFolderPath,
   findSentFolderPath,
   FavoriteFolder,
+  getFolderPaneFontSize,
+  FOLDER_PANE_FONT_SIZE_PX,
+  FOLDER_PANE_FONT_SIZE_CHANGED_EVENT,
 } from '../../utils/mailPreferences';
 import { useMailStore, VirtualFolder } from '../../stores/mailStore';
 
@@ -148,6 +151,18 @@ export default function FolderPane({
   const selectVirtualFolder = useMailStore((s) => s.selectVirtualFolder);
   const categoryFilter = useMailStore((s) => s.categoryFilter);
   const setCategoryFilter = useMailStore((s) => s.setCategoryFilter);
+
+  // User-configurable font size for the whole folder tree (Settings → Apparence
+  // on mobile/tablet, "Afficher" ribbon on desktop). The selected size is
+  // applied as inline `fontSize` on the scroll container; descendant labels
+  // use `text-[length:inherit]` so they pick it up automatically.
+  const [folderFontSize, setFolderFontSize] = useState(getFolderPaneFontSize);
+  useEffect(() => {
+    const handler = () => setFolderFontSize(getFolderPaneFontSize());
+    window.addEventListener(FOLDER_PANE_FONT_SIZE_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(FOLDER_PANE_FONT_SIZE_CHANGED_EVENT, handler);
+  }, []);
+  const folderFontSizePx = FOLDER_PANE_FONT_SIZE_PX[folderFontSize];
 
   const [accountContextMenu, setAccountContextMenu] = useState<
     { x: number; y: number; account: MailAccount } | null
@@ -268,7 +283,12 @@ export default function FolderPane({
 
   return (
     <div className="w-full h-full min-h-0 bg-white flex flex-col flex-shrink-0 overflow-hidden">
-      <div className="p-3">
+      {/*
+        Bouton "Nouveau message" : masqué sur mobile/tablette (`< md`) car le
+        bouton flottant (FAB) en bas de page assure déjà cette fonction et
+        permet d'éviter le doublon en haut du volet.
+      */}
+      <div className="hidden md:block p-3">
         <button
           onClick={onCompose}
           className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md py-3 md:py-2 px-4 text-[15px] md:text-sm font-medium flex items-center justify-center gap-2 transition-colors shadow-sm min-h-[44px] md:min-h-0"
@@ -278,7 +298,10 @@ export default function FolderPane({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-1 pb-4">
+      <div
+        className="flex-1 overflow-y-auto px-1 pb-4 pt-2 md:pt-0"
+        style={{ fontSize: `${folderFontSizePx}px` }}
+      >
         <FavoritesSection
           accounts={orderedAccounts}
           expanded={favoritesExpanded}
@@ -336,7 +359,7 @@ export default function FolderPane({
                   onSelectAccount(account);
                   if (!expandedAccounts.has(account.id)) toggleAccount(account.id);
                 }}
-                className={`group flex items-center gap-1.5 md:gap-1 px-2 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 text-[15px] md:text-sm rounded hover:bg-outlook-bg-hover transition-colors cursor-pointer
+                className={`group flex items-center gap-1.5 md:gap-1 px-2 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 text-[length:inherit] rounded hover:bg-outlook-bg-hover transition-colors cursor-pointer
                   ${selectedAccount?.id === account.id ? 'font-semibold text-outlook-text-primary' : 'text-outlook-text-secondary'}`}
               >
                 <GripVertical
@@ -669,7 +692,7 @@ function AccountFolders({
           }}
           onDrop={(e) => handleFolderDrop(e, folder)}
           style={{ paddingLeft: 12 + depth * 16 }}
-          className={`w-full flex items-center gap-2.5 md:gap-2 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[15px] md:text-sm rounded transition-colors
+          className={`w-full flex items-center gap-2.5 md:gap-2 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[length:inherit] rounded transition-colors
             ${isDragOver
               ? 'bg-outlook-blue/10 ring-2 ring-outlook-blue ring-inset'
               : isSelected
@@ -1045,7 +1068,7 @@ function FavoritesSection({
                     e.preventDefault();
                     onFavoriteContextMenu(fav, e.clientX, e.clientY);
                   }}
-                  className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[15px] md:text-sm rounded transition-colors
+                  className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[length:inherit] rounded transition-colors
                     ${isActive
                       ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
                       : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
@@ -1075,7 +1098,7 @@ function FavoritesSection({
                   <button
                     key={cat.id}
                     onClick={() => onSelectCategoryFilter(active ? null : cat.id)}
-                    className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[15px] md:text-sm rounded transition-colors
+                    className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[length:inherit] rounded transition-colors
                       ${active
                         ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
                         : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
@@ -1102,7 +1125,7 @@ function VirtualFolderButton({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[15px] md:text-sm rounded transition-colors
+      className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[length:inherit] rounded transition-colors
         ${active
           ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
           : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}

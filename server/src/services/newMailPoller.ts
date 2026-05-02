@@ -3,6 +3,7 @@ import { decrypt } from '../utils/encryption';
 import { MailService } from './mail';
 import { notifyWithPush, hasActiveWebSocket } from './websocket';
 import { logger } from '../utils/logger';
+import { maybeSendAutoReply } from './autoResponderService';
 
 /**
  * Periodically checks each mail account owned by users who have at least one
@@ -89,6 +90,13 @@ async function checkAccount(row: any) {
       const fromName = msg?.from?.name || msg?.from?.address || 'Expéditeur inconnu';
       const preview = stripHtml(msg?.bodyText || msg?.bodyHtml || '').slice(0, 160);
 
+      // Fire-and-forget the auto-responder check (errors are swallowed inside).
+      maybeSendAutoReply(
+        { id: row.id, user_id: row.user_id, email: row.email, name: row.name },
+        msg,
+        service,
+      ).catch(() => { /* already logged */ });
+
       await notifyWithPush(
         row.user_id,
         'new-mail',
@@ -126,15 +134,24 @@ async function checkAccount(row: any) {
 async function tick() {
   try {
     // Pull the per-user `mail.newMailPollMinutes` preference for everyone who
-    // has at least one enabled push subscription. Users without the preference
-    // fall back to DEFAULT_POLL_MINUTES.
+    // has at least one enabled push subscription OR at least one mail account
+    // with an enabled auto-responder (the responder runs on the same poller
+    // because both depend on detecting new INBOX UIDs). Users without the
+    // preference fall back to DEFAULT_POLL_MINUTES.
     const prefRows = await pool.query(
-      `SELECT DISTINCT ps.user_id,
+      `WITH eligible AS (
+         SELECT user_id FROM push_subscriptions WHERE enabled = true
+         UNION
+         SELECT ma.user_id
+           FROM auto_responders ar
+           JOIN mail_accounts ma ON ma.id = ar.account_id
+          WHERE ar.enabled = true AND ma.user_id IS NOT NULL
+       )
+       SELECT DISTINCT e.user_id,
               COALESCE(up.value, '') AS pref_value
-         FROM push_subscriptions ps
+         FROM eligible e
          LEFT JOIN user_preferences up
-           ON up.user_id = ps.user_id AND up.key = 'mail.newMailPollMinutes'
-        WHERE ps.enabled = true`
+           ON up.user_id = e.user_id AND up.key = 'mail.newMailPollMinutes'`
     );
 
     if (prefRows.rowCount === 0) return;

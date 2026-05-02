@@ -48,6 +48,7 @@ export const BACKUP_KEYS: string[] = [
   'mail.newMailPollMinutes',
   // Personnalisation interface
   'ui.fabPosition',
+  'ui.folderPaneFontSize',
   // Vues / mise en page
   'readingPaneMode',
   'listDensity',

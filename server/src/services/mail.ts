@@ -34,6 +34,12 @@ interface SendMailOptions {
   attachments?: any[];
   inReplyTo?: string;
   references?: string;
+  /** Extra RFC 822 headers (e.g. Auto-Submitted, X-Auto-Response-Suppress, …). */
+  headers?: Record<string, string>;
+  /** When true, do NOT append the sent message to the IMAP Sent folder.
+   *  Used by the auto-responder so vacation replies don't pollute the user's
+   *  Sent box (and so they don't show up as "replied by user"). */
+  skipSentFolder?: boolean;
 }
 
 export class MailService {
@@ -246,6 +252,15 @@ export class MailService {
             references: Array.isArray(parsed.references)
               ? parsed.references.join(' ')
               : (typeof parsed.references === 'string' ? parsed.references : undefined),
+            // Subset of headers used by the auto-responder loop guard.
+            autoSubmitted: (parsed.headers as any)?.get?.('auto-submitted') as string | undefined,
+            precedence: (parsed.headers as any)?.get?.('precedence') as string | undefined,
+            listId: (parsed.headers as any)?.get?.('list-id') as string | undefined,
+            listUnsubscribe: (parsed.headers as any)?.get?.('list-unsubscribe') as string | undefined,
+            returnPath: (parsed.headers as any)?.get?.('return-path') as string | undefined,
+            xAutoResponseSuppress: (parsed.headers as any)?.get?.('x-auto-response-suppress') as string | undefined,
+            xAutorespond: (parsed.headers as any)?.get?.('x-autorespond') as string | undefined,
+            xLoop: (parsed.headers as any)?.get?.('x-loop') as string | undefined,
           },
           size: message.size,
         };
@@ -295,6 +310,10 @@ export class MailService {
       mailOptions.references = options.references;
     }
 
+    if (options.headers && Object.keys(options.headers).length > 0) {
+      mailOptions.headers = options.headers;
+    }
+
     if (options.attachments?.length) {
       mailOptions.attachments = options.attachments.map((att: any) => ({
         filename: att.filename,
@@ -306,9 +325,11 @@ export class MailService {
     const result = await transport.sendMail(mailOptions);
 
     // Ensure a copy is present in IMAP "Sent" folder regardless of provider behavior.
-    await this.appendToSentFolder(options, result.messageId).catch((error) => {
-      logger.warn(`Unable to append message to Sent folder: ${error?.message || error}`);
-    });
+    if (!options.skipSentFolder) {
+      await this.appendToSentFolder(options, result.messageId).catch((error) => {
+        logger.warn(`Unable to append message to Sent folder: ${error?.message || error}`);
+      });
+    }
 
     logger.info(`Email sent: ${result.messageId}`);
     return result;

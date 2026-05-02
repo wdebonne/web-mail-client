@@ -12,7 +12,7 @@ import {
   Eraser, Subscript, Superscript, Quote, Code, Heading1, Heading2, Heading3,
   Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film, PenTool,
   Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
-  Tag, MessagesSquare, ShieldAlert, ShieldOff,
+  Tag, MessagesSquare, ShieldAlert, ShieldOff, Coffee,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
@@ -26,6 +26,9 @@ import {
   getUnifiedSentEnabled, setUnifiedSentEnabled,
   getAccountDisplayName,
   getDeleteConfirmEnabled, setDeleteConfirmEnabled,
+  getFolderPaneFontSize, setFolderPaneFontSize,
+  type FolderPaneFontSize, FOLDER_PANE_FONT_SIZE_LABELS, FOLDER_PANE_FONT_SIZE_PX,
+  FOLDER_PANE_FONT_SIZE_CHANGED_EVENT,
 } from '../../utils/mailPreferences';
 
 type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer';
@@ -139,6 +142,11 @@ interface RibbonProps {
   onNewCategory?: () => void;
   onManageCategories?: () => void;
   messageCategoryIds?: string[];
+
+  // Auto-responder (vacation responder) modal trigger
+  onOpenAutoResponder?: () => void;
+  /** Whether the responder is currently enabled — drives the button's active state. */
+  autoResponderEnabled?: boolean;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -225,6 +233,7 @@ export default function Ribbon({
   conversationShowAllInReadingPane = true, onToggleConversationShowAllInReadingPane,
   onCategorize, onClearCategories, onNewCategory, onManageCategories,
   messageCategoryIds = [],
+  onOpenAutoResponder, autoResponderEnabled = false,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -235,6 +244,15 @@ export default function Ribbon({
   const [showListModeMenu, setShowListModeMenu] = useState(false);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [showConversationsMenu, setShowConversationsMenu] = useState(false);
+  const [showFolderFontMenu, setShowFolderFontMenu] = useState(false);
+  // Folder pane font size — synced with the global event so two ribbons stay
+  // in sync if multiple windows/tabs are open.
+  const [folderFontSize, setFolderFontSizeState] = useState<FolderPaneFontSize>(() => getFolderPaneFontSize());
+  useEffect(() => {
+    const handler = () => setFolderFontSizeState(getFolderPaneFontSize());
+    window.addEventListener(FOLDER_PANE_FONT_SIZE_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(FOLDER_PANE_FONT_SIZE_CHANGED_EVENT, handler);
+  }, []);
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
   const favoritesMenuBtnRef = useRef<HTMLButtonElement>(null);
@@ -243,6 +261,7 @@ export default function Ribbon({
   const listModeMenuBtnRef = useRef<HTMLButtonElement>(null);
   const categoryMenuBtnRef = useRef<HTMLButtonElement>(null);
   const conversationsMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const folderFontMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
@@ -251,6 +270,7 @@ export default function Ribbon({
   const [listModeMenuPos, setListModeMenuPos] = useState({ top: 0, left: 0 });
   const [categoryMenuPos, setCategoryMenuPos] = useState({ top: 0, left: 0 });
   const [conversationsMenuPos, setConversationsMenuPos] = useState({ top: 0, left: 0 });
+  const [folderFontMenuPos, setFolderFontMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -340,6 +360,15 @@ export default function Ribbon({
       setDensityMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowDensityMenu(v => !v);
+  };
+
+  const openFolderFontMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || folderFontMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setFolderFontMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowFolderFontMenu(v => !v);
   };
 
   const openListModeMenu = (e?: React.MouseEvent) => {
@@ -575,6 +604,46 @@ export default function Ribbon({
         document.body
       )}
 
+      {/* Folder pane font size menu */}
+      {showFolderFontMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowFolderFontMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-64"
+            style={{ top: folderFontMenuPos.top, left: folderFontMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Texte du volet « Dossiers »
+            </div>
+            {(['sm', 'md', 'lg', 'xl'] as FolderPaneFontSize[]).map((s) => {
+              const active = folderFontSize === s;
+              return (
+                <button
+                  key={s}
+                  onClick={() => {
+                    setFolderPaneFontSize(s);
+                    setFolderFontSizeState(s);
+                    setShowFolderFontMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  <span className="w-4 flex items-center justify-center text-outlook-blue">
+                    {active ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: `${FOLDER_PANE_FONT_SIZE_PX[s]}px` }}>
+                    {FOLDER_PANE_FONT_SIZE_LABELS[s]}
+                  </span>
+                  <span className="ml-auto text-xs text-outlook-text-disabled">
+                    {FOLDER_PANE_FONT_SIZE_PX[s]} px
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body
+      )}
+
       {/* List display mode menu */}
       {showListModeMenu && createPortal(
         <>
@@ -698,6 +767,16 @@ export default function Ribbon({
                 <span className="text-xs whitespace-nowrap">Densité</span>
                 <ChevronDown size={10} />
               </button>
+              <button
+                ref={folderFontMenuBtnRef}
+                onClick={(e) => openFolderFontMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showFolderFontMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Taille du texte du volet Dossiers"
+              >
+                <Type size={14} />
+                <span className="text-xs whitespace-nowrap">Texte volet</span>
+                <ChevronDown size={10} />
+              </button>
               <SimplifiedSep />
               <button
                 ref={conversationsMenuBtnRef}
@@ -738,6 +817,13 @@ export default function Ribbon({
                 <span className="text-xs whitespace-nowrap">Boîtes favoris</span>
                 <ChevronDown size={10} />
               </button>
+              <SimplifiedSep />
+              <SimplifiedButton
+                icon={Coffee}
+                label="Répondeur"
+                onClick={() => onOpenAutoResponder && onOpenAutoResponder()}
+                active={autoResponderEnabled}
+              />
               <SimplifiedSep />
               <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
               <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
@@ -899,6 +985,19 @@ export default function Ribbon({
                 </div>
                 <div className="relative">
                   <button
+                    ref={folderFontMenuBtnRef}
+                    onClick={(e) => openFolderFontMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showFolderFontMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Taille du texte du volet Dossiers"
+                  >
+                    <Type size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Texte volet <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
                     ref={conversationsMenuBtnRef}
                     onClick={(e) => openConversationsMenu(e)}
                     className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showConversationsMenu || conversationGrouping !== 'none' ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
@@ -1031,6 +1130,17 @@ export default function Ribbon({
               <RibbonGroup label="Actions">
                 <RibbonButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
                 <RibbonButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
+              </RibbonGroup>
+              <RibbonSeparator />
+
+              {/* Répondeur (vacation responder) */}
+              <RibbonGroup label="Absence">
+                <RibbonButton
+                  icon={Coffee}
+                  label="Répondeur"
+                  onClick={() => onOpenAutoResponder && onOpenAutoResponder()}
+                  active={autoResponderEnabled}
+                />
               </RibbonGroup>
               <RibbonSeparator />
 

@@ -714,4 +714,34 @@ export const api = {
     request(`/admin/o2switch/accounts/${id}/link`, { method: 'POST', body: JSON.stringify(data) }),
   getO2SwitchLinks: (id: string) => request<any[]>(`/admin/o2switch/accounts/${id}/links`),
   getO2SwitchDisk: (id: string) => request<any>(`/admin/o2switch/accounts/${id}/disk`),
+
+  // Auto-responder (vacation responder)
+  getAutoResponder: (accountId: string) =>
+    request<{
+      accountId: string;
+      enabled: boolean;
+      subject: string;
+      bodyHtml: string;
+      bodyText: string;
+      scheduled: boolean;
+      startAt: string | null;
+      endAt: string | null;
+      onlyContacts: boolean;
+      updatedAt: string | null;
+    }>(`/auto-responder/account/${accountId}`),
+
+  saveAutoResponder: (accountId: string, data: {
+    enabled: boolean;
+    subject: string;
+    bodyHtml: string;
+    bodyText?: string;
+    scheduled: boolean;
+    startAt: string | null;
+    endAt: string | null;
+    onlyContacts: boolean;
+  }) =>
+    request<{ success: boolean }>(`/auto-responder/account/${accountId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 };

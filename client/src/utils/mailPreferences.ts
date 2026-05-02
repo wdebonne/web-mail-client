@@ -381,6 +381,46 @@ export function setFabPosition(position: FabPosition) {
 
 export const FAB_POSITION_CHANGED_EVENT = FAB_POSITION_EVENT;
 
+// --- Folder pane font size (volet "Dossiers") ---
+// Allows users with small screens or large fingers to bump the text size of
+// the mailboxes / folders / favourites tree. Independent of the message list
+// density (which controls the reading area).
+export type FolderPaneFontSize = 'sm' | 'md' | 'lg' | 'xl';
+
+const KEY_FOLDER_PANE_FONT_SIZE = 'ui.folderPaneFontSize';
+const FOLDER_PANE_FONT_SIZE_EVENT = 'folder-pane-font-size-changed';
+
+/** Pixel size for each step. */
+export const FOLDER_PANE_FONT_SIZE_PX: Record<FolderPaneFontSize, number> = {
+  sm: 13,
+  md: 15,
+  lg: 17,
+  xl: 19,
+};
+
+export const FOLDER_PANE_FONT_SIZE_LABELS: Record<FolderPaneFontSize, string> = {
+  sm: 'Petit',
+  md: 'Normal',
+  lg: 'Grand',
+  xl: 'Très grand',
+};
+
+export function getFolderPaneFontSize(): FolderPaneFontSize {
+  const raw = localStorage.getItem(KEY_FOLDER_PANE_FONT_SIZE);
+  return (['sm', 'md', 'lg', 'xl'] as FolderPaneFontSize[]).includes(raw as FolderPaneFontSize)
+    ? (raw as FolderPaneFontSize)
+    : 'md';
+}
+
+export function setFolderPaneFontSize(size: FolderPaneFontSize) {
+  localStorage.setItem(KEY_FOLDER_PANE_FONT_SIZE, size);
+  try {
+    window.dispatchEvent(new CustomEvent(FOLDER_PANE_FONT_SIZE_EVENT, { detail: { size } }));
+  } catch { /* noop */ }
+}
+
+export const FOLDER_PANE_FONT_SIZE_CHANGED_EVENT = FOLDER_PANE_FONT_SIZE_EVENT;
+
 // --- Swipe gesture preferences (mobile / tablet) ---
 /**
  * Actions qui peuvent être déclenchées par un balayage horizontal sur un

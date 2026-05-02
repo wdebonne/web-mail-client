@@ -603,6 +603,30 @@ export async function initDatabase() {
         expires_at TIMESTAMPTZ NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_expires ON webauthn_challenges(expires_at);
+
+      -- Auto-responder (vacation responder) settings, one row per mail account.
+      -- A background job in the new-mail poller consults this table when it
+      -- detects new incoming messages, and sends an automatic reply when the
+      -- responder is enabled and the current time falls within the schedule.
+      CREATE TABLE IF NOT EXISTS auto_responders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        account_id UUID NOT NULL UNIQUE REFERENCES mail_accounts(id) ON DELETE CASCADE,
+        enabled BOOLEAN NOT NULL DEFAULT false,
+        subject TEXT NOT NULL DEFAULT 'Réponse automatique',
+        body_html TEXT NOT NULL DEFAULT '',
+        body_text TEXT NOT NULL DEFAULT '',
+        -- When false, the responder is active as soon as enabled=true (no schedule).
+        scheduled BOOLEAN NOT NULL DEFAULT false,
+        start_at TIMESTAMPTZ,
+        end_at TIMESTAMPTZ,
+        only_contacts BOOLEAN NOT NULL DEFAULT false,
+        -- Per-recipient cooldown tracking (avoid spamming the same sender).
+        -- Shape: { "<email>": "<ISO timestamp of last reply>" }
+        replied_log JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_auto_responders_account ON auto_responders(account_id);
     `);
 
     // One-shot data fix: keep `is_admin` aligned with `role`. Older builds

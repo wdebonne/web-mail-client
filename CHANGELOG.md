@@ -7,7 +7,21 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+#### Taille du texte du volet « Dossiers » personnalisable
+
+- **Nouvelle préférence `ui.folderPaneFontSize`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : 4 paliers (`sm` 13 px, `md` 15 px, `lg` 17 px, `xl` 19 px) avec libellés FR (*Petit*, *Normal*, *Grand*, *Très grand*) et événement `folder-pane-font-size-changed` qui met à jour en temps réel toutes les vues ouvertes sans rechargement.
+- **Le volet *Dossiers* écoute la préférence** ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)) : le conteneur scrollable applique `style={{ fontSize: ... }}` ; les boutons enfants (compte, dossier, favori, dossier virtuel, catégorie favorite) utilisent `text-[length:inherit]` afin d'hériter automatiquement de la taille choisie. Les hauteurs minimales `min-h-[40px]/[44px]` restent garanties pour préserver l'accessibilité tactile.
+- **Réglage utilisateur dans Paramètres → Apparence** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) : nouveau composant `FolderPaneFontSizePicker` — quatre boutons radio « Aa » qui prévisualisent la taille à appliquer, avec toast de confirmation. Visible sur tous les terminaux mais surtout pensé pour mobile / tablette.
+- **Réglage rapide dans le ruban Mail → Afficher** ([client/src/components/mail/Ribbon.tsx](client/src/components/mail/Ribbon.tsx)) : nouveau bouton *Texte volet* (icône `Type`) à côté de *Densité*, présent à la fois en ruban classique (col + chevron) et en ruban simplifié (inline). Le menu déroulant prévisualise chaque palier à sa taille réelle et affiche la valeur en pixels. Synchronisé via le même événement global, donc les changements faits côté Paramètres apparaissent immédiatement dans le ruban et inversement.
+- **Synchronisée entre appareils** : la clé est ajoutée à `BACKUP_KEYS` ([client/src/utils/backup.ts](client/src/utils/backup.ts)) — la taille préférée est sauvegardée localement et synchronisée vers `user_preferences` côté serveur (limite de 64 Ko largement respectée).
+
 ### Modifié
+
+#### Bouton « Nouveau message » du volet *Dossiers* masqué sur mobile / tablette
+
+- **Doublon supprimé** ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)) : le bouton bleu *Nouveau message* en haut du volet passe en `hidden md:block` — sur mobile et tablette, le **bouton flottant (FAB)** déjà présent en bas (préférence `ui.fabPosition`) assure exactement la même fonction. La place récupérée bénéficie à la liste des comptes / dossiers / favoris (premier élément immédiatement visible). Sur desktop (`md+`) le bouton historique reste affiché en haut du volet.
 
 #### Liste des boîtes mail tactile sur mobile / tablette
 
