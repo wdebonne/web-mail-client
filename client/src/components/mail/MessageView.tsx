@@ -5,7 +5,7 @@ import {
   Reply, ReplyAll, Forward, Trash2, Star, MoreHorizontal,
   Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown,
   ChevronRight, MessagesSquare, Lock, ShieldCheck, ShieldAlert, ShieldX, KeyRound,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, CloudUpload,
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../../api';
 import { inspectIncoming, SecurityVerdict } from '../../crypto/inbound';
 import { useSecurityStore } from '../../stores/securityStore';
+import NextcloudFolderPicker from '../ui/NextcloudFolderPicker';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu';
 
@@ -57,6 +58,12 @@ export default function MessageView({
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachmentState | null>(null);
   const [previewLoadingName, setPreviewLoadingName] = useState<string | null>(null);
   const [activeAttachmentMenuIndex, setActiveAttachmentMenuIndex] = useState<number | null>(null);
+  // NextCloud save: status + folder picker target. `target` is either a single
+  // attachment object, or 'all' to upload every visible attachment at once.
+  const [ncLinked, setNcLinked] = useState<boolean>(false);
+  const [ncSaveTarget, setNcSaveTarget] = useState<{ kind: 'one'; att: { filename: string; contentType?: string; content?: string } } | { kind: 'all' } | null>(null);
+  const [ncSaving, setNcSaving] = useState(false);
+  const [ncSaveMessage, setNcSaveMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   // Mobile only — collapsed by default to save vertical space; tap the
   // sender row to expand and reveal the full address/recipients/cc/date.
   const [mobileSenderExpanded, setMobileSenderExpanded] = useState(false);
@@ -156,6 +163,64 @@ export default function MessageView({
       api.recordSender(message.from.address, message.from.name).catch(() => {/* silent */});
     }
   }, [message?.uid]);
+
+  // Probe whether the user has a linked NextCloud account so we can show the
+  // "Save to NextCloud" affordance only when it would actually work.
+  useEffect(() => {
+    let cancelled = false;
+    api.nextcloudFilesStatus()
+      .then(s => { if (!cancelled) setNcLinked(!!s.linked); })
+      .catch(() => { if (!cancelled) setNcLinked(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Auto-dismiss save banner.
+  useEffect(() => {
+    if (!ncSaveMessage) return;
+    const t = setTimeout(() => setNcSaveMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [ncSaveMessage]);
+
+  /** Upload one or several attachments to the chosen NC folder. */
+  const performNextcloudSave = async (folderPath: string) => {
+    if (!ncSaveTarget) return;
+    const list = ncSaveTarget.kind === 'one'
+      ? [ncSaveTarget.att]
+      : visibleAttachments.filter(a => !!a.content);
+    if (list.length === 0) {
+      setNcSaveTarget(null);
+      return;
+    }
+    setNcSaving(true);
+    let ok = 0;
+    let failed = 0;
+    for (const att of list) {
+      if (!att.content) { failed++; continue; }
+      try {
+        await api.nextcloudFilesUpload({
+          folderPath,
+          filename: att.filename || 'piece-jointe',
+          contentType: att.contentType,
+          contentBase64: att.content,
+          ensureFolder: true,
+        });
+        ok++;
+      } catch {
+        failed++;
+      }
+    }
+    setNcSaving(false);
+    setNcSaveTarget(null);
+    if (failed === 0) {
+      setNcSaveMessage({ kind: 'success', text: ok === 1
+        ? `Pièce jointe enregistrée dans ${folderPath}`
+        : `${ok} pièces jointes enregistrées dans ${folderPath}` });
+    } else if (ok === 0) {
+      setNcSaveMessage({ kind: 'error', text: 'Échec de l’enregistrement sur Nextcloud' });
+    } else {
+      setNcSaveMessage({ kind: 'error', text: `${ok} enregistrée(s), ${failed} en échec` });
+    }
+  };
 
   useEffect(() => {
     if (!previewAttachment) return;
@@ -512,6 +577,16 @@ export default function MessageView({
         <div className="px-6 py-2 border-b border-outlook-border bg-outlook-bg-primary/30 flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
             <Paperclip size={14} className="text-outlook-text-secondary" />
+            {ncLinked && visibleAttachments.some(a => !!a.content) && (
+              <button
+                onClick={() => setNcSaveTarget({ kind: 'all' })}
+                className="flex items-center gap-1 bg-white border border-outlook-border rounded px-2 py-1 text-xs hover:bg-outlook-bg-hover transition-colors"
+                title="Enregistrer toutes les pièces jointes dans Nextcloud"
+              >
+                <CloudUpload size={12} className="text-outlook-blue" />
+                <span>Tout enregistrer dans Nextcloud</span>
+              </button>
+            )}
             {visibleAttachments.map((att, i) => (
               <div key={i} className="relative">
                 <button
@@ -525,6 +600,15 @@ export default function MessageView({
                   </span>
                   {attachmentActionMode === 'menu' && <ChevronDown size={11} className="text-outlook-text-secondary" />}
                 </button>
+                {ncLinked && att.content && attachmentActionMode !== 'menu' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setNcSaveTarget({ kind: 'one', att }); }}
+                    className="ml-1 inline-flex items-center justify-center p-1 rounded hover:bg-outlook-bg-hover text-outlook-blue"
+                    title="Enregistrer dans Nextcloud"
+                  >
+                    <CloudUpload size={12} />
+                  </button>
+                )}
 
                 {attachmentActionMode === 'menu' && activeAttachmentMenuIndex === i && (
                   <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-outlook-border rounded-md shadow-lg py-1 min-w-40">
@@ -546,11 +630,27 @@ export default function MessageView({
                     >
                       <Download size={12} /> Télécharger
                     </button>
+                    {ncLinked && att.content && (
+                      <button
+                        onClick={() => {
+                          setActiveAttachmentMenuIndex(null);
+                          setNcSaveTarget({ kind: 'one', att });
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-outlook-bg-hover flex items-center gap-2"
+                      >
+                        <CloudUpload size={12} /> Enregistrer dans Nextcloud
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             ))}
           </div>
+          {ncSaveMessage && (
+            <div className={`mt-2 text-xs px-2 py-1 rounded ${ncSaveMessage.kind === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {ncSaveMessage.text}
+            </div>
+          )}
         </div>
       )}
 
@@ -772,6 +872,21 @@ export default function MessageView({
                   <p className="text-xs text-white/70 truncate">{previewAttachment.contentType}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {ncLinked && previewAttachment.url && (
+                    <button
+                      onClick={() => {
+                        // Re-derive the original attachment payload from the
+                        // currently-open message so we can upload it.
+                        const att = (message?.attachments || []).find(a => a.filename === previewAttachment.name);
+                        if (att?.content) setNcSaveTarget({ kind: 'one', att });
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-white/15 hover:bg-white/25 text-xs"
+                      title="Enregistrer dans Nextcloud"
+                    >
+                      <CloudUpload size={13} />
+                      Nextcloud
+                    </button>
+                  )}
                   <a
                     href={previewAttachment.url}
                     download={previewAttachment.name}
@@ -840,6 +955,19 @@ export default function MessageView({
           </motion.div>
         )}
       </AnimatePresence>
+      <NextcloudFolderPicker
+        open={ncSaveTarget !== null}
+        title={ncSaving ? 'Envoi en cours...' : 'Enregistrer dans Nextcloud'}
+        subtitle={
+          ncSaveTarget?.kind === 'one'
+            ? ncSaveTarget.att.filename
+            : ncSaveTarget?.kind === 'all'
+              ? `${visibleAttachments.filter(a => !!a.content).length} pièce(s) jointe(s)`
+              : undefined
+        }
+        onPick={(folder) => { performNextcloudSave(folder); }}
+        onClose={() => { if (!ncSaving) setNcSaveTarget(null); }}
+      />
     </motion.div>
   );
 }

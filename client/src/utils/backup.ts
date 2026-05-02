@@ -70,6 +70,7 @@ export const BACKUP_KEYS: string[] = [
   // Notifications (préférences locales)
   'notifications.sound',
   'notifications.calendar',
+  'notifications.prefs.v1',
   // GIFs (clé API GIPHY perso si l'utilisateur en a saisi une)
   'giphyApiKey',
   // Divers

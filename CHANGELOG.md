@@ -9,6 +9,14 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Enregistrement des pièces jointes dans Nextcloud (Files)
+
+- **Sauvegarde directe vers le drive Nextcloud personnel** ([client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx), [client/src/components/ui/NextcloudFolderPicker.tsx](client/src/components/ui/NextcloudFolderPicker.tsx)) : lorsque l'utilisateur a un compte Nextcloud lié (via le provisionnement admin existant), une icône **« nuage »** apparaît à côté de chaque pièce jointe ainsi qu'un bouton global **« Tout enregistrer dans Nextcloud »** au début de la barre des pièces jointes. Une entrée équivalente est ajoutée au menu *Aperçu / Téléchargement* (mode menu) et un bouton dédié dans l'en-tête de la modal d'aperçu plein écran.
+- **Sélecteur de dossier avec arborescence** ([client/src/components/ui/NextcloudFolderPicker.tsx](client/src/components/ui/NextcloudFolderPicker.tsx)) : modale qui liste en direct les sous-dossiers du drive Nextcloud (PROPFIND), avec fil d'Ariane cliquable, bouton *Racine*, remontée d'un niveau, et création de sous-dossier à la volée. Le champ de création **accepte les chemins multi-niveaux** (`2026/Factures/Mai`) et déclenche un MKCOL récursif côté serveur — toute l'arborescence manquante est créée en une étape.
+- **Anti-collision automatique** ([server/src/services/nextcloud.ts](server/src/services/nextcloud.ts)) : si un fichier du même nom existe déjà à la destination, un suffixe `(2)`, `(3)`, … est appliqué (sauf si l'overwrite est explicitement demandé). Le serveur sanitise les chemins (suppression des `..` et `\`) et plafonne l'upload à 100 Mo par fichier.
+- **Pont WebDAV côté serveur** ([server/src/routes/nextcloudFiles.ts](server/src/routes/nextcloudFiles.ts)) : nouveau routeur monté sur `/api/nextcloud/files` (auth requise) — `GET /status`, `GET /list?path=…`, `POST /mkdir`, `POST /upload` (base64). Réutilise le client `NextCloudService` par utilisateur basé sur les identifiants chiffrés stockés dans `nextcloud_users` ; aucune nouvelle exigence de configuration admin (le drive Files est inclus dès lors qu'un utilisateur est lié).
+- **Affichage opt-in** : si Nextcloud n'est pas lié pour l'utilisateur courant (`/api/nextcloud/files/status` renvoie `linked: false`), aucun bouton ni icône n'apparaît — comportement strictement progressif.
+
 #### Mode d'affichage du corps des mails (natif / étiré)
 
 - **Nouvelle préférence globale `mail.displayMode`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : deux valeurs `native` (défaut, largeur de lecture ~820 px centrée à la Outlook) ou `stretched` (occupe toute la largeur disponible du volet de lecture). Événement `mail-display-mode-changed` pour synchroniser ruban, page Mail et vue message en temps réel.

@@ -125,7 +125,7 @@ export async function notifyWithPush(
   userId: string,
   event: string,
   data: any,
-  push: PushPayload,
+  push: PushPayload | ((row: { platform: string | null; userAgent: string | null }) => PushPayload | Promise<PushPayload>),
   mode: 'auto' | 'both' | 'push-only' = 'auto'
 ) {
   const hasWs = hasActiveWebSocket(userId);
@@ -134,7 +134,7 @@ export async function notifyWithPush(
   }
   if (mode === 'both' || mode === 'push-only' || !hasWs) {
     try {
-      await sendPushToUser(userId, push);
+      await sendPushToUser(userId, push as any);
     } catch (err) {
       logger.warn({ err }, 'Push fallback failed');
     }

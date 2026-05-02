@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
 import { getPublicVapidKey, isPushConfigured, sendPushToUser } from '../services/push';
+import {
+  loadUserNotificationPrefs, classifyPlatform, buildPlatformPayload,
+} from '../services/notificationPrefs';
 import { logger } from '../utils/logger';
 
 export const pushRouter = Router();
@@ -72,22 +75,19 @@ pushRouter.post('/unsubscribe', async (req: AuthRequest, res) => {
 // Send a test push to current user (all devices)
 pushRouter.post('/test', async (req: AuthRequest, res) => {
   try {
-    const sent = await sendPushToUser(req.userId!, {
-      title: 'Notification de test',
-      body: 'Les notifications push fonctionnent correctement.',
-      tag: 'test',
-      url: '/mail',
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      requireInteraction: true,
-      renotify: true,
-      silent: false,
-      timestamp: Date.now(),
-      vibrate: [120, 60, 120],
-      actions: [
-        { action: 'open', title: 'Ouvrir' },
-        { action: 'dismiss', title: 'Ignorer' },
-      ],
+    const sent = await sendPushToUser(req.userId!, async ({ platform, userAgent }) => {
+      const prefs = await loadUserNotificationPrefs(req.userId!);
+      const target = classifyPlatform(platform, userAgent);
+      return buildPlatformPayload(prefs, target, {
+        sender: 'Frédéric Debonne',
+        senderEmail: 'frederic@example.com',
+        accountEmail: 'wdebonne@hotmail.com',
+        accountName: 'Pro',
+        appName: prefs.appName,
+        siteUrl: prefs.siteUrl,
+        subject: 'Test objet',
+        preview: 'Test Corp message Envoyé à partir de Outlook pour Android',
+      }, { accountId: 'test', uid: 'test', folder: 'INBOX' });
     });
     res.json({ ok: true, sent });
   } catch (error: any) {

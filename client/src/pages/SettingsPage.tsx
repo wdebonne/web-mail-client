@@ -36,6 +36,11 @@ import {
   isPrefsSyncEnabled, setPrefsSyncEnabled, getLastSyncAt as getLastPrefsSyncAt,
   getLastSyncError as getLastPrefsSyncError, triggerPrefsSyncNow, PREFS_SYNC_EVENT,
 } from '../services/prefsSync';
+import {
+  getNotificationPrefs, setNotificationPrefs,
+  type NotificationPrefs, type NotificationPlatform,
+} from '../utils/notificationPrefs';
+import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 
 type Tab = 'profile' | 'accounts' | 'mail' | 'autoresponder' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
 
@@ -947,6 +952,10 @@ function NotificationSettings() {
         </div>
       </div>
 
+      <div className="mt-6">
+        <NotificationPrefsSection />
+      </div>
+
       <div className="mt-6 p-3 rounded border border-outlook-border bg-outlook-bg-secondary/40 text-xs text-outlook-text-secondary space-y-1">
         <div><strong>Astuce :</strong></div>
         <div>• <strong>Windows 11</strong> : installez l'application (Chrome/Edge/Vivaldi → icône d'installation <em>⊕</em> dans la barre d'adresse, ou menu → « Installer WebMail… »). Une fois installée, les notifications s'affichent sous le nom « WebMail » (et non plus « Chrome » / « Vivaldi ») avec son, bannière et icône dédiés — comme Outlook.</div>
@@ -957,6 +966,51 @@ function NotificationSettings() {
         <div>• <strong>iOS / iPadOS</strong> : Safari → Partager → « Sur l'écran d'accueil », puis activez les notifications ici (iOS 16.4+).</div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Section "Personnalisation des notifications" — ajoute l'éditeur multi-
+ * plateforme avec aperçu en direct et tests rendus / push réel. Persistée
+ * dans `localStorage` (clé `notifications.prefs.v1`) et synchronisée
+ * automatiquement entre appareils via le pipeline prefsSync.
+ */
+function NotificationPrefsSection() {
+  const [prefs, setPrefs] = useState<NotificationPrefs>(() => getNotificationPrefs());
+
+  useEffect(() => {
+    const handler = () => setPrefs(getNotificationPrefs());
+    window.addEventListener('notification-prefs-changed', handler);
+    return () => window.removeEventListener('notification-prefs-changed', handler);
+  }, []);
+
+  const update = (next: NotificationPrefs) => {
+    setPrefs(next);
+    setNotificationPrefs(next);
+  };
+
+  const sendServerTest = async (_platform: NotificationPlatform) => {
+    // Le serveur ne sait pas encore cibler une plateforme spécifique pour le
+    // test ; il envoie à tous les appareils inscrits. Le test local ci-dessus
+    // permet en revanche de prévisualiser exactement le rendu choisi.
+    const { sendTestPush } = await import('../pwa/push');
+    await sendTestPush();
+  };
+
+  return (
+    <details className="border border-outlook-border rounded-md" open>
+      <summary className="px-3 py-2 text-sm font-semibold cursor-pointer flex items-center gap-2">
+        <Bell size={14} /> Personnaliser le rendu des notifications
+      </summary>
+      <div className="p-3 border-t border-outlook-border">
+        <NotificationPreferencesEditor
+          value={prefs}
+          onChange={update}
+          mode="user"
+          onSendServerTest={sendServerTest}
+        />
+      </div>
+    </details>
   );
 }
 

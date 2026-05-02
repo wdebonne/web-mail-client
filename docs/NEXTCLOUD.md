@@ -15,6 +15,7 @@ L'intégration NextCloud est **optionnelle**. Quand elle est activée, elle perm
 - Envoyer automatiquement les **invitations iMIP** aux participants (via NextCloud)
 - Synchroniser **bidirectionnellement** calendriers et contacts (polling + à la demande)
 - Récupérer les photos de profil NextCloud
+- **Enregistrer les pièces jointes** des mails dans le drive Files de l'utilisateur, dans n'importe quel dossier (avec création d'arborescence à la volée)
 
 ---
 

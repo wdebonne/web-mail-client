@@ -6,15 +6,20 @@ import {
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
-  ChevronDown, ChevronRight, LogOut, Coffee,
+  ChevronDown, ChevronRight, LogOut, Coffee, Bell,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
 
 import AdminCalendarManagement from '../components/admin/AdminCalendarManagement';
 import AdminAutoResponders from '../components/admin/AdminAutoResponders';
+import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
+import {
+  getDefaultNotificationPrefs, mergeNotificationPrefs,
+  type NotificationPrefs,
+} from '../utils/notificationPrefs';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('dashboard');
@@ -41,6 +46,7 @@ export default function AdminPage() {
     { id: 'logs' as const, icon: ScrollText, label: 'Logs' },
     { id: 'loginAppearance' as const, icon: Palette, label: 'Apparence connexion' },
     { id: 'devices' as const, icon: Monitor, label: 'Appareils' },
+    { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
     { id: 'system' as const, icon: Settings, label: 'Système' },
   ];
 
@@ -101,6 +107,7 @@ export default function AdminPage() {
             {tab === 'logs' && <LogsPanel />}
             {tab === 'loginAppearance' && <LoginAppearanceSettings />}
             {tab === 'devices' && <DeviceSessionsManagement />}
+            {tab === 'notifications' && <AdminNotificationDefaults />}
             {tab === 'system' && <SystemSettings />}
           </div>
         </div>
@@ -1985,6 +1992,62 @@ function NextCloudUsersPanel() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Admin Notifications — défauts serveur appliqués aux utilisateurs
+// n'ayant pas personnalisé leurs notifications dans Réglages.
+// ──────────────────────────────────────────────────────────────────────────
+function AdminNotificationDefaults() {
+  const queryClient = useQueryClient();
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ['admin-settings'],
+    queryFn: api.getAdminSettings,
+  });
+
+  const initial = useMemo(() => {
+    const raw = settings?.notification_defaults;
+    let parsed: any = null;
+    try {
+      parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch { /* ignore */ }
+    const def = getDefaultNotificationPrefs();
+    return mergeNotificationPrefs(def, parsed || null);
+  }, [settings]);
+
+  const [prefs, setPrefs] = useState<NotificationPrefs>(initial);
+  useEffect(() => { setPrefs(initial); }, [initial]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.updateAdminSettings({ notification_defaults: prefs }),
+    onSuccess: () => {
+      toast.success('Défauts de notifications enregistrés');
+      queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+    },
+    onError: (e: any) => toast.error(e?.message || 'Échec de l\'enregistrement'),
+  });
+
+  if (isLoading) {
+    return <div className="text-sm text-outlook-text-secondary">Chargement…</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold flex items-center gap-2">
+          <Bell size={16} /> Notifications — défauts utilisateurs
+        </h3>
+        <button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          className="px-3 py-1.5 text-sm rounded bg-outlook-blue text-white hover:brightness-110 disabled:opacity-50"
+        >
+          Enregistrer
+        </button>
+      </div>
+      <NotificationPreferencesEditor value={prefs} onChange={setPrefs} mode="admin" />
     </div>
   );
 }

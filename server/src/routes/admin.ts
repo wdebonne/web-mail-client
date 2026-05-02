@@ -14,6 +14,7 @@ import {
   adminRevokeDeviceSession,
 } from '../services/deviceSessions';
 import { upsertAutoResponderForAccount } from './autoResponder';
+import { invalidateNotificationPrefsCache } from '../services/notificationPrefs';
 
 export const adminRouter = Router();
 
@@ -53,6 +54,11 @@ adminRouter.put('/settings', async (req: AuthRequest, res) => {
          ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
         [key, JSON.stringify(value)]
       );
+    }
+    if ('notification_defaults' in settings) {
+      // Reset every cached user prefs so admin changes take effect immediately
+      // for users who haven't overridden the defaults locally.
+      invalidateNotificationPrefsCache();
     }
     res.json({ success: true });
   } catch (error: any) {

@@ -4,6 +4,9 @@ import { MailService } from './mail';
 import { notifyWithPush, hasActiveWebSocket } from './websocket';
 import { logger } from '../utils/logger';
 import { maybeSendAutoReply } from './autoResponderService';
+import {
+  loadUserNotificationPrefs, classifyPlatform, buildPlatformPayload,
+} from './notificationPrefs';
 
 /**
  * Periodically checks each mail account owned by users who have at least one
@@ -207,23 +210,36 @@ async function checkAccount(row: any) {
         row.user_id,
         'new-mail',
         { accountId: row.id, uid, subject, from: msg?.from },
-        {
-          title: `${fromName} — ${row.email}`,
-          body: `${subject}${preview ? '\n' + preview : ''}`,
-          tag: `mail-${row.id}-${uid}`,
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
-          url: `/mail/${row.id}/INBOX`,
-          data: { accountId: row.id, uid, folder: 'INBOX' },
-          requireInteraction: true,
-          renotify: true,
-          silent: false,
-          timestamp: Date.now(),
-          vibrate: [120, 60, 120],
-          actions: [
-            { action: 'open', title: 'Lire' },
-            { action: 'dismiss', title: 'Ignorer' },
-          ],
+        async ({ platform, userAgent }) => {
+          const prefs = await loadUserNotificationPrefs(row.user_id);
+          if (!prefs.enabled) {
+            // Build a minimal silent payload — push will fire-and-forget.
+            return {
+              title: prefs.appName || 'WebMail',
+              body: '',
+              tag: `mail-${row.id}-${uid}`,
+              silent: true,
+            } as any;
+          }
+          const target = classifyPlatform(platform, userAgent);
+          if (!prefs[target].enabled) {
+            return {
+              title: prefs.appName || 'WebMail',
+              body: '',
+              tag: `mail-${row.id}-${uid}`,
+              silent: true,
+            } as any;
+          }
+          return buildPlatformPayload(prefs, target, {
+            sender: fromName,
+            senderEmail: msg?.from?.address || '',
+            accountEmail: row.email,
+            accountName: row.name || row.email,
+            appName: prefs.appName,
+            siteUrl: prefs.siteUrl,
+            subject,
+            preview,
+          }, { accountId: row.id, uid, folder: 'INBOX' });
         },
         'both',
       );

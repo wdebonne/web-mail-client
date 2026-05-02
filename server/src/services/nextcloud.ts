@@ -811,6 +811,194 @@ export class NextCloudService {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // Files (WebDAV) — used to save mail attachments into the user's
+  // personal NextCloud Files area (/remote.php/dav/files/{user}/).
+  // All paths are user-relative (e.g. "/Mail/Pieces jointes").
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Base WebDAV files endpoint for the configured user, with trailing slash. */
+  private filesBase(): string {
+    return `${this.davBase()}/files/${encodeURIComponent(this.config.username)}/`;
+  }
+
+  /** Encode a user-relative path preserving '/' separators. */
+  private encodeFilesPath(relPath: string): string {
+    const cleaned = (relPath || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+    if (!cleaned) return '';
+    return cleaned.split('/').map(seg => encodeURIComponent(seg)).join('/');
+  }
+
+  /** Build the absolute WebDAV URL for a user-relative path. */
+  private filesUrl(relPath: string, trailingSlash = false): string {
+    const enc = this.encodeFilesPath(relPath);
+    const base = this.filesBase();
+    if (!enc) return base;
+    return `${base}${enc}${trailingSlash ? '/' : ''}`;
+  }
+
+  /**
+   * List immediate children of a folder. Returns folders and files with their
+   * user-relative paths. The root is "" or "/".
+   */
+  async listFiles(relPath: string): Promise<Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }>> {
+    const url = this.filesUrl(relPath, true);
+    const res = await fetch(url, {
+      method: 'PROPFIND',
+      headers: {
+        Authorization: this.getAuthHeader(),
+        Depth: '1',
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: `<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:">
+  <d:prop>
+    <d:resourcetype/>
+    <d:getcontentlength/>
+    <d:getcontenttype/>
+    <d:displayname/>
+  </d:prop>
+</d:propfind>`,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`PROPFIND files failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+    const xml = await res.text();
+    return this.parseFileListing(xml, relPath);
+  }
+
+  private parseFileListing(xml: string, requestedPath: string): Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }> {
+    const results: Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }> = [];
+    const responses = xml.split(/<\s*[a-z0-9]*:?response\b/i).slice(1);
+    // Build the prefix that identifies the requested folder in <href>.
+    const reqEnc = this.encodeFilesPath(requestedPath);
+    const reqHrefBase = `/remote.php/dav/files/${encodeURIComponent(this.config.username)}/${reqEnc ? reqEnc + '/' : ''}`;
+    for (const chunk of responses) {
+      const hrefMatch = chunk.match(/<\s*[a-z0-9]*:?href\b[^>]*>([^<]+)</i);
+      if (!hrefMatch) continue;
+      let href = hrefMatch[1].trim();
+      try { href = decodeURI(href); } catch { /* ignore */ }
+      // Skip the folder itself.
+      const normalized = href.replace(/\/+$/, '');
+      const baseNoSlash = reqHrefBase.replace(/\/+$/, '');
+      if (normalized === baseNoSlash) continue;
+      // Compute the path relative to the user files root.
+      const userRoot = `/remote.php/dav/files/${encodeURIComponent(this.config.username)}/`;
+      let userRel = href;
+      const idx = href.indexOf(userRoot);
+      if (idx >= 0) userRel = href.slice(idx + userRoot.length);
+      try { userRel = decodeURI(userRel); } catch { /* ignore */ }
+      userRel = userRel.replace(/\/+$/, '');
+      if (!userRel) continue;
+      const isFolder = /<\s*[a-z0-9]*:?collection\b/i.test(chunk);
+      const sizeMatch = chunk.match(/<\s*[a-z0-9]*:?getcontentlength\b[^>]*>([^<]*)</i);
+      const ctMatch = chunk.match(/<\s*[a-z0-9]*:?getcontenttype\b[^>]*>([^<]*)</i);
+      const segs = userRel.split('/');
+      const name = segs[segs.length - 1];
+      results.push({
+        name,
+        path: '/' + userRel,
+        isFolder,
+        size: sizeMatch && sizeMatch[1] ? parseInt(sizeMatch[1], 10) : undefined,
+        contentType: ctMatch && ctMatch[1] ? ctMatch[1] : undefined,
+      });
+    }
+    // Folders first, then alphabetical.
+    results.sort((a, b) => {
+      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+    return results;
+  }
+
+  /** Returns true if the WebDAV resource exists. */
+  async fileExists(relPath: string): Promise<boolean> {
+    const res = await fetch(this.filesUrl(relPath), {
+      method: 'PROPFIND',
+      headers: { Authorization: this.getAuthHeader(), Depth: '0' },
+    });
+    return res.status >= 200 && res.status < 300;
+  }
+
+  /** MKCOL on a single folder. Returns true if created, false if it already exists. */
+  private async mkcolOne(relPath: string): Promise<boolean> {
+    const res = await fetch(this.filesUrl(relPath, true), {
+      method: 'MKCOL',
+      headers: { Authorization: this.getAuthHeader() },
+    });
+    if (res.status === 201) return true;
+    if (res.status === 405 || res.status === 409 /* sometimes returned when exists */) {
+      // 405: already exists. Verify by PROPFIND.
+      if (await this.fileExists(relPath)) return false;
+    }
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`MKCOL failed (${res.status}) for ${relPath}: ${txt.slice(0, 200)}`);
+    }
+    return true;
+  }
+
+  /**
+   * Recursively create the folder hierarchy for a user-relative path.
+   * Existing intermediate folders are skipped silently.
+   */
+  async createFolderRecursive(relPath: string): Promise<void> {
+    const cleaned = (relPath || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+    if (!cleaned) return;
+    const parts = cleaned.split('/').filter(Boolean);
+    let current = '';
+    for (const part of parts) {
+      current = current ? `${current}/${part}` : part;
+      try {
+        await this.mkcolOne(current);
+      } catch (e) {
+        // Re-check existence in case of race.
+        if (!(await this.fileExists(current))) throw e;
+      }
+    }
+  }
+
+  /**
+   * Upload a file to the given user-relative folder. By default appends a
+   * numeric suffix when a file with the same name already exists. Pass
+   * `overwrite: true` to replace the existing file.
+   * Returns the final user-relative path used.
+   */
+  async uploadFile(folderPath: string, filename: string, data: Buffer, contentType?: string, overwrite = false): Promise<string> {
+    const safeName = (filename || 'piece-jointe').replace(/[\\/]+/g, '_').replace(/^\.+/, '_').slice(0, 240) || 'piece-jointe';
+    const folderClean = (folderPath || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+    let finalName = safeName;
+    if (!overwrite) {
+      const dot = safeName.lastIndexOf('.');
+      const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
+      const ext = dot > 0 ? safeName.slice(dot) : '';
+      let n = 1;
+      while (await this.fileExists(folderClean ? `${folderClean}/${finalName}` : finalName)) {
+        n += 1;
+        finalName = `${stem} (${n})${ext}`;
+        if (n > 999) break;
+      }
+    }
+    const relPath = folderClean ? `${folderClean}/${finalName}` : finalName;
+    const headers: Record<string, string> = {
+      Authorization: this.getAuthHeader(),
+      'Content-Type': contentType || 'application/octet-stream',
+      'Content-Length': String(data.length),
+    };
+    if (!overwrite) headers['If-None-Match'] = '*';
+    const res = await fetch(this.filesUrl(relPath), {
+      method: 'PUT',
+      headers,
+      body: new Uint8Array(data),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`PUT file failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+    return '/' + relPath;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // Utilities
   // ═══════════════════════════════════════════════════════════════════
 

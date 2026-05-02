@@ -913,6 +913,71 @@ export default function MailPage() {
   const [mobileView, setMobileView] = useState<'folders' | 'list' | 'message'>('list');
   const [showFolderPane, setShowFolderPane] = useState(true);
 
+  // Deep-link from a Web Push notification action (Outlook-style buttons:
+  // archive / delete / reply / markRead / flag). The Service Worker forwards
+  // the click via URL params; we run the matching mutation, then clean the
+  // params so a refresh doesn't re-trigger them.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get('notifAction');
+    if (!action) return;
+    const uid = Number(params.get('notifUid') || 0);
+    const accountId = params.get('notifAccountId') || undefined;
+    const folder = params.get('notifFolder') || 'INBOX';
+    if (!uid || !accountId) return;
+
+    const cleanup = () => {
+      params.delete('notifAction');
+      params.delete('notifUid');
+      params.delete('notifAccountId');
+      params.delete('notifFolder');
+      const qs = params.toString();
+      const url = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+      window.history.replaceState({}, '', url);
+    };
+
+    (async () => {
+      try {
+        if (action === 'markRead') {
+          markReadMutation.mutate({ uid, isRead: true, accountId, folder });
+          toast.success('Marqué comme lu');
+        } else if (action === 'flag') {
+          flagMutation.mutate({ uid, isFlagged: true, accountId, folder });
+        } else if (action === 'delete') {
+          deleteMutation.mutate({ uid, accountId, folder, toTrash: true });
+          toast.success('Message supprimé');
+        } else if (action === 'archive') {
+          let folders = queryClient.getQueryData<MailFolder[]>(['folders', accountId]);
+          if (!folders) {
+            try {
+              folders = await queryClient.fetchQuery({
+                queryKey: ['folders', accountId],
+                queryFn: () => api.getFolders(accountId),
+              });
+            } catch { folders = []; }
+          }
+          const archive = (folders || []).find(f =>
+            /archive|archives/i.test(f.path) || /archive|archives/i.test(f.name)
+          );
+          const target = archive?.path || 'Archive';
+          moveMutation.mutate({ uid, toFolder: target, accountId, fromFolder: folder });
+          toast.success('Message archivé');
+        } else if (action === 'reply') {
+          // Best-effort: load the message then open a reply.
+          try {
+            const msg = await api.getMessage(accountId, uid, folder);
+            handleReply(msg);
+          } catch {
+            toast.error('Impossible d\u2019ouvrir la réponse');
+          }
+        }
+      } finally {
+        cleanup();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Mobile/tablet: the top-bar hamburger emits a signal via the UI store. When
   // it fires, toggle between the folder list and the message list.
   const mobileSidebarSignal = useUIStore((s) => s.mobileSidebarSignal);

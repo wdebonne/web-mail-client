@@ -26,6 +26,43 @@ Configuration disponible dans :
 
 ---
 
+## Enregistrer dans Nextcloud
+
+Quand l'utilisateur courant est lie a un compte Nextcloud (voir `docs/NEXTCLOUD.md`), une option supplementaire apparait pour chaque piece jointe : **Enregistrer dans Nextcloud**.
+
+### Points d'entree dans l'UI
+
+- Icone *nuage* a cote de chaque piece jointe (modes Apercu et Telechargement).
+- Entree *Enregistrer dans Nextcloud* dans le menu deroulant (mode Menu).
+- Bouton *Nextcloud* dans l'en-tete de la modal d'apercu plein ecran.
+- Bouton *Tout enregistrer dans Nextcloud* en debut de barre, qui telecharge en une seule action toutes les pieces jointes du message vers le meme dossier.
+
+### Selection du dossier
+
+Une modale liste les dossiers du drive Files de l'utilisateur :
+
+- Navigation par fil d'Ariane cliquable + bouton *Racine* + remontee d'un niveau.
+- Bouton *Creer* qui accepte un nom simple ou un chemin multi-niveaux (par exemple `2026/Factures/Mai`) et cree toute l'arborescence manquante en une seule etape.
+- Bouton *Enregistrer ici* qui valide le dossier courant.
+
+### Anti-collision et limites
+
+- Si un fichier du meme nom existe deja, un suffixe ` (2)`, ` (3)`, ... est applique automatiquement.
+- Taille maximale par fichier : 100 Mo (limite serveur).
+- Les chemins contenant `..` ou `\` sont nettoyes cote serveur avant tout appel WebDAV.
+- Si Nextcloud n'est pas lie pour l'utilisateur, aucune option de sauvegarde n'apparait.
+
+### API associee
+
+Voir la section `Nextcloud Files (par utilisateur)` dans `API.md` :
+
+- `GET /api/nextcloud/files/status`
+- `GET /api/nextcloud/files/list?path=...`
+- `POST /api/nextcloud/files/mkdir`
+- `POST /api/nextcloud/files/upload`
+
+---
+
 ## Formats d'apercu
 
 ### Images

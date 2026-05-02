@@ -78,19 +78,26 @@ export function isPushConfigured(): boolean {
 /**
  * Send a push notification to a specific user (all their registered devices).
  * Automatically prunes invalid/expired subscriptions.
+ *
+ * Optionally accepts a per-subscription `builder` so callers can tailor
+ * the payload (templates, actions, sound, vibration) to the device's
+ * platform — see `notificationPrefs.buildPlatformPayload`.
  */
-export async function sendPushToUser(userId: string, payload: PushPayload): Promise<number> {
+export async function sendPushToUser(
+  userId: string,
+  payload: PushPayload | ((row: { platform: string | null; userAgent: string | null }) => PushPayload | Promise<PushPayload>),
+): Promise<number> {
   if (!vapidConfigured) return 0;
 
   const result = await pool.query(
-    `SELECT id, endpoint, p256dh, auth_key FROM push_subscriptions
+    `SELECT id, endpoint, p256dh, auth_key, platform, user_agent FROM push_subscriptions
       WHERE user_id = $1 AND enabled = true`,
     [userId]
   );
 
   if (result.rowCount === 0) return 0;
 
-  const json = JSON.stringify(payload);
+  const isBuilder = typeof payload === 'function';
   let sent = 0;
 
   await Promise.all(result.rows.map(async (row) => {
@@ -98,6 +105,16 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
       endpoint: row.endpoint,
       keys: { p256dh: row.p256dh, auth: row.auth_key },
     };
+    let json: string;
+    try {
+      const final = isBuilder
+        ? await (payload as any)({ platform: row.platform, userAgent: row.user_agent })
+        : payload;
+      json = JSON.stringify(final);
+    } catch (err) {
+      logger.warn({ err, sub: row.id }, 'Failed to build push payload');
+      return;
+    }
     try {
       await webpush.sendNotification(sub, json, { TTL: 60 * 60 * 24 });
       sent++;

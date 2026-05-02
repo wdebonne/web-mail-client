@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
+import { invalidateNotificationPrefsCache } from '../services/notificationPrefs';
 
 export const settingsRouter = Router();
 
@@ -231,6 +232,12 @@ settingsRouter.put('/preferences', async (req: AuthRequest, res) => {
       throw txErr;
     } finally {
       client.release();
+    }
+
+    // Invalidate the in-memory cache used by the new-mail push pipeline so
+    // the next notification reflects the updated preferences immediately.
+    if (Object.keys(accepted).some((k) => k === 'notifications.prefs.v1')) {
+      invalidateNotificationPrefsCache(req.userId!);
     }
 
     res.json({ accepted: Object.keys(accepted).length, items: accepted });

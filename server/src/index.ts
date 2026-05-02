@@ -22,6 +22,7 @@ import { pluginRouter } from './routes/plugins';
 import { searchRouter } from './routes/search';
 import { pushRouter } from './routes/push';
 import { autoResponderRouter } from './routes/autoResponder';
+import { nextcloudFilesRouter } from './routes/nextcloudFiles';
 import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES } from './routes/branding';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
@@ -115,6 +116,7 @@ app.use('/api/plugins', authMiddleware, pluginRouter);
 app.use('/api/search', authMiddleware, searchRouter);
 app.use('/api/push', authMiddleware, pushRouter);
 app.use('/api/auto-responder', authMiddleware, autoResponderRouter);
+app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

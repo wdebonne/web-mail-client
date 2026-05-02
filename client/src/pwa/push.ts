@@ -153,6 +153,15 @@ export function listenForNotificationClicks(onNavigate: (url: string) => void) {
     } else if (data?.type === 'pushsubscriptionchange') {
       // Attempt transparent re-subscription
       subscribeToPush().catch(() => { /* ignore */ });
+    } else if (data?.type === 'play-notification-sound') {
+      // Le service worker ne peut pas jouer de son fiable sur Chrome —
+      // on le fait depuis l'app au premier plan via Web Audio.
+      import('../utils/notificationPrefs').then(({ playNotificationSound }) => {
+        playNotificationSound(data.sound, {
+          customUrl: data.customSoundUrl,
+          volume: data.volume,
+        }).catch(() => { /* ignore */ });
+      }).catch(() => { /* ignore */ });
     }
   });
 }

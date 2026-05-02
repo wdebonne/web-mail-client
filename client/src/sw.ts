@@ -116,16 +116,56 @@ self.addEventListener('push', (event: PushEvent) => {
     data: { url: payload.url || '/', ...(payload.data || {}) },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    await self.registration.showNotification(title, options);
+    // Si un client est ouvert au premier plan, on lui demande de jouer le son
+    // configuré par l'utilisateur (Web Audio) — les sons custom ne sont pas
+    // jouables depuis le Service Worker.
+    const data: any = options.data || {};
+    if (!options.silent && (data.sound || data.customSoundUrl)) {
+      const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of clientsList) {
+        if ((client as WindowClient).focused) {
+          (client as WindowClient).postMessage({
+            type: 'play-notification-sound',
+            sound: data.sound,
+            customSoundUrl: data.customSoundUrl,
+            volume: data.soundVolume,
+          });
+          break;
+        }
+      }
+    }
+  })());
 });
 
 self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close();
 
-  // L'action "dismiss" ferme simplement la notification sans focaliser la fenêtre.
-  if (event.action === 'dismiss') return;
+  const action = event.action || 'open';
 
-  const targetUrl = (event.notification.data && (event.notification.data as any).url) || '/';
+  // L'action "dismiss" ferme simplement la notification sans focaliser la fenêtre.
+  if (action === 'dismiss') return;
+
+  const data = (event.notification.data || {}) as Record<string, any>;
+  const baseUrl = data.url || '/';
+
+  // Pour les actions de type Outlook (archiver / supprimer / répondre /
+  // marquer comme lu / flag), on ouvre l'app en lui transmettant l'action
+  // via une querystring. La page MailPage détecte ces paramètres et
+  // exécute l'opération via l'API authentifiée — exactement comme si
+  // l'utilisateur avait cliqué dans la liste.
+  let targetUrl = baseUrl;
+  if (action !== 'open') {
+    const sep = baseUrl.includes('?') ? '&' : '?';
+    const qs = new URLSearchParams({
+      notifAction: action,
+      notifUid: String(data.uid ?? ''),
+      notifAccountId: String(data.accountId ?? ''),
+      notifFolder: String(data.folder ?? 'INBOX'),
+    }).toString();
+    targetUrl = `${baseUrl}${sep}${qs}`;
+  }
 
   event.waitUntil((async () => {
     const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -136,8 +176,8 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
         (client as WindowClient).postMessage({
           type: 'notification-click',
           url: targetUrl,
-          action: event.action || 'open',
-          data: event.notification.data,
+          action,
+          data,
         });
         return;
       }

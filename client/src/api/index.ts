@@ -483,6 +483,31 @@ export const api = {
   syncNextcloudUser: (userId: string) =>
     request<any>(`/admin/nextcloud/users/${userId}/sync`, { method: 'POST' }),
 
+  // Per-user NextCloud Files (save mail attachments to user's NC drive)
+  nextcloudFilesStatus: () =>
+    request<{ linked: boolean }>('/nextcloud/files/status'),
+  nextcloudFilesList: (path: string = '/') =>
+    request<{ path: string; items: Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }> }>(
+      `/nextcloud/files/list?path=${encodeURIComponent(path)}`
+    ),
+  nextcloudFilesMkdir: (path: string) =>
+    request<{ ok: boolean; path: string }>('/nextcloud/files/mkdir', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+  nextcloudFilesUpload: (data: {
+    folderPath: string;
+    filename: string;
+    contentType?: string;
+    contentBase64: string;
+    overwrite?: boolean;
+    ensureFolder?: boolean;
+  }) =>
+    request<{ ok: boolean; path: string }>('/nextcloud/files/upload', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   // Calendar sharing / publishing
   shareCalendar: (calendarId: string, payload: { userId?: string; email?: string; permission?: 'read' | 'write' | 'busy' | 'titles' }) =>
     request<any>(`/calendar/${calendarId}/share`, { method: 'POST', body: JSON.stringify(payload) }),

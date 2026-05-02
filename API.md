@@ -21,6 +21,7 @@ L'API utilise deux méthodes d'authentification :
 - [Calendrier](#calendrier)
 - [Paramètres](#paramètres)
 - [Administration](#administration)
+- [Nextcloud Files](#nextcloud-files-par-utilisateur)
 - [Dashboard](#dashboard)
 - [Logs d'audit](#logs-daudit)
 - [O2Switch cPanel](#o2switch-cpanel)
@@ -1323,6 +1324,86 @@ Délie le compte NextCloud (le compte NC n'est pas supprimé côté NextCloud).
 ### POST /api/admin/nextcloud/users/:userId/sync
 
 Déclenche une synchronisation immédiate (calendriers + contacts) pour l'utilisateur.
+
+---
+
+## Nextcloud Files (par utilisateur)
+
+Pont minimal sur le drive Files de l'utilisateur courant, utilise par l'UI mail pour enregistrer une ou plusieurs pieces jointes dans un dossier Nextcloud (avec creation d'arborescence). Toutes les routes requierent que l'utilisateur soit lie a un compte NextCloud (table `nextcloud_users`). Les chemins sont **relatifs au drive Files** de l'utilisateur (`/remote.php/dav/files/<user>/`).
+
+Les parametres `path` / `folderPath` sont systematiquement nettoyes cote serveur (suppression des `..` et `\`).
+
+### GET /api/nextcloud/files/status
+
+Indique si l'utilisateur courant a un compte NextCloud lie et utilisable.
+
+**Reponse 200 :**
+```json
+{ "linked": true }
+```
+
+### GET /api/nextcloud/files/list?path=/Mail
+
+Liste les enfants immediats d'un dossier (PROPFIND `Depth: 1`). La racine est `/`.
+
+**Reponse 200 :**
+```json
+{
+  "path": "/Mail",
+  "items": [
+    { "name": "Pieces jointes", "path": "/Mail/Pieces jointes", "isFolder": true },
+    { "name": "rapport.pdf", "path": "/Mail/rapport.pdf", "isFolder": false, "size": 245312, "contentType": "application/pdf" }
+  ]
+}
+```
+
+**Erreurs :**
+- `409 NextCloud not linked` — l'utilisateur n'a pas (ou plus) de compte NC actif.
+- `500` — propage le code HTTP WebDAV en cas d'echec PROPFIND.
+
+### POST /api/nextcloud/files/mkdir
+
+Cree un dossier ou une arborescence complete (MKCOL recursif). Les segments deja existants sont ignores silencieusement.
+
+**Body :**
+```json
+{ "path": "/Mail/2026/Factures/Mai" }
+```
+
+**Reponse 200 :**
+```json
+{ "ok": true, "path": "/Mail/2026/Factures/Mai" }
+```
+
+### POST /api/nextcloud/files/upload
+
+Depose un fichier dans un dossier du drive utilisateur. Si le fichier existe deja et que `overwrite` n'est pas a `true`, un suffixe ` (2)`, ` (3)`, ... est ajoute automatiquement au nom.
+
+**Body :**
+```json
+{
+  "folderPath": "/Mail/2026/Factures/Mai",
+  "filename": "facture-EDF.pdf",
+  "contentType": "application/pdf",
+  "contentBase64": "JVBERi0xLjQK...",
+  "overwrite": false,
+  "ensureFolder": true
+}
+```
+
+- `ensureFolder` (defaut `false`) : si `true`, le serveur cree d'abord l'arborescence manquante avant l'upload.
+- `overwrite` (defaut `false`) : si `true`, un fichier existant est remplace ; sinon, un nom unique est genere.
+- Taille maximale du payload decode : **100 Mo**.
+
+**Reponse 200 :**
+```json
+{ "ok": true, "path": "/Mail/2026/Factures/Mai/facture-EDF.pdf" }
+```
+
+**Erreurs :**
+- `400 Invalid base64 payload` / `Empty file` — payload manquant ou invalide.
+- `409 NextCloud not linked` — utilisateur sans compte NC actif.
+- `413 File too large` — depasse 100 Mo.
 
 ---
 
