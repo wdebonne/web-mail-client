@@ -457,6 +457,11 @@ function AccountFolders({
   account, selectedAccountId, selectedFolder, externalFolders,
   onSelectFolder, onContextMenu, onDropMessage, onCopyFolder, onMoveFolder, onFolderOrderChanged, prefsVersion,
 }: AccountFoldersProps) {
+  // When a virtual folder (Favoris > Boîte de réception unifiée, etc.) is
+  // active, we must NOT highlight any regular folder in the per-account tree —
+  // the previous selectedAccount/selectedFolder still live in the store but
+  // they no longer represent the user's current location.
+  const virtualFolder = useMailStore((s) => s.virtualFolder);
   const { data } = useQuery({
     queryKey: ['folders', account.id],
     queryFn: () => api.getFolders(account.id),
@@ -637,7 +642,7 @@ function AccountFolders({
   }, [ordered]);
 
   const renderFolder = (folder: MailFolder, depth: number): React.ReactNode => {
-    const isSelected = selectedAccountId === account.id && folder.path === selectedFolder;
+    const isSelected = !virtualFolder && selectedAccountId === account.id && folder.path === selectedFolder;
     const isDragOver = dragOver === folder.path;
     const indicator = folderDropIndicator?.path === folder.path ? folderDropIndicator.position : null;
     const Icon = getFolderIcon(folder);

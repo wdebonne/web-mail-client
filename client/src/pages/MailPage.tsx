@@ -1701,7 +1701,11 @@ export default function MailPage() {
               <ArrowLeft size={18} />
             </button>
             <span className="text-sm font-medium text-outlook-text-primary truncate">
-              {selectedAccount ? getAccountDisplayName(selectedAccount) : ''}
+              {virtualFolder === 'unified-inbox'
+                ? 'Boîte de réception (Favoris)'
+                : virtualFolder === 'unified-sent'
+                  ? 'Éléments envoyés (Favoris)'
+                  : selectedAccount ? getAccountDisplayName(selectedAccount) : ''}
             </span>
           </div>
           <MessageList

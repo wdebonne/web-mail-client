@@ -442,7 +442,7 @@ export default function MessageList({
             {onToggleFolderPane && (
               <button
                 onClick={onToggleFolderPane}
-                className={`p-1 rounded transition-colors flex-shrink-0 ${showFolderPane ? 'text-outlook-blue bg-outlook-blue/10' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary'}`}
+                className={`hidden md:inline-flex p-1 rounded transition-colors flex-shrink-0 ${showFolderPane ? 'text-outlook-blue bg-outlook-blue/10' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary'}`}
                 title={showFolderPane ? 'Masquer les dossiers' : 'Afficher les dossiers'}
               >
                 {showFolderPane ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
