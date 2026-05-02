@@ -5,6 +5,7 @@ import {
   Reply, ReplyAll, Forward, Trash2, Star, MoreHorizontal,
   Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown,
   ChevronRight, MessagesSquare, Lock, ShieldCheck, ShieldAlert, ShieldX, KeyRound,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +37,10 @@ interface MessageViewProps {
   onArchive?: () => void;
   attachmentMinVisibleKb?: number;
   attachmentActionMode?: AttachmentActionMode;
+  /** Global preference for the mail body width: 'native' (constrained
+   *  reading column) or 'stretched' (fills the whole pane). Can be
+   *  overridden per message by the user via the inline toggle. */
+  mailDisplayMode?: 'native' | 'stretched';
   /** All messages belonging to the same conversation thread as `message` (including `message` itself).
    *  When provided and length > 1, the view renders a clickable conversation strip. */
   conversationMessages?: Email[];
@@ -45,12 +50,22 @@ interface MessageViewProps {
 
 export default function MessageView({
   message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove, onArchive, attachmentMinVisibleKb = 0, attachmentActionMode = 'preview',
+  mailDisplayMode = 'native',
   conversationMessages, onSelectThreadMessage,
 }: MessageViewProps) {
   const [showMore, setShowMore] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachmentState | null>(null);
   const [previewLoadingName, setPreviewLoadingName] = useState<string | null>(null);
   const [activeAttachmentMenuIndex, setActiveAttachmentMenuIndex] = useState<number | null>(null);
+
+  // Per-message override of the global mailDisplayMode. `null` means « follow the
+  // global preference »; once the user toggles the local button, this stores the
+  // chosen mode for the current message only. Reset whenever the displayed
+  // message changes so that switching threads goes back to the global default.
+  const [localDisplayMode, setLocalDisplayMode] = useState<'native' | 'stretched' | null>(null);
+  useEffect(() => { setLocalDisplayMode(null); }, [message?.uid, message?._accountId]);
+  const effectiveDisplayMode: 'native' | 'stretched' = localDisplayMode ?? mailDisplayMode;
+  const bodyClass = `email-body${effectiveDisplayMode === 'native' ? ' email-body-native' : ''}`;
 
   // --- Conversation thread (expandable stack) ---
   const isThreadMode = !!(conversationMessages && conversationMessages.length > 1);
@@ -604,7 +619,7 @@ export default function MessageView({
                       )}
                       <div className="px-3 sm:px-5 py-3">
                         {bodyHtml ? (
-                          <div className="email-body" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+                          <div className={bodyClass} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
                         ) : (
                           <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
                             {m.bodyText || ''}
@@ -637,13 +652,41 @@ export default function MessageView({
       ) : (
         <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
           <SecurityBanner verdict={verdict} />
+          {/* Inline display-mode toggle — lets the user override the global
+              "natif/étiré" preference just for the message currently shown. */}
+          {(sanitizedHtml || securePlaintext) && (
+            <div className="hidden md:flex items-center justify-end mb-2 -mt-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setLocalDisplayMode(prev => {
+                    const current = prev ?? mailDisplayMode;
+                    return current === 'native' ? 'stretched' : 'native';
+                  })
+                }
+                className="flex items-center gap-1.5 px-2 py-1 text-2xs text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover border border-outlook-border rounded transition-colors"
+                title={
+                  effectiveDisplayMode === 'native'
+                    ? 'Afficher ce mail étiré (toute la largeur)'
+                    : 'Afficher ce mail en largeur de lecture (natif)'
+                }
+              >
+                {effectiveDisplayMode === 'native'
+                  ? <Maximize2 size={12} />
+                  : <Minimize2 size={12} />}
+                <span>
+                  {effectiveDisplayMode === 'native' ? 'Étirer' : 'Vue native'}
+                </span>
+              </button>
+            </div>
+          )}
           {securePlaintext ? (
             <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
               {securePlaintext}
             </pre>
           ) : sanitizedHtml ? (
             <div
-              className="email-body"
+              className={bodyClass}
               dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
             />
           ) : (

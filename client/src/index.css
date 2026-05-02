@@ -127,6 +127,15 @@ html, body, #root {
   overflow-x: auto;
 }
 
+/* Native rendering — constrain the body to a readable column even when the
+   reading pane is wide. Mirrors Gmail / Outlook behaviour and prevents
+   marketing emails from being stretched edge-to-edge on large screens.
+   Combined with `.email-body { max-width: 100% }`, the body never exceeds
+   the container width either. */
+.email-body.email-body-native {
+  max-width: 820px;
+}
+
 .email-body img {
   max-width: 100%;
   height: auto;

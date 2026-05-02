@@ -27,7 +27,8 @@ import {
   getDeleteConfirmEnabled,
   getSwipePrefs, getSwipeMoveTarget, getSwipeCopyTarget, setSwipeMoveTarget, setSwipeCopyTarget,
   getAutoLoadAllEnabled,
-  type SwipeAction,
+  getMailDisplayMode, setMailDisplayMode, MAIL_DISPLAY_MODE_CHANGED_EVENT,
+  type SwipeAction, type MailDisplayMode,
 } from '../utils/mailPreferences';
 import {
   toggleMessageCategory, clearMessageCategories, getMessageCategories,
@@ -953,6 +954,19 @@ export default function MailPage() {
     return (v === 'wide' || v === 'compact' || v === 'auto') ? v : 'auto';
   });
   useEffect(() => { localStorage.setItem('listDisplayMode', listDisplayMode); }, [listDisplayMode]);
+  // Mail body display mode (corps du mail) — natif (largeur de lecture) ou
+  // étiré (toute la largeur). Préférence globale, peut être surchargée par
+  // message dans MessageView.
+  const [mailDisplayMode, setMailDisplayModeState] = useState<MailDisplayMode>(() => getMailDisplayMode());
+  useEffect(() => {
+    const handler = () => setMailDisplayModeState(getMailDisplayMode());
+    window.addEventListener(MAIL_DISPLAY_MODE_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(MAIL_DISPLAY_MODE_CHANGED_EVENT, handler);
+  }, []);
+  const handleChangeMailDisplayMode = useCallback((m: MailDisplayMode) => {
+    setMailDisplayMode(m);
+    setMailDisplayModeState(m);
+  }, []);
   // Conversation view — group messages by thread. Disabled by default.
   const [conversationView, setConversationView] = useState<boolean>(() => {
     return localStorage.getItem('conversationView') === '1';
@@ -1640,6 +1654,8 @@ export default function MailPage() {
           onChangeListDensity={(d) => setListDensity(d)}
           listDisplayMode={listDisplayMode}
           onChangeListDisplayMode={(m) => setListDisplayMode(m)}
+          mailDisplayMode={mailDisplayMode}
+          onChangeMailDisplayMode={handleChangeMailDisplayMode}
           conversationGrouping={conversationGrouping}
           onChangeConversationGrouping={(m) => setConversationGrouping(m)}
           conversationShowAllInReadingPane={conversationShowAllInReadingPane}
@@ -1811,6 +1827,7 @@ export default function MailPage() {
                     }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
+                    mailDisplayMode={mailDisplayMode}
                     conversationMessages={conversationThread}
                     onSelectThreadMessage={(m) => handleSelectMessage(m)}
                   />
@@ -1936,6 +1953,7 @@ export default function MailPage() {
                     }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
+                    mailDisplayMode={mailDisplayMode}
                   />
                 </div>
                 {/* Split resize handle */}
@@ -2008,6 +2026,7 @@ export default function MailPage() {
                     }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
+                    mailDisplayMode={mailDisplayMode}
                     conversationMessages={conversationThread}
                     onSelectThreadMessage={(m) => handleSelectMessage(m)}
                   />
@@ -2044,6 +2063,7 @@ export default function MailPage() {
                     }}
                     attachmentMinVisibleKb={attachmentMinVisibleKb}
                     attachmentActionMode={attachmentActionMode}
+                    mailDisplayMode={mailDisplayMode}
                   />
                 </div>
               </div>
@@ -2075,6 +2095,7 @@ export default function MailPage() {
                 }}
                 attachmentMinVisibleKb={attachmentMinVisibleKb}
                 attachmentActionMode={attachmentActionMode}
+                mailDisplayMode={mailDisplayMode}
                 conversationMessages={conversationThread}
                 onSelectThreadMessage={(m) => handleSelectMessage(m)}
               />

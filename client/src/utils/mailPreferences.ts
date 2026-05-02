@@ -421,6 +421,31 @@ export function setFolderPaneFontSize(size: FolderPaneFontSize) {
 
 export const FOLDER_PANE_FONT_SIZE_CHANGED_EVENT = FOLDER_PANE_FONT_SIZE_EVENT;
 
+// --- Mail body display mode (native vs stretched) ---
+// 'native'    : the rendered HTML body is constrained to a comfortable reading
+//               width (around 800 px) regardless of the available container —
+//               this matches Gmail/Outlook behaviour and prevents marketing
+//               emails from being awkwardly stretched on wide screens.
+// 'stretched' : the body fills 100 % of the message column (legacy behaviour).
+export type MailDisplayMode = 'native' | 'stretched';
+
+const KEY_MAIL_DISPLAY_MODE = 'mail.displayMode';
+const MAIL_DISPLAY_MODE_EVENT = 'mail-display-mode-changed';
+
+export function getMailDisplayMode(): MailDisplayMode {
+  const raw = localStorage.getItem(KEY_MAIL_DISPLAY_MODE);
+  return raw === 'stretched' ? 'stretched' : 'native';
+}
+
+export function setMailDisplayMode(mode: MailDisplayMode) {
+  localStorage.setItem(KEY_MAIL_DISPLAY_MODE, mode);
+  try {
+    window.dispatchEvent(new CustomEvent(MAIL_DISPLAY_MODE_EVENT, { detail: { mode } }));
+  } catch { /* noop */ }
+}
+
+export const MAIL_DISPLAY_MODE_CHANGED_EVENT = MAIL_DISPLAY_MODE_EVENT;
+
 // --- Swipe gesture preferences (mobile / tablet) ---
 /**
  * Actions qui peuvent être déclenchées par un balayage horizontal sur un

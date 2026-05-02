@@ -13,6 +13,7 @@ import {
   Smile, Table as TableIcon, Minus as MinusIcon, PenLine, Calendar, Film, PenTool,
   Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
   Tag, MessagesSquare, ShieldAlert, ShieldOff, Coffee,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
@@ -125,6 +126,10 @@ interface RibbonProps {
   listDisplayMode?: 'auto' | 'wide' | 'compact';
   onChangeListDisplayMode?: (m: 'auto' | 'wide' | 'compact') => void;
 
+  // Mail body display mode (rendu corps du mail : natif vs étiré)
+  mailDisplayMode?: 'native' | 'stretched';
+  onChangeMailDisplayMode?: (m: 'native' | 'stretched') => void;
+
   // Conversation grouping (Outlook « Conversations » menu).
   // - 'none'         : Ne pas regrouper les messages (plat, par date).
   // - 'conversation' : Regrouper les messages par conversation (un seul nœud par thread).
@@ -229,6 +234,7 @@ export default function Ribbon({
   readingPaneMode = 'right', onChangeReadingPaneMode,
   listDensity = 'comfortable', onChangeListDensity,
   listDisplayMode = 'auto', onChangeListDisplayMode,
+  mailDisplayMode = 'native', onChangeMailDisplayMode,
   conversationGrouping = 'none', onChangeConversationGrouping,
   conversationShowAllInReadingPane = true, onToggleConversationShowAllInReadingPane,
   onCategorize, onClearCategories, onNewCategory, onManageCategories,
@@ -245,6 +251,7 @@ export default function Ribbon({
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [showConversationsMenu, setShowConversationsMenu] = useState(false);
   const [showFolderFontMenu, setShowFolderFontMenu] = useState(false);
+  const [showMailDisplayMenu, setShowMailDisplayMenu] = useState(false);
   // Folder pane font size — synced with the global event so two ribbons stay
   // in sync if multiple windows/tabs are open.
   const [folderFontSize, setFolderFontSizeState] = useState<FolderPaneFontSize>(() => getFolderPaneFontSize());
@@ -262,6 +269,7 @@ export default function Ribbon({
   const categoryMenuBtnRef = useRef<HTMLButtonElement>(null);
   const conversationsMenuBtnRef = useRef<HTMLButtonElement>(null);
   const folderFontMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const mailDisplayMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
@@ -271,6 +279,7 @@ export default function Ribbon({
   const [categoryMenuPos, setCategoryMenuPos] = useState({ top: 0, left: 0 });
   const [conversationsMenuPos, setConversationsMenuPos] = useState({ top: 0, left: 0 });
   const [folderFontMenuPos, setFolderFontMenuPos] = useState({ top: 0, left: 0 });
+  const [mailDisplayMenuPos, setMailDisplayMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -378,6 +387,15 @@ export default function Ribbon({
       setListModeMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowListModeMenu(v => !v);
+  };
+
+  const openMailDisplayMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || mailDisplayMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setMailDisplayMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowMailDisplayMenu(v => !v);
   };
 
   const openCategoryMenu = (e?: React.MouseEvent) => {
@@ -678,10 +696,47 @@ export default function Ribbon({
         </>,
         document.body
       )}
+
+      {/* Mail body display mode menu (natif vs étiré) */}
+      {showMailDisplayMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowMailDisplayMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-72"
+            style={{ top: mailDisplayMenuPos.top, left: mailDisplayMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Affichage du corps des mails
+            </div>
+            {[
+              { id: 'native' as const, label: 'Natif (largeur de lecture)', icon: Minimize2, hint: 'Limite la largeur du contenu pour une lecture confortable.' },
+              { id: 'stretched' as const, label: 'Étiré (toute la largeur)', icon: Maximize2, hint: 'Le contenu remplit toute la largeur du volet.' },
+            ].map((opt) => {
+              const active = mailDisplayMode === opt.id;
+              const Icon = opt.icon;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => { onChangeMailDisplayMode && onChangeMailDisplayMode(opt.id); setShowMailDisplayMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-start gap-2"
+                >
+                  <span className="w-4 flex items-center justify-center text-outlook-blue mt-0.5">
+                    {active ? '✓' : ''}
+                  </span>
+                  <Icon size={14} className="mt-0.5 text-outlook-text-secondary flex-shrink-0" />
+                  <span className="flex flex-col">
+                    <span>{opt.label}</span>
+                    <span className="text-[11px] text-outlook-text-disabled">{opt.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body
+      )}
     </>
   );
-
-  // ─── Simplified ribbon ─────────────────────────────────────
   if (ribbonMode === 'simplified') {
     return (
       <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
@@ -755,6 +810,16 @@ export default function Ribbon({
               >
                 <ListIcon size={14} />
                 <span className="text-xs whitespace-nowrap">Liste mail</span>
+                <ChevronDown size={10} />
+              </button>
+              <button
+                ref={mailDisplayMenuBtnRef}
+                onClick={(e) => openMailDisplayMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showMailDisplayMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Affichage du corps des mails (natif / étiré)"
+              >
+                {mailDisplayMode === 'stretched' ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+                <span className="text-xs whitespace-nowrap">Affichage mail</span>
                 <ChevronDown size={10} />
               </button>
               <button
@@ -971,6 +1036,19 @@ export default function Ribbon({
                     <ListIcon size={18} />
                     <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
                       Liste mail <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    ref={mailDisplayMenuBtnRef}
+                    onClick={(e) => openMailDisplayMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showMailDisplayMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Affichage du corps des mails (natif / étiré)"
+                  >
+                    {mailDisplayMode === 'stretched' ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Affichage mail <ChevronDown size={8} />
                     </span>
                   </button>
                 </div>
