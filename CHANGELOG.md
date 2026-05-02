@@ -16,9 +16,17 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+#### Lecture et suppression des e-mails sur mobile / tablette
+
+- **Mise en page de l'en-tête de message non chevauchée** ([client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : le nom de l'expéditeur et son adresse `<email>` sont désormais dans un conteneur `flex-wrap` avec `gap-x-1` (et `truncate max-w-full` sur chaque segment) — l'adresse passe à la ligne sur mobile au lieu de se superposer au nom. La colonne d'actions à droite est masquée en `< md` et remplacée par une **barre d'actions sur sa propre ligne** sous l'en-tête, scindée en deux groupes : *Répondre / Répondre à tous / Transférer* à gauche, *Indicateur (étoile) / Corbeille / Plus* à droite. Plus aucun chevauchement entre l'identité de l'expéditeur et les boutons corbeille/favori. La date passe sous les destinataires sur mobile et reste à droite sur desktop.
+- **Corps du message responsive** ([client/src/index.css](client/src/index.css), [client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : neutralisation des `<table width="600">` typiques des newsletters HTML (`max-width: 100% !important`, `width: auto !important`, `table-layout: auto !important`), `word-break` + `overflow-wrap: anywhere` sur `td/th/pre/code/a` pour empêcher les longues URL ou cellules de pousser la mise en page au-delà du viewport, et `max-width: 100%` + `overflow-x: auto` sur `.email-body` (le scroll horizontal est contenu à l'intérieur du message si nécessaire). Le padding latéral passe à `px-3 sm:px-6` (vue simple) et `px-3 sm:px-5` (vue conversation) pour récupérer ~24 px de largeur utile sur petit écran.
+- **Retour automatique à la liste après suppression** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : sur mobile/tablette, supprimer le message en cours de lecture provoquait l'affichage du placeholder *« Sélectionnez un message pour le lire »* au lieu de revenir à la liste. `deleteMutation.onMutate` détecte désormais si le message ouvert est celui qui vient d'être supprimé et bascule automatiquement `mobileView` sur `'list'`. Aucun changement de comportement sur desktop (le mode `mobileView` n'a aucun effet en `md+`).
+
 #### Synchronisation des signatures avec images embarquées
 
 - **Limite de taille par préférence augmentée pour les clés contenant du contenu riche** ([server/src/routes/settings.ts](server/src/routes/settings.ts)) : la limite globale de 64 Ko empêchait la synchronisation des signatures contenant des images base64 (erreur `413 Content Too Large` sur `mail.signatures.v1`). Une nouvelle fonction `maxBytesForKey(key)` étend la limite à **4 Mo** pour les clés préfixées `mail.signatures.` et `mail.templates.`, tout en conservant le plafond historique de 64 Ko pour les autres préférences (couleurs, layout, swipe, etc.). Le message d'erreur 413 indique désormais la limite réelle qui s'applique à la clé concernée.
+
+### Ajouté (suite)
 
 #### Notifications push pour les rappels d'événements calendrier
 
