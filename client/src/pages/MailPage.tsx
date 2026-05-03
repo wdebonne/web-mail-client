@@ -14,6 +14,7 @@ import Ribbon from '../components/mail/Ribbon';
 import AutoResponderModal from '../components/mail/AutoResponderModal';
 import EmojiPanel from '../components/mail/EmojiPanel';
 import GifPanel from '../components/mail/GifPanel';
+import { MailTemplatePickerModal, MailTemplatesManagerModal } from '../components/mail/MailTemplates';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import FloatingActionButton from '../components/ui/FloatingActionButton';
@@ -1176,6 +1177,10 @@ export default function MailPage() {
   // GIF side panel (opened from the Insérer tab)
   const [showGifPanel, setShowGifPanel] = useState(false);
 
+  // Mail templates modals (Insérer > Modèles)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [showTemplatesManager, setShowTemplatesManager] = useState(false);
+
   // Auto-close the side panels when composition ends.
   useEffect(() => {
     if (!isComposing) {
@@ -1737,6 +1742,8 @@ export default function MailPage() {
           isComposing={isComposing}
           composeEditorRef={composeEditorRef}
           onComposeAttachFiles={(files) => composeApiRef.current?.addFiles(files)}
+          onOpenTemplatesPicker={isComposing ? () => setShowTemplatePicker(true) : undefined}
+          onOpenTemplatesManager={() => setShowTemplatesManager(true)}
           onToggleEmojiPanel={() => {
             saveComposeSelection();
             setShowEmojiPanel(v => !v);
@@ -2229,6 +2236,21 @@ export default function MailPage() {
               onClose={() => setShowGifPanel(false)}
               onSelect={insertGifIntoCompose}
             />
+          )}
+
+          {/* Mail templates picker — only while composing */}
+          {showTemplatePicker && isComposing && (
+            <MailTemplatePickerModal
+              onClose={() => setShowTemplatePicker(false)}
+              onOpenManager={() => { setShowTemplatePicker(false); setShowTemplatesManager(true); }}
+              onInsert={(tpl) => {
+                composeApiRef.current?.applyTemplate(tpl.subject, tpl.bodyHtml);
+              }}
+            />
+          )}
+          {/* Mail templates manager */}
+          {showTemplatesManager && (
+            <MailTemplatesManagerModal onClose={() => setShowTemplatesManager(false)} />
           )}
           </div>
 

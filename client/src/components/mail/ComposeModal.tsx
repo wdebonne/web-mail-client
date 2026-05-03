@@ -4,7 +4,7 @@ import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link as LinkIcon, Image, Palette, Type, Indent, Outdent,
-  Users, Check, ShieldCheck,
+  Users, Check, ShieldCheck, MoreHorizontal, FileText,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ComposeData } from '../../stores/mailStore';
@@ -19,6 +19,7 @@ import {
   resolveDefaultNewId, resolveDefaultReplyId,
 } from '../../utils/signatures';
 import { attachImageEditing } from '../../utils/imageEditing';
+import { SaveAsTemplateDialog } from './MailTemplates';
 import toast from 'react-hot-toast';
 
 interface ComposeModalProps {
@@ -43,6 +44,7 @@ interface ComposeModalProps {
 
 export interface ComposeApi {
   addFiles: (files: FileList | File[]) => void;
+  applyTemplate: (subject: string, bodyHtml: string) => void;
 }
 
 export default function ComposeModal({
@@ -82,6 +84,21 @@ export default function ComposeModal({
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+
+  // Compose "More" menu (Plus)
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [showMoreMenu]);
 
   // Contact autocomplete
   const [toInput, setToInput] = useState('');
@@ -180,9 +197,16 @@ export default function ComposeModal({
   // Expose API to the ribbon (Insérer > Joindre un fichier)
   useEffect(() => {
     if (!apiRef) return;
-    apiRef.current = { addFiles };
+    apiRef.current = {
+      addFiles,
+      applyTemplate: (tplSubject: string, tplBody: string) => {
+        setSubject(tplSubject || '');
+        setBodyHtml(tplBody || '');
+        if (editorRef.current) editorRef.current.innerHTML = tplBody || '';
+      },
+    };
     return () => { if (apiRef) apiRef.current = null; };
-  }, [apiRef, addFiles]);
+  }, [apiRef, addFiles, editorRef]);
 
   // Drag & drop file attachment
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -439,6 +463,31 @@ export default function ComposeModal({
               <Paperclip size={15} />
             </button>
             <SecurityMenu mode={securityMode} onChange={setSecurityMode} open={securityMenuOpen} setOpen={setSecurityMenuOpen} />
+            <div ref={moreMenuRef} className="relative">
+              <button
+                onClick={() => setShowMoreMenu(v => !v)}
+                className="text-outlook-text-secondary hover:text-outlook-text-primary p-1.5 rounded hover:bg-outlook-bg-hover"
+                title="Plus d'options"
+              >
+                <MoreHorizontal size={15} />
+              </button>
+              {showMoreMenu && (
+                <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] bg-white border border-outlook-border rounded shadow-lg py-1">
+                  <button
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      // Capture current editor HTML before opening dialog
+                      if (editorRef.current) setBodyHtml(editorRef.current.innerHTML);
+                      setShowSaveAsTemplate(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-outlook-text-primary hover:bg-outlook-bg-hover"
+                  >
+                    <FileText size={14} />
+                    Enregistrer comme modèle
+                  </button>
+                </div>
+              )}
+            </div>
             {onToggleExpand && (
               <button
                 onClick={onToggleExpand}
@@ -631,6 +680,15 @@ export default function ComposeModal({
           currentRecipients={showContactPicker === 'to' ? to : showContactPicker === 'cc' ? cc : bcc}
           onAdd={(addr) => addRecipient(showContactPicker!, addr)}
           onClose={() => setShowContactPicker(null)}
+        />
+      )}
+      {showSaveAsTemplate && (
+        <SaveAsTemplateDialog
+          initialName={subject}
+          subject={subject}
+          bodyHtml={editorRef.current?.innerHTML ?? bodyHtml}
+          onClose={() => setShowSaveAsTemplate(false)}
+          onSaved={() => setShowSaveAsTemplate(false)}
         />
       )}
     </motion.div>

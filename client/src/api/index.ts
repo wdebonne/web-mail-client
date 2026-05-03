@@ -861,4 +861,84 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(accountId ? { accountId } : {}),
     }),
+
+  // ─── Mail templates ─────────────────────────────────────────────────────
+  // Reusable subject + body presets. The picker in the ribbon's "Insérer"
+  // tab lists everything accessible to the user (owned, global, shared).
+  listMailTemplates: () => request<Array<MailTemplate>>('/mail-templates'),
+  createMailTemplate: (data: { name: string; subject: string; bodyHtml: string }) =>
+    request<MailTemplate>('/mail-templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateMailTemplate: (id: string, data: { name: string; subject: string; bodyHtml: string }) =>
+    request<MailTemplate>(`/mail-templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteMailTemplate: (id: string) =>
+    request<{ success: boolean }>(`/mail-templates/${id}`, { method: 'DELETE' }),
+  listMailTemplateShares: (id: string) =>
+    request<Array<MailTemplateShare>>(`/mail-templates/${id}/shares`),
+  shareMailTemplate: (id: string, data: { userId?: string | null; groupId?: string | null }) =>
+    request<{ id: string }>(`/mail-templates/${id}/shares`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  unshareMailTemplate: (id: string, shareId: string) =>
+    request<{ success: boolean }>(`/mail-templates/${id}/shares/${shareId}`, { method: 'DELETE' }),
+
+  // Admin-side: every template, ability to mark global, edit any.
+  adminListMailTemplates: () => request<Array<MailTemplate>>('/admin/mail-templates'),
+  adminCreateMailTemplate: (data: {
+    name: string; subject: string; bodyHtml: string;
+    isGlobal?: boolean; ownerUserId?: string | null;
+  }) =>
+    request<MailTemplate>('/admin/mail-templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  adminUpdateMailTemplate: (id: string, data: {
+    name: string; subject: string; bodyHtml: string;
+    isGlobal?: boolean; ownerUserId?: string | null;
+  }) =>
+    request<MailTemplate>(`/admin/mail-templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  adminDeleteMailTemplate: (id: string) =>
+    request<{ success: boolean }>(`/admin/mail-templates/${id}`, { method: 'DELETE' }),
+  adminListMailTemplateShares: (id: string) =>
+    request<Array<MailTemplateShare>>(`/admin/mail-templates/${id}/shares`),
+  adminShareMailTemplate: (id: string, data: { userId?: string | null; groupId?: string | null }) =>
+    request<{ id: string }>(`/admin/mail-templates/${id}/shares`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  adminUnshareMailTemplate: (id: string, shareId: string) =>
+    request<{ success: boolean }>(`/admin/mail-templates/${id}/shares/${shareId}`, { method: 'DELETE' }),
 };
+
+export interface MailTemplate {
+  id: string;
+  ownerUserId: string | null;
+  ownerEmail: string | null;
+  ownerDisplayName: string | null;
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  isGlobal: boolean;
+  /** 'owned' | 'global' | 'shared' — only meaningful for the user-side list. */
+  scope: 'owned' | 'global' | 'shared';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MailTemplateShare {
+  id: string;
+  userId: string | null;
+  groupId: string | null;
+  userEmail: string | null;
+  userDisplayName: string | null;
+  groupName: string | null;
+}

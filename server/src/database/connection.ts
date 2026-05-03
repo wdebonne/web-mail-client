@@ -627,6 +627,43 @@ export async function initDatabase() {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_auto_responders_account ON auto_responders(account_id);
+
+      -- Mail templates — reusable subject + body presets that users can insert
+      -- into a compose window from the ribbon "Insérer > Modèles" picker.
+      -- A template is owned by a user (owner_user_id) or marked global by an
+      -- admin (is_global=true, owner_user_id=NULL), and can additionally be
+      -- shared with specific users / groups via mail_template_shares.
+      CREATE TABLE IF NOT EXISTS mail_templates (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        subject VARCHAR(998) NOT NULL DEFAULT '',
+        body_html TEXT NOT NULL DEFAULT '',
+        is_global BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        CHECK (
+          (is_global = true AND owner_user_id IS NULL)
+          OR (is_global = false AND owner_user_id IS NOT NULL)
+        )
+      );
+      CREATE INDEX IF NOT EXISTS idx_mail_templates_owner ON mail_templates(owner_user_id);
+      CREATE INDEX IF NOT EXISTS idx_mail_templates_global ON mail_templates(is_global) WHERE is_global = true;
+
+      CREATE TABLE IF NOT EXISTS mail_template_shares (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        template_id UUID NOT NULL REFERENCES mail_templates(id) ON DELETE CASCADE,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        CHECK (
+          (user_id IS NOT NULL AND group_id IS NULL) OR
+          (user_id IS NULL AND group_id IS NOT NULL)
+        )
+      );
+      CREATE INDEX IF NOT EXISTS idx_mail_template_shares_tpl ON mail_template_shares(template_id);
+      CREATE INDEX IF NOT EXISTS idx_mail_template_shares_user ON mail_template_shares(user_id);
+      CREATE INDEX IF NOT EXISTS idx_mail_template_shares_group ON mail_template_shares(group_id);
     `);
 
     // One-shot data fix: keep `is_admin` aligned with `role`. Older builds

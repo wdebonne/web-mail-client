@@ -14,6 +14,7 @@ import {
   Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
   Tag, MessagesSquare, ShieldAlert, ShieldOff, Coffee,
   Maximize2, Minimize2,
+  FileText, Settings as SettingsIcon,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
@@ -152,6 +153,10 @@ interface RibbonProps {
   onOpenAutoResponder?: () => void;
   /** Whether the responder is currently enabled — drives the button's active state. */
   autoResponderEnabled?: boolean;
+
+  // Mail templates (Insérer tab > Modèles)
+  onOpenTemplatesPicker?: () => void;
+  onOpenTemplatesManager?: () => void;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -240,6 +245,7 @@ export default function Ribbon({
   onCategorize, onClearCategories, onNewCategory, onManageCategories,
   messageCategoryIds = [],
   onOpenAutoResponder, autoResponderEnabled = false,
+  onOpenTemplatesPicker, onOpenTemplatesManager,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -907,7 +913,7 @@ export default function Ribbon({
           )}
 
           {activeTab === 'inserer' && (
-            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} compact />
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} onOpenTemplatesPicker={onOpenTemplatesPicker} onOpenTemplatesManager={onOpenTemplatesManager} compact />
           )}
         </div>
         {sharedPopups}
@@ -1000,7 +1006,7 @@ export default function Ribbon({
           )}
 
           {activeTab === 'inserer' && (
-            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} />
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} onOpenTemplatesPicker={onOpenTemplatesPicker} onOpenTemplatesManager={onOpenTemplatesManager} />
           )}
 
           {activeTab === 'afficher' && (
@@ -1765,7 +1771,7 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
 // ─────────────────────────────────────────────────────────────────────────────
 // Insérer tab — Outlook-web-style insertion tools
 // ─────────────────────────────────────────────────────────────────────────────
-function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmojiPanelOpen = false, onToggleGifPanel, isGifPanelOpen = false, compact = false, accounts = [] }: {
+function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmojiPanelOpen = false, onToggleGifPanel, isGifPanelOpen = false, compact = false, accounts = [], onOpenTemplatesPicker, onOpenTemplatesManager }: {
   editorRef?: React.RefObject<HTMLDivElement>;
   onAttachFiles?: (files: FileList | File[]) => void;
   onToggleEmojiPanel?: () => void;
@@ -1774,6 +1780,8 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
   isGifPanelOpen?: boolean;
   compact?: boolean;
   accounts?: MailAccount[];
+  onOpenTemplatesPicker?: () => void;
+  onOpenTemplatesManager?: () => void;
 }) {
   const { exec, saveSelection, restoreSelection, insertHTML } = useEditorControl(editorRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2033,6 +2041,20 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
         <span ref={el => { signatureBtnRef.current = el; }} className="inline-flex">
           <SimplifiedButton icon={PenTool} label="Signature" onClick={() => { saveSelection(); setShowSignatureMenu(v => !v); }} active={showSignatureMenu} />
         </span>
+        {onOpenTemplatesPicker && (
+          <span className="inline-flex items-center">
+            <SimplifiedButton icon={FileText} label="Modèles" onClick={() => onOpenTemplatesPicker()} />
+            {onOpenTemplatesManager && (
+              <button
+                onClick={() => onOpenTemplatesManager()}
+                className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary"
+                title="Gérer les modèles"
+              >
+                <SettingsIcon size={11} />
+              </button>
+            )}
+          </span>
+        )}
         {portals}
       </>
     );
@@ -2091,6 +2113,24 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
           <RibbonButton icon={PenTool} label="Signature" onClick={() => { saveSelection(); setShowSignatureMenu(s => !s); }} active={showSignatureMenu} />
         </span>
       </RibbonGroup>
+      {onOpenTemplatesPicker && (
+        <>
+          <RibbonSeparator />
+          <RibbonGroup label="Modèles">
+            <RibbonButton icon={FileText} label="Modèles" onClick={() => onOpenTemplatesPicker()} />
+            {onOpenTemplatesManager && (
+              <button
+                onClick={() => onOpenTemplatesManager()}
+                className="flex flex-col items-center gap-0.5 rounded transition-colors px-1.5 py-0.5 min-w-[40px] hover:bg-outlook-bg-hover cursor-pointer text-outlook-text-secondary"
+                title="Gérer mes modèles"
+              >
+                <SettingsIcon size={14} />
+                <span className="text-[9px] leading-tight text-center whitespace-nowrap">Gérer</span>
+              </button>
+            )}
+          </RibbonGroup>
+        </>
+      )}
       {portals}
     </>
   );
