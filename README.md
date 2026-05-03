@@ -142,7 +142,7 @@ Vous pouvez ajouter vos images et captures d'écran dans le dossier `docs/images
 ### Interface principale
 | Boîte de réception | Lecture d'un e-mail |
 | :---: | :---: |
-| *Ajoutez une capture `docs/images/inbox.png`* | ![Lecture e-mail](docs/images/mail-reading.png) |
+| ![Boîte de réception](docs/images/inbox.png) | ![Lecture e-mail](docs/images/mail-reading.png) |
 
 | Barre latérale & Favoris | Liste des contacts |
 | :---: | :---: |
