@@ -82,9 +82,9 @@ export default function NotificationPreferencesEditor({
   };
 
   const sampleCtx: NotificationContext = useMemo(() => ({
-    sender: 'Frédéric Debonne',
-    senderEmail: 'frederic@example.com',
-    accountEmail: 'wdebonne@hotmail.com',
+    sender: 'Expéditeur Test',
+    senderEmail: 'expediteur@example.com',
+    accountEmail: 'utilisateur@example.com',
     accountName: 'Pro',
     appName: value.appName || 'WebMail',
     siteUrl: value.siteUrl || (typeof window !== 'undefined' ? window.location.host : ''),

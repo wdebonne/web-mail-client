@@ -79,9 +79,9 @@ pushRouter.post('/test', async (req: AuthRequest, res) => {
       const prefs = await loadUserNotificationPrefs(req.userId!);
       const target = classifyPlatform(platform, userAgent);
       return buildPlatformPayload(prefs, target, {
-        sender: 'Frédéric Debonne',
-        senderEmail: 'frederic@example.com',
-        accountEmail: 'wdebonne@hotmail.com',
+        sender: 'Expéditeur Test',
+        senderEmail: 'expediteur@example.com',
+        accountEmail: 'utilisateur@example.com',
         accountName: 'Pro',
         appName: prefs.appName,
         siteUrl: prefs.siteUrl,
