@@ -917,7 +917,141 @@ export const api = {
     }),
   adminUnshareMailTemplate: (id: string, shareId: string) =>
     request<{ success: boolean }>(`/admin/mail-templates/${id}/shares/${shareId}`, { method: 'DELETE' }),
+
+  // ─── Mail rules (Outlook-style) ────────────────────────────────────────
+  listMailRules: () => request<Array<MailRule>>('/rules'),
+  createMailRule: (data: MailRuleUpsert) =>
+    request<MailRule>('/rules', { method: 'POST', body: JSON.stringify(data) }),
+  updateMailRule: (id: string, data: MailRuleUpsert) =>
+    request<MailRule>(`/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteMailRule: (id: string) =>
+    request<{ success: boolean }>(`/rules/${id}`, { method: 'DELETE' }),
+  toggleMailRule: (id: string, enabled?: boolean) =>
+    request<{ success: boolean; enabled: boolean }>(`/rules/${id}/toggle`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+  renameMailRule: (id: string, name: string) =>
+    request<{ success: boolean }>(`/rules/${id}/rename`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  reorderMailRules: (ids: string[]) =>
+    request<{ success: boolean }>(`/rules/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  listMailRuleShares: (id: string) =>
+    request<Array<MailRuleShare>>(`/rules/${id}/shares`),
+  shareMailRule: (id: string, data: { userId?: string | null; groupId?: string | null }) =>
+    request<{ id: string }>(`/rules/${id}/shares`, { method: 'POST', body: JSON.stringify(data) }),
+  unshareMailRule: (id: string, shareId: string) =>
+    request<{ success: boolean }>(`/rules/${id}/shares/${shareId}`, { method: 'DELETE' }),
+
+  // Admin
+  adminListMailRules: (params: { view?: 'all' | 'user' | 'group'; q?: string; userId?: string; groupId?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (params.view) q.set('view', params.view);
+    if (params.q) q.set('q', params.q);
+    if (params.userId) q.set('userId', params.userId);
+    if (params.groupId) q.set('groupId', params.groupId);
+    const qs = q.toString();
+    return request<AdminMailRulesResponse>(`/admin/rules${qs ? `?${qs}` : ''}`);
+  },
+  adminUpdateMailRule: (id: string, data: MailRuleUpsert) =>
+    request<MailRule>(`/admin/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  adminToggleMailRule: (id: string, enabled?: boolean) =>
+    request<{ success: boolean; enabled: boolean }>(`/admin/rules/${id}/toggle`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+  adminDeleteMailRule: (id: string) =>
+    request<{ success: boolean }>(`/admin/rules/${id}`, { method: 'DELETE' }),
+  adminMailRulesDirectory: () =>
+    request<{
+      users: Array<{ id: string; email: string; displayName: string | null; isAdmin: boolean }>;
+      groups: Array<{ id: string; name: string }>;
+    }>(`/admin/rules/directory`),
 };
+
+// ─── Mail rules types (mirrors server/src/services/mailRules.ts) ───────
+export type MailRuleConditionType =
+  | 'fromContains' | 'toContains' | 'ccContains'
+  | 'subjectContains' | 'subjectOrBodyContains' | 'bodyContains'
+  | 'recipientAddressContains' | 'senderAddressContains' | 'headerContains'
+  | 'hasAttachment' | 'importance' | 'sensitivity'
+  | 'sentOnlyToMe' | 'myNameInTo' | 'myNameInCc' | 'myNameInToOrCc' | 'myNameNotInTo'
+  | 'flagged' | 'sizeAtLeast';
+
+export type MailRuleActionType =
+  | 'moveToFolder' | 'copyToFolder' | 'delete' | 'permanentlyDelete'
+  | 'markAsRead' | 'markAsUnread' | 'flag' | 'unflag'
+  | 'forwardTo' | 'redirectTo' | 'replyWithTemplate' | 'stopProcessingMoreRules';
+
+export interface MailRuleCondition {
+  type: MailRuleConditionType;
+  value?: string;
+  headerName?: string;
+  level?: string;
+  bytes?: number;
+}
+export interface MailRuleAction {
+  type: MailRuleActionType;
+  folder?: string;
+  to?: string;
+  templateId?: string;
+}
+
+export interface MailRule {
+  id: string;
+  userId: string;
+  accountId: string | null;
+  name: string;
+  enabled: boolean;
+  position: number;
+  matchType: 'all' | 'any';
+  stopProcessing: boolean;
+  conditions: MailRuleCondition[];
+  exceptions: MailRuleCondition[];
+  actions: MailRuleAction[];
+  createdAt: string | null;
+  updatedAt: string | null;
+  // Listing extras
+  sharedIn?: boolean;
+  ownerDisplayName?: string | null;
+  ownerEmail?: string | null;
+  // Admin extras
+  userEmail?: string;
+  userDisplayName?: string | null;
+  groupIds?: string[];
+  groupNames?: string[];
+}
+
+export interface MailRuleUpsert {
+  name: string;
+  enabled?: boolean;
+  matchType?: 'all' | 'any';
+  stopProcessing?: boolean;
+  accountId?: string | null;
+  conditions?: MailRuleCondition[];
+  exceptions?: MailRuleCondition[];
+  actions: MailRuleAction[];
+}
+
+export interface MailRuleShare {
+  id: string;
+  userId: string | null;
+  groupId: string | null;
+  userEmail: string | null;
+  userDisplayName: string | null;
+  groupName: string | null;
+}
+
+export type AdminMailRulesResponse =
+  | { view: 'all'; rules: MailRule[] }
+  | { view: 'user'; groups: Array<{ kind: 'user'; userId: string; userEmail: string; userDisplayName: string | null; rules: MailRule[] }> }
+  | { view: 'group'; groups: Array<{ kind: 'group'; groupId: string; groupName: string; rules: MailRule[] }> };
+
 
 export interface MailTemplate {
   id: string;

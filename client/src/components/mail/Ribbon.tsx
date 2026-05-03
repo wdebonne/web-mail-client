@@ -14,7 +14,7 @@ import {
   Star, ArrowLeftRight, AlignVerticalJustifyCenter, List as ListIcon,
   Tag, MessagesSquare, ShieldAlert, ShieldOff, Coffee,
   Maximize2, Minimize2,
-  FileText, Settings as SettingsIcon,
+  FileText, Settings as SettingsIcon, Filter,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
@@ -154,6 +154,9 @@ interface RibbonProps {
   /** Whether the responder is currently enabled — drives the button's active state. */
   autoResponderEnabled?: boolean;
 
+  // Mail rules modal trigger (Outlook-style rules manager)
+  onOpenRules?: () => void;
+
   // Mail templates (Insérer tab > Modèles)
   onOpenTemplatesPicker?: () => void;
   onOpenTemplatesManager?: () => void;
@@ -245,6 +248,7 @@ export default function Ribbon({
   onCategorize, onClearCategories, onNewCategory, onManageCategories,
   messageCategoryIds = [],
   onOpenAutoResponder, autoResponderEnabled = false,
+  onOpenRules,
   onOpenTemplatesPicker, onOpenTemplatesManager,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
@@ -900,6 +904,16 @@ export default function Ribbon({
                   <SimplifiedSep />
                 </>
               )}
+              {onOpenRules && (
+                <>
+                  <SimplifiedButton
+                    icon={Filter}
+                    label="Règles"
+                    onClick={() => onOpenRules()}
+                  />
+                  <SimplifiedSep />
+                </>
+              )}
               <SimplifiedButton icon={Printer} label="Imprimer" onClick={onPrint} disabled={!hasSelectedMessage} />
               <SimplifiedButton icon={FileDown} label="Télécharger" onClick={onDownloadEml} disabled={!hasSelectedMessage} />
               <SimplifiedButton icon={Paperclip} label="Pièce jointe" onClick={() => {/* no-op in simplified */}} />
@@ -1230,6 +1244,20 @@ export default function Ribbon({
                       label="Répondeur"
                       onClick={() => onOpenAutoResponder()}
                       active={autoResponderEnabled}
+                    />
+                  </RibbonGroup>
+                  <RibbonSeparator />
+                </>
+              )}
+
+              {/* Règles */}
+              {onOpenRules && (
+                <>
+                  <RibbonGroup label="Règles">
+                    <RibbonButton
+                      icon={Filter}
+                      label="Règles"
+                      onClick={() => onOpenRules()}
                     />
                   </RibbonGroup>
                   <RibbonSeparator />

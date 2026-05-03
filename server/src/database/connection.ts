@@ -664,6 +664,44 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_mail_template_shares_tpl ON mail_template_shares(template_id);
       CREATE INDEX IF NOT EXISTS idx_mail_template_shares_user ON mail_template_shares(user_id);
       CREATE INDEX IF NOT EXISTS idx_mail_template_shares_group ON mail_template_shares(group_id);
+
+      -- Mail rules — Outlook-like rules engine. Each rule belongs to a user
+      -- and is applied to incoming mail by the new-mail poller in declared
+      -- order (lowest "position" first). Conditions and actions are stored
+      -- as JSONB arrays of typed nodes, see server/src/services/mailRules.ts
+      -- for the supported types.
+      CREATE TABLE IF NOT EXISTS mail_rules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        account_id UUID REFERENCES mail_accounts(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        position INTEGER NOT NULL DEFAULT 0,
+        match_type VARCHAR(8) NOT NULL DEFAULT 'all',
+        stop_processing BOOLEAN NOT NULL DEFAULT true,
+        conditions JSONB NOT NULL DEFAULT '[]'::jsonb,
+        exceptions JSONB NOT NULL DEFAULT '[]'::jsonb,
+        actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_mail_rules_user ON mail_rules(user_id, position);
+      CREATE INDEX IF NOT EXISTS idx_mail_rules_account ON mail_rules(account_id);
+
+      CREATE TABLE IF NOT EXISTS mail_rule_shares (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        rule_id UUID NOT NULL REFERENCES mail_rules(id) ON DELETE CASCADE,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        CHECK (
+          (user_id IS NOT NULL AND group_id IS NULL) OR
+          (user_id IS NULL AND group_id IS NOT NULL)
+        )
+      );
+      CREATE INDEX IF NOT EXISTS idx_mail_rule_shares_rule ON mail_rule_shares(rule_id);
+      CREATE INDEX IF NOT EXISTS idx_mail_rule_shares_user ON mail_rule_shares(user_id);
+      CREATE INDEX IF NOT EXISTS idx_mail_rule_shares_group ON mail_rule_shares(group_id);
     `);
 
     // One-shot data fix: keep `is_admin` aligned with `role`. Older builds

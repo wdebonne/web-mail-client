@@ -6,7 +6,7 @@ import {
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
-  ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText,
+  ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -14,13 +14,14 @@ import { useUIStore } from '../stores/uiStore';
 import AdminCalendarManagement from '../components/admin/AdminCalendarManagement';
 import AdminAutoResponders from '../components/admin/AdminAutoResponders';
 import AdminMailTemplates from '../components/admin/AdminMailTemplates';
+import AdminRulesManagement from '../components/admin/AdminRulesManagement';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
   type NotificationPrefs,
 } from '../utils/notificationPrefs';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('dashboard');
@@ -41,6 +42,7 @@ export default function AdminPage() {
     { id: 'mailaccounts' as const, icon: Mail, label: 'Comptes mail' },
     { id: 'autoresponders' as const, icon: Coffee, label: 'Répondeurs' },
     { id: 'mailtemplates' as const, icon: FileText, label: 'Modèles' },
+    { id: 'rules' as const, icon: Filter, label: 'Règles' },
     { id: 'calendars' as const, icon: Calendar, label: 'Calendriers' },
     { id: 'o2switch' as const, icon: Server, label: 'O2Switch' },
     { id: 'plugins' as const, icon: Plug, label: 'Plugins' },
@@ -103,6 +105,7 @@ export default function AdminPage() {
             {tab === 'mailaccounts' && <MailAccountManagement />}
             {tab === 'autoresponders' && <AdminAutoResponders />}
             {tab === 'mailtemplates' && <AdminMailTemplates />}
+            {tab === 'rules' && <AdminRulesManagement />}
             {tab === 'calendars' && <AdminCalendarManagement />}
             {tab === 'o2switch' && <O2SwitchManagement />}
             {tab === 'plugins' && <PluginManagement />}

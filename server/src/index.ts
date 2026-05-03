@@ -23,6 +23,7 @@ import { searchRouter } from './routes/search';
 import { pushRouter } from './routes/push';
 import { autoResponderRouter } from './routes/autoResponder';
 import { mailTemplateRouter, adminMailTemplateRouter } from './routes/mailTemplates';
+import { rulesRouter, adminRulesRouter } from './routes/rules';
 import { nextcloudFilesRouter } from './routes/nextcloudFiles';
 import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES } from './routes/branding';
 import fs from 'fs';
@@ -119,6 +120,8 @@ app.use('/api/push', authMiddleware, pushRouter);
 app.use('/api/auto-responder', authMiddleware, autoResponderRouter);
 app.use('/api/mail-templates', authMiddleware, mailTemplateRouter);
 app.use('/api/admin/mail-templates', authMiddleware, adminMailTemplateRouter);
+app.use('/api/rules', authMiddleware, rulesRouter);
+app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
 
 // Serve uploaded files

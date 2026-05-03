@@ -4,6 +4,7 @@ import { MailService } from './mail';
 import { notifyWithPush, hasActiveWebSocket } from './websocket';
 import { logger } from '../utils/logger';
 import { maybeSendAutoReply } from './autoResponderService';
+import { applyRulesToIncoming } from './mailRules';
 import {
   loadUserNotificationPrefs, classifyPlatform, buildPlatformPayload,
 } from './notificationPrefs';
@@ -195,6 +196,22 @@ async function checkAccount(row: any) {
   for (const uid of toNotify) {
     try {
       const msg = await service.getMessage('INBOX', uid);
+
+      // Apply Outlook-style rules BEFORE notifying / responding so a rule
+      // that moves or deletes the message also silences the badge.
+      const ruleResult = await applyRulesToIncoming(
+        { id: row.id, user_id: row.user_id, email: row.email, name: row.name },
+        uid,
+        msg,
+        service,
+      ).catch((err) => {
+        logger.debug({ err, accountId: row.id }, 'mail-rules apply failed');
+        return { removed: false, markedRead: false, silence: false, matched: 0 } as const;
+      });
+      if (ruleResult.silence) {
+        continue;
+      }
+
       const subject = (msg?.subject || '(Sans objet)').toString().slice(0, 140);
       const fromName = msg?.from?.name || msg?.from?.address || 'Expéditeur inconnu';
       const preview = stripHtml(msg?.bodyText || msg?.bodyHtml || '').slice(0, 160);

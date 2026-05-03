@@ -12,6 +12,7 @@ import ComposeModal from '../components/mail/ComposeModal';
 import type { ComposeApi } from '../components/mail/ComposeModal';
 import Ribbon from '../components/mail/Ribbon';
 import AutoResponderModal from '../components/mail/AutoResponderModal';
+import RulesModal from '../components/mail/RulesModal';
 import EmojiPanel from '../components/mail/EmojiPanel';
 import GifPanel from '../components/mail/GifPanel';
 import { MailTemplatePickerModal, MailTemplatesManagerModal } from '../components/mail/MailTemplates';
@@ -1552,6 +1553,8 @@ export default function MailPage() {
   const [contextCategoryPicker, setContextCategoryPicker] = useState<{ message: any; x: number; y: number } | null>(null);
   // Auto-responder modal (vacation responder).
   const [autoResponderOpen, setAutoResponderOpen] = useState(false);
+  // Mail rules modal (Outlook-style rules manager).
+  const [rulesOpen, setRulesOpen] = useState(false);
   const { data: autoResponderFeature } = useQuery({
     queryKey: ['auto-responder-feature-settings'],
     queryFn: api.getAutoResponderFeatureSettings,
@@ -1786,6 +1789,7 @@ export default function MailPage() {
           messageCategoryIds={selectedMessageCategoryIds}
           onOpenAutoResponder={autoResponderFeatureEnabled ? () => setAutoResponderOpen(true) : undefined}
           autoResponderEnabled={!!autoResponderStatus?.enabled}
+          onOpenRules={() => setRulesOpen(true)}
         />
       </div>
 
@@ -2363,6 +2367,14 @@ export default function MailPage() {
           onClose={() => setAutoResponderOpen(false)}
           accountId={selectedAccount?.id}
           accounts={accounts}
+        />
+      )}
+
+      {/* Outlook-style rules modal triggered from the ribbon. */}
+      {rulesOpen && (
+        <RulesModal
+          onClose={() => setRulesOpen(false)}
+          defaultAccountId={selectedAccount?.id || null}
         />
       )}
 
