@@ -250,7 +250,7 @@ Utilisez le template suivant dans les Issues :
 ### Environnement
 - OS : [ex. Windows 11]
 - Navigateur : [ex. Chrome 120]
-- Version WebMail : [ex. 1.0.0]
+"- Version WebMail : [ex. 1.0.0]" * Pas encore implémenter
 - Docker : [Oui/Non, version]
 ```
 
