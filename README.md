@@ -157,6 +157,15 @@ Vous pouvez ajouter vos images et captures d'écran dans le dossier `docs/images
 | :---: | :---: |
 | ![Onglet Insérer](docs/images/ribbon-inserer.png) | ![Onglet Message](docs/images/ribbon-message.png) |
 
+### Fonctionnalités avancées
+| Gestion des Règles | Modèles de mail |
+| :---: | :---: |
+| ![Création de règle](docs/images/new-rule.png) | ![Modèles de mail](docs/images/mail-templates.png) |
+
+| Éditeur de signatures | |
+| :---: | :---: |
+| ![Éditeur de signatures](docs/images/signature-editor.png) | |
+
 ### Paramètres de l'application
 | Sécurité (Biométrie) | Répondeur Automatique |
 | :---: | :---: |
