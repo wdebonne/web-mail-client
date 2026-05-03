@@ -20,6 +20,7 @@ L'API utilise deux méthodes d'authentification :
 - [Contacts](#contacts)
 - [Calendrier](#calendrier)
 - [Paramètres](#paramètres)
+- [Modèles de mail](#modèles-de-mail)
 - [Administration](#administration)
 - [Nextcloud Files](#nextcloud-files-par-utilisateur)
 - [Dashboard](#dashboard)
@@ -992,6 +993,97 @@ Change le mot de passe.
   "newPassword": "nouveau_fort"
 }
 ```
+
+---
+
+## Modèles de mail
+
+> 🔒 Authentification requise
+
+### GET /api/mail-templates
+
+Liste les modèles visibles par l'utilisateur connecté : ses modèles personnels, les modèles globaux et ceux partagés (directement ou via un groupe d'appartenance).
+
+**Réponse :**
+```json
+[
+  {
+    "id": "uuid",
+    "ownerUserId": "uuid|null",
+    "ownerEmail": "owner@example.com",
+    "ownerDisplayName": "Jean Dupont",
+    "name": "Réponse standard",
+    "subject": "Re: votre demande",
+    "bodyHtml": "<p>Bonjour,</p>",
+    "isGlobal": false,
+    "scope": "owned",
+    "createdAt": "2025-…",
+    "updatedAt": "2025-…"
+  }
+]
+```
+
+`scope` vaut `owned` (modèle créé par l'utilisateur), `global` (modèle administrateur visible par tous) ou `shared` (partagé avec l'utilisateur ou l'un de ses groupes).
+
+### POST /api/mail-templates
+
+Crée un modèle personnel pour l'utilisateur courant.
+
+**Body :**
+```json
+{ "name": "Modèle X", "subject": "Objet", "bodyHtml": "<p>…</p>" }
+```
+
+### PUT /api/mail-templates/:id
+
+Met à jour un modèle dont l'utilisateur est propriétaire. Mêmes champs que `POST`.
+
+### DELETE /api/mail-templates/:id
+
+Supprime un modèle (cascade sur ses partages). Réservé au propriétaire.
+
+### GET /api/mail-templates/:id/shares
+
+Liste les partages d'un modèle.
+
+**Réponse :**
+```json
+[
+  {
+    "id": "uuid",
+    "userId": "uuid|null",
+    "groupId": "uuid|null",
+    "userEmail": "alice@example.com",
+    "userDisplayName": "Alice",
+    "groupName": null
+  }
+]
+```
+
+### POST /api/mail-templates/:id/shares
+
+Ajoute un partage. Exactement un des deux champs doit être renseigné (XOR `userId` / `groupId`).
+
+**Body :**
+```json
+{ "userId": "uuid", "groupId": null }
+```
+
+### DELETE /api/mail-templates/:id/shares/:shareId
+
+Retire un partage donné.
+
+### Variantes administrateur
+
+> 🔒 Authentification requise + rôle `admin`
+
+Les routes ci-dessus existent en miroir sous `/api/admin/mail-templates` et permettent à un administrateur d'opérer sur **tous** les modèles de la plateforme :
+
+- `GET /api/admin/mail-templates` — liste tous les modèles (personnels de tous les utilisateurs + globaux), avec colonnes `ownerEmail` / `ownerDisplayName` enrichies.
+- `POST /api/admin/mail-templates` — crée un modèle. Champs additionnels : `isGlobal: boolean` (modèle visible par tous, `ownerUserId` doit alors être `null`) et `ownerUserId: string | null` (assigne le modèle à un utilisateur spécifique).
+- `PUT /api/admin/mail-templates/:id` — modifie n'importe quel modèle, y compris pour basculer entre *global* et *personnel* via `isGlobal` / `ownerUserId`.
+- `DELETE /api/admin/mail-templates/:id` — supprime n'importe quel modèle.
+- `GET|POST|DELETE /api/admin/mail-templates/:id/shares[/:shareId]` — gère les partages d'un modèle pour le compte de son propriétaire.
 
 ---
 

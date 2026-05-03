@@ -374,6 +374,14 @@ admin_logs                o2switch_accounts
                           ├── mail_account_id (FK, nullable)
                           ├── auto_synced
                           └── created_at
+
+mail_templates                       mail_template_shares
+├── id (UUID, PK)                    ├── id (UUID, PK)
+├── owner_user_id (FK, nullable)     ├── template_id (FK → mail_templates)
+├── name, subject, body_html         ├── user_id (FK, nullable)  ─┐ XOR
+├── is_global (bool)                 ├── group_id (FK, nullable) ─┘
+├── created_at / updated_at          └── created_at
+└── CHECK (is_global XOR owner)
 ```
 
 ---
