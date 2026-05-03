@@ -319,7 +319,7 @@ Depuis **Paramètres → Notifications → Personnalisation**, chaque utilisateu
 
 - **Templates titre / corps** : variables `{sender}`, `{senderEmail}`, `{accountEmail}`, `{accountName}`, `{appName}`, `{siteUrl}`, `{subject}`, `{preview}`.
 - **Visibilité** : afficher l'expéditeur, l'aperçu, l'image, le compte, l'icône d'app, l'horodatage.
-- **Actions de type Outlook** : presets *Outlook* (**Archiver / Supprimer / Répondre**), *Lecture seule* (Marquer comme lu / Drapeau), *Minimal* (Ouvrir / Ignorer), ou personnalisé. Les limites Web Push sont respectées : **2 actions max sur desktop**, **3 sur mobile/tablette**.
+- **Actions de style messagerie professionnelle** : presets *style messagerie professionnelle* (**Archiver / Supprimer / Répondre**), *Lecture seule* (Marquer comme lu / Drapeau), *Minimal* (Ouvrir / Ignorer), ou personnalisé. Les limites Web Push sont respectées : **2 actions max sur desktop**, **3 sur mobile/tablette**.
 - **Son** : 5 sons synthétisés via Web Audio (ding, chime, pop, whistle, system) ou URL custom + slider de volume. Bouton **Écouter**.
 - **Vibration** : aucun / court / standard / long / motif personnalisé. Bouton **Tester la vibration**.
 - **Regroupement** : un tag par message / par compte / global (`renotify` est synchronisé en conséquence).
@@ -337,9 +337,9 @@ Le menu **Admin → Notifications** permet de définir les **valeurs par défaut
 
 Le serveur charge les préférences au moment de l'envoi (cache mémoire 60 s, invalidé à la sauvegarde) et construit un payload **distinct par abonnement push** en fonction de sa plateforme détectée (colonne `push_subscriptions.platform` + `User-Agent`). Voir [server/src/services/notificationPrefs.ts](../server/src/services/notificationPrefs.ts) (`buildPlatformPayload`) et [server/src/services/push.ts](../server/src/services/push.ts) (`sendPushToUser` accepte une fonction *builder*).
 
-#### Actions Outlook → URL profonde
+#### Actions style messagerie professionnelle → URL profonde
 
-Quand l'utilisateur clique sur une action Outlook dans la notification, le Service Worker mappe l'action vers une URL profonde du type `/mail/{accountId}/INBOX?notifAction=archive&notifUid=1234`. La page **Courrier** détecte ces paramètres au chargement, exécute la mutation correspondante (déplacement vers Archive, suppression vers Corbeille, marquage comme lu, drapeau, ou ouverture du composer en mode réponse), puis nettoie l'URL via `history.replaceState`. **Aucun clic supplémentaire n'est requis**.
+Quand l'utilisateur clique sur une action style messagerie professionnelle dans la notification, le Service Worker mappe l'action vers une URL profonde du type `/mail/{accountId}/INBOX?notifAction=archive&notifUid=1234`. La page **Courrier** détecte ces paramètres au chargement, exécute la mutation correspondante (déplacement vers Archive, suppression vers Corbeille, marquage comme lu, drapeau, ou ouverture du composer en mode réponse), puis nettoie l'URL via `history.replaceState`. **Aucun clic supplémentaire n'est requis**.
 
 #### Limite OS du nombre d'actions affichées
 
@@ -356,14 +356,14 @@ L'aperçu live du panneau **Réglages → Notifications** lit cette valeur au ru
 
 ### Pastille (badge) sur l'icône PWA — Web App Badging API
 
-Une pastille type Outlook (24 sur l'icône d'application) peut être activée et personnalisée depuis **Paramètres → Notifications → Pastille de l'application**.
+Une pastille style messagerie professionnelle (24 sur l'icône d'application) peut être activée et personnalisée depuis **Paramètres → Notifications → Pastille de l'application**.
 
 #### Options exposées à l'utilisateur
 
 | Option | Valeurs | Description |
 |--------|---------|-------------|
 | Activer/désactiver | toggle | Coupe entièrement la pastille (`navigator.clearAppBadge()` est appelé immédiatement). |
-| Type d'information | `inbox-unread` (défaut, comme Outlook) / `inbox-recent` / `inbox-total` | Source agrégée par le serveur via IMAP `STATUS`. |
+| Type d'information | `inbox-unread` (défaut, comme style messagerie professionnelle) / `inbox-recent` / `inbox-total` | Source agrégée par le serveur via IMAP `STATUS`. |
 | Comptes pris en compte | `all` / `default` | Cumule sur tous les comptes assignés et possédés, ou ne tient compte que du compte par défaut. |
 | Cadence de rafraîchissement | 1 à 60 minutes | Polling en arrière-plan (suspendu quand l'onglet est masqué). |
 | Plafond d'affichage | 1 à 99 999 | Au-delà, l'OS affiche typiquement « 99+ ». |
@@ -597,7 +597,7 @@ Le fichier manifest est généré automatiquement par `vite-plugin-pwa` avec :
 |-----------|--------|
 | `name` | WebMail - Client de messagerie |
 | `short_name` | WebMail |
-| `theme_color` | `#0078d4` (bleu Outlook) |
+| `theme_color` | `#0078d4` (bleu style messagerie professionnelle) |
 | `background_color` | `#f3f2f1` |
 | `display` | `standalone` |
 | `orientation` | `any` |

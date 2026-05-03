@@ -131,7 +131,7 @@ NODE_ENV=production
 DEFAULT_IMAP_PORT=993
 DEFAULT_SMTP_PORT=465
 
-# ===== OAuth2 Microsoft (Outlook / Microsoft 365) =====
+# ===== OAuth2 Microsoft (style messagerie professionnelle / Microsoft 365) =====
 # Requis pour connecter les comptes Microsoft 365 avec MFA (Authenticator).
 # Ces variables sont PRIORITAIRES sur les valeurs saisies dans l'UI Admin
 # (Administration → Comptes mail → Configuration OAuth Microsoft).
@@ -172,8 +172,8 @@ Au clic sur **+ Nouveau compte**, un sélecteur affiche les fournisseurs pris en
 
 | Fournisseur | IMAP | SMTP | Remarques |
 |-------------|------|------|-----------|
-| **Outlook / Microsoft 365** | `outlook.office365.com:993` | `smtp.office365.com:587` | **OAuth2 obligatoire** (bouton « Se connecter avec Microsoft ») — Basic Auth est désactivé par Microsoft depuis 2022 |
-| **Gmail** | `imap.gmail.com:993` | `smtp.gmail.com:465` | IMAP doit être activé ; mot de passe d'application requis |
+| **style messagerie professionnelle / Microsoft 365** | `style messagerie professionnelle.office365.com:993` | `smtp.office365.com:587` | **OAuth2 obligatoire** (bouton « Se connecter avec Microsoft ») — Basic Auth est désactivé par Microsoft depuis 2022 |
+| **des webmails courants** | `imap.des webmails courants.com:993` | `smtp.des webmails courants.com:465` | IMAP doit être activé ; mot de passe d'application requis |
 | **Yahoo Mail** | `imap.mail.yahoo.com:993` | `smtp.mail.yahoo.com:465` | Mot de passe d'application requis |
 | **iCloud Mail** | `imap.mail.me.com:993` | `smtp.mail.me.com:587` | Mot de passe d'application Apple ID requis |
 | **O2Switch** | saisie manuelle | saisie manuelle | Active la synchro CalDAV + CardDAV |
@@ -181,9 +181,9 @@ Au clic sur **+ Nouveau compte**, un sélecteur affiche les fournisseurs pris en
 
 Pour les quatre premiers fournisseurs, les champs serveur et port sont masqués (résumé en lecture seule) et l'identifiant est automatiquement l'adresse e-mail. Seul le mot de passe (d'application si nécessaire) reste à saisir.
 
-### Microsoft 365 / Outlook — Authentification OAuth2
+### Microsoft 365 / style messagerie professionnelle — Authentification OAuth2
 
-Microsoft a désactivé l'authentification basique IMAP/SMTP en septembre 2022. Les comptes Outlook.com, Hotmail, Live et Microsoft 365 — et *a fortiori* ceux protégés par Microsoft Authenticator — doivent obligatoirement passer par OAuth2.
+Microsoft a désactivé l'authentification basique IMAP/SMTP en septembre 2022. Les comptes style messagerie professionnelle.com, Hotmail, Live et Microsoft 365 — et *a fortiori* ceux protégés par Microsoft Authenticator — doivent obligatoirement passer par OAuth2.
 
 **Deux façons de fournir les identifiants Azure (Microsoft Entra ID) — variables d'environnement prioritaires :**
 
@@ -211,7 +211,7 @@ Microsoft a désactivé l'authentification basique IMAP/SMTP en septembre 2022. 
 4. **Configurer l'application**, au choix :
    - Via Portainer : ajoutez les variables dans la stack et redémarrez le conteneur.
    - Via l'UI : **Administration → Comptes mail → Configuration OAuth Microsoft** (panneau dépliable en haut de la liste), remplissez les champs et **Enregistrer**. Prend effet immédiatement sans redémarrage.
-5. **Connecter un compte** : **+ Nouveau compte → Outlook / Microsoft 365 → Se connecter avec Microsoft**. Authentifiez-vous (mot de passe + Microsoft Authenticator), acceptez les permissions, cliquez **Enregistrer**. Le serveur stocke un `refresh_token` chiffré (AES-256-GCM) et rafraîchit automatiquement le jeton d'accès avant chaque opération IMAP/SMTP.
+5. **Connecter un compte** : **+ Nouveau compte → style messagerie professionnelle / Microsoft 365 → Se connecter avec Microsoft**. Authentifiez-vous (mot de passe + Microsoft Authenticator), acceptez les permissions, cliquez **Enregistrer**. Le serveur stocke un `refresh_token` chiffré (AES-256-GCM) et rafraîchit automatiquement le jeton d'accès avant chaque opération IMAP/SMTP.
 
 Pour reconnecter un compte dont le refresh token a été révoqué (changement de mot de passe, consentement révoqué), rouvrez la fiche du compte et cliquez sur **Reconnecter**.
 
@@ -238,24 +238,24 @@ Pour reconnecter un compte dont le refresh token a été révoqué (changement d
 | Identifiant | `adresse@votre-domaine.com` |
 | Mot de passe | Mot de passe email cPanel |
 
-### Paramètres pour Gmail
+### Paramètres pour des webmails courants
 
 | Paramètre | Valeur |
 |-----------|--------|
-| Serveur IMAP | `imap.gmail.com` |
+| Serveur IMAP | `imap.des webmails courants.com` |
 | Port IMAP | `993` |
-| Serveur SMTP | `smtp.gmail.com` |
+| Serveur SMTP | `smtp.des webmails courants.com` |
 | Port SMTP | `465` |
-| Identifiant | `votre-adresse@gmail.com` |
+| Identifiant | `votre-adresse@des webmails courants.com` |
 | Mot de passe | Mot de passe d'application |
 
-> ⚠️ Gmail nécessite un [mot de passe d'application](https://support.google.com/accounts/answer/185833).
+> ⚠️ des webmails courants nécessite un [mot de passe d'application](https://support.google.com/accounts/answer/185833).
 
-### Paramètres pour Outlook.com / Office 365
+### Paramètres pour style messagerie professionnelle.com / Office 365
 
 | Paramètre | Valeur |
 |-----------|--------|
-| Serveur IMAP | `outlook.office365.com` |
+| Serveur IMAP | `style messagerie professionnelle.office365.com` |
 | Port IMAP | `993` |
 | Serveur SMTP | `smtp.office365.com` |
 | Port SMTP | `587` |
@@ -316,18 +316,18 @@ volumes:
 
 ## Configuration Tailwind / Thème
 
-Le thème visuel Outlook est défini dans `client/tailwind.config.js`. Les couleurs principales :
+Le thème visuel style messagerie professionnelle est défini dans `client/tailwind.config.js`. Les couleurs principales :
 
 | Nom | Valeur | Usage |
 |-----|--------|-------|
-| `outlook-blue` | `#0078d4` | Couleur primaire |
-| `outlook-dark-blue` | `#106ebe` | Hover |
-| `outlook-light-blue` | `#deecf9` | Sélection |
-| `outlook-bg-primary` | `#f3f2f1` | Fond principal |
-| `outlook-bg-secondary` | `#ffffff` | Fond secondaire |
-| `outlook-border` | `#edebe9` | Bordures |
-| `outlook-text-primary` | `#323130` | Texte principal |
-| `outlook-text-secondary` | `#605e5c` | Texte secondaire |
+| `style messagerie professionnelle-blue` | `#0078d4` | Couleur primaire |
+| `style messagerie professionnelle-dark-blue` | `#106ebe` | Hover |
+| `style messagerie professionnelle-light-blue` | `#deecf9` | Sélection |
+| `style messagerie professionnelle-bg-primary` | `#f3f2f1` | Fond principal |
+| `style messagerie professionnelle-bg-secondary` | `#ffffff` | Fond secondaire |
+| `style messagerie professionnelle-border` | `#edebe9` | Bordures |
+| `style messagerie professionnelle-text-primary` | `#323130` | Texte principal |
+| `style messagerie professionnelle-text-secondary` | `#605e5c` | Texte secondaire |
 
 ---
 

@@ -19,12 +19,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **Schéma serveur** ([server/src/database/connection.ts](server/src/database/connection.ts)) : nouvelles tables `mail_templates` (UUID, `owner_user_id` *nullable*, `name`, `subject`, `body_html`, `is_global`, contrainte `CHECK ((is_global=true AND owner_user_id IS NULL) OR (is_global=false AND owner_user_id IS NOT NULL))`) et `mail_template_shares` avec FK + index. Création idempotente au démarrage.
 - **API REST** ([server/src/routes/mailTemplates.ts](server/src/routes/mailTemplates.ts)) : routes utilisateur `GET/POST/PUT/DELETE /api/mail-templates[/:id]`, partages `GET/POST/DELETE /api/mail-templates/:id/shares[/:shareId]`, et leurs équivalents admin sous `/api/admin/mail-templates` (avec `isGlobal` et `ownerUserId` modifiables). `GET` retourne les modèles possédés + globaux + partagés (via `user_id` ou groupes appartenance) avec `scope = 'owned' | 'global' | 'shared'`. Sanitization HTML alignée sur le pipeline compose (`sanitize-html` avec balises et data URI d'images autorisés).
 
-#### Pastille (badge) sur l'icône PWA — type Outlook
+#### Pastille (badge) sur l'icône PWA — style messagerie professionnelle
 
-- **Compteur visible sur l'icône d'application** ([client/src/services/appBadgeService.ts](client/src/services/appBadgeService.ts)) : utilise la **Web App Badging API** (`navigator.setAppBadge` / `clearAppBadge`) pour afficher un nombre directement sur l'icône de la PWA installée — exactement comme Outlook (24). Mise à jour automatique au démarrage, à chaque retour au premier plan (`visibilitychange`), au retour de connexion (`online`), à la réception d'une notification push (message du Service Worker) et à intervalle configurable.
+- **Compteur visible sur l'icône d'application** ([client/src/services/appBadgeService.ts](client/src/services/appBadgeService.ts)) : utilise la **Web App Badging API** (`navigator.setAppBadge` / `clearAppBadge`) pour afficher un nombre directement sur l'icône de la PWA installée — exactement comme style messagerie professionnelle (24). Mise à jour automatique au démarrage, à chaque retour au premier plan (`visibilitychange`), au retour de connexion (`online`), à la réception d'une notification push (message du Service Worker) et à intervalle configurable.
 - **Personnalisation utilisateur** ([client/src/components/notifications/NotificationPreferencesEditor.tsx](client/src/components/notifications/NotificationPreferencesEditor.tsx), [client/src/utils/notificationPrefs.ts](client/src/utils/notificationPrefs.ts)) : nouvelle section *Pastille de l'application* dans **Réglages → Notifications**. Options exposées :
   - **Activer/désactiver** la pastille ;
-  - **Type d'information** : *mails non lus* (UNSEEN — défaut Outlook), *nouveaux mails reçus* (RECENT) ou *total des mails dans la boîte de réception* ;
+  - **Type d'information** : *mails non lus* (UNSEEN — défaut style messagerie professionnelle), *nouveaux mails reçus* (RECENT) ou *total des mails dans la boîte de réception* ;
   - **Comptes pris en compte** : *tous mes comptes (cumulé)* ou *compte par défaut uniquement* ;
   - **Cadence de rafraîchissement** (1 à 60 minutes) ;
   - **Plafond d'affichage** (au-delà l'OS affiche « 99+ »).
@@ -39,13 +39,13 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 #### Personnalisation avancée des notifications push (par plateforme : PC / mobile / tablette)
 
-- **Schéma de préférences unifié** ([client/src/utils/notificationPrefs.ts](client/src/utils/notificationPrefs.ts)) : nouvelle clé `notifications.prefs.v1` avec trois sous-blocs indépendants `desktop`, `mobile`, `tablet`. Chaque plateforme définit son propre titre/corps templatisés (`{sender}`, `{senderEmail}`, `{accountEmail}`, `{accountName}`, `{appName}`, `{siteUrl}`, `{subject}`, `{preview}`), ses booléens de visibilité (afficher l'expéditeur, l'aperçu, l'image, le compte, l'icône d'app, l'horodatage), son lot d'actions (preset *Outlook* avec **Archiver / Supprimer / Répondre**, *Lecture seule*, *Minimal*, ou personnalisé), son son (5 sons synthétiques via Web Audio + URL custom), son volume, son pattern de vibration et sa stratégie de regroupement (`per-message` / `per-account` / `global`). Synchronisé multi-appareil via `BACKUP_KEYS`.
+- **Schéma de préférences unifié** ([client/src/utils/notificationPrefs.ts](client/src/utils/notificationPrefs.ts)) : nouvelle clé `notifications.prefs.v1` avec trois sous-blocs indépendants `desktop`, `mobile`, `tablet`. Chaque plateforme définit son propre titre/corps templatisés (`{sender}`, `{senderEmail}`, `{accountEmail}`, `{accountName}`, `{appName}`, `{siteUrl}`, `{subject}`, `{preview}`), ses booléens de visibilité (afficher l'expéditeur, l'aperçu, l'image, le compte, l'icône d'app, l'horodatage), son lot d'actions (preset *style messagerie professionnelle* avec **Archiver / Supprimer / Répondre**, *Lecture seule*, *Minimal*, ou personnalisé), son son (5 sons synthétiques via Web Audio + URL custom), son volume, son pattern de vibration et sa stratégie de regroupement (`per-message` / `per-account` / `global`). Synchronisé multi-appareil via `BACKUP_KEYS`.
 - **Aperçu live multi-supports** ([client/src/components/notifications/NotificationPreview.tsx](client/src/components/notifications/NotificationPreview.tsx)) : maquettes visuelles fidèles du rendu sur **Windows 11 (Centre de notifications)**, **Android (heads-up)** et **iOS (lock screen)** — l'utilisateur voit en temps réel l'effet de chaque modification (templates, actions, icônes, image, badge) avant d'appliquer.
 - **Éditeur unifié avec onglets par plateforme** ([client/src/components/notifications/NotificationPreferencesEditor.tsx](client/src/components/notifications/NotificationPreferencesEditor.tsx)) : onglets *Bureau / Mobile / Tablette* (avec auto-détection de l'appareil courant), boutons **Écouter le son**, **Tester la vibration** et **Tester le rendu sur cet appareil** (vrai `showNotification` avec actions), plus un bouton optionnel **Envoyer un test via le serveur** (vrai Web Push relayé par le serveur, donc fidèle à 100 % à la production).
 - **Réglages utilisateur** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) : nouvelle section *Personnalisation des notifications* dans l'onglet Notifications, persiste localement (effet immédiat) puis pousse vers le serveur via `prefsSync`.
 - **Réglages admin (valeurs par défaut globales)** ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : nouvel onglet **Notifications** dans le panneau Admin, qui écrit `admin_settings.notification_defaults` — appliqué automatiquement aux utilisateurs n'ayant pas encore défini leurs préférences personnelles.
 - **Pipeline serveur par-abonnement** ([server/src/services/notificationPrefs.ts](server/src/services/notificationPrefs.ts), [server/src/services/push.ts](server/src/services/push.ts), [server/src/services/websocket.ts](server/src/services/websocket.ts), [server/src/services/newMailPoller.ts](server/src/services/newMailPoller.ts)) : `sendPushToUser` accepte désormais un *builder* qui reçoit la plateforme et le `User-Agent` de chaque abonnement push enregistré, et construit un payload distinct **par appareil** (limites Web Push respectées : 2 actions desktop / 3 mobile-tablette, vibration omise sur desktop, `silent` propagé). Cache mémoire 60 s avec invalidation sur sauvegarde des préférences (utilisateur ou admin).
-- **Boutons d'action de type Outlook fonctionnels** ([client/src/sw.ts](client/src/sw.ts), [client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : remplace l'ancien duo *Lire / Ignorer*. Le Service Worker mappe les actions `archive` / `delete` / `reply` / `markRead` / `flag` vers une URL profonde `/mail/{accountId}/INBOX?notifAction=…&notifUid=…` ; la page Courrier détecte ces paramètres au chargement et déclenche directement la mutation correspondante (déplacement vers Archive, suppression vers Corbeille, marquage comme lu, drapeau, ouverture du composer en mode réponse) avant de nettoyer l'URL via `history.replaceState`. **Aucun clic supplémentaire requis** depuis la notification.
+- **Boutons d'action de style messagerie professionnelle fonctionnels** ([client/src/sw.ts](client/src/sw.ts), [client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : remplace l'ancien duo *Lire / Ignorer*. Le Service Worker mappe les actions `archive` / `delete` / `reply` / `markRead` / `flag` vers une URL profonde `/mail/{accountId}/INBOX?notifAction=…&notifUid=…` ; la page Courrier détecte ces paramètres au chargement et déclenche directement la mutation correspondante (déplacement vers Archive, suppression vers Corbeille, marquage comme lu, drapeau, ouverture du composer en mode réponse) avant de nettoyer l'URL via `history.replaceState`. **Aucun clic supplémentaire requis** depuis la notification.
 - **Lecture du son configuré au premier plan** ([client/src/pwa/push.ts](client/src/pwa/push.ts)) : lorsque l'app est ouverte au moment de l'arrivée d'un push, le SW poste un message `play-notification-sound` qui déclenche `playNotificationSound` (Web Audio + sons custom URL), contournant l'absence de prise en charge fiable du son par les Service Workers Chromium/Edge.
 
 #### Enregistrement des pièces jointes dans Nextcloud (Files)
@@ -58,10 +58,10 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 #### Mode d'affichage du corps des mails (natif / étiré)
 
-- **Nouvelle préférence globale `mail.displayMode`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : deux valeurs `native` (défaut, largeur de lecture ~820 px centrée à la Outlook) ou `stretched` (occupe toute la largeur disponible du volet de lecture). Événement `mail-display-mode-changed` pour synchroniser ruban, page Mail et vue message en temps réel.
+- **Nouvelle préférence globale `mail.displayMode`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : deux valeurs `native` (défaut, largeur de lecture ~820 px centrée à la style messagerie professionnelle) ou `stretched` (occupe toute la largeur disponible du volet de lecture). Événement `mail-display-mode-changed` pour synchroniser ruban, page Mail et vue message en temps réel.
 - **Bouton *Affichage mail* dans le ruban → onglet *Afficher*** ([client/src/components/mail/Ribbon.tsx](client/src/components/mail/Ribbon.tsx)) : présent en ruban classique et simplifié, l'icône bascule entre `Minimize2` (natif) et `Maximize2` (étiré). Menu déroulant avec les deux options et libellés explicites *Natif (largeur de lecture)* / *Étiré (toute la largeur)*.
 - **Override par message dans la vue message** ([client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : état local `localDisplayMode` (réinitialisé à chaque changement de message) qui prime sur la préférence globale, permettant d'inverser ponctuellement l'affichage d'un mail particulier.
-- **Classe CSS `.email-body-native`** ([client/src/index.css](client/src/index.css)) : applique `max-width: 820px` + `margin: auto` pour reproduire le rendu Outlook desktop centré.
+- **Classe CSS `.email-body-native`** ([client/src/index.css](client/src/index.css)) : applique `max-width: 820px` + `margin: auto` pour reproduire le rendu style messagerie professionnelle desktop centré.
 
 ### Corrigé
 
@@ -73,14 +73,14 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
   - panneau des boîtes (sommet de la pile interne) → comportement par défaut conservé, l'utilisateur peut quitter l'app/page normalement.
 - **Implémentation** : une entrée d'historique sentinelle (`history.state.__mailMobileBack = true`) est poussée au montage et re-poussée après chaque retour consommé, garantissant que les appuis successifs continuent d'être capturés. Une `mobileViewRef` synchronisée évite les fermetures obsolètes dans le handler `popstate`. Au démontage, la sentinelle est consommée si elle est encore en haut de la pile, pour ne pas exiger un appui retour supplémentaire en quittant la page Courrier. Sur tablette/desktop (`md+`), tous les panneaux étant visibles simultanément, l'interception n'est pas activée — le retour OS conserve son comportement par défaut.
 
-#### Affichage des mails sur mobile (parité Outlook)
+#### Affichage des mails sur mobile (parité style messagerie professionnelle)
 
 - **Plus aucun débordement horizontal sur mobile** ([client/src/index.css](client/src/index.css), [client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : les newsletters HTML (typiquement `<table width="600">`) sortaient du viewport et imposaient un défilement horizontal. Deux corrections combinées :
-  - **CSS `@media (max-width: 767px)`** : toutes les `table / tbody / tr / td / th` du `.email-body` passent en `display: block !important; width: 100% !important;` — les colonnes des newsletters s'empilent verticalement, exactement comme dans l'app mobile Outlook / Gmail. `min-width: 0 !important` + `max-width: 100% !important` + `box-sizing: border-box` sur **tous** les descendants neutralisent les `width:600` / `min-width:600` inline. `word-break: break-word` + `overflow-wrap: anywhere` cassent les longues URL de tracking.
+  - **CSS `@media (max-width: 767px)`** : toutes les `table / tbody / tr / td / th` du `.email-body` passent en `display: block !important; width: 100% !important;` — les colonnes des newsletters s'empilent verticalement, exactement comme dans l'app mobile style messagerie professionnelle / des webmails courants. `min-width: 0 !important` + `max-width: 100% !important` + `box-sizing: border-box` sur **tous** les descendants neutralisent les `width:600` / `min-width:600` inline. `word-break: break-word` + `overflow-wrap: anywhere` cassent les longues URL de tracking.
   - **Conteneurs flex shrinkables** : ajout de `min-w-0` sur le wrapper racine `motion.div` et sur les deux conteneurs scrollables du corps (mode thread + mode message simple). Sans cela, la valeur par défaut `min-width: auto` des flex items refusait de réduire les tableaux de largeur fixe sous leur taille de contenu intrinsèque.
 - **Barre d'objet masquée sur mobile en vue message simple** ([client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : doublon avec l'objet déjà visible à droite du bouton retour. Conditionnée par `${isThreadMode ? '' : 'hidden md:block'}` — gain de hauteur appréciable sur petit écran. Reste visible en mode conversation (où plusieurs messages partagent la barre).
 - **Informations de l'expéditeur repliables sur mobile** ([client/src/components/mail/MessageView.tsx](client/src/components/mail/MessageView.tsx)) : nouvel état `mobileSenderExpanded` (défaut `false`, réinitialisé à chaque changement de message). Un bouton mobile affiche le nom + chevron (`ChevronRight` / `ChevronDown`) ; replié, seul le nom apparaît, déplié on retrouve l'email entre `< >`, les destinataires (`À :` / `Cc :`) et la date. Sur desktop (`md+`) la disposition originale reste affichée intégralement.
-- **Centrage du corps de mail sur desktop** ([client/src/index.css](client/src/index.css)) : auparavant collé à gauche, le corps est désormais centré (`margin-left: auto; margin-right: auto`) avec une largeur de lecture confortable de 820 px en mode natif, parité avec Outlook desktop. Les tables centrées des newsletters (`<center><table>`) restent correctement centrées (la règle `width: auto` qui collapsait les tables 600 px à leur contenu a été retirée).
+- **Centrage du corps de mail sur desktop** ([client/src/index.css](client/src/index.css)) : auparavant collé à gauche, le corps est désormais centré (`margin-left: auto; margin-right: auto`) avec une largeur de lecture confortable de 820 px en mode natif, parité avec style messagerie professionnelle desktop. Les tables centrées des newsletters (`<center><table>`) restent correctement centrées (la règle `width: auto` qui collapsait les tables 600 px à leur contenu a été retirée).
 
 #### Répondeur d'absence (vacation auto-responder)
 
@@ -146,7 +146,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 #### Sélecteur de vue calendrier et recherche unifiée sur mobile / tablette
 
-- **Sélecteur de vue style Outlook** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : sur mobile et tablette (`< lg`, 1024 px), un bouton dédié situé en haut à droite du panneau calendrier (à côté de l'icône loupe) permet de basculer librement entre les vues **Jour**, **Semaine de travail**, **Semaine**, **Mois** et **Agenda**. L'icône reflète la vue active (`Calendar`, `CalendarRange`, `CalendarDays`, `List`) et un menu déroulant met en surbrillance la vue courante avec une coche. Le verrouillage automatique en vue *Jour* sur petits écrans a été supprimé : seul `dayCount` reste forcé à 1 pour préserver la lisibilité. Sur desktop (`lg+`), le ruban classique reste l'unique point d'accès aux vues.
+- **Sélecteur de vue style messagerie professionnelle** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : sur mobile et tablette (`< lg`, 1024 px), un bouton dédié situé en haut à droite du panneau calendrier (à côté de l'icône loupe) permet de basculer librement entre les vues **Jour**, **Semaine de travail**, **Semaine**, **Mois** et **Agenda**. L'icône reflète la vue active (`Calendar`, `CalendarRange`, `CalendarDays`, `List`) et un menu déroulant met en surbrillance la vue courante avec une coche. Le verrouillage automatique en vue *Jour* sur petits écrans a été supprimé : seul `dayCount` reste forcé à 1 pour préserver la lisibilité. Sur desktop (`lg+`), le ruban classique reste l'unique point d'accès aux vues.
 - **Boîte de dialogue de recherche unifiée** ([client/src/components/calendar/UnifiedSearchDialog.tsx](client/src/components/calendar/UnifiedSearchDialog.tsx)) : nouvelle icône loupe en haut à droite de la page calendrier (mobile/tablette uniquement) qui ouvre une recherche **transverse à tous les agendas et toutes les boîtes mail** de l'utilisateur, en s'appuyant sur l'endpoint serveur existant `GET /api/search`. Champ de saisie avec debounce de 250 ms, indicateur de chargement, fermeture par `ESC` ou clic en dehors. Résultats regroupés en deux sections : **Événements** (pastille couleur du calendrier, date/heure formatées en français, lieu, calendrier d'origine) et **E-mails** (objet, expéditeur, snippet, date). Cliquer un événement bascule la page calendrier en vue *Jour* à la date de l'événement ; cliquer un e-mail navigue vers `/mail?search=…`.
 
 ### Modifié
@@ -190,19 +190,19 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 #### Pages Contacts, Paramètres et Administration responsives (mobile / tablette)
 
-- **Pages *Paramètres* et *Administration* adaptées aux petits écrans** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx), [client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : la barre latérale verticale `w-56` (qui amputait l'espace de contenu sur mobile/tablette) est remplacée en `< md` (768 px) par une **barre d'onglets horizontale défilable** (`overflow-x-auto`) collée en haut. Chaque onglet conserve son icône et son libellé et bascule sur la pastille bleue Outlook lorsqu'il est actif. En `md+`, la disposition historique (sidebar verticale + contenu à droite) est préservée. Le padding du conteneur passe à `p-3 sm:p-4 md:p-6` pour récupérer de la place sur petit écran.
+- **Pages *Paramètres* et *Administration* adaptées aux petits écrans** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx), [client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : la barre latérale verticale `w-56` (qui amputait l'espace de contenu sur mobile/tablette) est remplacée en `< md` (768 px) par une **barre d'onglets horizontale défilable** (`overflow-x-auto`) collée en haut. Chaque onglet conserve son icône et son libellé et bascule sur la pastille bleue style messagerie professionnelle lorsqu'il est actif. En `md+`, la disposition historique (sidebar verticale + contenu à droite) est préservée. Le padding du conteneur passe à `p-3 sm:p-4 md:p-6` pour récupérer de la place sur petit écran.
 - **Page *Contacts* en vue maître/détail responsive** ([client/src/pages/ContactsPage.tsx](client/src/pages/ContactsPage.tsx)) : sur mobile/tablette (`< md`), la liste des contacts occupe toute la largeur tant qu'aucun contact n'est sélectionné ; en cliquant sur un contact, la fiche détaillée prend le relais en plein écran avec un bouton **« Retour »** (icône `ChevronLeft`) en barre supérieure pour revenir à la liste. La poignée de redimensionnement de la barre latérale est masquée (`hidden md:block`) sur petits écrans. La largeur fixe (`sidebarWidth`) n'est appliquée qu'à partir de 768 px ; en dessous, la liste utilise `w-full`. Le comportement côte-à-côte historique est conservé sur desktop (`md+`).
 
 #### Vue Agenda dans le calendrier
 
-- **Nouvelle vue « Agenda »** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx), [client/src/components/calendar/CalendarRibbon.tsx](client/src/components/calendar/CalendarRibbon.tsx)) : liste plate de tous les événements groupés par jour, à la manière d'Outlook Mobile. Chaque jour affiche un en-tête (`mardi 25 avril`) — coloré en bleu si c'est aujourd'hui — suivi de ses événements triés (les *Toute la journée* en premier, puis chronologiquement). Pastille colorée du calendrier, heure de début, titre et lieu. Accessible depuis tous les rubans (simplifié + classique, onglets *Accueil* et *Afficher*) et le menu *Vues enregistrées*.
+- **Nouvelle vue « Agenda »** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx), [client/src/components/calendar/CalendarRibbon.tsx](client/src/components/calendar/CalendarRibbon.tsx)) : liste plate de tous les événements groupés par jour, à la manière d'style messagerie professionnelle Mobile. Chaque jour affiche un en-tête (`mardi 25 avril`) — coloré en bleu si c'est aujourd'hui — suivi de ses événements triés (les *Toute la journée* en premier, puis chronologiquement). Pastille colorée du calendrier, heure de début, titre et lieu. Accessible depuis tous les rubans (simplifié + classique, onglets *Accueil* et *Afficher*) et le menu *Vues enregistrées*.
 - **Plage de chargement adaptée** : la vue Agenda charge automatiquement `currentDate − 1 mois` à `+ 2 mois` afin de couvrir le passé récent et les prochaines semaines en une seule requête. La navigation `<` `>` se fait par mois.
 - **Disponible aussi sur mobile** : contrairement aux autres vues qui sont forcées en *Jour* sur petits écrans, la vue Agenda reste utilisable telle quelle (idéale pour un usage tablette / téléphone).
 - État vide explicite avec bouton *Créer un nouvel événement*.
 
 #### Bouton flottant (FAB) sur mobile et tablette
 
-- **Nouveau composant réutilisable** [client/src/components/ui/FloatingActionButton.tsx](client/src/components/ui/FloatingActionButton.tsx) : bouton circulaire `bg-outlook-blue` (icône + label accessible), rendu uniquement en `md:hidden` (mobile/tablette) et masqué automatiquement sur desktop où le ruban suffit.
+- **Nouveau composant réutilisable** [client/src/components/ui/FloatingActionButton.tsx](client/src/components/ui/FloatingActionButton.tsx) : bouton circulaire `bg-style messagerie professionnelle-blue` (icône + label accessible), rendu uniquement en `md:hidden` (mobile/tablette) et masqué automatiquement sur desktop où le ruban suffit.
 - **Branché sur la page Messagerie** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : ouvre la fenêtre de composition (`openCompose()`). Masqué pendant qu'un brouillon est ouvert pour éviter le chevauchement.
 - **Branché sur la page Calendrier** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : ouvre le formulaire *Nouvel événement* pré-rempli sur la date courante.
 
@@ -215,7 +215,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 #### Personnalisation de la couleur des comptes (boîtes mail)
 
 - **Nouvelle clé `mail.accountColors`** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : surcharge utilisateur de la couleur d'un compte ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)). Helpers `getAccountColor`, `setAccountColorOverride` (avec validation hex `#RRGGBB`), surcharge non-destructive de la couleur fournie par le serveur (`account.color`).
-- **Menu contextuel sur le compte** : nouveau sous-menu *Couleur de la boîte mail* avec les 24 couleurs Outlook standard (`CATEGORY_COLORS`) plus *Réinitialiser la couleur*, identique à ce qui existe déjà pour les dossiers.
+- **Menu contextuel sur le compte** : nouveau sous-menu *Couleur de la boîte mail* avec les 24 couleurs style messagerie professionnelle standard (`CATEGORY_COLORS`) plus *Réinitialiser la couleur*, identique à ce qui existe déjà pour les dossiers.
 - Toutes les pastilles de couleur du compte (en-tête, dossier dépliable, bouton compact) lisent désormais via `getAccountColor(account)` pour refléter immédiatement la surcharge.
 - **Synchronisée entre appareils** via `BACKUP_KEYS`.
 
@@ -237,7 +237,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 #### Liste des messages — sélection multiple et dossiers d'envoi
 
 - **Sélection multiple en vue unifiée** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : la sélection était indexée par `uid` seul, or un même UID peut exister dans plusieurs comptes/dossiers à la fois (vues *Boîte de réception unifiée* et *Éléments envoyés unifiés*). Cocher une ligne cochait toutes les lignes ayant le même `uid`, ce qui ressemblait à des doublons. La sélection utilise désormais une clé composite `accountId:folder:uid` (`Set<string>`) — chaque ligne est indépendante.
-- **Affichage du destinataire dans les Éléments envoyés** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : pour un mail envoyé, le champ `from` correspond à l'utilisateur lui-même, ce qui affichait *Inconnu / ?* dans la liste. Un helper `isSentLikeFolder` détecte les dossiers de type Sent (multilingue : `Sent`, `Sent Items`, `Éléments envoyés`, `Gesendet`, `Enviado`, `Inviata`, `Verzonden`, `Skickat`) et la liste affiche alors le **destinataire** (`to[0]`) — nom, initiales et couleur d'avatar — comme Outlook. S'applique aussi au dossier unifié `Sent`.
+- **Affichage du destinataire dans les Éléments envoyés** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : pour un mail envoyé, le champ `from` correspond à l'utilisateur lui-même, ce qui affichait *Inconnu / ?* dans la liste. Un helper `isSentLikeFolder` détecte les dossiers de type Sent (multilingue : `Sent`, `Sent Items`, `Éléments envoyés`, `Gesendet`, `Enviado`, `Inviata`, `Verzonden`, `Skickat`) et la liste affiche alors le **destinataire** (`to[0]`) — nom, initiales et couleur d'avatar — comme style messagerie professionnelle. S'applique aussi au dossier unifié `Sent`.
 
 #### Vues unifiées — chargement bloqué avec « Tout charger »
 
@@ -316,16 +316,16 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 - **Suppression / sélection multiple involontaire dans la vue unifiée** ([client/src/stores/mailStore.ts](client/src/stores/mailStore.ts), [client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx), [client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : dans la boîte de réception unifiée, plusieurs comptes peuvent retourner le même UID IMAP. Le code comparait uniquement par `uid`, ce qui faisait que (1) `isSelected` mettait en surbrillance toutes les lignes ayant ce même UID (effet visuel « 3 messages sélectionnés alors que je n'en clique qu'un »), (2) `removeMessage(uid)` supprimait du store toutes les copies — peu importe le compte d'origine — et (3) la résolution du compte/dossier avant l'appel IMAP pouvait pointer vers le mauvais message. Désormais : `removeMessage(uid, accountId?, folder?)` filtre par UID **et** par tags d'origine `_accountId` / `_folder` ; `isSelected` compare le triplet `(uid, _accountId, _folder)` ; les callbacks `onDelete` / `onMove` / `onCopy` / `onArchive` / `onMarkRead` / `onToggleFlag` / `onSwipe` du composant `MessageList` transportent l'origine de la ligne réelle ; un nouveau helper `resolveOrigin(uid, accountId?, folder?)` privilégie ces tags et ne tombe sur la résolution par UID qu'en secours.
 - **Lenteur (plusieurs secondes) lors de la suppression / archivage / déplacement par balayage ou ruban** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : les mutations attendaient la réponse IMAP avant de retirer la ligne et d'afficher la notification. Mise à jour optimiste : `deleteMutation`, `moveMutation` et `archiveMutation` retirent immédiatement le message du store via `onMutate` (avec snapshot dans le contexte `react-query`), puis `onError` restaure l'état précédent en cas d'échec. Le swipe est désormais instantané ; le toast et l'opération IMAP suivent en arrière-plan.
-- **Liste des dossiers mail non scrollable** ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)) : la racine du `FolderPane` n'avait pas de hauteur explicite (`flex-shrink-0` sans `h-full`), donc la zone interne `flex-1 overflow-y-auto` ne se contraignait jamais et la barre de défilement n'apparaissait pas — les comptes avec beaucoup de dossiers (Outlook complet : Boîte de réception, sous-dossiers, Brouillons, Courrier indésirable, Archives, Calendrier, Contacts, Notes, Tâches, etc.) étaient tronqués. Ajout de `h-full min-h-0` sur le conteneur racine pour activer le scroll vertical.
+- **Liste des dossiers mail non scrollable** ([client/src/components/mail/FolderPane.tsx](client/src/components/mail/FolderPane.tsx)) : la racine du `FolderPane` n'avait pas de hauteur explicite (`flex-shrink-0` sans `h-full`), donc la zone interne `flex-1 overflow-y-auto` ne se contraignait jamais et la barre de défilement n'apparaissait pas — les comptes avec beaucoup de dossiers (style messagerie professionnelle complet : Boîte de réception, sous-dossiers, Brouillons, Courrier indésirable, Archives, Calendrier, Contacts, Notes, Tâches, etc.) étaient tronqués. Ajout de `h-full min-h-0` sur le conteneur racine pour activer le scroll vertical.
 - **Callback OAuth Microsoft renvoyait `Non authentifié`** ([server/src/routes/admin.ts](server/src/routes/admin.ts), [server/src/index.ts](server/src/index.ts)) : la redirection top-level depuis `login.microsoftonline.com` n'envoie que le cookie de session, pas le Bearer token du SPA — la callback bloquait donc sur `authMiddleware`. La callback est désormais exposée via un `oauthCallbackRouter` public monté avant `authMiddleware` ; l'identité admin est persistée dans `req.session.oauthUserId/oauthIsAdmin` lors du `POST /start` (avec `session.save()` attendu pour éviter une race avec l'ouverture du popup) et relue dans la callback.
 
 ### Ajouté
 
-#### Administration — Authentification OAuth2 pour Microsoft 365 / Outlook
+#### Administration — Authentification OAuth2 pour Microsoft 365 / style messagerie professionnelle
 
 - **Configuration hybride (env + UI Admin)** ([server/src/services/oauth.ts](server/src/services/oauth.ts), [client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : les identifiants Azure AD peuvent être définis soit via les variables d'environnement `MICROSOFT_OAUTH_*` (recommandé en prod via Portainer / docker-compose), soit via **Administration → Comptes mail → Configuration OAuth Microsoft** (panneau dépliable, stockage chiffré dans `admin_settings`). **Les variables d'environnement sont prioritaires champ par champ** : un `CLIENT_ID` fixé par env écrase celui en base, un secret en base est utilisé si le secret env est vide, etc. Endpoints : `GET/PUT /api/admin/oauth-settings/microsoft`.
-- **Connexion OAuth2 moderne** pour les comptes Microsoft 365, Outlook.com, Hotmail, Live protégés par Microsoft Authenticator ou MFA ([server/src/services/oauth.ts](server/src/services/oauth.ts), [server/src/routes/admin.ts](server/src/routes/admin.ts)) : Microsoft ayant désactivé l'authentification basique IMAP/SMTP en septembre 2022, ces comptes ne pouvaient plus se connecter. Ils passent désormais par le flow OAuth2 v2.0 avec scopes `IMAP.AccessAsUser.All` + `SMTP.Send` + `offline_access`.
-- **Bouton « Se connecter avec Microsoft »** dans le formulaire du fournisseur Outlook ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : ouvre une popup `login.microsoftonline.com`, l'admin s'authentifie (mot de passe + Microsoft Authenticator), la popup renvoie un identifiant éphémère via `postMessage` et le formulaire pré-remplit automatiquement l'adresse e-mail et le nom détectés depuis l'`id_token`. Plus aucun champ mot de passe n'est demandé.
+- **Connexion OAuth2 moderne** pour les comptes Microsoft 365, style messagerie professionnelle.com, Hotmail, Live protégés par Microsoft Authenticator ou MFA ([server/src/services/oauth.ts](server/src/services/oauth.ts), [server/src/routes/admin.ts](server/src/routes/admin.ts)) : Microsoft ayant désactivé l'authentification basique IMAP/SMTP en septembre 2022, ces comptes ne pouvaient plus se connecter. Ils passent désormais par le flow OAuth2 v2.0 avec scopes `IMAP.AccessAsUser.All` + `SMTP.Send` + `offline_access`.
+- **Bouton « Se connecter avec Microsoft »** dans le formulaire du fournisseur style messagerie professionnelle ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : ouvre une popup `login.microsoftonline.com`, l'admin s'authentifie (mot de passe + Microsoft Authenticator), la popup renvoie un identifiant éphémère via `postMessage` et le formulaire pré-remplit automatiquement l'adresse e-mail et le nom détectés depuis l'`id_token`. Plus aucun champ mot de passe n'est demandé.
 - **Endpoints OAuth admin** ([server/src/routes/admin.ts](server/src/routes/admin.ts)) :
   - `POST /api/admin/mail-accounts/oauth/microsoft/start` — génère un `state` anti-CSRF (stocké en session), retourne l'URL d'autorisation Microsoft.
   - `GET /api/admin/mail-accounts/oauth/microsoft/callback` — vérifie le `state`, échange le `code` contre `access_token` + `refresh_token`, décode l'`id_token` pour extraire l'e-mail, stocke les jetons dans un cache en mémoire (TTL 10 min) et ferme la popup avec un `postMessage` vers la fenêtre parente.
@@ -337,8 +337,8 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 #### Administration — Assistant de création de compte mail par fournisseur
 
-- **Sélecteur de fournisseur avant le formulaire** ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : au clic sur **+ Nouveau compte** dans *Administration → Comptes mail*, l'admin choisit d'abord le type de boîte (**Outlook / Microsoft 365**, **Gmail**, **Yahoo Mail**, **iCloud Mail**, **O2Switch**, ou **IMAP / SMTP (autre)**) avec logo et description, puis le formulaire s'adapte automatiquement :
-  - **Hôtes et ports pré-remplis et verrouillés** pour les fournisseurs publics (Outlook `outlook.office365.com:993` + `smtp.office365.com:587`, Gmail `imap.gmail.com:993` + `smtp.gmail.com:465`, Yahoo `imap.mail.yahoo.com:993` + `smtp.mail.yahoo.com:465`, iCloud `imap.mail.me.com:993` + `smtp.mail.me.com:587`) — champs serveur/port masqués, résumé affiché en lecture seule.
+- **Sélecteur de fournisseur avant le formulaire** ([client/src/pages/AdminPage.tsx](client/src/pages/AdminPage.tsx)) : au clic sur **+ Nouveau compte** dans *Administration → Comptes mail*, l'admin choisit d'abord le type de boîte (**style messagerie professionnelle / Microsoft 365**, **des webmails courants**, **Yahoo Mail**, **iCloud Mail**, **O2Switch**, ou **IMAP / SMTP (autre)**) avec logo et description, puis le formulaire s'adapte automatiquement :
+  - **Hôtes et ports pré-remplis et verrouillés** pour les fournisseurs publics (style messagerie professionnelle `style messagerie professionnelle.office365.com:993` + `smtp.office365.com:587`, des webmails courants `imap.des webmails courants.com:993` + `smtp.des webmails courants.com:465`, Yahoo `imap.mail.yahoo.com:993` + `smtp.mail.yahoo.com:465`, iCloud `imap.mail.me.com:993` + `smtp.mail.me.com:587`) — champs serveur/port masqués, résumé affiché en lecture seule.
   - **Identifiant automatique = adresse e-mail** pour les fournisseurs publics, champ `Identifiant` séparé uniquement pour le mode IMAP générique.
   - **Bandeau d'avertissement contextuel** rappelant qu'un mot de passe d'application est nécessaire quand le MFA/2FA est actif (Google, Apple, Yahoo, Microsoft 365).
   - **Couleur de compte pré-remplie** avec la couleur de marque du fournisseur (éditable ensuite).
@@ -386,7 +386,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **Nouvelles variables d'environnement** ([.env.example](.env.example)) : `JWT_SECRET`, `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_ORIGIN`. Toutes sont maintenant transmises au conteneur via [docker-compose.yml](docker-compose.yml) (les valeurs définies dans Portainer prennent la priorité sur le fichier `.env`).
 - **`app.set('trust proxy', 1)`** ajouté dans [server/src/index.ts](server/src/index.ts) pour que le cookie `wm_refresh` soit correctement posé avec le flag `Secure` derrière Nginx Proxy Manager / Traefik.
 
-#### Partage de calendrier — Dialogue à onglets (Outlook-like)
+#### Partage de calendrier — Dialogue à onglets (style messagerie professionnelle)
 
 - **Nouvelle interface de partage à 3 onglets** ([client/src/components/calendar/ShareCalendarDialog.tsx](client/src/components/calendar/ShareCalendarDialog.tsx)) :
   - **Au sein de votre organisation** — annuaire interne (utilisateurs de l'app + liens NextCloud) via nouveau endpoint [server/src/routes/contacts.ts](server/src/routes/contacts.ts) `GET /api/contacts/directory/users`. Recherche live, avatar/initiales, ajout en 1 clic.
@@ -398,7 +398,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 - **Nouveau routeur public non authentifié** ([server/src/routes/calendarPublic.ts](server/src/routes/calendarPublic.ts)) monté sur `/api/public/calendar` :
   - `GET /:token` → page HTML autonome responsive (clair/sombre), avec boutons *Télécharger .ics*, *S'abonner* (`webcal://`) et *Copier le lien*.
-  - `GET /:token.ics` → flux iCalendar RFC 5545 (`Content-Type: text/calendar`) compatible Outlook, Apple Calendar, Google Calendar, Thunderbird.
+  - `GET /:token.ics` → flux iCalendar RFC 5545 (`Content-Type: text/calendar`) compatible style messagerie professionnelle, la plupart des calendriers.
   - `GET /:token.json` → flux JSON (intégrations custom).
 - **Filtrage par permission appliqué côté serveur** :
   - `busy` → titre remplacé par « Occupé(e) », aucune autre donnée (ni lieu, ni description, ni invités, ni pièces jointes).
@@ -414,9 +414,9 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **Mode *Automatique*** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx) — `TimeGridView`) : le `gridTemplateColumns` est calculé à partir d'un poids par jour. Le poids est dérivé du nombre maximal de voies de chevauchement utilisées par `layoutDay()` ce jour-là, avec une croissance logarithmique douce (`1 + min(1.4, log2(1+lanes) * 0.7)`). Un jour vide reçoit le poids minimal `0.5`. Résultat : les jours chargés s'élargissent pour rester lisibles, les jours libres se réduisent, sans jamais qu'une colonne ne devienne incliquable.
 - **Mode *Fixe*** : comportement historique conservé (toutes les colonnes ont `1fr`). Reste la valeur par défaut.
 
-#### Agenda — Disposition Outlook des événements qui se chevauchent
+#### Agenda — Disposition style messagerie professionnelle des événements qui se chevauchent
 
-- **Colonnes parallèles pour les chevauchements** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : les vues *Jour*, *Semaine* et *Semaine de travail* utilisent un algorithme de layout type Outlook. Les événements qui se chevauchent sont groupés en « clusters » (composantes connexes d'overlap), puis distribués dans des « voies » verticales parallèles. Chaque événement occupe `1/cols` de la colonne-jour, avec une légère superposition (4 px) pour le rendu en cascade caractéristique d'Outlook et un z-index croissant (hover = au-dessus).
+- **Colonnes parallèles pour les chevauchements** ([client/src/pages/CalendarPage.tsx](client/src/pages/CalendarPage.tsx)) : les vues *Jour*, *Semaine* et *Semaine de travail* utilisent un algorithme de layout style messagerie professionnelle. Les événements qui se chevauchent sont groupés en « clusters » (composantes connexes d'overlap), puis distribués dans des « voies » verticales parallèles. Chaque événement occupe `1/cols` de la colonne-jour, avec une légère superposition (4 px) pour le rendu en cascade caractéristique d'style messagerie professionnelle et un z-index croissant (hover = au-dessus).
 - **Expansion latérale automatique** : un événement qui n'a pas de voisin dans les voies à sa droite (pour la plage temporelle qu'il occupe) s'étend pour occuper toute la largeur libre restante — un événement isolé dans sa propre demi-heure reste pleine largeur même si d'autres événements coexistent ailleurs dans la journée.
 
 ### Corrigé
@@ -598,8 +598,8 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 
 - **Import / Export multi-formats** : nouvel utilitaire `client/src/utils/contactImportExport.ts` avec parsers et générateurs compatibles avec les principaux logiciels :
   - **vCard 3.0 / 4.0** (`.vcf`) — Apple Contacts, iOS, macOS, Android, Thunderbird
-  - **CSV Google Contacts** — Gmail / Google Contacts
-  - **CSV Outlook / Microsoft 365**
+  - **CSV Google Contacts** — des webmails courants / Google Contacts
+  - **CSV style messagerie professionnelle / Microsoft 365**
   - **CSV générique** compatible tableur
   - Détection automatique du format à l'import, gestion du BOM UTF-8, décodage des photos embarquées (`PHOTO;ENCODING=b`).
 - **Route d'import en masse** `POST /api/contacts/import` avec 3 modes de gestion des doublons :
@@ -608,7 +608,7 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
   - `replace` : écraser les champs des contacts existants
   - Déduplication par e-mail, promotion automatique des expéditeurs non enregistrés lors d'un import.
 - **Modale d'import** avec drag & drop, détection du format, aperçu des 50 premiers contacts avant validation et choix du mode de fusion.
-- **Menu d'export** (vCard, CSV Google, CSV Outlook, CSV générique) accessible depuis la barre latérale de la page Contacts.
+- **Menu d'export** (vCard, CSV Google, CSV style messagerie professionnelle, CSV générique) accessible depuis la barre latérale de la page Contacts.
 - **Nouveaux filtres** dans la barre latérale :
   - **Favoris** (étoile, ambre) — contacts marqués comme favoris
   - **Enregistrés** (vert) — contacts permanents (`source = 'local'`)
@@ -627,7 +627,7 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 - **Modale d'édition à onglets** : *Général* (identité, e-mail, téléphones) — *Professionnel* (entreprise, fonction, service, site web) — *Plus* (anniversaire, adresse, notes) — *Apparence* (couleur/image de la bannière avec aperçu en direct sur l'en-tête de la modale). Bouton favori en pilule, avatar avec boutons de prise de vue et de suppression.
 - **Groupement alphabétique** de la liste avec en-têtes collants (A, B, C…) et choix du tri : Nom / Récent / Entreprise.
 - **Barre latérale redimensionnable** : poignée verticale entre la liste et la fiche (240–600 px), persistée dans `localStorage` (`contacts-sidebar-width`), double-clic pour réinitialiser à 320 px.
-- **Couleurs adaptées au thème sombre** : utilisation de `bg-outlook-bg-selected`, `bg-outlook-bg-primary` et `bg-outlook-bg-tertiary` (variables CSS du thème) pour que le contact sélectionné, les en-têtes alphabétiques et les cartes restent lisibles en mode sombre.
+- **Couleurs adaptées au thème sombre** : utilisation de `bg-style messagerie professionnelle-bg-selected`, `bg-style messagerie professionnelle-bg-primary` et `bg-style messagerie professionnelle-bg-tertiary` (variables CSS du thème) pour que le contact sélectionné, les en-têtes alphabétiques et les cartes restent lisibles en mode sombre.
 - **Champs étendus** stockés dans `contacts.metadata` (jsonb) : `website`, `birthday`, `address`, `bannerColor`, `bannerImage`, `bannerFit`, `bannerPosX`, `bannerPosY`.
 
 ### Corrigé
@@ -688,8 +688,8 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 - **API cliente** (`client/src/api/index.ts`) : nouvelles méthodes `api.getBranding()`, `api.uploadBrandingIcon(type, file)` (multipart `FormData`) et `api.resetBrandingIcon(type)`.
 - **Application dynamique dans l'UI** (`client/src/App.tsx`) : au chargement, l'app récupère `/api/branding` et met à jour le `<link rel="icon">` ainsi que `document.title` en temps réel — les modifications faites dans l'admin sont visibles au prochain rafraîchissement sans toucher au code ni au build.
 
-#### Titre d'onglet dynamique — style Outlook
-- **Titre contextuel dans l'onglet du navigateur** (`client/src/pages/MailPage.tsx`, `client/src/App.tsx`) : l'onglet du navigateur affiche désormais `<Nom du dossier> — <Nom de l'application>` (par exemple *Boîte de réception — WebMail*, *Éléments supprimés — WebMail*), comme Outlook Web. Hors de la section mail, seul le nom de l'application est affiché.
+#### Titre d'onglet dynamique — style messagerie professionnelle
+- **Titre contextuel dans l'onglet du navigateur** (`client/src/pages/MailPage.tsx`, `client/src/App.tsx`) : l'onglet du navigateur affiche désormais `<Nom du dossier> — <Nom de l'application>` (par exemple *Boîte de réception — WebMail*, *Éléments supprimés — WebMail*), comme style messagerie professionnelle Web. Hors de la section mail, seul le nom de l'application est affiché.
 - **Résolution intelligente des noms de dossier** : la fonction `resolveFolderDisplayName` (`client/src/components/mail/MessageList.tsx`) est désormais exportée pour être réutilisée par `MailPage`. Elle mappe les chemins IMAP techniques (`INBOX`, `Sent`, `Trash`, `INBOX.Archives`…) vers leurs libellés francisés (*Boîte de réception*, *Éléments envoyés*, *Éléments supprimés*…) et gère les dossiers imbriqués en n'affichant que le segment feuille.
 - **Prise en charge des vues unifiées** : la boîte de réception unifiée et les éléments envoyés unifiés affichent `Boîte de réception (unifiée) — <App>` / `Éléments envoyés (unifiés) — <App>`.
 
@@ -712,14 +712,14 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 
 ### Ajouté (précédemment)
 
-#### Signatures multiples — gestion complète style Outlook Web
+#### Signatures multiples — gestion complète style messagerie professionnelle
 
 - **Signatures multiples par utilisateur** : création, édition, suppression et nommage de plusieurs signatures HTML depuis l'onglet **Insérer → Signature** du ruban de rédaction (`client/src/components/mail/Ribbon.tsx`). Un menu déroulant liste toutes les signatures enregistrées pour les insérer d'un clic dans le corps du message, et un lien **Signatures…** ouvre la gestion complète.
 - **Modale de gestion** (`client/src/components/mail/SignatureModals.tsx` → `SignaturesManagerModal`) : liste des signatures existantes avec actions *Modifier*, *Supprimer* et menu **…** pour définir rapidement la signature par défaut ; deux sélecteurs pour la **valeur par défaut des nouveaux messages** et pour la **valeur par défaut des réponses et transferts** ; bouton **+ Ajouter une signature**.
 - **Éditeur WYSIWYG dédié** (`SignatureEditorModal`) avec deux onglets *Mettre le texte en forme* / *Insérer* : gras, italique, souligné, barré, palette de couleurs, listes à puces et numérotées, alignements, insertion de liens et d'images. Cases à cocher *Définir les valeurs par défaut des nouveaux messages* et *Définir la valeur par défaut des réponses et des transferts* pour basculer les défauts directement depuis l'édition.
-- **Insertion automatique dans le compose** (`client/src/components/mail/ComposeModal.tsx`) : à l'ouverture d'un nouveau message, la signature « nouveaux messages » est insérée sous le corps vide ; pour une réponse ou un transfert, la signature « réponses/transferts » est insérée **avant** la citation d'origine, comme Outlook Web.
+- **Insertion automatique dans le compose** (`client/src/components/mail/ComposeModal.tsx`) : à l'ouverture d'un nouveau message, la signature « nouveaux messages » est insérée sous le corps vide ; pour une réponse ou un transfert, la signature « réponses/transferts » est insérée **avant** la citation d'origine, comme style messagerie professionnelle Web.
 - **Persistance locale** (`client/src/utils/signatures.ts`) : stockage dans `localStorage` (`mail.signatures.v1`, `mail.signatures.defaultNew`, `mail.signatures.defaultReply`) avec événement `mail.signatures.changed` pour synchroniser toutes les vues (ruban, modales) en temps réel. Les signatures et leurs valeurs par défaut restent 100 % côté client et ne transitent jamais par le serveur.
-- **Bloc signature isolé** : chaque signature insérée est enveloppée dans un `<div class="outlook-signature" data-signature="true">` précédé d'un saut de ligne, pour faciliter un repérage / remplacement futur et préserver le formatage d'origine.
+- **Bloc signature isolé** : chaque signature insérée est enveloppée dans un `<div class="style messagerie professionnelle-signature" data-signature="true">` précédé d'un saut de ligne, pour faciliter un repérage / remplacement futur et préserver le formatage d'origine.
 
 ### Corrigé
 
@@ -729,7 +729,7 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 ### Amélioré
 
 #### Mode sombre — lisibilité du corps des e-mails HTML
-- **Rendu des e-mails sur surface claire en mode sombre** : beaucoup d'e-mails HTML embarquent des couleurs codées en dur via des styles inline (texte noir sur fond blanc, citations grises, signatures colorées…) qui restaient superposées au fond sombre de l'application et devenaient illisibles — certains blocs apparaissaient en noir sur gris foncé, d'autres en blanc sur blanc selon la façon dont l'expéditeur avait mis en forme le message. Le conteneur `.email-body` est désormais rendu sur un fond blanc dédié avec un padding et un `border-radius`, et `color-scheme: light` est forcé sur l'arbre HTML du message afin que les contrôles de formulaire et les citations restent cohérents (`client/src/index.css`). Cette approche est celle utilisée par Gmail et Outlook Web : le reste de l'interface (en-tête, barre de conversation, boutons *Répondre / Transférer*) conserve le thème sombre, seul le corps HTML est isolé sur sa propre surface pour préserver les couleurs d'origine conçues par l'expéditeur.
+- **Rendu des e-mails sur surface claire en mode sombre** : beaucoup d'e-mails HTML embarquent des couleurs codées en dur via des styles inline (texte noir sur fond blanc, citations grises, signatures colorées…) qui restaient superposées au fond sombre de l'application et devenaient illisibles — certains blocs apparaissaient en noir sur gris foncé, d'autres en blanc sur blanc selon la façon dont l'expéditeur avait mis en forme le message. Le conteneur `.email-body` est désormais rendu sur un fond blanc dédié avec un padding et un `border-radius`, et `color-scheme: light` est forcé sur l'arbre HTML du message afin que les contrôles de formulaire et les citations restent cohérents (`client/src/index.css`). Cette approche est celle utilisée par des webmails courants et style messagerie professionnelle Web : le reste de l'interface (en-tête, barre de conversation, boutons *Répondre / Transférer*) conserve le thème sombre, seul le corps HTML est isolé sur sa propre surface pour préserver les couleurs d'origine conçues par l'expéditeur.
 - La couleur d'accent `#0078D4` est réappliquée explicitement aux liens à l'intérieur du corps pour rester lisible sur le fond blanc même si l'e-mail n'impose pas de couleur de lien.
 
 ### Ajouté
@@ -788,8 +788,8 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
   - Remplace l'affichage du corps par le texte en clair une fois le déchiffrement réussi.
 - **Nouveau module crypto côté client** (`client/src/crypto/`) reposant sur **openpgp v6**, **pkijs** et **asn1js** — aucune opération cryptographique n'est faite côté serveur, qui n'agit que comme relai SMTP/IMAP.
 
-#### Regroupement des conversations (style Outlook)
-- Nouveau menu **Conversations** dans l'onglet **Afficher** du ruban (icône bulle de dialogue, modes classique et simplifié), avec deux sections calquées sur Outlook :
+#### Regroupement des conversations (style messagerie professionnelle)
+- Nouveau menu **Conversations** dans l'onglet **Afficher** du ruban (icône bulle de dialogue, modes classique et simplifié), avec deux sections calquées sur style messagerie professionnelle :
   - **Liste de messages** : `Regrouper les messages par conversation` · `Regrouper les messages par branches dans les conversations` · `Ne pas regrouper les messages`.
   - **Volet de lecture → Organisation des messages** : `Afficher tous les messages de la conversation sélectionnée` · `Afficher uniquement le message sélectionné`.
 - **Regroupement en arborescence dans la liste** : lorsqu'un mode « Regrouper » est actif, chaque conversation est condensée en une seule ligne « racine » portant l'objet + un compteur de messages. Un **chevron** à gauche permet de déplier la conversation pour afficher les messages descendants indentés sous le parent.
@@ -799,7 +799,7 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 
 ### Ajouté (hors sécurité)
 
-#### Catégories de messages (style Outlook)
+#### Catégories de messages (style messagerie professionnelle)
 - Nouveau bouton **Catégoriser** dans l'onglet **Accueil** du ruban (modes classique et simplifié) ainsi qu'une entrée **Catégoriser** dans le menu contextuel de la liste de mails.
 - Sélecteur (popup) avec champ de recherche, cases à cocher, et raccourcis « Nouvelle catégorie », « Effacer les catégories » et « Gérer les catégories ».
 - **Modal de création** d'une catégorie : nom, étoile favori, palette de 24 couleurs.
@@ -866,7 +866,7 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
   - Clic simple = bascule immédiate Clair ↔ Sombre.
   - Chevron / clic droit = menu pour choisir explicitement **Système / Clair / Sombre**.
 - Préférence persistée dans `localStorage` (`theme.mode`). L'attribut `color-scheme` est également synchronisé pour que les contrôles natifs (scrollbars, inputs) adoptent la bonne palette.
-- Palette Outlook entièrement basée sur des variables CSS (`--outlook-*` au format RGB) permettant les opacités Tailwind (`/30`, `/50`, etc.) dans les deux modes.
+- Palette style messagerie professionnelle entièrement basée sur des variables CSS (`--style messagerie professionnelle-*` au format RGB) permettant les opacités Tailwind (`/30`, `/50`, etc.) dans les deux modes.
 
 #### Rédaction
 - Nouveau bouton **Agrandir / Réduire** dans l'en-tête de la fenêtre de rédaction en ligne (entre Joindre un fichier et Fermer). En mode agrandi, la liste des dossiers et la liste des messages sont masquées pour donner toute la largeur au compose ; un clic sur le bouton (Minimize) ou la fermeture du brouillon restaure la vue normale.
@@ -894,14 +894,14 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 - Réactivité croisée : tout changement (ruban ↔ menu contextuel ↔ glisser-déposer) est reflété instantanément dans les deux composants sans rafraîchissement de la page.
 
 #### Ruban et rédaction
-- Nouvel onglet **Message** dans le ruban (style Outlook) visible uniquement pendant la rédaction, regroupant les outils de mise en forme : polices, tailles, styles (Titre 1/2/3, citation, code), gras/italique/souligné/barré, indice/exposant, couleurs de texte et de surlignage, listes, retraits, alignements.
+- Nouvel onglet **Message** dans le ruban (style messagerie professionnelle) visible uniquement pendant la rédaction, regroupant les outils de mise en forme : polices, tailles, styles (Titre 1/2/3, citation, code), gras/italique/souligné/barré, indice/exposant, couleurs de texte et de surlignage, listes, retraits, alignements.
 - Nouvel onglet **Insérer** avec les groupes Inclure (joindre un fichier, lien, image), Tableaux (grille 8×10), Symboles (emojis, ligne horizontale, date/heure) et boutons Emoji / GIF.
 - Les onglets restent visibles en mode ruban simplifié.
 - Hauteur du ruban constante sur tous les onglets.
 - Les menus déroulants (police, taille, styles, couleurs, lien, tableau) utilisent désormais des portails React pour éviter le clipping.
 
 #### Panneau Emojis
-- Panneau latéral droit dédié (320 px), style Outlook web, ouvert depuis l'onglet Insérer.
+- Panneau latéral droit dédié (320 px), style messagerie professionnelle, ouvert depuis l'onglet Insérer.
 - Champ de recherche, catégories (Smileys, Gestes, Nature, Nourriture, Voyages, Activités, Objets, Symboles) et section **Récents** persistée localement.
 - Insertion à la position du curseur, sélection préservée entre plusieurs insertions.
 
@@ -925,7 +925,7 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 ### Ajouté
 
 #### Messagerie
-- Interface trois panneaux style Outlook (dossiers, liste, lecture)
+- Interface trois panneaux style messagerie professionnelle (dossiers, liste, lecture)
 - Support multi-comptes IMAP/SMTP
 - Compatible o2switch / cPanel et tout hébergeur standard
 - Éditeur HTML riche pour la rédaction
@@ -1056,7 +1056,7 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 
 ### Ajouté
 
-#### Interface Block Layout (style Outlook Web)
+#### Interface Block Layout (style messagerie professionnelle)
 - Disposition en blocs avec marges, coins arrondis et ombres entre les panneaux
 - Fond tertiaire `#E8E6E4` visible entre les blocs (dossiers, liste, lecture, ruban)
 - Marges uniformes autour du ruban et de la zone de contenu
@@ -1073,7 +1073,7 @@ création native des calendriers/contacts côté NextCloud, et gestion du partag
 - **Modal de sélection de contacts** : clic sur les labels "À", "Cc", "Cci" ouvre un carnet d'adresses complètes
 - **Autocomplète amélioré** : sensibilité à 1 caractère, liste déroulante avec noms des contacts et badges "Expéditeur"
 - **Chips destinataires stylisés** : les destinataires sélectionnés affichent le nom avec arrondis bleus
-- **Éditeur de texte riche style Outlook** :
+- **Éditeur de texte riche style messagerie professionnelle** :
   - Sélection de police (Arial, Times, Courier, Georgia, Verdana, etc.) avec aperçu en direct
   - Taille de police (8px à 72px) avec menu déroulant
   - **Gras**, *Italique*, <u>Souligné</u>, ~~Barré~~

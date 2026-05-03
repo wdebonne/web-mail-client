@@ -86,7 +86,7 @@ Vue d'ensemble de l'architecture technique de WebMail.
 | React 18 | Framework UI |
 | TypeScript | Typage statique |
 | Vite | Build tool & dev server |
-| Tailwind CSS | Styles utilitaires (thème Outlook) |
+| Tailwind CSS | Styles utilitaires (thème style messagerie professionnelle) |
 | Zustand | État global (auth, mail, onglets) |
 | React Query | Cache serveur & synchronisation |
 | Lucide React | Icônes |
@@ -199,7 +199,7 @@ Le poller calendrier marque `reminder_sent_at = NOW()` après envoi pour éviter
 
 #### Personnalisation par plateforme (PC / mobile / tablette)
 
-Le payload Web Push est désormais construit **par-abonnement** : `sendPushToUser(userId, builder)` itère sur tous les `push_subscriptions` actifs de l'utilisateur et appelle `builder({ platform, userAgent })` pour chaque appareil. La fonction `buildPlatformPayload` (`server/src/services/notificationPrefs.ts`) résout la plateforme cible (`desktop` / `mobile` / `tablet`), applique les templates configurés (`{sender}`, `{subject}`, `{appName}`, …), assemble le bon set d'actions (max 2 desktop / 3 mobile-tablette, presets *Outlook : Archiver/Supprimer/Répondre*, *Lecture seule*, *Minimal*, ou personnalisé), choisit le son et la vibration. Cache mémoire 60 s, invalidé à la sauvegarde des préférences (utilisateur ou admin). Voir [docs/PWA.md](docs/PWA.md#personnalisation-par-plateforme-pc--mobile--tablette).
+Le payload Web Push est désormais construit **par-abonnement** : `sendPushToUser(userId, builder)` itère sur tous les `push_subscriptions` actifs de l'utilisateur et appelle `builder({ platform, userAgent })` pour chaque appareil. La fonction `buildPlatformPayload` (`server/src/services/notificationPrefs.ts`) résout la plateforme cible (`desktop` / `mobile` / `tablet`), applique les templates configurés (`{sender}`, `{subject}`, `{appName}`, …), assemble le bon set d'actions (max 2 desktop / 3 mobile-tablette, presets *style messagerie professionnelle : Archiver/Supprimer/Répondre*, *Lecture seule*, *Minimal*, ou personnalisé), choisit le son et la vibration. Cache mémoire 60 s, invalidé à la sauvegarde des préférences (utilisateur ou admin). Voir [docs/PWA.md](docs/PWA.md#personnalisation-par-plateforme-pc--mobile--tablette).
 
 ### Auto-enregistrement des expéditeurs
 
@@ -445,7 +445,7 @@ Infrastructure  →  Réseau Docker isolé
 
 ### Disposition en blocs
 
-L'interface suit un **Block Layout** inspiré d'Outlook Web :
+L'interface suit un **Block Layout** inspiré d'style messagerie professionnelle Web :
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -482,7 +482,7 @@ Basculement automatique via `ResizeObserver`. Basculement manuel via chevron ▲
 L'onglet **Afficher** contient :
 - Volet Dossiers (afficher/masquer)
 - **Disposition** : Volet de lecture (droite / bas / plein écran), Liste mail (auto / colonnes / multi-lignes), Densité (spacieux / confortable / compacte), **Conversations** (menu dédié : regrouper par conversation / par branches / ne pas regrouper, et *afficher tous les messages / uniquement le sélectionné* dans le volet de lecture)
-- **Affichage mail** : bascule globale entre *Natif* (largeur de lecture ~820 px centrée à la Outlook desktop) et *Étiré* (toute la largeur du volet). Préférence `mail.displayMode` (clé localStorage), événement `mail-display-mode-changed` propagé en temps réel à toutes les `MessageView` ouvertes. Override par message disponible dans la vue de lecture (state local éphémère, réinitialisé au changement de message).
+- **Affichage mail** : bascule globale entre *Natif* (largeur de lecture ~820 px centrée à la style messagerie professionnelle desktop) et *Étiré* (toute la largeur du volet). Préférence `mail.displayMode` (clé localStorage), événement `mail-display-mode-changed` propagé en temps réel à toutes les `MessageView` ouvertes. Override par message disponible dans la vue de lecture (state local éphémère, réinitialisé au changement de message).
 - **Côte à côte** (Dossiers / Liste / Réponse)
 - **Boîtes favoris** (comptes inclus dans les vues unifiées)
 - **Paramètres d'onglets** (mode d'ouverture + nombre max)
@@ -630,11 +630,11 @@ Module : `client/src/utils/categories.ts` + `client/src/components/mail/Category
 - **Liste de mails** (`MessageList.tsx`) : badges « pill » à côté de l'objet (2 visibles + `+N` en wide, 3 en compact), teinte de fond de la ligne via `categoryRowTint(color, 0.18)` (désactivée si la ligne est sélectionnée ou cochée), entrée « Catégoriser » dans le menu contextuel.
 - **Page mail** (`MailPage.tsx`) : `handleCategorize(message, id)` appelle `toggleMessageCategory` puis, si la nouvelle assignation n'est pas vide et que le message n'est pas déjà flaggé, déclenche `flagMutation` → le mail catégorisé apparaît dans le groupe **Épinglé** de la liste. `visibleMessages = messages.filter(...)` applique le `categoryFilter` du store.
 - **Volet Favoris** : voir section précédente.
-- **Modals** : `CategoryEditorModal` (modes `create` / `edit`, layout identique avec étoile favori + palette 24 couleurs), `CategoryManageModal` (liste des catégories avec actions favori / éditer / supprimer + bouton « + Créer »), `CategoryPicker` (popup style Outlook avec recherche, cases à cocher et actions « Nouvelle catégorie » / « Effacer » / « Gérer »).
+- **Modals** : `CategoryEditorModal` (modes `create` / `edit`, layout identique avec étoile favori + palette 24 couleurs), `CategoryManageModal` (liste des catégories avec actions favori / éditer / supprimer + bouton « + Créer »), `CategoryPicker` (popup style messagerie professionnelle avec recherche, cases à cocher et actions « Nouvelle catégorie » / « Effacer » / « Gérer »).
 
 6 catégories par défaut (`Orange`, `Blue`, `Green`, `Purple`, `Red`, `Yellow`) sont seedées au premier accès.
 
-### Signatures (multiples, style Outlook Web)
+### Signatures (multiples, style messagerie professionnelle)
 
 Module : `client/src/utils/signatures.ts` + `client/src/components/mail/SignatureModals.tsx`. Modèle 100 % côté client, indépendant des comptes IMAP et de la table serveur `mail_accounts.signature` (les deux peuvent coexister).
 
@@ -646,11 +646,11 @@ Module : `client/src/utils/signatures.ts` + `client/src/components/mail/Signatur
 | `mail.signatures.accountDefaultNew.v1` | `Record<accountId, string \| null>` | Override par compte pour les nouveaux messages (`null` = « aucune signature », clé absente = suit le défaut global) |
 | `mail.signatures.accountDefaultReply.v1` | `Record<accountId, string \| null>` | Override par compte pour les réponses/transferts (idem) |
 
-**API du module** : `getSignatures`, `getSignatureById`, `upsertSignature`, `deleteSignature` (nettoie les défauts globaux **et** les overrides par compte pointant sur l'ID supprimé), `getDefaultNewId` / `setDefaultNewId`, `getDefaultReplyId` / `setDefaultReplyId`, `getAccountDefaultNewId` / `setAccountDefaultNewId`, `getAccountDefaultReplyId` / `setAccountDefaultReplyId`, **`resolveDefaultNewId(accountId)` / `resolveDefaultReplyId(accountId)`** (override du compte → valeur globale), `wrapSignatureHtml` (enveloppe la signature dans `<div class="outlook-signature" data-signature="true">` précédé d'un `<br>`). Tous les mutateurs émettent un évènement `mail.signatures.changed` sur `window` pour notifier les composants abonnés.
+**API du module** : `getSignatures`, `getSignatureById`, `upsertSignature`, `deleteSignature` (nettoie les défauts globaux **et** les overrides par compte pointant sur l'ID supprimé), `getDefaultNewId` / `setDefaultNewId`, `getDefaultReplyId` / `setDefaultReplyId`, `getAccountDefaultNewId` / `setAccountDefaultNewId`, `getAccountDefaultReplyId` / `setAccountDefaultReplyId`, **`resolveDefaultNewId(accountId)` / `resolveDefaultReplyId(accountId)`** (override du compte → valeur globale), `wrapSignatureHtml` (enveloppe la signature dans `<div class="style messagerie professionnelle-signature" data-signature="true">` précédé d'un `<br>`). Tous les mutateurs émettent un évènement `mail.signatures.changed` sur `window` pour notifier les composants abonnés.
 
 **Points d'intégration UI** :
 - **Ruban → Insérer** (`Ribbon.tsx`, `InsererTabContent`) — modes classique et simplifié : bouton **Signature** (icône `PenTool`) ouvrant un menu ancré (`AnchoredPortal`) qui liste les signatures existantes + entrée **Signatures…** pour ouvrir le gestionnaire. La prop `accounts: MailAccount[]` est transmise du composant `Ribbon` principal à `InsererTabContent`, puis au `SignaturesManagerModal` pour activer la section « signature par compte ».
-- **Compose** (`ComposeModal.tsx`) : à l'initialisation de l'état `bodyHtml`, la signature est résolue via `resolveDefaultNewId(accountId)` / `resolveDefaultReplyId(accountId)` — l'override du compte actif l'emporte sur la valeur globale. La signature est placée **sous** le corps pour un nouveau message, et **au-dessus** de la citation pour une réponse/transfert, comme Outlook Web.
+- **Compose** (`ComposeModal.tsx`) : à l'initialisation de l'état `bodyHtml`, la signature est résolue via `resolveDefaultNewId(accountId)` / `resolveDefaultReplyId(accountId)` — l'override du compte actif l'emporte sur la valeur globale. La signature est placée **sous** le corps pour un nouveau message, et **au-dessus** de la citation pour une réponse/transfert, comme style messagerie professionnelle Web.
 - **Modals** :
   - `SignaturesManagerModal` — section **Défauts globaux** (deux `<select>`) + section **Signature par compte de messagerie** (un bloc par compte de la prop `accounts`, avec `<select>` *Nouveaux messages* / *Réponses et transferts* proposant `(Valeur par défaut globale)`, `(Aucune signature)` ou l'une des signatures) + liste des signatures avec *Modifier* / *Supprimer* / menu **…** + bouton **+ Ajouter une signature**.
   - `SignatureEditorModal` — onglets *Mettre le texte en forme* / *Insérer*, champ nom, éditeur `contentEditable` (WYSIWYG via `document.execCommand`), cases à cocher pour basculer les défauts à l'enregistrement.
@@ -683,7 +683,7 @@ Les icônes de l'application (favicon + PWA) peuvent être remplacées à chaud 
 
 **Mise à jour dynamique du client** :
 - `App.tsx` récupère `/api/branding` au montage et met à jour `<link rel="icon">` + `document.title` au vol.
-- `MailPage.tsx` définit un titre contextuel **`<NomDossier> — <AppName>`** (style Outlook) via `resolveFolderDisplayName` (exporté par `MessageList.tsx`). Les vues unifiées ajoutent le suffixe *(unifiée)* / *(unifiés)*.
+- `MailPage.tsx` définit un titre contextuel **`<NomDossier> — <AppName>`** (style messagerie professionnelle) via `resolveFolderDisplayName` (exporté par `MessageList.tsx`). Les vues unifiées ajoutent le suffixe *(unifiée)* / *(unifiés)*.
 
 **Clé `admin_settings`** :
 - `app_name` — nom de l'application (affiché dans le titre de l'onglet et comme `name` dans le manifeste PWA).

@@ -126,7 +126,7 @@ Endpoints :
 | `GET` | `/api/public/calendar/:token.ics` | Flux iCalendar RFC 5545 (sans auth) |
 | `GET` | `/api/public/calendar/:token.json` | Flux JSON (sans auth) |
 
-> ℹ️ Auparavant `POST /publish` renvoyait l'URL `<CS:publish-url>` de NextCloud, qui conduisait à l'interface WebDAV *(« This is the WebDAV interface… »)*. Le lien est désormais servi par l'application sous forme de page HTML et de flux `.ics` directement consommables par Outlook, Apple Calendar, Google Calendar et Thunderbird.
+> ℹ️ Auparavant `POST /publish` renvoyait l'URL `<CS:publish-url>` de NextCloud, qui conduisait à l'interface WebDAV *(« This is the WebDAV interface… »)*. Le lien est désormais servi par l'application sous forme de page HTML et de flux `.ics` directement consommables par style messagerie professionnelle, Apple Calendar, Google Calendar et Thunderbird.
 
 ### Contacts
 

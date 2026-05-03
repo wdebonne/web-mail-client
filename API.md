@@ -269,7 +269,7 @@ Teste la connexion IMAP/SMTP d'un compte.
 Renvoie le compteur agrégé pour la **pastille (badge) de l'icône PWA** — alimente la Web App Badging API côté client.
 
 **Query :**
-- `source` (optionnel, défaut `inbox-unread`) : `inbox-unread` (mails non lus, défaut Outlook) | `inbox-recent` (nouveaux mails marqués RECENT) | `inbox-total` (total des mails dans la Boîte de réception).
+- `source` (optionnel, défaut `inbox-unread`) : `inbox-unread` (mails non lus, défaut style messagerie professionnelle) | `inbox-recent` (nouveaux mails marqués RECENT) | `inbox-total` (total des mails dans la Boîte de réception).
 - `scope` (optionnel, défaut `all`) : `all` (cumul sur tous les comptes assignés et possédés par l'utilisateur) | `default` (compte par défaut uniquement).
 
 **Réponse 200 :**
@@ -662,7 +662,7 @@ Promeut un contact de `source = 'sender'` à `source = 'local'`.
 
 ### POST /api/contacts/import
 
-Import en masse de contacts depuis un fichier vCard ou CSV (Gmail / Outlook / générique). Le parsing est effectué côté client (`client/src/utils/contactImportExport.ts`) ; seules les données normalisées arrivent au serveur.
+Import en masse de contacts depuis un fichier vCard ou CSV (les messageries courantes). Le parsing est effectué côté client (`client/src/utils/contactImportExport.ts`) ; seules les données normalisées arrivent au serveur.
 
 **Corps** :
 ```json
@@ -1641,7 +1641,7 @@ Page HTML autonome du calendrier publié (viewer responsive clair/sombre). Affic
 
 ### GET /api/public/calendar/:token.ics
 
-Flux iCalendar (RFC 5545, `Content-Type: text/calendar`). Compatible Outlook, Apple Calendar, Google Calendar, Thunderbird. Les évènements sont filtrés selon la permission :
+Flux iCalendar (RFC 5545, `Content-Type: text/calendar`). Compatible style messagerie professionnelle, la plupart des calendriers. Les évènements sont filtrés selon la permission :
 - `busy` → titre remplacé par « Occupé(e) », aucune autre donnée
 - `titles` → titre et lieu uniquement
 - `read` → toutes les propriétés

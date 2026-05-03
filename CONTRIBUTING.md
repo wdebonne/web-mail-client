@@ -177,7 +177,7 @@ chore(deps): mise à jour de React 18.3
 ### CSS / Tailwind
 
 - Utilisez les classes Tailwind CSS
-- Utilisez les couleurs du thème Outlook : `outlook-blue`, `outlook-bg-primary`, etc.
+- Utilisez les couleurs du thème style messagerie professionnelle : `style messagerie professionnelle-blue`, `style messagerie professionnelle-bg-primary`, etc.
 - Évitez les styles inline sauf nécessité absolue
 - Responsive : mobile-first
 
@@ -198,7 +198,7 @@ chore(deps): mise à jour de React 18.3
 - [ ] Le code compile sans erreur (`npm run build`)
 - [ ] Pas de régression dans les fonctionnalités existantes
 - [ ] Les nouvelles routes API sont documentées
-- [ ] Les nouveaux composants suivent le design Outlook existant
+- [ ] Les nouveaux composants suivent le design style messagerie professionnelle existant
 - [ ] Les messages utilisateur sont en français
 
 ### Template de PR

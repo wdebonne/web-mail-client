@@ -55,8 +55,8 @@ Le client supporte l'import et l'export compatibles avec les principaux logiciel
 | Format | Extension | Compatible avec |
 |--------|-----------|-----------------|
 | **vCard 3.0 / 4.0** | `.vcf`, `.vcard` | Apple Contacts, iOS, macOS, Android, Thunderbird |
-| **CSV Google** | `.csv` | Gmail / Google Contacts |
-| **CSV Outlook** | `.csv` | Outlook / Microsoft 365 |
+| **CSV Google** | `.csv` | des webmails courants / Google Contacts |
+| **CSV style messagerie professionnelle** | `.csv` | style messagerie professionnelle / Microsoft 365 |
 | **CSV générique** | `.csv` | Tableurs (Excel, LibreOffice…) |
 
 ### Import
@@ -115,7 +115,7 @@ Menu **Exporter** dans la barre latérale. Le fichier est téléchargé directem
 
 - `contacts-YYYY-MM-DD.vcf`
 - `contacts-YYYY-MM-DD-google.csv`
-- `contacts-YYYY-MM-DD-outlook.csv`
+- `contacts-YYYY-MM-DD-style messagerie professionnelle.csv`
 - `contacts-YYYY-MM-DD-generic.csv`
 
 Les expéditeurs non enregistrés sont **exclus** de l'export.
