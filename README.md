@@ -135,6 +135,37 @@ Client de messagerie web complet avec interface style messagerie professionnelle
 - 🔒 Tokens API chiffrés AES-256-GCM
 - 📊 Consultation des quotas disque
 
+## Captures d'écran
+
+Vous pouvez ajouter vos images et captures d'écran dans le dossier `docs/images/`.
+
+### Interface principale
+| Boîte de réception | Lecture d'un e-mail |
+| :---: | :---: |
+| *Ajoutez une capture `docs/images/inbox.png`* | ![Lecture e-mail](docs/images/mail-reading.png) |
+
+| Barre latérale & Favoris | Liste des contacts |
+| :---: | :---: |
+| ![Barre latérale](docs/images/sidebar-favorites.png) | ![Liste des contacts](docs/images/contacts-list.png) |
+
+### Le Ruban (Style messagerie professionnelle)
+| Onglet Accueil | Onglet Afficher |
+| :---: | :---: |
+| ![Onglet Accueil](docs/images/ribbon-accueil.png) | ![Onglet Afficher](docs/images/ribbon-afficher.png) |
+
+| Onglet Insérer | Onglet Message (Édition) |
+| :---: | :---: |
+| ![Onglet Insérer](docs/images/ribbon-inserer.png) | ![Onglet Message](docs/images/ribbon-message.png) |
+
+### Paramètres de l'application
+| Sécurité (Biométrie) | Répondeur Automatique |
+| :---: | :---: |
+| ![Sécurité biométrique](docs/images/settings-security.png) | ![Répondeur](docs/images/settings-autoresponder.png) |
+
+| Préférences de Messagerie | Vue du Calendrier |
+| :---: | :---: |
+| ![Préférences Messagerie](docs/images/settings-messaging.png) | ![Vue du Calendrier](docs/images/calendar-view.png) |
+
 ## Documentation
 
 - [API complète](API.md)
