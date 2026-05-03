@@ -358,4 +358,4 @@ Testé avec :
 
 ## Licence
 
-MIT
+AGPL-3.0 (Affero General Public License v3.0)
