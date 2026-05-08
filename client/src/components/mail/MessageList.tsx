@@ -1276,13 +1276,13 @@ export default function MessageList({
       const targetFolders = folders!.filter(f => f.path !== folder);
       const recentEntries = action === 'move' ? getRecentMoveFolders() : getRecentCopyFolders();
       const recentCount = action === 'move' ? getRecentMoveFoldersCount() : getRecentCopyFoldersCount();
-      const accountId = message._accountId;
+      const accountIdForRecent = message._accountId || accountId;
 
       const recentItems: ContextMenuItem[] = [];
-      if (recentCount > 0 && accountId) {
+      if (recentCount > 0 && accountIdForRecent) {
         const seen = new Set<string>();
         for (const entry of recentEntries) {
-          if (entry.accountId !== accountId) continue;
+          if (entry.accountId !== accountIdForRecent) continue;
           if (entry.path === folder) continue;
           if (seen.has(entry.path)) continue;
           const f = targetFolders.find(x => x.path === entry.path);
@@ -1293,8 +1293,8 @@ export default function MessageList({
             icon: <Clock size={14} />,
             onClick: () => {
               onAction(message.uid, f.path, message._accountId, message._folder);
-              if (action === 'move') pushRecentMoveFolder(accountId, f.path);
-              else pushRecentCopyFolder(accountId, f.path);
+              if (action === 'move') pushRecentMoveFolder(accountIdForRecent, f.path);
+              else pushRecentCopyFolder(accountIdForRecent, f.path);
             },
           });
           if (recentItems.length >= recentCount) break;
@@ -1306,9 +1306,9 @@ export default function MessageList({
         icon: <FolderIcon size={14} />,
         onClick: () => {
           onAction(message.uid, f.path, message._accountId, message._folder);
-          if (accountId) {
-            if (action === 'move') pushRecentMoveFolder(accountId, f.path);
-            else pushRecentCopyFolder(accountId, f.path);
+          if (accountIdForRecent) {
+            if (action === 'move') pushRecentMoveFolder(accountIdForRecent, f.path);
+            else pushRecentCopyFolder(accountIdForRecent, f.path);
           }
         },
       }));
