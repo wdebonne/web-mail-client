@@ -4,6 +4,60 @@ import MailComposer from 'nodemailer/lib/mail-composer';
 import { simpleParser } from 'mailparser';
 import { logger } from '../utils/logger';
 
+/**
+ * Pick the first usable address from an IMAP envelope address array.
+ * Returns null if every entry is empty or has neither an address nor a name —
+ * this is what the IMAP envelope returns for malformed/group-syntax FROM
+ * headers (e.g. "Undisclosed recipients:;") and is the root cause of the
+ * "Inconnu" rows the user reports in the message list.
+ */
+function pickFirstAddress(list?: any[] | null): { address: string; name: string } | null {
+  if (!list || !Array.isArray(list)) return null;
+  for (const a of list) {
+    if (!a) continue;
+    const address = (a.address || '').trim();
+    const name = (a.name || '').trim();
+    if (address || name) return { address, name };
+  }
+  return null;
+}
+
+/**
+ * Last-resort sender extraction from raw RFC-2822 headers when the IMAP
+ * envelope yielded nothing (some servers return a degraded envelope when the
+ * From header has unusual encoding). We try From, then Sender, then Reply-To,
+ * then Return-Path, and unfold continuation lines as required by RFC 5322.
+ */
+function parseAddressFromHeaders(headerBlock: string): { address: string; name: string } | null {
+  if (!headerBlock) return null;
+  // Unfold: a header value continues on the next line if it starts with WSP.
+  const unfolded = headerBlock.replace(/\r?\n[ \t]+/g, ' ');
+  const lines = unfolded.split(/\r?\n/);
+  const grab = (name: string): string | null => {
+    const re = new RegExp(`^${name}\\s*:\\s*(.*)$`, 'i');
+    for (const line of lines) {
+      const m = line.match(re);
+      if (m && m[1]) return m[1].trim();
+    }
+    return null;
+  };
+  const candidates = [grab('From'), grab('Sender'), grab('Reply-To'), grab('Return-Path')];
+  for (const value of candidates) {
+    if (!value) continue;
+    // Format: "Display Name" <addr@host>  |  Display Name <addr@host>  |  addr@host
+    const angle = value.match(/^(.*?)<([^>]+)>\s*$/);
+    if (angle) {
+      let name = angle[1].trim().replace(/^"|"$/g, '').trim();
+      // RFC 2047 encoded-word decoding is best-effort: leave as-is if present.
+      const address = angle[2].trim();
+      if (address || name) return { address, name };
+    }
+    const bare = value.replace(/[<>]/g, '').trim();
+    if (bare && /@/.test(bare)) return { address: bare, name: '' };
+  }
+  return null;
+}
+
 interface MailAccount {
   email: string;
   name: string;
@@ -162,6 +216,10 @@ export class MailService {
         const messages: any[] = [];
         const range = `${start}:${end}`;
 
+        // Track UIDs whose envelope did not yield a usable sender — we'll fetch
+        // the raw From/Sender/Reply-To headers in a second pass to fill them in.
+        const missingFromUids: number[] = [];
+
         for await (const msg of client.fetch(range, {
           uid: true,
           flags: true,
@@ -170,14 +228,15 @@ export class MailService {
           size: true,
         })) {
           const envelope = msg.envelope!;
+          const from = pickFirstAddress(envelope.from)
+            || pickFirstAddress((envelope as any).sender)
+            || pickFirstAddress((envelope as any).replyTo);
+          if (!from) missingFromUids.push(msg.uid);
           messages.push({
             uid: msg.uid,
             messageId: envelope.messageId,
             subject: envelope.subject,
-            from: envelope.from?.[0] ? {
-              address: envelope.from[0].address,
-              name: envelope.from[0].name,
-            } : null,
+            from,
             to: envelope.to?.map((addr: any) => ({
               address: addr.address,
               name: addr.name,
@@ -198,6 +257,29 @@ export class MailService {
             size: msg.size,
             snippet: '',
           });
+        }
+
+        // Second pass: for messages whose IMAP envelope had no usable address
+        // (malformed RFC-2822 group syntax, missing FROM, etc.), parse the raw
+        // From/Sender/Reply-To headers so the UI no longer shows "Inconnu".
+        if (missingFromUids.length > 0) {
+          try {
+            const uidSet = missingFromUids.join(',');
+            for await (const hMsg of client.fetch(uidSet, {
+              uid: true,
+              headers: ['from', 'sender', 'reply-to', 'return-path'],
+            } as any, { uid: true })) {
+              const raw = (hMsg as any).headers;
+              if (!raw) continue;
+              const headerText = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw);
+              const addr = parseAddressFromHeaders(headerText);
+              if (!addr) continue;
+              const target = messages.find((m) => m.uid === hMsg.uid);
+              if (target && !target.from) target.from = addr;
+            }
+          } catch (err) {
+            logger.warn('[mail] header fallback fetch failed', err);
+          }
         }
 
         return {
@@ -244,7 +326,18 @@ export class MailService {
           from: parsed.from?.value?.[0] ? {
             address: parsed.from.value[0].address,
             name: parsed.from.value[0].name,
-          } : null,
+          } : (pickFirstAddress(envelope.from)
+            || pickFirstAddress((envelope as any).sender)
+            || pickFirstAddress((envelope as any).replyTo)
+            || (parsed.headers ? parseAddressFromHeaders(
+                ['from','sender','reply-to','return-path']
+                  .map((h) => {
+                    const v = parsed.headers.get(h);
+                    return v ? `${h}: ${typeof v === 'string' ? v : (Array.isArray((v as any).value) ? (v as any).text || '' : ((v as any).text || ''))}` : '';
+                  })
+                  .filter(Boolean)
+                  .join('\r\n')
+              ) : null)),
           to: parsed.to ? (Array.isArray(parsed.to) ? parsed.to : [parsed.to]).flatMap((t: any) => t.value.map((v: any) => ({
             address: v.address,
             name: v.name,
