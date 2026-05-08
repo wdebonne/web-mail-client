@@ -6,23 +6,28 @@ type MessageHandler = (data: any) => void;
 const DEBUG = true;
 const log = (...args: any[]) => { if (DEBUG) console.debug('[ws]', ...args); };
 
+/** Always read the freshest access token. The api layer rotates the JWT in
+ *  localStorage on every 401 retry but the Zustand `authStore.token` is only
+ *  updated at explicit login points, so it can hold a JWT signed with an
+ *  outdated secret. localStorage is the source of truth for transport. */
+function readToken(): string | null {
+  try {
+    const stored = localStorage.getItem('auth_token');
+    if (stored) return stored;
+  } catch {}
+  return useAuthStore.getState().token;
+}
+
 export function useWebSocket(handlers: Record<string, MessageHandler> = {}) {
   const ws = useRef<WebSocket | null>(null);
   const token = useAuthStore((s) => s.token);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
   const closedByClient = useRef(false);
-  // Keep the latest handlers in a ref so swapping callbacks across renders
-  // doesn't tear down and re-establish the WebSocket connection.
   const handlersRef = useRef(handlers);
   useEffect(() => { handlersRef.current = handlers; }, [handlers]);
-  // Same trick for the token: we read the freshest one inside `connect`
-  // without re-creating the callback every time the token rotates (which
-  // would tear down a perfectly valid socket).
-  const tokenRef = useRef(token);
-  useEffect(() => { tokenRef.current = token; }, [token]);
 
   const connect = useCallback(() => {
-    const t = tokenRef.current;
+    const t = readToken();
     if (!t) { log('skip connect: no token'); return; }
     if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
       log('skip connect: socket already open/connecting');
@@ -39,7 +44,7 @@ export function useWebSocket(handlers: Record<string, MessageHandler> = {}) {
 
     socket.onopen = () => {
       log('open, sending auth');
-      try { socket.send(JSON.stringify({ type: 'auth', token: tokenRef.current })); } catch {}
+      try { socket.send(JSON.stringify({ type: 'auth', token: readToken() })); } catch {}
     };
 
     socket.onmessage = (event) => {

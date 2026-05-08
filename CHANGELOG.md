@@ -12,8 +12,11 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 #### WebSocket temps-réel rejetée avec « invalid signature »
 
 - **Symptôme** : la connexion `/ws` montait bien (`101 Switching Protocols`) puis se fermait immédiatement, et les logs serveur affichaient en boucle `WebSocket auth failed (invalid/expired token) err=invalid signature`. Conséquence : aucun événement temps-réel (`new-mail`, `mail-moved`, …) ne parvenait au client.
-- **Cause** : les access tokens JWT sont signés avec `JWT_SECRET` (avec fallback sur `SESSION_SECRET`) via `getJwtSecret()` dans [server/src/services/deviceSessions.ts](server/src/services/deviceSessions.ts), mais le handshake WebSocket vérifiait uniquement avec `SESSION_SECRET`. Quand un déploiement définissait un `JWT_SECRET` distinct, la signature ne pouvait jamais être validée.
-- **Correctif** ([server/src/services/websocket.ts](server/src/services/websocket.ts)) : le handshake utilise désormais `verifyAccessToken` (le même validateur que les routes HTTP) en priorité, avec un fallback sur `jwt.verify(SESSION_SECRET)` pour rester compatible avec les anciens tokens longs.
+- **Cause** : double souci.
+  1. Côté serveur, le handshake WebSocket ne vérifiait le JWT qu'avec `SESSION_SECRET`, alors que les access tokens sont signés avec `JWT_SECRET` (avec fallback sur `SESSION_SECRET`) via `getJwtSecret()` dans [server/src/services/deviceSessions.ts](server/src/services/deviceSessions.ts).
+  2. Côté client, le hook `useWebSocket` lisait le JWT depuis le store Zustand `authStore.token`, qui n'est mis à jour qu'au login explicite. Or l'intercepteur 401 dans [client/src/api/index.ts](client/src/api/index.ts) écrit le token rafraîchi uniquement dans `localStorage['auth_token']`, ce qui pouvait faire envoyer un access token périmé/signé avec un ancien secret au handshake `/ws`.
+- **Correctif (serveur)** ([server/src/services/websocket.ts](server/src/services/websocket.ts)) : le handshake utilise désormais `verifyAccessToken` (le même validateur que les routes HTTP) en priorité, avec fallback sur `jwt.verify(SESSION_SECRET)` pour rester compatible avec les anciens tokens longs.
+- **Correctif (client)** ([client/src/hooks/useWebSocket.ts](client/src/hooks/useWebSocket.ts)) : le hook lit `localStorage['auth_token']` (la source de vérité du transport, mise à jour à chaque rotation silencieuse) plutôt que `authStore.token`, et ré-ouvre la socket à chaque rotation pour ré-authentifier avec le JWT frais.
 
 #### Liste de la boîte de réception qui ne se vide pas après une règle « Déplacer vers le dossier »
 
