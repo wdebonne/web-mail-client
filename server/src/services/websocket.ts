@@ -22,16 +22,25 @@ export function setupWebSocket(wss: WebSocketServer) {
         // Authentication message
         if (message.type === 'auth') {
           const token = message.token;
-          const decoded = jwt.verify(token, process.env.SESSION_SECRET || 'dev-secret-change-me') as { userId: string };
-          userId = decoded.userId;
+          try {
+            const decoded = jwt.verify(token, process.env.SESSION_SECRET || 'dev-secret-change-me') as { userId: string };
+            userId = decoded.userId;
 
-          if (!clients.has(userId)) {
-            clients.set(userId, []);
+            if (!clients.has(userId)) {
+              clients.set(userId, []);
+            }
+            clients.get(userId)!.push({ ws, userId, isAlive: true });
+
+            ws.send(JSON.stringify({ type: 'auth', status: 'ok' }));
+            logger.info(`WebSocket authenticated: ${userId}`);
+          } catch (err) {
+            // JWT invalide ou expiré : on prévient le client (qui pourra
+            // rafraîchir son token et se reconnecter) puis on ferme proprement.
+            logger.warn({ err: (err as Error).message }, 'WebSocket auth failed (invalid/expired token)');
+            try { ws.send(JSON.stringify({ type: 'auth', status: 'error', reason: 'invalid_token' })); } catch {}
+            ws.close(4001, 'invalid_token');
+            return;
           }
-          clients.get(userId)!.push({ ws, userId, isAlive: true });
-
-          ws.send(JSON.stringify({ type: 'auth', status: 'ok' }));
-          logger.info(`WebSocket authenticated: ${userId}`);
         }
 
         // Ping/pong
