@@ -28,6 +28,8 @@ export const BACKUP_KEYS: string[] = [
   'mail.signatures.v1',
   'mail.signatures.defaultNew',
   'mail.signatures.defaultReply',
+  'mail.signatures.accountDefaultNew.v1',
+  'mail.signatures.accountDefaultReply.v1',
   // Catégories
   'mail.categories',
   'mail.messageCategories',
@@ -75,11 +77,14 @@ export const BACKUP_KEYS: string[] = [
   'giphyApiKey',
   // Divers
   'emoji-panel-recent',
+  'contacts-sidebar-width',
 ];
 
 /** Préfixes sauvegardés (toutes les clés débutant par ceux-ci). */
 export const BACKUP_PREFIXES: string[] = [
-  // Rien pour l'instant — placeholder pour futures familles de clés.
+  // Préférences calendrier (groupes, ordre, vue, surcharges nom/couleur,
+  // calendriers masqués localement, ribbon, etc.).
+  'calendar.',
 ];
 
 /** Clés de config du module backup lui-même (jamais incluses dans l'export). */
