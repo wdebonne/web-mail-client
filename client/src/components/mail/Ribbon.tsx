@@ -20,6 +20,12 @@ import {
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
 import { getSignatures, MailSignature, wrapSignatureHtml } from '../../utils/signatures';
+import {
+  getCategories as getMailCategories,
+  toggleCategoryFavorite,
+  subscribeCategories,
+  type MailCategory,
+} from '../../utils/categories';
 import toast from 'react-hot-toast';
 import type { TabMode } from '../../stores/mailStore';
 import type { MailAccount } from '../../types';
@@ -1473,6 +1479,24 @@ function FavoritesMailboxMenu({
   // Reference prefsVersion so the component re-renders when it changes
   void prefsVersion;
 
+  // Live list of categories — re-renders when categories change in any tab.
+  const [catVersion, setCatVersion] = useState(0);
+  useEffect(() => subscribeCategories(() => setCatVersion((n) => n + 1)), []);
+  const categories: MailCategory[] = (() => { void catVersion; return getMailCategories(); })();
+  const favoriteCount = categories.filter((c) => c.isFavorite).length;
+
+  const toggleAllCategories = () => {
+    // If at least one category is not favorite → mark all favorites; else clear all.
+    const allFavorite = categories.length > 0 && favoriteCount === categories.length;
+    const list = getMailCategories();
+    list.forEach((c) => {
+      if (allFavorite ? c.isFavorite : !c.isFavorite) {
+        toggleCategoryFavorite(c.id);
+      }
+    });
+    onChanged();
+  };
+
   const toggleAccount = (id: string) => {
     const current = getUnifiedAccountIds();
     const baseSet = new Set<string>(current.length ? current : accounts.map((a) => a.id));
@@ -1552,6 +1576,48 @@ function FavoritesMailboxMenu({
                 style={{ backgroundColor: account.color }}
               />
               <span className="truncate flex-1">{getAccountDisplayName(account)}</span>
+            </label>
+          );
+        })}
+      </div>
+
+      <div className="border-t border-outlook-border my-1" />
+      <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+        <span>Catégories dans les favoris</span>
+        {categories.length > 0 && (
+          <button
+            onClick={toggleAllCategories}
+            className="text-[10px] normal-case font-normal text-outlook-blue hover:underline"
+            title={favoriteCount === categories.length ? 'Retirer toutes les catégories des favoris' : 'Ajouter toutes les catégories aux favoris'}
+          >
+            {favoriteCount === categories.length ? 'Tout retirer' : 'Tout inclure'}
+          </button>
+        )}
+      </div>
+      <div className="max-h-48 overflow-y-auto">
+        {categories.length === 0 && (
+          <div className="px-3 py-2 text-xs text-outlook-text-disabled">
+            Aucune catégorie. Créez-en depuis l'onglet Accueil.
+          </div>
+        )}
+        {categories.map((cat) => {
+          const checked = !!cat.isFavorite;
+          return (
+            <label
+              key={cat.id}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-outlook-bg-hover cursor-pointer"
+              title="Afficher cette catégorie comme dossier unifié dans les favoris"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => { toggleCategoryFavorite(cat.id); onChanged(); }}
+              />
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: cat.color }}
+              />
+              <span className="truncate flex-1">{cat.name}</span>
             </label>
           );
         })}
