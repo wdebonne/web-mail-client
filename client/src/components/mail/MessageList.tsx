@@ -19,6 +19,7 @@ import {
   subscribeCategories, MailCategory,
 } from '../../utils/categories';
 import type { SwipeAction } from '../../utils/mailPreferences';
+import { isFavoriteFolder, toggleFavoriteFolder } from '../../utils/mailPreferences';
 
 type SortField = 'date' | 'from' | 'subject' | 'size' | 'importance';
 type SortOrder = 'asc' | 'desc';
@@ -123,6 +124,10 @@ interface MessageListProps {
   loadAllActive?: boolean;
   /** Toggles the auto-load-everything mode. */
   onToggleLoadAll?: () => void;
+  /** Notified when the favourite-folder state changes via the header star, so the parent can refresh its UI. */
+  onFavoritesChanged?: () => void;
+  /** True when displaying a virtual folder (unified inbox/sent). The header star is hidden in that case. */
+  isVirtualFolder?: boolean;
 }
 
 interface MessageGroup {
@@ -174,6 +179,8 @@ export default function MessageList({
   onLoadMore,
   loadAllActive = false,
   onToggleLoadAll,
+  onFavoritesChanged,
+  isVirtualFolder = false,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -198,6 +205,20 @@ export default function MessageList({
   // Categories — subscribe to changes so badges & tint refresh live.
   const [catsVersion, setCatsVersion] = useState(0);
   useEffect(() => subscribeCategories(() => setCatsVersion((n) => n + 1)), []);
+
+  // Local re-render trigger after toggling the header favourite star.
+  const [favTick, setFavTick] = useState(0);
+  const headerCanFavorite = !isVirtualFolder && !!accountId && !!folder;
+  const headerIsFavorite = useMemo(
+    () => (headerCanFavorite ? isFavoriteFolder(accountId!, folder) : false),
+    [headerCanFavorite, accountId, folder, favTick],
+  );
+  const handleToggleHeaderFavorite = () => {
+    if (!headerCanFavorite) return;
+    toggleFavoriteFolder(accountId!, folder);
+    setFavTick((n) => n + 1);
+    onFavoritesChanged?.();
+  };
   const categoriesMap = useMemo(() => {
     const map = new Map<string, MailCategory>();
     for (const c of getCategories()) map.set(c.id, c);
@@ -451,7 +472,18 @@ export default function MessageList({
             <h2 className="text-sm font-semibold text-outlook-text-primary truncate">
               {getFolderDisplayName(folder)}
             </h2>
-            <Star size={13} className="text-outlook-text-disabled cursor-pointer hover:text-outlook-warning flex-shrink-0" />
+            {headerCanFavorite && (
+              <button
+                type="button"
+                onClick={handleToggleHeaderFavorite}
+                className={`p-0.5 rounded transition-colors flex-shrink-0 ${headerIsFavorite ? 'text-outlook-warning' : 'text-outlook-text-disabled hover:text-outlook-warning'}`}
+                title={headerIsFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                aria-label={headerIsFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                aria-pressed={headerIsFavorite}
+              >
+                <Star size={13} fill={headerIsFavorite ? 'currentColor' : 'none'} />
+              </button>
+            )}
           </div>
 
           {/* Right: toolbar icons */}

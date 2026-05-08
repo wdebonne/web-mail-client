@@ -1899,6 +1899,11 @@ export default function MailPage() {
             loadingMore={loadingMore}
             onLoadMore={handleLoadMore}
             loadAllActive={loadAllActive}
+            isVirtualFolder={!!virtualFolder}
+            onFavoritesChanged={() => {
+              bumpPrefs();
+              queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+            }}
           />
         </div>
 
@@ -1991,6 +1996,11 @@ export default function MailPage() {
                   loadingMore={loadingMore}
                   onLoadMore={handleLoadMore}
                   loadAllActive={loadAllActive}
+                  isVirtualFolder={!!virtualFolder}
+                  onFavoritesChanged={() => {
+                    bumpPrefs();
+                    queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+                  }}
                 />
               )}
             </div>
