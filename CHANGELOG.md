@@ -9,6 +9,12 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+#### WebSocket temps-réel rejetée avec « invalid signature »
+
+- **Symptôme** : la connexion `/ws` montait bien (`101 Switching Protocols`) puis se fermait immédiatement, et les logs serveur affichaient en boucle `WebSocket auth failed (invalid/expired token) err=invalid signature`. Conséquence : aucun événement temps-réel (`new-mail`, `mail-moved`, …) ne parvenait au client.
+- **Cause** : les access tokens JWT sont signés avec `JWT_SECRET` (avec fallback sur `SESSION_SECRET`) via `getJwtSecret()` dans [server/src/services/deviceSessions.ts](server/src/services/deviceSessions.ts), mais le handshake WebSocket vérifiait uniquement avec `SESSION_SECRET`. Quand un déploiement définissait un `JWT_SECRET` distinct, la signature ne pouvait jamais être validée.
+- **Correctif** ([server/src/services/websocket.ts](server/src/services/websocket.ts)) : le handshake utilise désormais `verifyAccessToken` (le même validateur que les routes HTTP) en priorité, avec un fallback sur `jwt.verify(SESSION_SECRET)` pour rester compatible avec les anciens tokens longs.
+
 #### Liste de la boîte de réception qui ne se vide pas après une règle « Déplacer vers le dossier »
 
 - **Symptôme** : quand une règle de courrier déplaçait un nouveau message hors de la boîte de réception (action *Déplacer vers le dossier*), le mail apparaissait simultanément dans la boîte de réception **et** dans le dossier cible côté UI, et ne disparaissait de la boîte de réception qu'au rafraîchissement automatique suivant (jusqu'à 30 s plus tard).

@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '../utils/logger';
 import jwt from 'jsonwebtoken';
 import { sendPushToUser, PushPayload } from './push';
+import { verifyAccessToken } from './deviceSessions';
 
 interface WsClient {
   ws: WebSocket;
@@ -22,25 +23,36 @@ export function setupWebSocket(wss: WebSocketServer) {
         // Authentication message
         if (message.type === 'auth') {
           const token = message.token;
-          try {
-            const decoded = jwt.verify(token, process.env.SESSION_SECRET || 'dev-secret-change-me') as { userId: string };
-            userId = decoded.userId;
-
-            if (!clients.has(userId)) {
-              clients.set(userId, []);
+          // Try the modern access-token path first (signed with JWT_SECRET via
+          // deviceSessions.getJwtSecret), then fall back to the legacy long-lived
+          // JWT signed with SESSION_SECRET so older sessions keep working.
+          let resolvedUserId: string | null = null;
+          const accessPayload = verifyAccessToken(token);
+          if (accessPayload?.userId) {
+            resolvedUserId = accessPayload.userId;
+          } else {
+            try {
+              const decoded = jwt.verify(token, process.env.SESSION_SECRET || 'dev-secret-change-me') as { userId: string };
+              resolvedUserId = decoded?.userId ?? null;
+            } catch (err) {
+              logger.warn({ err: (err as Error).message }, 'WebSocket auth failed (invalid/expired token)');
             }
-            clients.get(userId)!.push({ ws, userId, isAlive: true });
+          }
 
-            ws.send(JSON.stringify({ type: 'auth', status: 'ok' }));
-            logger.info(`WebSocket authenticated: ${userId}`);
-          } catch (err) {
-            // JWT invalide ou expiré : on prévient le client (qui pourra
-            // rafraîchir son token et se reconnecter) puis on ferme proprement.
-            logger.warn({ err: (err as Error).message }, 'WebSocket auth failed (invalid/expired token)');
+          if (!resolvedUserId) {
             try { ws.send(JSON.stringify({ type: 'auth', status: 'error', reason: 'invalid_token' })); } catch {}
             ws.close(4001, 'invalid_token');
             return;
           }
+
+          userId = resolvedUserId;
+          if (!clients.has(userId)) {
+            clients.set(userId, []);
+          }
+          clients.get(userId)!.push({ ws, userId, isAlive: true });
+
+          ws.send(JSON.stringify({ type: 'auth', status: 'ok' }));
+          logger.info(`WebSocket authenticated: ${userId}`);
         }
 
         // Ping/pong
