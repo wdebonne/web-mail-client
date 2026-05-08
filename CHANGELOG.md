@@ -7,6 +7,15 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Corrigé
+
+#### Plus d'expéditeur « Inconnu » dans la liste des messages
+
+- **Cascade de repli sur l'enveloppe IMAP** ([server/src/services/mail.ts](server/src/services/mail.ts)) : certains messages (newsletters, listes de diffusion, en-têtes encodés exotiques, syntaxe « group » RFC-2822 du genre `Undisclosed-recipients:;`) renvoient une enveloppe IMAP dont `envelope.from[0]` existe mais avec `address` et `name` vides — le client recevait alors `from: null` et la liste affichait *Inconnu / ?*, particulièrement visible au changement de dossier ou pendant la synchronisation du cache (moment où la liste est repeuplée depuis IMAP). Nouveau helper `pickFirstAddress()` qui ignore les entrées vides puis cascade `envelope.from` → `envelope.sender` → `envelope.replyTo`.
+- **Seconde passe sur les en-têtes bruts** : pour les UIDs encore sans expéditeur après la cascade enveloppe, une seconde requête `client.fetch(uids, { headers: ['from','sender','reply-to','return-path'] })` récupère les en-têtes RFC 5322 bruts. Le helper `parseAddressFromHeaders()` les déplie (continuations WSP), reconnaît les formats `"Nom" <a@b>`, `Nom <a@b>` et adresse nue, et remplit le champ `from` manquant. Erreurs IMAP non bloquantes (`logger.warn`).
+- **Même cascade dans la vue détail** : `getMessage()` applique désormais `mailparser` → `pickFirstAddress(envelope.*)` → `parseAddressFromHeaders()` avant de tomber sur `null`, ce qui élimine également l'affichage *Inconnu* dans le panneau de lecture et les conversations.
+- **Note migration** : les messages déjà mis en cache avec `from: null` continueront d'afficher *Inconnu* tant que le dossier n'est pas re-synchronisé. Forcer une resynchro (Paramètres → Cache → **Vider le cache**) ou attendre la fenêtre incrémentale de 10 min par dossier.
+
 ### Ajouté
 
 #### Modèles de mail (templates) — personnels, partagés et globaux
