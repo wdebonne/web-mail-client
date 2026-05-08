@@ -7,6 +7,10 @@ export function useWebSocket(handlers: Record<string, MessageHandler> = {}) {
   const ws = useRef<WebSocket | null>(null);
   const token = useAuthStore((s) => s.token);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  // Keep the latest handlers in a ref so swapping callbacks across renders
+  // doesn't tear down and re-establish the WebSocket connection.
+  const handlersRef = useRef(handlers);
+  useEffect(() => { handlersRef.current = handlers; }, [handlers]);
 
   const connect = useCallback(() => {
     if (!token) return;
@@ -23,7 +27,7 @@ export function useWebSocket(handlers: Record<string, MessageHandler> = {}) {
     ws.current.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        const handler = handlers[message.type];
+        const handler = handlersRef.current[message.type];
         if (handler) {
           handler(message.data);
         }
@@ -37,7 +41,7 @@ export function useWebSocket(handlers: Record<string, MessageHandler> = {}) {
     ws.current.onerror = () => {
       ws.current?.close();
     };
-  }, [token, handlers]);
+  }, [token]);
 
   useEffect(() => {
     connect();

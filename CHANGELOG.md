@@ -7,6 +7,15 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Corrigé
+
+#### Liste de la boîte de réception qui ne se vide pas après une règle « Déplacer vers le dossier »
+
+- **Symptôme** : quand une règle de courrier déplaçait un nouveau message hors de la boîte de réception (action *Déplacer vers le dossier*), le mail apparaissait simultanément dans la boîte de réception **et** dans le dossier cible côté UI, et ne disparaissait de la boîte de réception qu'au rafraîchissement automatique suivant (jusqu'à 30 s plus tard).
+- **Cause** : le moteur de règles côté serveur effectue bien le `MOVE` IMAP, puis pose `ruleResult.silence = true` pour éviter une notification utilisateur sur un UID qui n'existe plus dans `INBOX` ([server/src/services/mailRules.ts](server/src/services/mailRules.ts)). Mais comme la branche silencieuse sortait directement de la boucle ([server/src/services/newMailPoller.ts](server/src/services/newMailPoller.ts)), **aucun événement WebSocket** n'était émis — l'UI ouverte ne savait pas qu'elle devait recharger la liste des messages.
+- **Correctif (côté serveur)** ([server/src/services/newMailPoller.ts](server/src/services/newMailPoller.ts)) : quand une règle déplace ou supprime un message, le poller émet désormais un événement WebSocket léger `mail-moved` (`{ accountId, uid, srcFolder: 'INBOX', reason: 'rule', matchedRules }`) à destination de l'utilisateur propriétaire — sans notification visible, juste un signal de rafraîchissement.
+- **Correctif (côté client)** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx), [client/src/hooks/useWebSocket.ts](client/src/hooks/useWebSocket.ts)) : la page Messagerie s'abonne désormais aux événements temps-réel `new-mail`, `mail-moved`, `mail-deleted`, `mail-read` et `mail-archived` via `useWebSocket`, et invalide les caches React-Query `['messages']` / `['virtual-messages']` / `['folders']` à la réception. Le hook conserve désormais les handlers dans une `ref` pour éviter de reconstruire/reconnecter la WebSocket à chaque re-rendu.
+
 ### Ajouté
 
 #### Transfert automatique pendant que le répondeur est actif

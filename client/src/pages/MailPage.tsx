@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { api } from '../api';
 import { useMailStore, ComposeData } from '../stores/mailStore';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { useUIStore } from '../stores/uiStore';
 import { offlineDB } from '../pwa/offlineDB';
 import FolderPane from '../components/mail/FolderPane';
@@ -287,6 +288,37 @@ export default function MailPage() {
       setMessages(messagesData.messages || [], messagesData.total || 0, messagesData.page || 1);
     }
   }, [messagesData]);
+
+  // Real-time refresh: when the server emits a `new-mail` WebSocket event,
+  // immediately invalidate the message lists. Without this, the INBOX list
+  // would only catch up on the next 30 s `refetchInterval`, which is too slow
+  // for messages that have been MOVED by a server-side rule (the user would
+  // briefly see the same message in both the source folder *and* the target
+  // folder until the next refresh). The server already broadcasts mail-moved
+  // / mail-read / mail-archived for the same reason — we listen to all of
+  // them so the UI stays in sync regardless of the source.
+  useWebSocket({
+    'new-mail': () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+      queryClient.invalidateQueries({ queryKey: ['folders'] });
+    },
+    'mail-moved': () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+    },
+    'mail-deleted': () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+    },
+    'mail-read': () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    },
+    'mail-archived': () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+    },
+  });
 
   // Apply user's mail rules with `assignCategory` actions to the freshly
   // fetched messages. Categories live in localStorage (client-side only) so

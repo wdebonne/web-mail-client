@@ -1,7 +1,7 @@
 import { pool } from '../database/connection';
 import { decrypt } from '../utils/encryption';
 import { MailService } from './mail';
-import { notifyWithPush, hasActiveWebSocket } from './websocket';
+import { notifyWithPush, hasActiveWebSocket, notifyUser } from './websocket';
 import { logger } from '../utils/logger';
 import { maybeSendAutoReply } from './autoResponderService';
 import { applyRulesToIncoming } from './mailRules';
@@ -209,6 +209,18 @@ async function checkAccount(row: any) {
         return { removed: false, markedRead: false, silence: false, matched: 0 } as const;
       });
       if (ruleResult.silence) {
+        // The rule moved/deleted the message away from INBOX — no user-facing
+        // notification needed, but the open UI must refresh its INBOX list
+        // immediately, otherwise the client would show the now-moved UID until
+        // its next 30 s polling tick. Emitting a lightweight `mail-moved`
+        // event over WebSocket lets MailPage invalidate its cached queries.
+        notifyUser(row.user_id, 'mail-moved', {
+          accountId: row.id,
+          uid,
+          srcFolder: 'INBOX',
+          reason: 'rule',
+          matchedRules: ruleResult.matched,
+        });
         continue;
       }
 
