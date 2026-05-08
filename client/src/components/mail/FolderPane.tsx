@@ -519,9 +519,16 @@ function AccountFolders({
     queryKey: ['folder-status', account.id],
     queryFn: () => api.getFoldersStatus(account.id),
     enabled: wantStatus,
-    staleTime: 15_000,
-    refetchInterval: 30_000,
+    staleTime: 30_000,
+    refetchInterval: (q) => {
+      // Server returned `failed:true` (auth issue, IMAP down) — back off to
+      // avoid hammering. The server cache is already 5 minutes in that case.
+      const d: any = q.state.data;
+      if (d?.failed) return false;
+      return 60_000;
+    },
     refetchOnWindowFocus: true,
+    retry: false,
   });
   const statusByPath = (statusData?.folders || {}) as Record<
     string,
@@ -1050,9 +1057,14 @@ function FavoritesSection({
       queryKey: ['folder-status', id],
       queryFn: () => api.getFoldersStatus(id),
       enabled: wantStatus || wantStatusForUnifiedInbox,
-      staleTime: 15_000,
-      refetchInterval: 30_000,
+      staleTime: 30_000,
+      refetchInterval: (q: any) => {
+        const d: any = q?.state?.data;
+        if (d?.failed) return false;
+        return 60_000;
+      },
       refetchOnWindowFocus: true,
+      retry: false,
     })),
   });
 

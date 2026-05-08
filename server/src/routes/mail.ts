@@ -28,8 +28,12 @@ mailRouter.get('/accounts/:accountId/folders', async (req: AuthRequest, res) => 
 // Statut (compteurs) de tous les dossiers d'un compte — utilisé pour
 // afficher le nombre de mails non lus à côté du nom du dossier.
 // Mis en cache 20 s par utilisateur+compte pour limiter les commandes IMAP STATUS.
-const folderStatusCache = new Map<string, { value: Record<string, { messages: number; unseen: number; recent: number }>; at: number }>();
+// Quand l'authentification IMAP échoue (token OAuth expiré, mot de passe
+// changé, etc.), on renvoie un objet vide avec un cache plus long pour ne pas
+// marteler le serveur IMAP toutes les 30 s.
+const folderStatusCache = new Map<string, { value: Record<string, { messages: number; unseen: number; recent: number }>; at: number; failed?: boolean }>();
 const FOLDER_STATUS_TTL_MS = 20_000;
+const FOLDER_STATUS_FAIL_TTL_MS = 5 * 60_000;
 
 mailRouter.get('/accounts/:accountId/folders/status', async (req: AuthRequest, res) => {
   try {
@@ -40,14 +44,29 @@ mailRouter.get('/accounts/:accountId/folders/status', async (req: AuthRequest, r
     const cacheKey = `${req.userId}:${accountId}`;
     const force = String(req.query.refresh || '') === '1';
     const cached = folderStatusCache.get(cacheKey);
-    if (!force && cached && Date.now() - cached.at < FOLDER_STATUS_TTL_MS) {
-      return res.json({ folders: cached.value, cached: true });
+    const ttl = cached?.failed ? FOLDER_STATUS_FAIL_TTL_MS : FOLDER_STATUS_TTL_MS;
+    if (!force && cached && Date.now() - cached.at < ttl) {
+      return res.json({ folders: cached.value, cached: true, failed: !!cached.failed });
     }
 
     const mailService = new MailService(account);
-    const status = await mailService.getFoldersStatus();
-    folderStatusCache.set(cacheKey, { value: status, at: Date.now() });
-    res.json({ folders: status, cached: false });
+    try {
+      const status = await mailService.getFoldersStatus();
+      folderStatusCache.set(cacheKey, { value: status, at: Date.now() });
+      res.json({ folders: status, cached: false });
+    } catch (imapError: any) {
+      // Auth failures (OAuth token expired, wrong password) and other IMAP
+      // command errors must not flood the logs nor become 500s — counters are
+      // a non-critical UI affordance. Cache an empty result for a few minutes.
+      const isAuthFailure = !!imapError?.authenticationFailed
+        || imapError?.responseStatus === 'NO'
+        || /AUTHENTICATE failed/i.test(String(imapError?.responseText || imapError?.message || ''));
+      folderStatusCache.set(cacheKey, { value: {}, at: Date.now(), failed: true });
+      if (!isAuthFailure) {
+        logger.warn({ err: imapError, accountId }, 'folder-status: IMAP error');
+      }
+      res.json({ folders: {}, cached: false, failed: true, reason: isAuthFailure ? 'auth' : 'imap' });
+    }
   } catch (error: any) {
     console.error('Get folder status error:', error);
     res.status(500).json({ error: error.message || 'Erreur de récupération du statut' });
