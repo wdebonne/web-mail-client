@@ -12,6 +12,7 @@ import {
   IMPORTANCE_LEVELS, SENSITIVITY_LEVELS,
   actionNeedsValue, conditionNeedsValue,
 } from '../../utils/mailRules';
+import { getCategories, subscribeCategories, type MailCategory } from '../../utils/categories';
 
 interface RuleWizardProps {
   rule: MailRule | null;
@@ -92,8 +93,7 @@ export default function RuleWizard({ rule, accounts, defaultAccountId, isAdmin, 
       const need = actionNeedsValue(a.type);
       if (need === 'folder' && !a.folder) return `Sélectionnez un dossier pour « ${ACTION_LABELS[a.type]} ».`;
       if (need === 'addresses' && !(a.to || '').trim()) return `Indiquez au moins une adresse pour « ${ACTION_LABELS[a.type]} ».`;
-      if (need === 'template' && !a.templateId) return `Sélectionnez un modèle pour « ${ACTION_LABELS[a.type]} ».`;
-    }
+      if (need === 'template' && !a.templateId) return `Sélectionnez un modèle pour « ${ACTION_LABELS[a.type]} ».`;      if (need === 'category' && !a.categoryId) return `Sélectionnez une catégorie pour « ${ACTION_LABELS[a.type]} ».`;    }
     return null;
   };
 
@@ -490,6 +490,10 @@ function Step3(props: {
   const remove = (idx: number) => props.setActions(props.actions.filter((_, i) => i !== idx));
   const addOfType = (type: MailRuleActionType) => props.setActions([...props.actions, { type }]);
 
+  // Categories live in localStorage — keep them reactive while the wizard is open.
+  const [categories, setCategories] = useState<MailCategory[]>(() => getCategories());
+  useEffect(() => subscribeCategories(() => setCategories(getCategories())), []);
+
   return (
     <div>
       <div className="text-xs font-semibold text-outlook-text-secondary mb-2 uppercase tracking-wide">
@@ -505,7 +509,7 @@ function Step3(props: {
             <div key={idx} className="flex items-start gap-2 p-2 border border-outlook-border rounded bg-outlook-bg-primary">
               <select
                 value={a.type}
-                onChange={(e) => update(idx, { type: e.target.value as MailRuleActionType, folder: '', to: '', templateId: undefined })}
+                onChange={(e) => update(idx, { type: e.target.value as MailRuleActionType, folder: '', to: '', templateId: undefined, categoryId: undefined, categoryName: undefined })}
                 className="px-2 py-1 text-sm border border-outlook-border rounded bg-white"
               >
                 {ACTION_GROUPS.map((g) => (
@@ -546,6 +550,25 @@ function Step3(props: {
                 >
                   <option value="">-- Choisir un modèle --</option>
                   {props.templates.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+
+              {need === 'category' && (
+                <select
+                  value={a.categoryId || ''}
+                  onChange={(e) => {
+                    const cat = categories.find((c) => c.id === e.target.value);
+                    update(idx, { categoryId: e.target.value, categoryName: cat?.name });
+                  }}
+                  className="flex-1 px-2 py-1 text-sm border border-outlook-border rounded"
+                >
+                  <option value="">-- Choisir une catégorie --</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                  {a.categoryId && !categories.find((c) => c.id === a.categoryId) && a.categoryName && (
+                    <option value={a.categoryId}>{a.categoryName} (inconnue ici)</option>
+                  )}
                 </select>
               )}
 

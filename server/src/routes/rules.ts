@@ -21,6 +21,8 @@ const actionSchema = z.object({
   folder: z.string().max(255).optional(),
   to: z.string().max(2000).optional(),
   templateId: z.string().uuid().optional(),
+  categoryId: z.string().max(120).optional(),
+  categoryName: z.string().max(255).optional(),
 });
 
 const ruleUpsertSchema = z.object({

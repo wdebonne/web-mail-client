@@ -2235,7 +2235,7 @@ adminRouter.get('/auto-responders/account/:accountId', async (req: AuthRequest, 
 
     const result = await pool.query(
       `SELECT account_id, enabled, subject, body_html, body_text,
-              scheduled, start_at, end_at, only_contacts, created_at, updated_at
+              scheduled, start_at, end_at, only_contacts, forward_to, created_at, updated_at
          FROM auto_responders WHERE account_id = $1`,
       [accountId],
     );
@@ -2250,6 +2250,7 @@ adminRouter.get('/auto-responders/account/:accountId', async (req: AuthRequest, 
         startAt: null,
         endAt: null,
         onlyContacts: false,
+        forwardTo: [],
         updatedAt: null,
       });
     }
@@ -2264,6 +2265,7 @@ adminRouter.get('/auto-responders/account/:accountId', async (req: AuthRequest, 
       startAt: row.start_at,
       endAt: row.end_at,
       onlyContacts: row.only_contacts,
+      forwardTo: Array.isArray(row.forward_to) ? row.forward_to : [],
       updatedAt: row.updated_at,
     });
   } catch (error: any) {

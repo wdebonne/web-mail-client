@@ -36,6 +36,8 @@ import {
   toggleMessageCategory, clearMessageCategories, getMessageCategories,
   subscribeCategories,
 } from '../utils/categories';
+import { applyCategoryRules } from '../utils/mailRulesEval';
+import { useAuthStore } from '../stores/authStore';
 import { CategoryEditorModal, CategoryManageModal, CategoryPicker } from '../components/mail/CategoryModals';
 import { resolveFolderDisplayName } from '../components/mail/MessageList';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
@@ -62,6 +64,15 @@ export default function MailPage() {
   // Bump to re-render when preferences change (favorites etc.)
   const [prefsVersion, setPrefsVersion] = useState(0);
   const bumpPrefs = useCallback(() => setPrefsVersion((n) => n + 1), []);
+
+  // Mail rules — used to apply the client-side `assignCategory` action when
+  // a freshly fetched message matches one of the user's enabled rules.
+  const authUser = useAuthStore((s) => s.user);
+  const { data: rulesForCategorization = [] } = useQuery({
+    queryKey: ['mail-rules'],
+    queryFn: () => api.listMailRules(),
+    staleTime: 60_000,
+  });
 
   /** Resolve the origin (accountId, folder) for a message — uses message tags
    *  when present (virtual/unified view), falls back to the current selection. */
@@ -276,6 +287,22 @@ export default function MailPage() {
       setMessages(messagesData.messages || [], messagesData.total || 0, messagesData.page || 1);
     }
   }, [messagesData]);
+
+  // Apply user's mail rules with `assignCategory` actions to the freshly
+  // fetched messages. Categories live in localStorage (client-side only) so
+  // this re-evaluation has to happen here rather than on the server.
+  useEffect(() => {
+    const list = messagesData?.messages || [];
+    if (!list.length || !rulesForCategorization.length || !selectedAccount) return;
+    const n = applyCategoryRules(list as any, rulesForCategorization, {
+      accountId: selectedAccount.id,
+      folder: selectedFolder,
+      accountEmail: selectedAccount.email || '',
+      userEmail: authUser?.email || '',
+      userDisplayName: (authUser as any)?.display_name || (authUser as any)?.displayName || '',
+    });
+    if (n > 0) bumpPrefs();
+  }, [messagesData, rulesForCategorization, selectedAccount, selectedFolder, authUser, bumpPrefs]);
 
   // Hydrate the message list from IndexedDB the instant the user switches to a
   // folder, without waiting for the network round-trip. The React-Query refetch

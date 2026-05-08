@@ -75,6 +75,10 @@ export const upsertSchema = z.object({
   startAt: z.string().datetime().nullable().optional(),
   endAt: z.string().datetime().nullable().optional(),
   onlyContacts: z.boolean().default(false),
+  /** Optional list of email addresses that should receive a copy of every
+   *  incoming message while the responder is active. Capped to keep the
+   *  forwarding fan-out reasonable. */
+  forwardTo: z.array(z.string().trim().toLowerCase().email()).max(20).default([]),
 });
 
 export const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
@@ -120,7 +124,7 @@ autoResponderRouter.get('/account/:accountId', async (req: AuthRequest, res) => 
 
     const result = await pool.query(
       `SELECT id, account_id, enabled, subject, body_html, body_text,
-              scheduled, start_at, end_at, only_contacts, updated_at
+              scheduled, start_at, end_at, only_contacts, forward_to, updated_at
          FROM auto_responders WHERE account_id = $1`,
       [accountId],
     );
@@ -136,6 +140,7 @@ autoResponderRouter.get('/account/:accountId', async (req: AuthRequest, res) => 
         startAt: null,
         endAt: null,
         onlyContacts: false,
+        forwardTo: [],
         updatedAt: null,
       });
     }
@@ -151,6 +156,7 @@ autoResponderRouter.get('/account/:accountId', async (req: AuthRequest, res) => 
       startAt: row.start_at,
       endAt: row.end_at,
       onlyContacts: row.only_contacts,
+      forwardTo: Array.isArray(row.forward_to) ? row.forward_to : [],
       updatedAt: row.updated_at,
     });
   } catch (error: any) {
@@ -215,11 +221,14 @@ export async function upsertAutoResponderForAccount(accountId: string, body: unk
     return { status: 400, error: 'Le message du répondeur ne peut pas être vide' };
   }
 
+  // Deduplicate while preserving order; emails were already trimmed/lowercased by Zod.
+  const forwardList = Array.from(new Set(data.forwardTo || []));
+
   await pool.query(
     `INSERT INTO auto_responders (
         account_id, enabled, subject, body_html, body_text,
-        scheduled, start_at, end_at, only_contacts, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        scheduled, start_at, end_at, only_contacts, forward_to, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       ON CONFLICT (account_id) DO UPDATE SET
         enabled = EXCLUDED.enabled,
         subject = EXCLUDED.subject,
@@ -229,6 +238,7 @@ export async function upsertAutoResponderForAccount(accountId: string, body: unk
         start_at = EXCLUDED.start_at,
         end_at = EXCLUDED.end_at,
         only_contacts = EXCLUDED.only_contacts,
+        forward_to = EXCLUDED.forward_to,
         updated_at = NOW()`,
     [
       accountId,
@@ -240,6 +250,7 @@ export async function upsertAutoResponderForAccount(accountId: string, body: unk
       data.scheduled ? data.startAt : null,
       data.scheduled ? data.endAt ?? null : null,
       data.onlyContacts,
+      JSON.stringify(forwardList),
     ],
   );
 

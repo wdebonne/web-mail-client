@@ -761,6 +761,7 @@ export const api = {
       startAt: string | null;
       endAt: string | null;
       onlyContacts: boolean;
+      forwardTo: string[];
       updatedAt: string | null;
     }>(`/auto-responder/account/${accountId}`),
 
@@ -773,6 +774,7 @@ export const api = {
     startAt: string | null;
     endAt: string | null;
     onlyContacts: boolean;
+    forwardTo: string[];
   }) =>
     request<{ success: boolean }>(`/auto-responder/account/${accountId}`, {
       method: 'PUT',
@@ -820,6 +822,7 @@ export const api = {
       startAt: string | null;
       endAt: string | null;
       onlyContacts: boolean;
+      forwardTo: string[];
       updatedAt: string | null;
     }>(`/admin/auto-responders/account/${accountId}`),
 
@@ -832,6 +835,7 @@ export const api = {
     startAt: string | null;
     endAt: string | null;
     onlyContacts: boolean;
+    forwardTo: string[];
   }) =>
     request<{ success: boolean }>(`/admin/auto-responders/account/${accountId}`, {
       method: 'PUT',
@@ -986,7 +990,9 @@ export type MailRuleConditionType =
 export type MailRuleActionType =
   | 'moveToFolder' | 'copyToFolder' | 'delete' | 'permanentlyDelete'
   | 'markAsRead' | 'markAsUnread' | 'flag' | 'unflag'
-  | 'forwardTo' | 'redirectTo' | 'replyWithTemplate' | 'stopProcessingMoreRules';
+  | 'forwardTo' | 'redirectTo' | 'replyWithTemplate'
+  | 'assignCategory'
+  | 'stopProcessingMoreRules';
 
 export interface MailRuleCondition {
   type: MailRuleConditionType;
@@ -1000,6 +1006,10 @@ export interface MailRuleAction {
   folder?: string;
   to?: string;
   templateId?: string;
+  /** Local category id (client-side localStorage) for `assignCategory`. */
+  categoryId?: string;
+  /** Category display name, used as a fallback if the id is unknown locally. */
+  categoryName?: string;
 }
 
 export interface MailRule {

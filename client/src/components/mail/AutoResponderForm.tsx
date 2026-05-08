@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, Save,
-  Loader2, AlertCircle,
+  Loader2, AlertCircle, X, Forward,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../../api';
@@ -33,6 +33,8 @@ interface ResponderState {
   startAt: string;       // 'YYYY-MM-DDTHH:mm' (local), or ''
   endAt: string;         // same
   onlyContacts: boolean;
+  forwardEnabled: boolean;
+  forwardTo: string[];
 }
 
 const DEFAULT_STATE: ResponderState = {
@@ -43,7 +45,12 @@ const DEFAULT_STATE: ResponderState = {
   startAt: '',
   endAt: '',
   onlyContacts: false,
+  forwardEnabled: false,
+  forwardTo: [],
 };
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_FORWARD_TARGETS = 20;
 
 /** Convert an ISO string to a `datetime-local` value (in the user's local zone). */
 function isoToLocalInput(iso: string | null): string {
@@ -92,6 +99,7 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
   // Hydrate the form whenever the loaded settings change.
   useEffect(() => {
     if (!data) return;
+    const incomingForward = Array.isArray((data as any).forwardTo) ? (data as any).forwardTo as string[] : [];
     setState({
       enabled: data.enabled,
       subject: data.subject || 'Réponse automatique',
@@ -100,6 +108,8 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
       startAt: isoToLocalInput(data.startAt),
       endAt: isoToLocalInput(data.endAt),
       onlyContacts: data.onlyContacts,
+      forwardEnabled: incomingForward.length > 0,
+      forwardTo: incomingForward,
     });
     if (editorRef.current) {
       editorRef.current.innerHTML = data.bodyHtml || '';
@@ -109,6 +119,9 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
   const saveMutation = useMutation({
     mutationFn: () => {
       const html = editorRef.current?.innerHTML ?? state.bodyHtml;
+      const forwardTo = state.forwardEnabled
+        ? Array.from(new Set(state.forwardTo.map((e) => e.trim().toLowerCase()).filter((e) => EMAIL_RE.test(e))))
+        : [];
       const payload = {
         enabled: state.enabled,
         subject: state.subject.trim() || 'Réponse automatique',
@@ -117,6 +130,7 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
         startAt: state.scheduled ? localInputToIso(state.startAt) : null,
         endAt: state.scheduled && state.endAt ? localInputToIso(state.endAt) : null,
         onlyContacts: state.onlyContacts,
+        forwardTo,
       };
       return adminMode
         ? api.adminSaveAutoResponder(accountId, payload)
@@ -284,6 +298,14 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
           />
           <span className="text-sm">Envoyer des réponses uniquement à mes contacts</span>
         </label>
+
+        {/* Auto-forwarding */}
+        <ForwardingSection
+          enabled={state.forwardEnabled}
+          recipients={state.forwardTo}
+          onToggle={(checked) => setState(s => ({ ...s, forwardEnabled: checked }))}
+          onChange={(list) => setState(s => ({ ...s, forwardTo: list }))}
+        />
       </div>
 
       {/* Save button */}
@@ -299,6 +321,189 @@ export default function AutoResponderForm({ accountId: initialId, accounts, onSa
           Enregistrer
         </button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Forwarding section — toggle + chips of email addresses + autocomplete input
+// powered by the contacts directory. Also accepts free-form addresses entered
+// manually (validated as standard emails) via Enter / comma / blur.
+// ---------------------------------------------------------------------------
+
+interface ForwardingSectionProps {
+  enabled: boolean;
+  recipients: string[];
+  onToggle: (checked: boolean) => void;
+  onChange: (next: string[]) => void;
+}
+
+function ForwardingSection({ enabled, recipients, onToggle, onChange }: ForwardingSectionProps) {
+  const [input, setInput] = useState('');
+  const [suggestions, setSuggestions] = useState<Array<{ name?: string; email: string }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<number | undefined>(undefined);
+
+  const atCap = recipients.length >= MAX_FORWARD_TARGETS;
+
+  // Close the suggestion popover when clicking outside.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  // Debounced autocomplete search against the contacts API.
+  useEffect(() => {
+    if (!enabled || atCap) {
+      setSuggestions([]);
+      return;
+    }
+    const q = input.trim();
+    if (q.length < 1) {
+      setSuggestions([]);
+      return;
+    }
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(async () => {
+      try {
+        const r = await api.searchContacts(q);
+        const flat: Array<{ name?: string; email: string }> = [];
+        for (const c of r.contacts || []) {
+          const email = (c.email || '').trim();
+          if (email) flat.push({ name: c.display_name || c.name || c.full_name, email });
+        }
+        // Drop already-selected and the empty ones; cap to 8.
+        const picked = recipients.map((e) => e.toLowerCase());
+        const filtered = flat
+          .filter((s) => !picked.includes(s.email.toLowerCase()))
+          .slice(0, 8);
+        setSuggestions(filtered);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 200);
+    return () => { if (debounceRef.current) window.clearTimeout(debounceRef.current); };
+  }, [input, enabled, atCap, recipients]);
+
+  const addRecipient = (raw: string) => {
+    const candidate = raw.trim().toLowerCase();
+    if (!candidate) return;
+    if (!EMAIL_RE.test(candidate)) {
+      toast.error('Adresse e-mail invalide');
+      return;
+    }
+    if (recipients.some((e) => e.toLowerCase() === candidate)) {
+      setInput('');
+      return;
+    }
+    if (recipients.length >= MAX_FORWARD_TARGETS) {
+      toast.error(`Maximum ${MAX_FORWARD_TARGETS} destinataires`);
+      return;
+    }
+    onChange([...recipients, candidate]);
+    setInput('');
+    setSuggestions([]);
+  };
+
+  const removeAt = (idx: number) => {
+    onChange(recipients.filter((_, i) => i !== idx));
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',' || e.key === ';') {
+      e.preventDefault();
+      if (input.trim()) addRecipient(input);
+    } else if (e.key === 'Backspace' && !input && recipients.length > 0) {
+      removeAt(recipients.length - 1);
+    }
+  };
+
+  return (
+    <div className="mt-4 border-t border-outlook-border pt-3">
+      <label className="inline-flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+        <span className="text-sm font-medium inline-flex items-center gap-1.5">
+          <Forward size={14} className="text-outlook-text-secondary" />
+          Transférer également les nouveaux mails reçus
+        </span>
+      </label>
+
+      {enabled && (
+        <div ref={containerRef} className="mt-2 pl-6 relative">
+          <p className="text-xs text-outlook-text-secondary mb-2">
+            Pendant que le répondeur est actif, chaque nouveau message reçu sera également envoyé
+            à ces adresses (avec ses pièces jointes).
+          </p>
+
+          <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 border border-outlook-border rounded bg-white min-h-[36px]">
+            {recipients.map((email, idx) => (
+              <span
+                key={`${email}-${idx}`}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-outlook-blue/10 text-outlook-blue"
+              >
+                {email}
+                <button
+                  type="button"
+                  onClick={() => removeAt(idx)}
+                  className="hover:bg-outlook-blue/20 rounded-full p-0.5"
+                  aria-label={`Retirer ${email}`}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+            <input
+              type="email"
+              value={input}
+              onChange={(e) => { setInput(e.target.value); setShowSuggestions(true); }}
+              onKeyDown={onKeyDown}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => {
+                // Auto-commit a typed address on blur if it looks like an email.
+                if (input.trim() && EMAIL_RE.test(input.trim().toLowerCase())) {
+                  addRecipient(input);
+                }
+              }}
+              disabled={atCap}
+              placeholder={atCap ? 'Limite atteinte' : (recipients.length === 0 ? 'Ajouter un destinataire…' : '')}
+              className="flex-1 min-w-[160px] text-sm bg-transparent outline-none placeholder:text-outlook-text-disabled"
+            />
+          </div>
+
+          {showSuggestions && suggestions.length > 0 && (
+            <ul className="absolute z-20 left-6 right-0 mt-1 max-h-56 overflow-y-auto bg-white border border-outlook-border rounded shadow-lg">
+              {suggestions.map((s) => (
+                <li key={s.email}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); addRecipient(s.email); }}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex flex-col"
+                  >
+                    {s.name && <span className="font-medium">{s.name}</span>}
+                    <span className="text-xs text-outlook-text-secondary">{s.email}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="text-[11px] text-outlook-text-secondary mt-1">
+            Astuce : appuyez sur <kbd className="px-1 py-0.5 bg-outlook-bg-secondary rounded border">Entrée</kbd> ou
+            <kbd className="px-1 py-0.5 bg-outlook-bg-secondary rounded border ml-1">,</kbd> pour ajouter une adresse.
+            Les messages déjà automatiques (listes de diffusion, autres répondeurs…) ne sont jamais transférés.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

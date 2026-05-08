@@ -59,6 +59,7 @@ export type RuleActionType =
   | 'forwardTo'
   | 'redirectTo'
   | 'replyWithTemplate'
+  | 'assignCategory'
   | 'stopProcessingMoreRules';
 
 export interface RuleAction {
@@ -67,6 +68,11 @@ export interface RuleAction {
   /** comma-separated list of email addresses */
   to?: string;
   templateId?: string;
+  /** For `assignCategory` — local category id stored client-side. */
+  categoryId?: string;
+  /** Human-readable category name, kept as a fallback when the id
+   *  is unknown to the device viewing the rule. */
+  categoryName?: string;
 }
 
 export interface MailRuleRow {
@@ -96,7 +102,8 @@ export const CONDITION_TYPES: RuleConditionType[] = [
 export const ACTION_TYPES: RuleActionType[] = [
   'moveToFolder', 'copyToFolder', 'delete', 'permanentlyDelete',
   'markAsRead', 'markAsUnread', 'flag', 'unflag', 'forwardTo',
-  'redirectTo', 'replyWithTemplate', 'stopProcessingMoreRules',
+  'redirectTo', 'replyWithTemplate', 'assignCategory',
+  'stopProcessingMoreRules',
 ];
 
 function lc(v: any): string {
@@ -457,6 +464,11 @@ async function runAction(
       }
       return;
     }
+    case 'assignCategory':
+      // Categories are stored client-side (localStorage) — the engine has
+      // nothing to do here. The action is persisted on the rule and applied
+      // by the web app after fetching the message list.
+      return;
     case 'stopProcessingMoreRules':
       return;
     default:

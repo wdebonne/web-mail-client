@@ -43,12 +43,14 @@ export const ACTION_LABELS: Record<MailRuleActionType, string> = {
   forwardTo: 'Transférer à',
   redirectTo: 'Rediriger vers',
   replyWithTemplate: 'Répondre avec un modèle',
+  assignCategory: 'Affecter à la catégorie',
   stopProcessingMoreRules: 'Ne plus traiter de règles',
 };
 
 export const ACTION_GROUPS: { label: string; types: MailRuleActionType[] }[] = [
   { label: 'Déplacer / supprimer', types: ['moveToFolder', 'copyToFolder', 'delete', 'permanentlyDelete'] },
   { label: 'Marquer', types: ['markAsRead', 'markAsUnread', 'flag', 'unflag'] },
+  { label: 'Catégoriser', types: ['assignCategory'] },
   { label: 'Transférer / répondre', types: ['forwardTo', 'redirectTo', 'replyWithTemplate'] },
   { label: 'Avancé', types: ['stopProcessingMoreRules'] },
 ];
@@ -74,7 +76,7 @@ export function conditionNeedsValue(t: MailRuleConditionType): boolean {
   }
 }
 
-export function actionNeedsValue(t: MailRuleActionType): 'folder' | 'addresses' | 'template' | null {
+export function actionNeedsValue(t: MailRuleActionType): 'folder' | 'addresses' | 'template' | 'category' | null {
   switch (t) {
     case 'moveToFolder':
     case 'copyToFolder':
@@ -84,19 +86,21 @@ export function actionNeedsValue(t: MailRuleActionType): 'folder' | 'addresses' 
       return 'addresses';
     case 'replyWithTemplate':
       return 'template';
+    case 'assignCategory':
+      return 'category';
     default:
       return null;
   }
 }
 
-export function summarizeRule(rule: { conditions: { type: MailRuleConditionType; value?: string }[]; actions: { type: MailRuleActionType; folder?: string; to?: string }[] }): string {
+export function summarizeRule(rule: { conditions: { type: MailRuleConditionType; value?: string }[]; actions: { type: MailRuleActionType; folder?: string; to?: string; categoryName?: string }[] }): string {
   const c = rule.conditions[0];
   const a = rule.actions[0];
   const condLabel = c
-    ? `${CONDITION_LABELS[c.type] || c.type}${c.value ? ` « ${c.value} »` : ''}`
+    ? `${CONDITION_LABELS[c.type] || c.type}${c.value ? ` « ${c.value} »` : ''}`
     : '(aucune condition)';
   const actLabel = a
-    ? `${ACTION_LABELS[a.type] || a.type}${a.folder ? ` → ${a.folder}` : a.to ? ` → ${a.to}` : ''}`
+    ? `${ACTION_LABELS[a.type] || a.type}${a.folder ? ` → ${a.folder}` : a.to ? ` → ${a.to}` : a.categoryName ? ` → ${a.categoryName}` : ''}`
     : '(aucune action)';
   return `Si ${condLabel.toLowerCase()} → ${actLabel}`;
 }

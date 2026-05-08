@@ -623,10 +623,14 @@ export async function initDatabase() {
         -- Per-recipient cooldown tracking (avoid spamming the same sender).
         -- Shape: { "<email>": "<ISO timestamp of last reply>" }
         replied_log JSONB NOT NULL DEFAULT '{}'::jsonb,
+        -- Automatic forwarding addresses applied while the responder is active.
+        -- Shape: ["alice@example.com", "bob@example.com"]
+        forward_to JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_auto_responders_account ON auto_responders(account_id);
+      ALTER TABLE IF EXISTS auto_responders ADD COLUMN IF NOT EXISTS forward_to JSONB NOT NULL DEFAULT '[]'::jsonb;
 
       -- Mail templates — reusable subject + body presets that users can insert
       -- into a compose window from the ribbon "Insérer > Modèles" picker.
