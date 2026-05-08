@@ -214,7 +214,15 @@ async function checkAccount(row: any) {
         // immediately, otherwise the client would show the now-moved UID until
         // its next 30 s polling tick. Emitting a lightweight `mail-moved`
         // event over WebSocket lets MailPage invalidate its cached queries.
-        logger.debug({ accountId: row.id, uid, matched: ruleResult.matched }, 'mail-rules: silenced — broadcasting mail-moved');
+        // INFO level (instead of debug) so we can confirm in production logs
+        // that the server actually broadcasts the event when a rule fires.
+        logger.info({
+          userId: row.user_id,
+          accountId: row.id,
+          uid,
+          matched: ruleResult.matched,
+          hasOpenWebSocket: hasActiveWebSocket(row.user_id),
+        }, 'mail-rules: silenced — broadcasting mail-moved');
         notifyUser(row.user_id, 'mail-moved', {
           accountId: row.id,
           uid,
