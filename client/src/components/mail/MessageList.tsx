@@ -494,21 +494,23 @@ export default function MessageList({
         <div className="px-2 pt-2 pb-1 flex items-center justify-between">
           {/* Left: folder pane toggle + folder name + star */}
           <div className="flex items-center gap-1 min-w-0">
-            {/* Select-all checkbox — toggles selection of every visible message */}
-            <label
-              className="hidden md:inline-flex items-center justify-center p-1 rounded flex-shrink-0 cursor-pointer text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary"
-              title={allFilteredSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
-              aria-label={allFilteredSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
-            >
-              <input
-                ref={selectAllRef}
-                type="checkbox"
-                checked={allFilteredSelected}
-                onChange={handleToggleSelectAll}
-                disabled={allFilteredKeys.length === 0}
-                className="w-3.5 h-3.5 rounded border-gray-300 text-outlook-blue focus:ring-outlook-blue cursor-pointer"
-              />
-            </label>
+            {/* Select-all checkbox — only visible when selection mode is active */}
+            {selectionMode && (
+              <label
+                className="hidden md:inline-flex items-center justify-center p-1 rounded flex-shrink-0 cursor-pointer text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary"
+                title={allFilteredSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
+                aria-label={allFilteredSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
+              >
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={handleToggleSelectAll}
+                  disabled={allFilteredKeys.length === 0}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-outlook-blue focus:ring-outlook-blue cursor-pointer"
+                />
+              </label>
+            )}
             {onToggleFolderPane && (
               <button
                 onClick={onToggleFolderPane}
