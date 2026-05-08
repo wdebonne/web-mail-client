@@ -289,38 +289,97 @@ export default function MailPage() {
     }
   }, [messagesData]);
 
-  // Real-time refresh: when the server emits a `new-mail` WebSocket event,
-  // immediately invalidate the message lists. Without this, the INBOX list
-  // would only catch up on the next 30 s `refetchInterval`, which is too slow
-  // for messages that have been MOVED by a server-side rule (the user would
-  // briefly see the same message in both the source folder *and* the target
-  // folder until the next refresh). The server already broadcasts mail-moved
-  // / mail-read / mail-archived for the same reason — we listen to all of
-  // them so the UI stays in sync regardless of the source.
+  // Real-time refresh: when the server emits WebSocket events, update the
+  // local caches *surgically* instead of invalidating the queries — a full
+  // refetch of `['messages']` would reset pagination to page 1, which is
+  // disastrous when "Tout charger" is active (it relaunches the page 2..N
+  // loop and floods the network with hundreds of `messages?page=N` requests).
+  // Pattern:
+  //   - `mail-moved` / `mail-deleted` → drop the UID from the source folder
+  //     cache (and the virtual caches), then a lightweight folder-counts
+  //     refresh (no re-pagination).
+  //   - `new-mail` / `mail-archived` → light invalidation limited to the
+  //     active query, only when no auto-load loop is currently running.
   useWebSocket({
     'new-mail': (data) => {
       console.debug('[ws] new-mail', data);
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+      // Folder counts always benefit from a refresh (cheap).
       queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
+      // For the active list: only schedule a non-disruptive refetch if no
+      // auto-load loop is in progress.
+      if (!loadAllActive && !loadingMore) {
+        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+        queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+      }
     },
     'mail-moved': (data) => {
       console.debug('[ws] mail-moved', data);
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+      const accountId: string | undefined = data?.accountId;
+      const srcFolder: string | undefined = data?.srcFolder;
+      const uid: number | undefined = data?.uid;
+      // 1) Drop the UID from the source folder's cached message list — this
+      //    is what makes the row disappear from the INBOX instantly.
+      if (accountId && srcFolder && typeof uid === 'number') {
+        queryClient.setQueryData<any>(['messages', accountId, srcFolder], (old: any) => {
+          if (!old || !Array.isArray(old.messages)) return old;
+          const filtered = old.messages.filter((m: any) => m?.uid !== uid);
+          if (filtered.length === old.messages.length) return old;
+          return { ...old, messages: filtered, total: Math.max(0, (old.total ?? filtered.length) - 1) };
+        });
+        // 2) Same surgical removal in the unified/virtual views.
+        removeMessageFromVirtualCaches(uid, accountId, srcFolder);
+        // 3) If this is the folder currently displayed, sync the Zustand
+        //    store too (the visible list is read from there).
+        if (selectedAccount?.id === accountId && selectedFolder === srcFolder) {
+          removeMessage(uid, accountId, srcFolder);
+        }
+      }
+      // 4) Folder counts (unread, total) need a refresh.
       queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
     },
     'mail-deleted': (data) => {
       console.debug('[ws] mail-deleted', data);
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+      const accountId: string | undefined = data?.accountId;
+      const folder: string | undefined = data?.folder || data?.srcFolder;
+      const uid: number | undefined = data?.uid;
+      if (accountId && folder && typeof uid === 'number') {
+        queryClient.setQueryData<any>(['messages', accountId, folder], (old: any) => {
+          if (!old || !Array.isArray(old.messages)) return old;
+          const filtered = old.messages.filter((m: any) => m?.uid !== uid);
+          if (filtered.length === old.messages.length) return old;
+          return { ...old, messages: filtered, total: Math.max(0, (old.total ?? filtered.length) - 1) };
+        });
+        removeMessageFromVirtualCaches(uid, accountId, folder);
+        if (selectedAccount?.id === accountId && selectedFolder === folder) {
+          removeMessage(uid, accountId, folder);
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
     },
     'mail-read': () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+      // Read-state changes do not move/remove messages; only the unread
+      // count needs a refresh. The list itself is updated locally by the
+      // existing `updateMessageFlags` calls in the read mutation.
+      queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
     },
-    'mail-archived': () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+    'mail-archived': (data) => {
+      console.debug('[ws] mail-archived', data);
+      const accountId: string | undefined = data?.accountId;
+      const folder: string | undefined = data?.srcFolder || data?.folder;
+      const uid: number | undefined = data?.uid;
+      if (accountId && folder && typeof uid === 'number') {
+        queryClient.setQueryData<any>(['messages', accountId, folder], (old: any) => {
+          if (!old || !Array.isArray(old.messages)) return old;
+          const filtered = old.messages.filter((m: any) => m?.uid !== uid);
+          if (filtered.length === old.messages.length) return old;
+          return { ...old, messages: filtered, total: Math.max(0, (old.total ?? filtered.length) - 1) };
+        });
+        removeMessageFromVirtualCaches(uid, accountId, folder);
+        if (selectedAccount?.id === accountId && selectedFolder === folder) {
+          removeMessage(uid, accountId, folder);
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
     },
   });
 
