@@ -48,6 +48,11 @@ export function useWebSocket(handlers: Record<string, MessageHandler> = {}) {
     };
 
     socket.onmessage = (event) => {
+      // Log every raw frame so we can confirm in DevTools that the server
+      // actually pushes events (mail-moved, new-mail, …). Without this it is
+      // impossible to tell whether the message never reaches the browser or
+      // simply has no matching handler registered.
+      log('frame ←', typeof event.data === 'string' ? event.data.slice(0, 300) : event.data);
       try {
         const message = JSON.parse(event.data);
         // Internal: surface auth status so we can see clearly in DevTools.
@@ -64,9 +69,14 @@ export function useWebSocket(handlers: Record<string, MessageHandler> = {}) {
         if (message.type === 'connected') { log('handshake', message.message); return; }
         const handler = handlersRef.current[message.type];
         if (handler) {
+          log('dispatch', message.type);
           handler(message.data);
+        } else {
+          log('no handler for', message.type, '— registered:', Object.keys(handlersRef.current));
         }
-      } catch {}
+      } catch (err) {
+        log('parse error', err);
+      }
     };
 
     socket.onclose = (ev) => {

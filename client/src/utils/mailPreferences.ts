@@ -421,6 +421,70 @@ export function setFolderPaneFontSize(size: FolderPaneFontSize) {
 
 export const FOLDER_PANE_FONT_SIZE_CHANGED_EVENT = FOLDER_PANE_FONT_SIZE_EVENT;
 
+// --- Affichage des mails non lus dans le volet "Dossiers" ---
+// Trois indicateurs *indépendants* peuvent être combinés :
+//   • count  : nombre `(n)` à la fin du nom de dossier (par défaut activé)
+//   • bold   : nom du dossier en gras quand au moins 1 mail non lu
+//   • dot    : pastille rouge à côté du nom du dossier
+// La portée détermine **quels dossiers** affichent ces indicateurs.
+export type UnreadIndicatorScope =
+  | 'inbox-only'           // uniquement les Boîtes de réception
+  | 'favorites-only'       // uniquement la section Favoris (boîtes unifiées + dossiers favoris)
+  | 'inbox-and-favorites'  // Boîtes de réception + Favoris
+  | 'all-folders';         // tous les dossiers (défaut)
+
+export interface UnreadIndicatorPrefs {
+  showCount: boolean;
+  showBold: boolean;
+  showDot: boolean;
+  scope: UnreadIndicatorScope;
+}
+
+const KEY_UNREAD_PREFS = 'mail.unreadIndicators.v1';
+const UNREAD_PREFS_EVENT = 'mail-unread-indicators-changed';
+
+const DEFAULT_UNREAD_PREFS: UnreadIndicatorPrefs = {
+  showCount: true,
+  showBold: false,
+  showDot: false,
+  scope: 'all-folders',
+};
+
+export function getUnreadIndicatorPrefs(): UnreadIndicatorPrefs {
+  try {
+    const raw = localStorage.getItem(KEY_UNREAD_PREFS);
+    if (!raw) return { ...DEFAULT_UNREAD_PREFS };
+    const parsed = JSON.parse(raw);
+    return {
+      showCount: typeof parsed.showCount === 'boolean' ? parsed.showCount : DEFAULT_UNREAD_PREFS.showCount,
+      showBold: typeof parsed.showBold === 'boolean' ? parsed.showBold : DEFAULT_UNREAD_PREFS.showBold,
+      showDot: typeof parsed.showDot === 'boolean' ? parsed.showDot : DEFAULT_UNREAD_PREFS.showDot,
+      scope: ['inbox-only', 'favorites-only', 'inbox-and-favorites', 'all-folders'].includes(parsed.scope)
+        ? parsed.scope
+        : DEFAULT_UNREAD_PREFS.scope,
+    };
+  } catch {
+    return { ...DEFAULT_UNREAD_PREFS };
+  }
+}
+
+export function setUnreadIndicatorPrefs(prefs: Partial<UnreadIndicatorPrefs>) {
+  const next = { ...getUnreadIndicatorPrefs(), ...prefs };
+  localStorage.setItem(KEY_UNREAD_PREFS, JSON.stringify(next));
+  try {
+    window.dispatchEvent(new CustomEvent(UNREAD_PREFS_EVENT, { detail: next }));
+  } catch { /* noop */ }
+}
+
+export const UNREAD_INDICATORS_CHANGED_EVENT = UNREAD_PREFS_EVENT;
+
+export const UNREAD_SCOPE_LABELS: Record<UnreadIndicatorScope, string> = {
+  'inbox-only': 'Boîte de réception uniquement',
+  'favorites-only': 'Favoris uniquement',
+  'inbox-and-favorites': 'Boîte de réception + Favoris',
+  'all-folders': 'Tous les dossiers',
+};
+
 // --- Mail body display mode (native vs stretched) ---
 // 'native'    : the rendered HTML body is constrained to a comfortable reading
 //               width (around 800 px) regardless of the available container —

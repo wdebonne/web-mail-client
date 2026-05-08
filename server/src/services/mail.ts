@@ -199,6 +199,44 @@ export class MailService {
     }
   }
 
+  /**
+   * Renvoie le STATUS IMAP (messages / unseen / recent) pour chaque dossier
+   * sélectionnable du compte, en réutilisant **une seule connexion IMAP**.
+   * Utilisé pour afficher les compteurs de mails non lus dans le volet
+   * « Dossiers » et les vues unifiées (Favoris).
+   */
+  async getFoldersStatus(): Promise<Record<string, { messages: number; unseen: number; recent: number }>> {
+    const client = this.createImapClient();
+    const out: Record<string, { messages: number; unseen: number; recent: number }> = {};
+    try {
+      await client.connect();
+      const folders = await client.list();
+      for (const f of folders) {
+        // Skip non-selectable mailboxes (containers like "[Gmail]") — STATUS
+        // would fail with NO on them.
+        const flags = f.flags ? Array.from(f.flags) : [];
+        if (flags.includes('\\Noselect') || flags.includes('\\NonExistent')) continue;
+        try {
+          const s: any = await client.status(f.path, {
+            messages: true,
+            recent: true,
+            unseen: true,
+          });
+          out[f.path] = {
+            messages: Number(s?.messages) || 0,
+            unseen: Number(s?.unseen) || 0,
+            recent: Number(s?.recent) || 0,
+          };
+        } catch {
+          // Per-folder failure shouldn't break the whole listing.
+        }
+      }
+      return out;
+    } finally {
+      await client.logout();
+    }
+  }
+
   async getMessages(folder: string, page: number = 1, limit: number = 50) {
     const client = this.createImapClient();
     try {

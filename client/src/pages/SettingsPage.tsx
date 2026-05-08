@@ -25,6 +25,9 @@ import {
   getRecentMoveFoldersCount, setRecentMoveFoldersCount,
   getRecentCopyFoldersCount, setRecentCopyFoldersCount,
   type RecentFoldersCount, RECENT_FOLDERS_CHANGED_EVENT,
+  getUnreadIndicatorPrefs, setUnreadIndicatorPrefs,
+  type UnreadIndicatorPrefs, type UnreadIndicatorScope,
+  UNREAD_INDICATORS_CHANGED_EVENT, UNREAD_SCOPE_LABELS,
 } from '../utils/mailPreferences';
 import type { MailAccount, MailFolder } from '../types';
 import {
@@ -676,6 +679,7 @@ function AppearanceSettings() {
         </div>
         <FabPositionPicker />
         <FolderPaneFontSizePicker />
+        <UnreadIndicatorsPicker />
       </div>
     </div>
   );
@@ -775,6 +779,92 @@ function FolderPaneFontSizePicker() {
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// Lets the user choose how unread mails are indicated in the folder list:
+// count at the end of the name (default), bold name, red dot — independent
+// toggles. Also lets the user limit the indicators to a subset of folders
+// (inbox only, favorites only, both, or all). Mirrored on desktop in the
+// "Afficher" ribbon under "Non lus".
+function UnreadIndicatorsPicker() {
+  const [prefs, setPrefs] = useState<UnreadIndicatorPrefs>(() => getUnreadIndicatorPrefs());
+  useEffect(() => {
+    const handler = () => setPrefs(getUnreadIndicatorPrefs());
+    window.addEventListener(UNREAD_INDICATORS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(UNREAD_INDICATORS_CHANGED_EVENT, handler);
+  }, []);
+  const update = (patch: Partial<UnreadIndicatorPrefs>) => {
+    setUnreadIndicatorPrefs(patch);
+    setPrefs((p) => ({ ...p, ...patch }));
+    toast.success('Affichage des non lus mis à jour');
+  };
+  const toggles: { id: keyof Pick<UnreadIndicatorPrefs, 'showCount' | 'showBold' | 'showDot'>; label: string; hint: string }[] = [
+    { id: 'showCount', label: 'Afficher le nombre à la fin du nom', hint: 'Comportement par défaut, identique à Outlook : « Boîte de réception (12) ».' },
+    { id: 'showBold', label: 'Mettre le nom en gras', hint: 'Met en évidence les dossiers contenant des mails non lus.' },
+    { id: 'showDot', label: 'Afficher une pastille rouge', hint: 'Petit point rouge à côté du nom.' },
+  ];
+  const scopes: UnreadIndicatorScope[] = ['inbox-only', 'favorites-only', 'inbox-and-favorites', 'all-folders'];
+  return (
+    <div>
+      <label className="text-sm text-outlook-text-secondary block">
+        Mails non lus — affichage dans la liste des dossiers
+      </label>
+      <p className="text-xs text-outlook-text-disabled mt-1 mb-2">
+        Choisissez comment signaler la présence de mails non lus dans le volet
+        « Dossiers ». Les trois indicateurs sont indépendants et peuvent être
+        combinés.
+      </p>
+      <div className="space-y-2">
+        {toggles.map((t) => {
+          const active = prefs[t.id];
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => update({ [t.id]: !active } as Partial<UnreadIndicatorPrefs>)}
+              className={`w-full text-left px-3 py-2 rounded-md border transition-colors flex items-start gap-2 ${
+                active
+                  ? 'border-outlook-blue bg-outlook-blue/10'
+                  : 'border-outlook-border hover:bg-outlook-bg-hover'
+              }`}
+            >
+              <span className={`mt-0.5 inline-flex items-center justify-center w-4 h-4 border rounded text-[11px] ${active ? 'bg-outlook-blue border-outlook-blue text-white' : 'border-outlook-border'}`}>
+                {active ? '✓' : ''}
+              </span>
+              <span className="flex flex-col">
+                <span className="text-sm text-outlook-text-primary">{t.label}</span>
+                <span className="text-[11px] text-outlook-text-disabled">{t.hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3">
+        <label className="text-xs text-outlook-text-secondary block mb-1">
+          Appliquer aux dossiers
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {scopes.map((scope) => {
+            const active = prefs.scope === scope;
+            return (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => update({ scope })}
+                className={`px-3 py-2 rounded-md border text-sm transition-colors min-h-[40px] ${
+                  active
+                    ? 'border-outlook-blue bg-outlook-blue/10 text-outlook-blue'
+                    : 'border-outlook-border hover:bg-outlook-bg-hover text-outlook-text-primary'
+                }`}
+              >
+                {UNREAD_SCOPE_LABELS[scope]}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

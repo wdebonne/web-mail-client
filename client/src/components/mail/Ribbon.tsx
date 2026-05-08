@@ -15,7 +15,7 @@ import {
   Tag, MessagesSquare, ShieldAlert, ShieldOff, Coffee,
   Maximize2, Minimize2,
   FileText, Settings as SettingsIcon, Filter,
-  Clock,
+  Clock, BellDot,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
@@ -41,6 +41,9 @@ import {
   getRecentMoveFoldersCount, setRecentMoveFoldersCount,
   getRecentCopyFoldersCount, setRecentCopyFoldersCount,
   type RecentFoldersCount, RECENT_FOLDERS_CHANGED_EVENT,
+  getUnreadIndicatorPrefs, setUnreadIndicatorPrefs,
+  type UnreadIndicatorPrefs, type UnreadIndicatorScope,
+  UNREAD_INDICATORS_CHANGED_EVENT, UNREAD_SCOPE_LABELS,
 } from '../../utils/mailPreferences';
 
 type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer';
@@ -273,6 +276,7 @@ export default function Ribbon({
   const [showFolderFontMenu, setShowFolderFontMenu] = useState(false);
   const [showMailDisplayMenu, setShowMailDisplayMenu] = useState(false);
   const [showRecentFoldersMenu, setShowRecentFoldersMenu] = useState(false);
+  const [showUnreadMenu, setShowUnreadMenu] = useState(false);
   // Folder pane font size — synced with the global event so two ribbons stay
   // in sync if multiple windows/tabs are open.
   const [folderFontSize, setFolderFontSizeState] = useState<FolderPaneFontSize>(() => getFolderPaneFontSize());
@@ -281,6 +285,19 @@ export default function Ribbon({
     window.addEventListener(FOLDER_PANE_FONT_SIZE_CHANGED_EVENT, handler);
     return () => window.removeEventListener(FOLDER_PANE_FONT_SIZE_CHANGED_EVENT, handler);
   }, []);
+
+  // Unread indicators preferences (count / bold / dot + scope) — synced through
+  // the global event so the pane and ribbon stay aligned.
+  const [unreadPrefs, setUnreadPrefsState] = useState<UnreadIndicatorPrefs>(() => getUnreadIndicatorPrefs());
+  useEffect(() => {
+    const handler = () => setUnreadPrefsState(getUnreadIndicatorPrefs());
+    window.addEventListener(UNREAD_INDICATORS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(UNREAD_INDICATORS_CHANGED_EVENT, handler);
+  }, []);
+  const updateUnreadPrefs = (patch: Partial<UnreadIndicatorPrefs>) => {
+    setUnreadIndicatorPrefs(patch);
+    setUnreadPrefsState((p) => ({ ...p, ...patch }));
+  };
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
   const favoritesMenuBtnRef = useRef<HTMLButtonElement>(null);
@@ -292,6 +309,7 @@ export default function Ribbon({
   const folderFontMenuBtnRef = useRef<HTMLButtonElement>(null);
   const mailDisplayMenuBtnRef = useRef<HTMLButtonElement>(null);
   const recentFoldersMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const unreadMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
@@ -303,6 +321,7 @@ export default function Ribbon({
   const [folderFontMenuPos, setFolderFontMenuPos] = useState({ top: 0, left: 0 });
   const [mailDisplayMenuPos, setMailDisplayMenuPos] = useState({ top: 0, left: 0 });
   const [recentFoldersMenuPos, setRecentFoldersMenuPos] = useState({ top: 0, left: 0 });
+  const [unreadMenuPos, setUnreadMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -436,6 +455,15 @@ export default function Ribbon({
       setRecentFoldersMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowRecentFoldersMenu(v => !v);
+  };
+
+  const openUnreadMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || unreadMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setUnreadMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowUnreadMenu(v => !v);
   };
 
   const openListModeMenu = (e?: React.MouseEvent) => {
@@ -841,6 +869,65 @@ export default function Ribbon({
         </>,
         document.body
       )}
+
+      {/* Unread indicators menu — count / bold / red dot + scope */}
+      {showUnreadMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowUnreadMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-80"
+            style={{ top: unreadMenuPos.top, left: unreadMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Mails non lus — Indicateurs
+            </div>
+            <div className="px-3 pt-1 pb-2 text-[11px] text-outlook-text-secondary">
+              Choisissez comment signaler la présence de mails non lus dans la
+              liste des dossiers. Les trois indicateurs sont indépendants.
+            </div>
+            {([
+              { id: 'showCount' as const, label: 'Nombre à la fin du nom (12)', hint: 'Comportement par défaut, identique à Outlook.' },
+              { id: 'showBold' as const, label: 'Nom du dossier en gras', hint: 'Met le nom en évidence quand il y a des mails non lus.' },
+              { id: 'showDot' as const, label: 'Pastille rouge', hint: 'Petit point rouge à côté de l\u2019icône.' },
+            ]).map((opt) => {
+              const active = unreadPrefs[opt.id];
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => updateUnreadPrefs({ [opt.id]: !active } as Partial<UnreadIndicatorPrefs>)}
+                  className="w-full text-left px-3 py-1.5 hover:bg-outlook-bg-hover flex items-start gap-2"
+                >
+                  <span className={`mt-0.5 inline-flex items-center justify-center w-4 h-4 border rounded ${active ? 'bg-outlook-blue border-outlook-blue text-white' : 'border-outlook-border'}`}>
+                    {active ? '✓' : ''}
+                  </span>
+                  <span className="flex flex-col">
+                    <span className="text-sm">{opt.label}</span>
+                    <span className="text-[11px] text-outlook-text-disabled">{opt.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+            <div className="border-t border-outlook-border my-1" />
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Appliquer aux dossiers
+            </div>
+            {(['inbox-only', 'favorites-only', 'inbox-and-favorites', 'all-folders'] as UnreadIndicatorScope[]).map((scope) => {
+              const active = unreadPrefs.scope === scope;
+              return (
+                <button
+                  key={scope}
+                  onClick={() => updateUnreadPrefs({ scope })}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                >
+                  <span className={`w-2 h-2 rounded-full ${active ? 'bg-outlook-blue' : 'bg-transparent border border-outlook-border'}`} />
+                  {UNREAD_SCOPE_LABELS[scope]}
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body
+      )}
     </>
   );
   if (ribbonMode === 'simplified') {
@@ -946,6 +1033,16 @@ export default function Ribbon({
               >
                 <Type size={14} />
                 <span className="text-xs whitespace-nowrap">Texte volet</span>
+                <ChevronDown size={10} />
+              </button>
+              <button
+                ref={unreadMenuBtnRef}
+                onClick={(e) => openUnreadMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showUnreadMenu || unreadPrefs.showBold || unreadPrefs.showDot ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Mails non lus — affichage dans la liste des dossiers"
+              >
+                <BellDot size={14} />
+                <span className="text-xs whitespace-nowrap">Non lus</span>
                 <ChevronDown size={10} />
               </button>
               <SimplifiedSep />
@@ -1201,6 +1298,19 @@ export default function Ribbon({
                     <Type size={18} />
                     <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
                       Texte volet <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    ref={unreadMenuBtnRef}
+                    onClick={(e) => openUnreadMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showUnreadMenu || unreadPrefs.showBold || unreadPrefs.showDot ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Mails non lus — affichage dans la liste des dossiers"
+                  >
+                    <BellDot size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Non lus <ChevronDown size={8} />
                     </span>
                   </button>
                 </div>

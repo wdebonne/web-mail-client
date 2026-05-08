@@ -25,6 +25,35 @@ mailRouter.get('/accounts/:accountId/folders', async (req: AuthRequest, res) => 
   }
 });
 
+// Statut (compteurs) de tous les dossiers d'un compte — utilisé pour
+// afficher le nombre de mails non lus à côté du nom du dossier.
+// Mis en cache 20 s par utilisateur+compte pour limiter les commandes IMAP STATUS.
+const folderStatusCache = new Map<string, { value: Record<string, { messages: number; unseen: number; recent: number }>; at: number }>();
+const FOLDER_STATUS_TTL_MS = 20_000;
+
+mailRouter.get('/accounts/:accountId/folders/status', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const account = await getAccountForUser(accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const cacheKey = `${req.userId}:${accountId}`;
+    const force = String(req.query.refresh || '') === '1';
+    const cached = folderStatusCache.get(cacheKey);
+    if (!force && cached && Date.now() - cached.at < FOLDER_STATUS_TTL_MS) {
+      return res.json({ folders: cached.value, cached: true });
+    }
+
+    const mailService = new MailService(account);
+    const status = await mailService.getFoldersStatus();
+    folderStatusCache.set(cacheKey, { value: status, at: Date.now() });
+    res.json({ folders: status, cached: false });
+  } catch (error: any) {
+    console.error('Get folder status error:', error);
+    res.status(500).json({ error: error.message || 'Erreur de récupération du statut' });
+  }
+});
+
 // Create a folder
 mailRouter.post('/accounts/:accountId/folders', async (req: AuthRequest, res) => {
   try {

@@ -196,6 +196,13 @@ export const api = {
   getFolders: (accountId: string) =>
     request<any[]>(`/mail/accounts/${accountId}/folders`),
 
+  /** Compteurs (messages, unseen, recent) par chemin de dossier — utilisé pour
+   *  afficher le nombre de mails non lus à côté du nom du dossier. */
+  getFoldersStatus: (accountId: string, refresh = false) =>
+    request<{ folders: Record<string, { messages: number; unseen: number; recent: number }>; cached?: boolean }>(
+      `/mail/accounts/${accountId}/folders/status${refresh ? '?refresh=1' : ''}`,
+    ),
+
   /** Pastille (Web App Badging API). `source` = type d'information remontée. */
   getBadgeCount: (
     source: 'inbox-unread' | 'inbox-recent' | 'inbox-total' = 'inbox-unread',

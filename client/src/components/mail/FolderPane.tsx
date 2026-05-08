@@ -38,6 +38,9 @@ import {
   getFolderPaneFontSize,
   FOLDER_PANE_FONT_SIZE_PX,
   FOLDER_PANE_FONT_SIZE_CHANGED_EVENT,
+  getUnreadIndicatorPrefs,
+  UNREAD_INDICATORS_CHANGED_EVENT,
+  type UnreadIndicatorPrefs,
 } from '../../utils/mailPreferences';
 import { useMailStore, VirtualFolder } from '../../stores/mailStore';
 
@@ -163,6 +166,15 @@ export default function FolderPane({
     return () => window.removeEventListener(FOLDER_PANE_FONT_SIZE_CHANGED_EVENT, handler);
   }, []);
   const folderFontSizePx = FOLDER_PANE_FONT_SIZE_PX[folderFontSize];
+
+  // Unread indicators preferences (count / bold / dot + scope) — kept in sync
+  // through a global event so the ribbon and the pane stay aligned.
+  const [unreadPrefs, setUnreadPrefs] = useState<UnreadIndicatorPrefs>(() => getUnreadIndicatorPrefs());
+  useEffect(() => {
+    const handler = () => setUnreadPrefs(getUnreadIndicatorPrefs());
+    window.addEventListener(UNREAD_INDICATORS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(UNREAD_INDICATORS_CHANGED_EVENT, handler);
+  }, []);
 
   const [accountContextMenu, setAccountContextMenu] = useState<
     { x: number; y: number; account: MailAccount } | null
@@ -319,6 +331,7 @@ export default function FolderPane({
           categoryFilter={categoryFilter}
           onSelectCategoryFilter={(id) => setCategoryFilter(id)}
           prefsVersion={prefsVersion + (externalPrefsVersion || 0)}
+          unreadPrefs={unreadPrefs}
           onChanged={() => {
             triggerRerender();
             onPreferencesChanged?.();
@@ -397,6 +410,7 @@ export default function FolderPane({
                   onMoveFolder={onMoveFolder}
                   onFolderOrderChanged={triggerRerender}
                   prefsVersion={prefsVersion}
+                  unreadPrefs={unreadPrefs}
                 />
               )}
             </div>
@@ -474,11 +488,13 @@ interface AccountFoldersProps {
   onMoveFolder?: FolderPaneProps['onMoveFolder'];
   onFolderOrderChanged?: () => void;
   prefsVersion?: number;
+  unreadPrefs: UnreadIndicatorPrefs;
 }
 
 function AccountFolders({
   account, selectedAccountId, selectedFolder, externalFolders,
   onSelectFolder, onContextMenu, onDropMessage, onCopyFolder, onMoveFolder, onFolderOrderChanged, prefsVersion,
+  unreadPrefs,
 }: AccountFoldersProps) {
   // When a virtual folder (Favoris > Boîte de réception unifiée, etc.) is
   // active, we must NOT highlight any regular folder in the per-account tree —
@@ -494,6 +510,37 @@ function AccountFolders({
 
   const folders: MailFolder[] = (externalFolders || (data as MailFolder[]) || []) as MailFolder[];
   const ordered = useMemo(() => sortFolders(folders, account.id), [folders, account.id, prefsVersion]);
+
+  // Per-folder STATUS (unseen / total / recent) — only fetched when the user
+  // actually wants to see unread indicators. Cached server-side for 20 s.
+  const wantStatus =
+    unreadPrefs.showCount || unreadPrefs.showBold || unreadPrefs.showDot;
+  const { data: statusData } = useQuery({
+    queryKey: ['folder-status', account.id],
+    queryFn: () => api.getFoldersStatus(account.id),
+    enabled: wantStatus,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const statusByPath = (statusData?.folders || {}) as Record<
+    string,
+    { messages: number; unseen: number; recent: number }
+  >;
+  const inboxPath = useMemo(() => findInboxFolderPath(folders), [folders]);
+
+  const isFolderInScope = (folderPath: string): boolean => {
+    switch (unreadPrefs.scope) {
+      case 'inbox-only':
+      case 'inbox-and-favorites':
+        return folderPath === inboxPath;
+      case 'favorites-only':
+        return false;
+      case 'all-folders':
+      default:
+        return true;
+    }
+  };
 
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [folderDropIndicator, setFolderDropIndicator] = useState<
@@ -669,6 +716,12 @@ function AccountFolders({
     const isDragOver = dragOver === folder.path;
     const indicator = folderDropIndicator?.path === folder.path ? folderDropIndicator.position : null;
     const Icon = getFolderIcon(folder);
+    const unseen = statusByPath[folder.path]?.unseen || 0;
+    const inScope = isFolderInScope(folder.path);
+    const showUnread = wantStatus && inScope && unseen > 0;
+    const useBold = showUnread && unreadPrefs.showBold;
+    const showDot = showUnread && unreadPrefs.showDot;
+    const showCount = showUnread && unreadPrefs.showCount;
     return (
       <div key={folder.path} className="relative">
         {indicator === 'before' && (
@@ -697,11 +750,30 @@ function AccountFolders({
               ? 'bg-outlook-blue/10 ring-2 ring-outlook-blue ring-inset'
               : isSelected
                 ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
-                : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'
+                : useBold
+                  ? 'text-outlook-text-primary hover:bg-outlook-bg-hover'
+                  : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'
             }`}
         >
           <Icon size={16} className={`md:w-3.5 md:h-3.5 flex-shrink-0 ${isSelected || isDragOver ? 'text-outlook-blue' : ''}`} />
-          <span className="truncate">{getFolderLabel(folder)}</span>
+          {showDot && (
+            <span
+              aria-hidden
+              className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0"
+              title={`${unseen} non lu${unseen > 1 ? 's' : ''}`}
+            />
+          )}
+          <span className={`truncate flex-1 text-left ${useBold ? 'font-semibold' : ''}`}>
+            {getFolderLabel(folder)}
+          </span>
+          {showCount && (
+            <span
+              className={`flex-shrink-0 text-xs tabular-nums ${useBold ? 'font-semibold text-outlook-blue' : 'text-outlook-text-secondary'}`}
+              title={`${unseen} non lu${unseen > 1 ? 's' : ''}`}
+            >
+              {unseen}
+            </span>
+          )}
         </button>
       </div>
     );
@@ -907,6 +979,7 @@ interface FavoritesSectionProps {
   onSelectFavorite: (fav: FavoriteFolder) => void;
   onFavoriteContextMenu: (fav: FavoriteFolder, x: number, y: number) => void;
   prefsVersion: number;
+  unreadPrefs: UnreadIndicatorPrefs;
   onChanged?: () => void;
   categoryFilter: string | null;
   onSelectCategoryFilter: (id: string | null) => void;
@@ -917,6 +990,7 @@ function FavoritesSection({
   selectedAccountId, selectedFolder,
   onSelectVirtual, onSelectFavorite, onFavoriteContextMenu, prefsVersion, onChanged,
   categoryFilter, onSelectCategoryFilter,
+  unreadPrefs,
 }: FavoritesSectionProps) {
   const favorites = useMemo(() => getFavoriteFolders(), [prefsVersion]);
   const unifiedInboxEnabled = useMemo(() => getUnifiedInboxEnabled(), [prefsVersion]);
@@ -932,10 +1006,15 @@ function FavoritesSection({
   );
 
   // Fetch folders for every favourite's account so we can display labels.
+  // Also include every account when the unified Inbox/Sent are visible so we
+  // can resolve the per-account INBOX / Sent path and sum unread counts.
   const accountIds = useMemo(() => {
     const ids = new Set<string>(favorites.map((f) => f.accountId));
+    if (unifiedInboxEnabled || unifiedSentEnabled) {
+      accounts.forEach((a) => ids.add(a.id));
+    }
     return Array.from(ids);
-  }, [favorites]);
+  }, [favorites, accounts, unifiedInboxEnabled, unifiedSentEnabled]);
 
   const foldersQueries = useQueries({
     queries: accountIds.map((id) => ({
@@ -954,6 +1033,40 @@ function FavoritesSection({
     return map;
   }, [accountIds, foldersQueries.map((q) => q.data).join('|')]);
 
+  // Per-account folder STATUS (unread / total / recent), keyed by folder path.
+  // Only fetched when the user actually wants unread indicators in the
+  // favourites section (or when its scope reaches it).
+  const wantStatus =
+    (unreadPrefs.showCount || unreadPrefs.showBold || unreadPrefs.showDot) &&
+    unreadPrefs.scope !== 'inbox-only';
+  // 'inbox-only' scope still needs unified-inbox totals if the unified inbox
+  // is shown — that's literally the inbox of every account.
+  const wantStatusForUnifiedInbox =
+    (unreadPrefs.showCount || unreadPrefs.showBold || unreadPrefs.showDot) &&
+    unifiedInboxEnabled;
+
+  const statusQueries = useQueries({
+    queries: accountIds.map((id) => ({
+      queryKey: ['folder-status', id],
+      queryFn: () => api.getFoldersStatus(id),
+      enabled: wantStatus || wantStatusForUnifiedInbox,
+      staleTime: 15_000,
+      refetchInterval: 30_000,
+      refetchOnWindowFocus: true,
+    })),
+  });
+
+  const statusByAccount = useMemo(() => {
+    const map = new Map<string, Record<string, { messages: number; unseen: number; recent: number }>>();
+    accountIds.forEach((id, i) => {
+      const data = statusQueries[i]?.data as
+        | { folders: Record<string, { messages: number; unseen: number; recent: number }> }
+        | undefined;
+      if (data?.folders) map.set(id, data.folders);
+    });
+    return map;
+  }, [accountIds, statusQueries.map((q) => q.data).join('|')]);
+
   const hasAnyItem =
     (unifiedInboxEnabled || unifiedSentEnabled) || favorites.length > 0 || favoriteCategories.length > 0;
 
@@ -967,6 +1080,35 @@ function FavoritesSection({
 
   const showUnifiedInbox = unifiedInboxEnabled && hasIncludedAccounts;
   const showUnifiedSent = unifiedSentEnabled && hasIncludedAccounts;
+
+  // Sum unread counts across "included" accounts for the unified Inbox / Sent
+  // virtual folders.
+  const wantAnyIndicator =
+    unreadPrefs.showCount || unreadPrefs.showBold || unreadPrefs.showDot;
+  const unifiedInboxUnseen = useMemo(() => {
+    if (!showUnifiedInbox || !wantAnyIndicator) return 0;
+    let total = 0;
+    accounts.forEach((a) => {
+      if (!isIncludedAccount(a.id)) return;
+      const folders = foldersByAccount.get(a.id) || [];
+      const inbox = findInboxFolderPath(folders);
+      total += statusByAccount.get(a.id)?.[inbox]?.unseen || 0;
+    });
+    return total;
+  }, [showUnifiedInbox, wantAnyIndicator, accounts, foldersByAccount, statusByAccount, unifiedAccountIds]);
+  const unifiedSentUnseen = useMemo(() => {
+    if (!showUnifiedSent || !wantAnyIndicator) return 0;
+    if (unreadPrefs.scope === 'inbox-only') return 0; // sent ≠ inbox
+    let total = 0;
+    accounts.forEach((a) => {
+      if (!isIncludedAccount(a.id)) return;
+      const folders = foldersByAccount.get(a.id) || [];
+      const sent = findSentFolderPath(folders);
+      if (!sent) return;
+      total += statusByAccount.get(a.id)?.[sent]?.unseen || 0;
+    });
+    return total;
+  }, [showUnifiedSent, wantAnyIndicator, unreadPrefs.scope, accounts, foldersByAccount, statusByAccount, unifiedAccountIds]);
 
   // Drag & drop reorder for favourite folders (unified inbox/sent are fixed on top).
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -1001,6 +1143,8 @@ function FavoritesSection({
               label="Boîte de réception"
               active={virtualFolder === 'unified-inbox'}
               onClick={() => onSelectVirtual('unified-inbox')}
+              unseen={unifiedInboxUnseen}
+              unreadPrefs={unreadPrefs}
             />
           )}
           {showUnifiedSent && (
@@ -1009,6 +1153,8 @@ function FavoritesSection({
               label="Éléments envoyés"
               active={virtualFolder === 'unified-sent'}
               onClick={() => onSelectVirtual('unified-sent')}
+              unseen={unifiedSentUnseen}
+              unreadPrefs={unreadPrefs}
             />
           )}
 
@@ -1027,6 +1173,16 @@ function FavoritesSection({
             const showDropBefore = dropIndex === index && dragIndex !== null && dragIndex !== index;
             const showDropAfter =
               dropIndex === favorites.length && index === favorites.length - 1 && dragIndex !== null;
+            // Unread indicator for this favourite row.
+            const inboxPathForAcc = findInboxFolderPath(accountFolders);
+            const isFavInbox = fav.path === inboxPathForAcc;
+            const favInScope =
+              unreadPrefs.scope === 'inbox-only' ? isFavInbox : true;
+            const favUnseen = statusByAccount.get(fav.accountId)?.[fav.path]?.unseen || 0;
+            const favShowUnread = wantAnyIndicator && favInScope && favUnseen > 0;
+            const favBold = favShowUnread && unreadPrefs.showBold;
+            const favDot = favShowUnread && unreadPrefs.showDot;
+            const favCount = favShowUnread && unreadPrefs.showCount;
             return (
               <div
                 key={`${fav.accountId}:${fav.path}`}
@@ -1071,12 +1227,29 @@ function FavoritesSection({
                   className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[length:inherit] rounded transition-colors
                     ${isActive
                       ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
-                      : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
+                      : favBold
+                        ? 'text-outlook-text-primary hover:bg-outlook-bg-hover'
+                        : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
                     ${isDragging ? 'opacity-50' : ''}`}
                   title={`${getAccountDisplayName(account)} · ${label}`}
                 >
                   <Icon size={16} className={`md:w-3.5 md:h-3.5 flex-shrink-0 ${isActive ? 'text-outlook-blue' : ''}`} />
-                  <span className="truncate flex-1 text-left">{label}</span>
+                  {favDot && (
+                    <span
+                      aria-hidden
+                      className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0"
+                      title={`${favUnseen} non lu${favUnseen > 1 ? 's' : ''}`}
+                    />
+                  )}
+                  <span className={`truncate flex-1 text-left ${favBold ? 'font-semibold' : ''}`}>{label}</span>
+                  {favCount && (
+                    <span
+                      className={`flex-shrink-0 text-xs tabular-nums ${favBold ? 'font-semibold text-outlook-blue' : 'text-outlook-text-secondary'}`}
+                      title={`${favUnseen} non lu${favUnseen > 1 ? 's' : ''}`}
+                    >
+                      {favUnseen}
+                    </span>
+                  )}
                   <span
                     className="w-2 h-2 md:w-1.5 md:h-1.5 rounded-full flex-shrink-0 opacity-70"
                     style={{ backgroundColor: getAccountColor(account) }}
@@ -1118,20 +1291,45 @@ function FavoritesSection({
 }
 
 function VirtualFolderButton({
-  icon: Icon, label, active, onClick,
+  icon: Icon, label, active, onClick, unseen, unreadPrefs,
 }: {
   icon: any; label: string; active: boolean; onClick: () => void;
+  unseen?: number; unreadPrefs?: UnreadIndicatorPrefs;
 }) {
+  const u = unseen || 0;
+  const p = unreadPrefs;
+  const wantAny = !!p && (p.showCount || p.showBold || p.showDot);
+  const showUnread = wantAny && u > 0;
+  const useBold = showUnread && !!p?.showBold;
+  const showDot = showUnread && !!p?.showDot;
+  const showCount = showUnread && !!p?.showCount;
   return (
     <button
       onClick={onClick}
       className={`w-full flex items-center gap-2.5 md:gap-2 pl-3 pr-3 py-2.5 md:py-1 min-h-[40px] md:min-h-0 text-[length:inherit] rounded transition-colors
         ${active
           ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary'
-          : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+          : useBold
+            ? 'text-outlook-text-primary hover:bg-outlook-bg-hover'
+            : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
     >
       <Icon size={16} className={`md:w-3.5 md:h-3.5 flex-shrink-0 ${active ? 'text-outlook-blue' : ''}`} />
-      <span className="truncate flex-1 text-left">{label}</span>
+      {showDot && (
+        <span
+          aria-hidden
+          className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0"
+          title={`${u} non lu${u > 1 ? 's' : ''}`}
+        />
+      )}
+      <span className={`truncate flex-1 text-left ${useBold ? 'font-semibold' : ''}`}>{label}</span>
+      {showCount && (
+        <span
+          className={`flex-shrink-0 text-xs tabular-nums ${useBold ? 'font-semibold text-outlook-blue' : 'text-outlook-text-secondary'}`}
+          title={`${u} non lu${u > 1 ? 's' : ''}`}
+        >
+          {u}
+        </span>
+      )}
     </button>
   );
 }
