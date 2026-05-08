@@ -316,6 +316,36 @@ Liste les dossiers d'un compte mail.
 ]
 ```
 
+### GET /api/mail/accounts/:accountId/folders/status
+
+Renvoie les compteurs `STATUS` IMAP (`messages` / `unseen` / `recent`) pour **tous les dossiers sélectionnables** d'un compte, en une seule connexion IMAP. Utilisé par le volet « Dossiers » pour afficher les indicateurs de mails non lus (compteur, nom en gras, pastille rouge).
+
+**Query params :**
+- `refresh=1` (optionnel) : ignore le cache mémoire et force une nouvelle interrogation IMAP.
+
+**Réponse 200 (succès) :**
+```json
+{
+  "folders": {
+    "INBOX": { "messages": 150, "unseen": 12, "recent": 0 },
+    "INBOX.Sent": { "messages": 89, "unseen": 0, "recent": 0 },
+    "INBOX.Archives": { "messages": 1240, "unseen": 0, "recent": 0 }
+  },
+  "cached": false
+}
+```
+
+**Réponse 200 (échec d'auth IMAP — token OAuth expiré, mot de passe changé, etc.) :**
+```json
+{ "folders": {}, "cached": false, "failed": true, "reason": "auth" }
+```
+
+**Notes :**
+- Les dossiers portant les flags `\Noselect` ou `\NonExistent` (conteneurs Gmail, etc.) sont ignorés.
+- Les erreurs par dossier sont silencieusement avalées — un seul dossier en erreur ne casse pas le listing global.
+- Cache mémoire serveur de **20 s** par couple `(userId, accountId)` en cas de succès, **5 min** en cas d'échec d'auth IMAP, pour ne pas marteler le serveur distant.
+- Côté client, requête activée uniquement si l'utilisateur a activé au moins un indicateur de mails non lus dans Paramètres → Apparence ou dans le ruban *Afficher → Non lus*.
+
 ### POST /api/mail/accounts/:accountId/folders
 
 Crée un nouveau dossier IMAP. Le dossier est automatiquement souscrit (`SUBSCRIBE`) pour être visible dans les autres clients mail.
