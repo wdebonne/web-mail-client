@@ -4,7 +4,11 @@ import { useAuthStore } from '../stores/authStore';
 type MessageHandler = (data: any) => void;
 
 const DEBUG = true;
-const log = (...args: any[]) => { if (DEBUG) console.debug('[ws]', ...args); };
+// IMPORTANT: use `console.log` (not `console.debug`) so the WS lifecycle
+// traces are visible at the default console level. With `console.debug`,
+// the browser's "Default levels" filter hides them and you cannot tell
+// whether a frame ever reached the page.
+const log = (...args: any[]) => { if (DEBUG) console.log('[ws]', ...args); };
 
 /** Always read the freshest access token. The api layer rotates the JWT in
  *  localStorage on every 401 retry but the Zustand `authStore.token` is only

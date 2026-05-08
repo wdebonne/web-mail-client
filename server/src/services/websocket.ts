@@ -114,15 +114,45 @@ export function setupWebSocket(wss: WebSocketServer) {
 // Notify a specific user
 export function notifyUser(userId: string, event: string, data: any) {
   const userClients = clients.get(userId);
-  if (!userClients) return;
+  if (!userClients) {
+    logger.info({ userId, event }, 'notifyUser: no client registered');
+    return;
+  }
 
   const message = JSON.stringify({ type: event, data, timestamp: new Date().toISOString() });
-  
+
+  // Filter out sockets that are no longer OPEN. This handles "ghost" entries
+  // that survived a tab close/refresh: if `close` did not fire (mobile tab
+  // freeze, network drop, page hidden), the entry would still sit in the
+  // map but `send()` would silently fail. We also drop them from the map so
+  // the next call has an accurate view.
+  const alive: WsClient[] = [];
+  let sent = 0;
+  let stale = 0;
+  let errors = 0;
   for (const client of userClients) {
-    if (client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(message);
+    const state = client.ws.readyState;
+    if (state === WebSocket.OPEN) {
+      try {
+        client.ws.send(message);
+        sent++;
+        alive.push(client);
+      } catch (err) {
+        errors++;
+        logger.warn({ err: (err as Error).message, userId, event }, 'notifyUser: send failed');
+      }
+    } else {
+      stale++;
     }
   }
+
+  if (alive.length === 0) {
+    clients.delete(userId);
+  } else if (alive.length !== userClients.length) {
+    clients.set(userId, alive);
+  }
+
+  logger.info({ userId, event, sent, stale, errors, total: userClients.length }, 'notifyUser dispatched');
 }
 
 // Notify all users
