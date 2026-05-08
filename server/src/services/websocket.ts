@@ -30,12 +30,21 @@ export function setupWebSocket(wss: WebSocketServer) {
           const accessPayload = verifyAccessToken(token);
           if (accessPayload?.userId) {
             resolvedUserId = accessPayload.userId;
+            logger.debug({ userId: resolvedUserId }, 'WebSocket auth via access token (JWT_SECRET)');
           } else {
             try {
               const decoded = jwt.verify(token, process.env.SESSION_SECRET || 'dev-secret-change-me') as { userId: string };
               resolvedUserId = decoded?.userId ?? null;
+              if (resolvedUserId) {
+                logger.debug({ userId: resolvedUserId }, 'WebSocket auth via legacy SESSION_SECRET');
+              }
             } catch (err) {
-              logger.warn({ err: (err as Error).message }, 'WebSocket auth failed (invalid/expired token)');
+              logger.warn({
+                err: (err as Error).message,
+                hasJwtSecret: Boolean(process.env.JWT_SECRET),
+                hasSessionSecret: Boolean(process.env.SESSION_SECRET),
+                tokenPrefix: token?.slice(0, 20),
+              }, 'WebSocket auth failed (both access-token and legacy paths rejected)');
             }
           }
 
