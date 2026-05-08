@@ -8,7 +8,7 @@ import {
   Flag, FolderInput, Copy, Archive, ChevronDown, ChevronRight,
   ArrowUpDown, ListFilter, Calendar, CheckSquare, FolderIcon,
   Check, MailCheck, PanelLeftOpen, PanelLeftClose,
-  Tag, MessagesSquare,
+  Tag, MessagesSquare, Clock,
 } from 'lucide-react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
@@ -19,7 +19,11 @@ import {
   subscribeCategories, MailCategory,
 } from '../../utils/categories';
 import type { SwipeAction } from '../../utils/mailPreferences';
-import { isFavoriteFolder, toggleFavoriteFolder } from '../../utils/mailPreferences';
+import {
+  isFavoriteFolder, toggleFavoriteFolder,
+  getRecentMoveFolders, getRecentMoveFoldersCount, pushRecentMoveFolder,
+  getRecentCopyFolders, getRecentCopyFoldersCount, pushRecentCopyFolder,
+} from '../../utils/mailPreferences';
 
 type SortField = 'date' | 'from' | 'subject' | 'size' | 'importance';
 type SortOrder = 'asc' | 'desc';
@@ -1262,35 +1266,80 @@ export default function MessageList({
 
     items.push({ label: '', separator: true, onClick: () => {} });
 
+    // Build a submenu listing the moveable/copyable folders, with the most
+    // recently used ones (per user preference) pinned at the top so a single
+    // hover can re-pick the previous destination.
+    const buildFolderSubmenu = (
+      action: 'move' | 'copy',
+      onAction: NonNullable<typeof onMove>,
+    ): ContextMenuItem[] => {
+      const targetFolders = folders!.filter(f => f.path !== folder);
+      const recentEntries = action === 'move' ? getRecentMoveFolders() : getRecentCopyFolders();
+      const recentCount = action === 'move' ? getRecentMoveFoldersCount() : getRecentCopyFoldersCount();
+      const accountId = message._accountId;
+
+      const recentItems: ContextMenuItem[] = [];
+      if (recentCount > 0 && accountId) {
+        const seen = new Set<string>();
+        for (const entry of recentEntries) {
+          if (entry.accountId !== accountId) continue;
+          if (entry.path === folder) continue;
+          if (seen.has(entry.path)) continue;
+          const f = targetFolders.find(x => x.path === entry.path);
+          if (!f) continue;
+          seen.add(entry.path);
+          recentItems.push({
+            label: getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name,
+            icon: <Clock size={14} />,
+            onClick: () => {
+              onAction(message.uid, f.path, message._accountId, message._folder);
+              if (action === 'move') pushRecentMoveFolder(accountId, f.path);
+              else pushRecentCopyFolder(accountId, f.path);
+            },
+          });
+          if (recentItems.length >= recentCount) break;
+        }
+      }
+
+      const fullList: ContextMenuItem[] = targetFolders.map(f => ({
+        label: getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name,
+        icon: <FolderIcon size={14} />,
+        onClick: () => {
+          onAction(message.uid, f.path, message._accountId, message._folder);
+          if (accountId) {
+            if (action === 'move') pushRecentMoveFolder(accountId, f.path);
+            else pushRecentCopyFolder(accountId, f.path);
+          }
+        },
+      }));
+
+      if (recentItems.length === 0) return fullList;
+      return [
+        ...recentItems,
+        { label: '', separator: true, onClick: () => {} },
+        ...fullList,
+      ];
+    };
+
     // Déplacer submenu
     if (onMove && folders && folders.length > 0) {
-      const moveableFolders = folders.filter(f => f.path !== folder);
       items.push({
         label: 'Déplacer',
         icon: <FolderInput size={14} />,
         onClick: () => {},
         submenuSearchable: true,
-        submenu: moveableFolders.map(f => ({
-          label: getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name,
-          icon: <FolderIcon size={14} />,
-          onClick: () => onMove(message.uid, f.path, message._accountId, message._folder),
-        })),
+        submenu: buildFolderSubmenu('move', onMove),
       });
     }
 
     // Copier submenu
     if (onCopy && folders && folders.length > 0) {
-      const copyableFolders = folders.filter(f => f.path !== folder);
       items.push({
         label: 'Copier',
         icon: <Copy size={14} />,
         onClick: () => {},
         submenuSearchable: true,
-        submenu: copyableFolders.map(f => ({
-          label: getFolderDisplayName(f.path) !== f.path ? getFolderDisplayName(f.path) : f.name,
-          icon: <FolderIcon size={14} />,
-          onClick: () => onCopy(message.uid, f.path, message._accountId, message._folder),
-        })),
+        submenu: buildFolderSubmenu('copy', onCopy),
       });
     }
 

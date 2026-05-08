@@ -22,6 +22,9 @@ import {
   getFolderPaneFontSize, setFolderPaneFontSize,
   type FolderPaneFontSize, FOLDER_PANE_FONT_SIZE_LABELS, FOLDER_PANE_FONT_SIZE_PX,
   getNewMailPollMinutes, setNewMailPollMinutes, type NewMailPollMinutes,
+  getRecentMoveFoldersCount, setRecentMoveFoldersCount,
+  getRecentCopyFoldersCount, setRecentCopyFoldersCount,
+  type RecentFoldersCount, RECENT_FOLDERS_CHANGED_EVENT,
 } from '../utils/mailPreferences';
 import type { MailAccount, MailFolder } from '../types';
 import {
@@ -380,6 +383,8 @@ function SwipeSettings() {
           </span>
         </span>
       </label>
+
+      <RecentFoldersPicker />
 
       {/* Dossiers par défaut pour Déplacer / Copier — un par compte. */}
       {(needsMoveTargets || needsCopyTargets) && prefs.enabled && (
@@ -771,6 +776,86 @@ function FolderPaneFontSizePicker() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Lets the user enable a "recent folders" shortcut at the top of the
+// "Déplacer" and "Copier" context-menu submenus, and pick how many entries
+// to keep visible (0 = disabled, up to 3). Mirrored on desktop in the
+// "Afficher" ribbon.
+function RecentFoldersPicker() {
+  const [moveCount, setMoveCount] = useState<RecentFoldersCount>(() => getRecentMoveFoldersCount());
+  const [copyCount, setCopyCount] = useState<RecentFoldersCount>(() => getRecentCopyFoldersCount());
+
+  useEffect(() => {
+    const handler = () => {
+      setMoveCount(getRecentMoveFoldersCount());
+      setCopyCount(getRecentCopyFoldersCount());
+    };
+    window.addEventListener(RECENT_FOLDERS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(RECENT_FOLDERS_CHANGED_EVENT, handler);
+  }, []);
+
+  const counts: RecentFoldersCount[] = [0, 1, 2, 3];
+  const updateMove = (n: RecentFoldersCount) => {
+    setMoveCount(n);
+    setRecentMoveFoldersCount(n);
+    toast.success(n === 0
+      ? 'Raccourci « Déplacer » désactivé'
+      : `Raccourci « Déplacer » : ${n} dossier${n > 1 ? 's' : ''} récent${n > 1 ? 's' : ''}`);
+  };
+  const updateCopy = (n: RecentFoldersCount) => {
+    setCopyCount(n);
+    setRecentCopyFoldersCount(n);
+    toast.success(n === 0
+      ? 'Raccourci « Copier » désactivé'
+      : `Raccourci « Copier » : ${n} dossier${n > 1 ? 's' : ''} récent${n > 1 ? 's' : ''}`);
+  };
+
+  const renderRow = (
+    label: string,
+    count: RecentFoldersCount,
+    onChange: (n: RecentFoldersCount) => void,
+  ) => (
+    <div className="flex items-center gap-3">
+      <span className="text-sm w-20 flex-shrink-0">{label}</span>
+      <div className="flex items-center gap-1 flex-1">
+        {counts.map((n) => {
+          const active = count === n;
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange(n)}
+              className={`flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                active
+                  ? 'border-outlook-blue bg-outlook-blue/10 text-outlook-blue font-medium'
+                  : 'border-outlook-border hover:bg-outlook-bg-hover text-outlook-text-primary'
+              }`}
+              title={n === 0 ? 'Désactivé' : `${n} dossier${n > 1 ? 's' : ''} récent${n > 1 ? 's' : ''}`}
+            >
+              {n === 0 ? 'Désactivé' : n}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="border border-outlook-border rounded-md p-3 space-y-3">
+      <div>
+        <div className="text-sm font-medium">Dossiers récents (Déplacer / Copier)</div>
+        <p className="text-[11px] text-outlook-text-disabled mt-0.5">
+          Affiche les derniers dossiers utilisés en haut des sous-menus contextuels
+          « Déplacer » et « Copier », juste sous la barre de recherche, pour
+          re-sélectionner rapidement la même destination. Réglez 0 pour désactiver
+          le raccourci sur l'une ou l'autre des actions.
+        </p>
+      </div>
+      {renderRow('Déplacer', moveCount, updateMove)}
+      {renderRow('Copier', copyCount, updateCopy)}
     </div>
   );
 }

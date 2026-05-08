@@ -15,6 +15,7 @@ import {
   Tag, MessagesSquare, ShieldAlert, ShieldOff, Coffee,
   Maximize2, Minimize2,
   FileText, Settings as SettingsIcon, Filter,
+  Clock,
 } from 'lucide-react';
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
@@ -31,6 +32,9 @@ import {
   getFolderPaneFontSize, setFolderPaneFontSize,
   type FolderPaneFontSize, FOLDER_PANE_FONT_SIZE_LABELS, FOLDER_PANE_FONT_SIZE_PX,
   FOLDER_PANE_FONT_SIZE_CHANGED_EVENT,
+  getRecentMoveFoldersCount, setRecentMoveFoldersCount,
+  getRecentCopyFoldersCount, setRecentCopyFoldersCount,
+  type RecentFoldersCount, RECENT_FOLDERS_CHANGED_EVENT,
 } from '../../utils/mailPreferences';
 
 type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer';
@@ -262,6 +266,7 @@ export default function Ribbon({
   const [showConversationsMenu, setShowConversationsMenu] = useState(false);
   const [showFolderFontMenu, setShowFolderFontMenu] = useState(false);
   const [showMailDisplayMenu, setShowMailDisplayMenu] = useState(false);
+  const [showRecentFoldersMenu, setShowRecentFoldersMenu] = useState(false);
   // Folder pane font size — synced with the global event so two ribbons stay
   // in sync if multiple windows/tabs are open.
   const [folderFontSize, setFolderFontSizeState] = useState<FolderPaneFontSize>(() => getFolderPaneFontSize());
@@ -280,6 +285,7 @@ export default function Ribbon({
   const conversationsMenuBtnRef = useRef<HTMLButtonElement>(null);
   const folderFontMenuBtnRef = useRef<HTMLButtonElement>(null);
   const mailDisplayMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const recentFoldersMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
@@ -290,6 +296,7 @@ export default function Ribbon({
   const [conversationsMenuPos, setConversationsMenuPos] = useState({ top: 0, left: 0 });
   const [folderFontMenuPos, setFolderFontMenuPos] = useState({ top: 0, left: 0 });
   const [mailDisplayMenuPos, setMailDisplayMenuPos] = useState({ top: 0, left: 0 });
+  const [recentFoldersMenuPos, setRecentFoldersMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -307,6 +314,32 @@ export default function Ribbon({
     const next = !deleteConfirmEnabled;
     setDeleteConfirmEnabled(next);
     setDeleteConfirmEnabledState(next);
+  };
+
+  // Recent move/copy folders shortcut counts — kept in sync with localStorage
+  // through the global RECENT_FOLDERS_CHANGED_EVENT so the settings page and
+  // the ribbon always show the same value.
+  const [recentMoveCount, setRecentMoveCountState] = useState<RecentFoldersCount>(
+    () => getRecentMoveFoldersCount(),
+  );
+  const [recentCopyCount, setRecentCopyCountState] = useState<RecentFoldersCount>(
+    () => getRecentCopyFoldersCount(),
+  );
+  useEffect(() => {
+    const handler = () => {
+      setRecentMoveCountState(getRecentMoveFoldersCount());
+      setRecentCopyCountState(getRecentCopyFoldersCount());
+    };
+    window.addEventListener(RECENT_FOLDERS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(RECENT_FOLDERS_CHANGED_EVENT, handler);
+  }, []);
+  const updateRecentMoveCount = (n: RecentFoldersCount) => {
+    setRecentMoveCountState(n);
+    setRecentMoveFoldersCount(n);
+  };
+  const updateRecentCopyCount = (n: RecentFoldersCount) => {
+    setRecentCopyCountState(n);
+    setRecentCopyFoldersCount(n);
   };
 
   // Auto-switch to Message tab when composing starts; go back to Accueil when it ends
@@ -388,6 +421,15 @@ export default function Ribbon({
       setFolderFontMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowFolderFontMenu(v => !v);
+  };
+
+  const openRecentFoldersMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || recentFoldersMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setRecentFoldersMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowRecentFoldersMenu(v => !v);
   };
 
   const openListModeMenu = (e?: React.MouseEvent) => {
@@ -745,6 +787,54 @@ export default function Ribbon({
         </>,
         document.body
       )}
+
+      {/* Recent Move/Copy folders menu */}
+      {showRecentFoldersMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowRecentFoldersMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-72"
+            style={{ top: recentFoldersMenuPos.top, left: recentFoldersMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Dossiers récents (Déplacer / Copier)
+            </div>
+            <div className="px-3 pt-1 pb-2 text-[11px] text-outlook-text-secondary">
+              Affiche les derniers dossiers utilisés en haut des sous-menus
+              « Déplacer » et « Copier » pour un accès plus rapide.
+            </div>
+
+            {([
+              { label: 'Déplacer', count: recentMoveCount, onChange: updateRecentMoveCount },
+              { label: 'Copier', count: recentCopyCount, onChange: updateRecentCopyCount },
+            ] as const).map((row) => (
+              <div key={row.label} className="px-3 py-1.5 border-t border-outlook-border first:border-t-0">
+                <div className="text-xs font-medium text-outlook-text-primary mb-1.5">{row.label}</div>
+                <div className="flex items-center gap-1">
+                  {([0, 1, 2, 3] as RecentFoldersCount[]).map((n) => {
+                    const active = row.count === n;
+                    return (
+                      <button
+                        key={n}
+                        onClick={() => row.onChange(n)}
+                        className={`flex-1 px-2 py-1 text-xs rounded border transition-colors
+                          ${active
+                            ? 'border-outlook-blue bg-outlook-blue/10 text-outlook-blue font-medium'
+                            : 'border-outlook-border hover:bg-outlook-bg-hover text-outlook-text-primary'
+                          }`}
+                        title={n === 0 ? 'Désactivé' : `${n} dossier${n > 1 ? 's' : ''} récent${n > 1 ? 's' : ''}`}
+                      >
+                        {n === 0 ? 'Off' : n}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
     </>
   );
   if (ribbonMode === 'simplified') {
@@ -861,6 +951,16 @@ export default function Ribbon({
               >
                 <MessagesSquare size={14} />
                 <span className="text-xs whitespace-nowrap">Conversations</span>
+                <ChevronDown size={10} />
+              </button>
+              <button
+                ref={recentFoldersMenuBtnRef}
+                onClick={(e) => openRecentFoldersMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showRecentFoldersMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Dossiers récents (Déplacer / Copier)"
+              >
+                <Clock size={14} />
+                <span className="text-xs whitespace-nowrap">Dossiers récents</span>
                 <ChevronDown size={10} />
               </button>
               <SimplifiedSep />
@@ -1108,6 +1208,19 @@ export default function Ribbon({
                     <MessagesSquare size={18} />
                     <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
                       Conversations <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    ref={recentFoldersMenuBtnRef}
+                    onClick={(e) => openRecentFoldersMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showRecentFoldersMenu ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Dossiers récents pour Déplacer / Copier"
+                  >
+                    <Clock size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Dossiers récents <ChevronDown size={8} />
                     </span>
                   </button>
                 </div>

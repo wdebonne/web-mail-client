@@ -521,3 +521,95 @@ export function setSwipeCopyTarget(accountId: string, folderPath: string | null)
   else delete prefs.copyTargets[accountId];
   setSwipePrefs(prefs);
 }
+
+
+// --- Recent Move / Copy folders ---------------------------------------------
+//
+// Stores the most recently used target folders for the « Déplacer » and
+// « Copier » context menu submenus, so the user can quickly re-pick the
+// previous destination without scrolling through the full folder list.
+//
+// Each scope (move/copy) has:
+//   * a count preference (0–3) — 0 disables the shortcut entirely;
+//   * a list of recent entries (accountId + folder path) ordered MRU-first.
+//
+// The lists are clamped to a small upper bound (5) so we don't grow forever
+// even when the user temporarily lowers the displayed count.
+export type RecentFoldersCount = 0 | 1 | 2 | 3;
+export interface RecentFolderEntry {
+  accountId: string;
+  path: string;
+}
+
+const KEY_RECENT_MOVE_COUNT = 'mail.recentMoveFoldersCount';
+const KEY_RECENT_COPY_COUNT = 'mail.recentCopyFoldersCount';
+const KEY_RECENT_MOVE = 'mail.recentMoveFolders';
+const KEY_RECENT_COPY = 'mail.recentCopyFolders';
+const RECENT_FOLDERS_EVENT = 'mail-recent-folders-changed';
+const RECENT_MAX_STORED = 5;
+
+function readRecentCount(key: string, fallback: RecentFoldersCount): RecentFoldersCount {
+  const raw = localStorage.getItem(key);
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  return (n === 0 || n === 1 || n === 2 || n === 3) ? (n as RecentFoldersCount) : fallback;
+}
+
+function writeRecentCount(key: string, value: RecentFoldersCount) {
+  localStorage.setItem(key, String(value));
+  try {
+    window.dispatchEvent(new CustomEvent(RECENT_FOLDERS_EVENT));
+  } catch { /* noop */ }
+}
+
+export function getRecentMoveFoldersCount(): RecentFoldersCount {
+  return readRecentCount(KEY_RECENT_MOVE_COUNT, 1);
+}
+
+export function setRecentMoveFoldersCount(n: RecentFoldersCount) {
+  writeRecentCount(KEY_RECENT_MOVE_COUNT, n);
+}
+
+export function getRecentCopyFoldersCount(): RecentFoldersCount {
+  return readRecentCount(KEY_RECENT_COPY_COUNT, 1);
+}
+
+export function setRecentCopyFoldersCount(n: RecentFoldersCount) {
+  writeRecentCount(KEY_RECENT_COPY_COUNT, n);
+}
+
+function readRecentList(key: string): RecentFolderEntry[] {
+  const list = readJSON<RecentFolderEntry[]>(key, []);
+  return Array.isArray(list)
+    ? list.filter((e) => e && typeof e.accountId === 'string' && typeof e.path === 'string')
+    : [];
+}
+
+function pushRecent(key: string, accountId: string, path: string) {
+  if (!accountId || !path) return;
+  const list = readRecentList(key);
+  const filtered = list.filter((e) => !(e.accountId === accountId && e.path === path));
+  filtered.unshift({ accountId, path });
+  writeJSON(key, filtered.slice(0, RECENT_MAX_STORED));
+  try {
+    window.dispatchEvent(new CustomEvent(RECENT_FOLDERS_EVENT));
+  } catch { /* noop */ }
+}
+
+export function getRecentMoveFolders(): RecentFolderEntry[] {
+  return readRecentList(KEY_RECENT_MOVE);
+}
+
+export function pushRecentMoveFolder(accountId: string, path: string) {
+  pushRecent(KEY_RECENT_MOVE, accountId, path);
+}
+
+export function getRecentCopyFolders(): RecentFolderEntry[] {
+  return readRecentList(KEY_RECENT_COPY);
+}
+
+export function pushRecentCopyFolder(accountId: string, path: string) {
+  pushRecent(KEY_RECENT_COPY, accountId, path);
+}
+
+export const RECENT_FOLDERS_CHANGED_EVENT = RECENT_FOLDERS_EVENT;
