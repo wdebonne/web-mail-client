@@ -298,25 +298,29 @@ export default function MailPage() {
   // / mail-read / mail-archived for the same reason — we listen to all of
   // them so the UI stays in sync regardless of the source.
   useWebSocket({
-    'new-mail': () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
+    'new-mail': (data) => {
+      console.debug('[ws] new-mail', data);
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
     },
-    'mail-moved': () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+    'mail-moved': (data) => {
+      console.debug('[ws] mail-moved', data);
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
     },
-    'mail-deleted': () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+    'mail-deleted': (data) => {
+      console.debug('[ws] mail-deleted', data);
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
     },
     'mail-read': () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
     },
     'mail-archived': () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
     },
   });
 
