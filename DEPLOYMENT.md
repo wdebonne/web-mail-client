@@ -281,6 +281,15 @@ proxy_set_header X-Forwarded-Host $host;
 Active **Force SSL** et **Websockets Support**. Une fois HTTPS fonctionnel,
 tu peux activer **HTTP/2** et **HSTS**.
 
+> **Important — Websockets Support doit être activé.** L'application ouvre
+> une connexion `wss://<domaine>/ws` pour pousser en temps réel les
+> événements `new-mail`, `mail-moved`, `mail-deleted`, `mail-read` et
+> `mail-archived`. Sans WebSocket, la liste des messages ne se rafraîchit
+> qu'au polling de 30 s — un message déplacé par une règle resterait visible
+> dans la boîte de réception jusqu'au prochain `refetchInterval`. Vérifie
+> dans DevTools → Network → filtre **WS** que la requête `/ws` répond bien
+> en `101 Switching Protocols`.
+
 ---
 
 ## WebAuthn / Passkeys — pièges fréquents
