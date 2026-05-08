@@ -318,6 +318,40 @@ export default function MessageList({
     return result;
   }, [messages, filterType, dateFilter, customDate, attachmentMinVisibleBytes]);
 
+  // Select-all helpers — operate on the currently filtered list so the
+  // "tout sélectionner" checkbox respects active filters (date / type).
+  const allFilteredKeys = useMemo(
+    () => filteredMessages.map(m => selectionKey(m, folder)),
+    [filteredMessages, folder],
+  );
+  const allFilteredSelected = allFilteredKeys.length > 0
+    && allFilteredKeys.every(k => selectedUids.has(k));
+  const someFilteredSelected = !allFilteredSelected
+    && allFilteredKeys.some(k => selectedUids.has(k));
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someFilteredSelected;
+    }
+  }, [someFilteredSelected, allFilteredSelected]);
+  const handleToggleSelectAll = () => {
+    if (allFilteredKeys.length === 0) return;
+    if (allFilteredSelected) {
+      setSelectedUids(prev => {
+        const next = new Set(prev);
+        for (const k of allFilteredKeys) next.delete(k);
+        return next;
+      });
+    } else {
+      if (!selectionMode) setSelectionMode(true);
+      setSelectedUids(prev => {
+        const next = new Set(prev);
+        for (const k of allFilteredKeys) next.add(k);
+        return next;
+      });
+    }
+  };
+
   // Sort messages
   const sortedMessages = useMemo(() => {
     const sorted = [...filteredMessages].sort((a, b) => {
@@ -460,6 +494,21 @@ export default function MessageList({
         <div className="px-2 pt-2 pb-1 flex items-center justify-between">
           {/* Left: folder pane toggle + folder name + star */}
           <div className="flex items-center gap-1 min-w-0">
+            {/* Select-all checkbox — toggles selection of every visible message */}
+            <label
+              className="hidden md:inline-flex items-center justify-center p-1 rounded flex-shrink-0 cursor-pointer text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary"
+              title={allFilteredSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
+              aria-label={allFilteredSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
+            >
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={handleToggleSelectAll}
+                disabled={allFilteredKeys.length === 0}
+                className="w-3.5 h-3.5 rounded border-gray-300 text-outlook-blue focus:ring-outlook-blue cursor-pointer"
+              />
+            </label>
             {onToggleFolderPane && (
               <button
                 onClick={onToggleFolderPane}

@@ -7,6 +7,15 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+#### Étoile de favoris cliquable dans l'en-tête de la liste des messages
+
+- **Bascule favori en un clic** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : l'étoile décorative affichée à côté du nom du dossier en haut de la liste devient un vrai bouton. Un clic ajoute (ou retire) le dossier courant de la section **Favoris** du panneau de gauche, sans passer par le menu contextuel.
+- **Indicateur visuel** : l'étoile s'affiche **pleine et orange** (`text-outlook-warning`, `fill="currentColor"`) quand le dossier est dans les favoris, **vide et grisée** sinon, avec un *tooltip* dynamique *Ajouter aux favoris / Retirer des favoris* et l'attribut `aria-pressed` pour les lecteurs d'écran.
+- **Synchronisation immédiate** ([client/src/pages/MailPage.tsx](client/src/pages/MailPage.tsx)) : après bascule, `bumpPrefs()` re-rend le `FolderPane` et invalide la query `virtual-messages` pour que la section *Favoris* reflète le changement sans reload.
+- **Masquage automatique** : l'étoile est cachée pour les vues virtuelles (Boîte de réception unifiée, Éléments envoyés unifiés) où la notion de favori-de-dossier n'a pas de sens — celles-ci restent gérées via le ruban.
+
 ### Corrigé
 
 #### Plus d'expéditeur « Inconnu » dans la liste des messages
