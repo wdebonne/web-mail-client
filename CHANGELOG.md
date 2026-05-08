@@ -16,6 +16,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 - **État indéterminé** : la case affiche trois états — vide (rien de sélectionné), **indéterminé** (sélection partielle parmi les messages visibles), cochée (tout est sélectionné). Géré via la propriété `indeterminate` de l'élément `<input>` mise à jour par `useEffect`.
 - **Respect des filtres** : la sélection cible uniquement les messages **filtrés** (filtres date, type — non lus, drapeau, pièces jointes…), pas la totalité des messages chargés. Cela permet par exemple de sélectionner d'un coup *tous les non lus du mois dernier* avant suppression.
 - **Compatible vues unifiées** : utilise les clés composites existantes `accountId:folder:uid` pour ne pas confondre des messages partageant le même UID dans des dossiers/comptes différents (boîte de réception unifiée).
+- **Surlignage cohérent des lignes cochées** : toutes les lignes sélectionnées partagent désormais le même fond bleu (`bg-outlook-blue/15`) et une **bordure gauche bleue**, indépendamment de l'état lu/non lu et de la catégorie (qui auparavant écrasaient le surlignage et ne mettaient en évidence que le message actuellement ouvert).
 
 #### Étoile de favoris cliquable dans l'en-tête de la liste des messages
 

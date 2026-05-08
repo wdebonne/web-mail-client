@@ -897,9 +897,12 @@ export default function MessageList({
                       className={`flex items-center gap-2 px-3 cursor-pointer border-b border-outlook-border transition-colors group relative
                         ${isWide ? densityWide : densityCompact}
                         ${isThreadChild ? 'pl-10 bg-outlook-bg-primary/40' : ''}
-                        ${isSelected && !selectionMode ? 'bg-blue-50 border-l-2 border-l-outlook-blue' : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
-                        ${isChecked ? 'bg-blue-50' : ''}
-                        ${isUnread && !primaryCatColor ? '' : (!primaryCatColor ? 'bg-outlook-bg-primary/30' : '')}`}
+                        ${isChecked
+                          ? 'bg-outlook-blue/15 border-l-2 border-l-outlook-blue'
+                          : isSelected && !selectionMode
+                            ? 'bg-blue-50 border-l-2 border-l-outlook-blue'
+                            : 'border-l-2 border-l-transparent hover:bg-outlook-bg-hover'}
+                        ${!isChecked && (isUnread && !primaryCatColor ? '' : (!primaryCatColor ? 'bg-outlook-bg-primary/30' : ''))}`}
                     >
                       {/* Thread expansion chevron — only on root rows of a threaded conversation.
                           Clicking toggles the sub-list visibility without selecting the message. */}
