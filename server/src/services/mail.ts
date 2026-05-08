@@ -278,7 +278,7 @@ export class MailService {
               if (target && !target.from) target.from = addr;
             }
           } catch (err) {
-            logger.warn('[mail] header fallback fetch failed', err);
+            logger.warn({ err }, '[mail] header fallback fetch failed');
           }
         }
 
