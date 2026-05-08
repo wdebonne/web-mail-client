@@ -9,6 +9,14 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Case « Tout sélectionner » dans l'en-tête de la liste des messages
+
+- **Nouvelle case à cocher** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : ajout d'une case à cocher en tête du volet de messages, à gauche du bouton *Masquer/Afficher les dossiers*, qui sélectionne ou désélectionne en un clic **tous les messages actuellement visibles** dans le dossier. Idéal pour purger un dossier (corbeille, spam, dossier obsolète) sans cocher chaque ligne une par une.
+- **État indéterminé** : la case affiche trois états — vide (rien de sélectionné), **indéterminé** (sélection partielle parmi les messages visibles), cochée (tout est sélectionné). Géré via la propriété `indeterminate` de l'élément `<input>` mise à jour par `useEffect`.
+- **Respect des filtres** : la sélection cible uniquement les messages **filtrés** (filtres date, type — non lus, drapeau, pièces jointes…), pas la totalité des messages chargés. Cela permet par exemple de sélectionner d'un coup *tous les non lus du mois dernier* avant suppression.
+- **Activation automatique du mode sélection** : un clic sur la case active le mode sélection s'il ne l'était pas déjà, faisant apparaître les cases à cocher de chaque ligne et la barre d'actions en lot.
+- **Compatible vues unifiées** : utilise les clés composites existantes `accountId:folder:uid` pour ne pas confondre des messages partageant le même UID dans des dossiers/comptes différents (boîte de réception unifiée).
+
 #### Étoile de favoris cliquable dans l'en-tête de la liste des messages
 
 - **Bascule favori en un clic** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : l'étoile décorative affichée à côté du nom du dossier en haut de la liste devient un vrai bouton. Un clic ajoute (ou retire) le dossier courant de la section **Favoris** du panneau de gauche, sans passer par le menu contextuel.
