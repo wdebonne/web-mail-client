@@ -9,6 +9,14 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Dossiers récents en tête des sous-menus « Déplacer » / « Copier »
+
+- **Raccourci MRU** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : les sous-menus *Déplacer vers…* et *Copier vers…* du menu contextuel d'un message affichent désormais en tête (juste sous la barre *Rechercher un dossier*) les **derniers dossiers utilisés** pour cette action, marqués d'une icône **horloge**. Un séparateur les distingue de la liste complète habituelle, qui reste accessible en dessous.
+- **Réglage par action** ([client/src/utils/mailPreferences.ts](client/src/utils/mailPreferences.ts)) : le nombre de raccourcis affichés est paramétrable **indépendamment** pour Déplacer et Copier, parmi quatre valeurs — *Off* (désactivé), *1*, *2* ou *3* dossiers récents. Persistant en `localStorage` (`mail.recentMoveFoldersCount` / `mail.recentCopyFoldersCount`) avec un événement `mail-recent-folders-changed` pour synchroniser ruban et page Paramètres.
+- **Suivi automatique** : à chaque clic dans le sous-menu (qu'il provienne de la zone *récents* ou de la liste complète), le dossier choisi remonte en tête de la liste MRU correspondante (`pushRecentMoveFolder` / `pushRecentCopyFolder`). Jusqu'à 5 dossiers stockés par action et par compte, déduplication automatique. Le repli utilise le prop `accountId` du composant pour fonctionner aussi en vue mono-compte (où `_accountId` n'est pas posé sur les messages).
+- **Contrôle dans le ruban** ([client/src/components/mail/Ribbon.tsx](client/src/components/mail/Ribbon.tsx)) : nouveau bouton **« Dossiers récents »** (icône horloge) dans le groupe *Disposition* de l'onglet **Afficher** (modes classique et simplifié). Le menu déroulant propose une rangée de boutons `Off / 1 / 2 / 3` pour Déplacer puis pour Copier.
+- **Contrôle dans Paramètres** ([client/src/pages/SettingsPage.tsx](client/src/pages/SettingsPage.tsx)) : section **Dossiers récents (Déplacer / Copier)** dans les préférences Mail, avec la même rangée `Off / 1 / 2 / 3` par action et un texte d'aide. Toute modification (ruban ou paramètres) est immédiatement visible dans l'autre via l'événement de synchronisation.
+
 #### Case « Tout sélectionner » dans l'en-tête de la liste des messages
 
 - **Nouvelle case à cocher** ([client/src/components/mail/MessageList.tsx](client/src/components/mail/MessageList.tsx)) : ajout d'une case à cocher en tête du volet de messages, à gauche du bouton *Masquer/Afficher les dossiers*, qui sélectionne ou désélectionne en un clic **tous les messages actuellement visibles** dans le dossier. Idéal pour purger un dossier (corbeille, spam, dossier obsolète) sans cocher chaque ligne une par une.
