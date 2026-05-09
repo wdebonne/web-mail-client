@@ -1,8 +1,14 @@
-# WebMail - Client Mail Web (style messagerie professionnelle)
+# WebMail - Client Mail Professionnel Moderne
 
-Client de messagerie web complet avec interface style messagerie professionnelle, intégration NextCloud optionnelle, PWA hors-ligne, système de plugins et déploiement Docker.
+## Aperçu Général
+WebMail est un client de messagerie web complet conçu pour offrir une expérience utilisateur comparable à celle des applications de bureau professionnelles (style Outlook). Il centralise la gestion multi-comptes IMAP/SMTP tout en intégrant des fonctionnalités avancées telles que le support S/MIME et OpenPGP, la synchronisation complète des calendriers et contacts, ainsi qu'une architecture extensible via un système de plugins. L'application est construite pour être robuste, fonctionnant en mode hors ligne (PWA) et adhérant aux meilleures pratiques de messagerie moderne.
 
-## Fonctionnalités
+**Fonctionnalités Clés :**
+*   ✅ **Multi-Comptes :** Gestion simultanée de plusieurs boîtes mail IMAP/SMTP (compatibilité o2switch/cPanel).
+*   🖼️ **Interface Pro :** Expérience utilisateur riche avec des catégories personnalisables, le chiffrement PGP/S/MIME et un éditeur HTML avancé.
+*   ⚡ **Fonctionnalités Avancées :** Synchronisation Cloud (préférences), mode hors ligne (PWA) et support de l'IA intégrée via plugins Ollama.
+
+Pour une analyse détaillée, veuillez consulter les sections suivantes du fichier.
 
 ### Messagerie
 - 📧 Multi-comptes IMAP/SMTP (compatible o2switch / cPanel)
