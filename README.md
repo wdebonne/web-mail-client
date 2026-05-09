@@ -63,22 +63,22 @@ Client de messagerie web complet avec interface style messagerie professionnelle
   - **Liste de messages** — *Regrouper par conversation* · *Regrouper par branches dans les conversations* · *Ne pas regrouper*. En mode regroupé, chaque fil est condensé en une seule ligne « racine » (objet + compteur de messages) et un chevron permet de déplier les messages descendants, indentés sous le parent. En vue unifiée, chaque enfant porte un badge de dossier d'origine (ex. `Éléments envoyés`).
   - **Volet de lecture → Organisation des messages** — *Afficher tous les messages de la conversation sélectionnée* (empilement de cartes dépliables, seul le plus récent ouvert) ou *Afficher uniquement le message sélectionné*.
   - Préférences persistées localement (`conversationGrouping`, `conversationShowAllInReadingPane`).
-- �️ **Mode d'affichage du corps des mails (natif / étiré)** : bouton *Affichage mail* dans l'onglet **Afficher** du ruban — bascule globale entre *Natif* (largeur de lecture ~820 px centrée, parité style messagerie professionnelle desktop) et *Étiré* (toute la largeur du volet). Override possible message par message depuis la vue de lecture. Sur mobile, les newsletters HTML (`<table width="600">`) sont automatiquement remises en flux : tables empilées en blocs, images redimensionnées, plus aucun défilement horizontal. Barre d'objet masquée et bloc expéditeur repliable par défaut sur petit écran pour gagner de la hauteur.
-- �🔐 **Chiffrement & signature S/MIME + OpenPGP** : page **Sécurité** dédiée pour générer / importer des clés PGP (Curve25519) et des certificats S/MIME (PKCS#12). Les clés privées sont chiffrées AES-GCM 256 via PBKDF2-SHA-256 (310 000 itérations) et stockées en IndexedDB, jamais envoyées au serveur. Sélecteur de mode (bouclier) dans le compose : **PGP** signer / chiffrer / signer+chiffrer · **S/MIME** signer / chiffrer / signer+chiffrer. Détection et déchiffrement automatiques à la réception, avec bannière de statut (vérifiée, déchiffrée, verrouillée, invalide).
+- 📐 **Mode d'affichage du corps des mails (natif / étiré)** : bouton *Affichage mail* dans l'onglet **Afficher** du ruban — bascule globale entre *Natif* (largeur de lecture ~820 px centrée, parité style messagerie professionnelle desktop) et *Étiré* (toute la largeur du volet). Override possible message par message depuis la vue de lecture. Sur mobile, les newsletters HTML (`<table width="600">`) sont automatiquement remises en flux : tables empilées en blocs, images redimensionnées, plus aucun défilement horizontal. Barre d'objet masquée et bloc expéditeur repliable par défaut sur petit écran pour gagner de la hauteur.
+- 🛡️🔐 **Chiffrement & signature S/MIME + OpenPGP** : page **Sécurité** dédiée pour générer / importer des clés PGP (Curve25519) et des certificats S/MIME (PKCS#12). Les clés privées sont chiffrées AES-GCM 256 via PBKDF2-SHA-256 (310 000 itérations) et stockées en IndexedDB, jamais envoyées au serveur. Sélecteur de mode (bouclier) dans le compose : **PGP** signer / chiffrer / signer+chiffrer · **S/MIME** signer / chiffrer / signer+chiffrer. Détection et déchiffrement automatiques à la réception, avec bannière de statut (vérifiée, déchiffrée, verrouillée, invalide).
 - ↩️ **Indicateur « répondu »** dans la liste des mails (icône *Répondre* devant la date) basé sur le flag IMAP `\Answered`.
 - 📏 Volet dossiers et liste de messages redimensionnables
 - 🗜️ **Rédaction plein-largeur** : bouton Agrandir/Réduire dans l'en-tête du compose pour masquer les volets et donner toute la largeur au brouillon
 - 📎 **Glisser-déposer de pièces jointes** directement sur la fenêtre de rédaction (overlay visuel pendant le survol)
 - 🎚️ Ruban auto-adaptatif (classique ↔ simplifié selon la largeur)
-- �️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF)
-- �📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
+- 🎛️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF)
+- 👥📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
 
 ### Contacts
 - 👥 Gestion complète des contacts (CRUD)
 - 🔍 Recherche par email, nom, prénom, entreprise
 - 📋 Groupes de contacts et listes de distribution
 - 🔗 Enrichissement depuis NextCloud (photo, fonction, rôle)
-- � **Expéditeurs automatiques** : tout expéditeur de mail reçu est enregistré comme "contact non permanent"
+- 📥 **Expéditeurs automatiques** : tout expéditeur de mail reçu est enregistré comme "contact non permanent"
 - ✅ **Promotion de contact** : conversion d'un expéditeur en contact permanent
 - 🔤 **Autocomplétion intelligente** dans le composeur avec affichage des noms (seuil 1 caractère)
 - 🎯 **Modal de sélection de contacts** : clic sur "À", "Cc", "Cci" pour ouvrir le carnet d'adresses complet
@@ -116,14 +116,14 @@ Client de messagerie web complet avec interface style messagerie professionnelle
 - 📝 Préparation de l'intégration d'un rendu bureautique fidèle via l'écosystème Office de NextCloud (à activer ultérieurement selon l'instance)
 
 ### Administration
-- � Dashboard temps réel (stats utilisateurs, mails, infra)
+- 📊 Dashboard temps réel (stats utilisateurs, mails, infra)
 - 👤 Gestion des utilisateurs et groupes
 - ⚙️ Paramètres globaux
 - 🎨 **Branding personnalisable** : téléversement à chaud du favicon et des icônes PWA (192×192, 512×512, Apple Touch) depuis l'onglet *Système*, sans rebuild ni redéploiement. Aperçu, réinitialisation et application immédiate au rafraîchissement.
 - 🪟 **Titre d'onglet dynamique** (style messagerie professionnelle) : l'onglet du navigateur affiche `<Nom du dossier> — <Nom de l'app>` (ex. *Boîte de réception — WebMail*).
 - 💾 **Sauvegarde & restauration de la configuration locale** (*Paramètres → Sauvegarde*) : export/import manuel de toute la personnalisation côté client (signatures **images embarquées incluses**, catégories, ordre/renommage des boîtes et dossiers, favoris, vues, thème, préférences, clé API GIPHY). **Sauvegarde automatique** optionnelle sur Windows / Linux (Chrome, Edge, Opera, Vivaldi) écrivant **un unique fichier** au nom personnalisable dans un dossier choisi (ex. `Documents`), compatible Duplicati et tout outil de backup de fichiers. Les contacts, calendriers et clés privées PGP/S/MIME sont volontairement exclus (couverts par le serveur / l'export dédié de la page Sécurité). Voir [docs/BACKUP.md](docs/BACKUP.md).
 - ☁️ **Synchronisation cloud des préférences entre appareils** (*Paramètres → Sauvegarde → Synchronisation cloud*) : les renommages de comptes/dossiers, l'ordre, les favoris, les couleurs, les signatures, les catégories, les actions de balayage et le thème sont automatiquement synchronisés via la table serveur `user_preferences` avec stratégie *last-write-wins* sur l'horodatage. Vos personnalisations vous suivent sur PC, téléphone et tablette sans intervention manuelle. Activable / désactivable depuis la même section. Voir [docs/PWA.md](docs/PWA.md#synchronisation-cloud-des-préférences).
-- �🔌 Gestion des plugins
+- 🔌 Gestion des plugins
 - ☁️ Configuration NextCloud
 - ☕ **Répondeurs automatiques (admin)** : page dédiée listant tous les répondeurs configurés par les utilisateurs, avec filtre texte, bascule *afficher uniquement les actifs*, édition / désactivation, et création pour n'importe quel compte (autocomplétion couvrant aussi les boîtes partagées via `mailbox_assignments`). Bouton **Paramètres** (engrenage) à côté de *Nouveau répondeur* : toggle global d'activation de la fonctionnalité (masque le ruban et l'onglet utilisateur quand désactivé) et durée par défaut entre vérifications (`1 / 5 / 15 / 30 / 60 min`).
 - 📋 **Modèles de mail (admin)** : page dédiée listant tous les modèles de la plateforme (personnels par utilisateur + globaux), avec filtre texte sur nom / objet / propriétaire, badge de type, et actions modifier / partager / supprimer pour chaque ligne. Création d'un modèle pour le compte de n'importe quel utilisateur, ou en tant que **modèle global** automatiquement visible par tous les utilisateurs.
