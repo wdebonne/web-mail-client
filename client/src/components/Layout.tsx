@@ -37,23 +37,19 @@ export default function Layout({ children }: LayoutProps) {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [userMenuOpen]);
 
-  const navItems = [
+  // 1. Définition des éléments de navigation principaux (core functional areas)
+  const primaryNavItems = [
     { path: '/mail', icon: Mail, label: 'Courrier' },
     { path: '/calendar', icon: Calendar, label: 'Calendrier' },
     { path: '/contacts', icon: Users, label: 'Contacts' },
   ];
 
-  const bottomItems = [
+  // 2. Définition des utilitaires et réglages (Support & Tools)
+  const supportNavItems = [
+    // Grouping related functional areas under a "Tools" or similar concept enhances discoverability.
     { path: '/settings', icon: Settings, label: 'Paramètres' },
     { path: '/security', icon: KeyRound, label: 'Sécurité' },
     ...(user?.isAdmin ? [{ path: '/admin', icon: Shield, label: 'Administration' }] : []),
-  ];
-
-  // Items shown in the mobile/tablet bottom navigation bar.
-  const mobileNavItems = [
-    ...navItems,
-    { path: '/settings', icon: Settings, label: 'Paramètres' },
-    ...(user?.isAdmin ? [{ path: '/admin', icon: Shield, label: 'Admin' }] : []),
   ];
 
   // The hamburger button only makes sense on pages that expose a contextual
@@ -184,66 +180,77 @@ export default function Layout({ children }: LayoutProps) {
       <div className="flex flex-1 overflow-hidden">
         {/* Left navigation rail — desktop only (lg+) */}
         <nav className="hidden lg:flex bg-outlook-bg-primary border-r border-outlook-border flex-col items-center py-2 flex-shrink-0 w-14">
-          {navItems.map((item) => {
-            const isActive = location.pathname.startsWith(item.path);
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className={`w-10 h-10 rounded-lg flex items-center justify-center mb-1 transition-colors relative group
-                  ${isActive ? 'text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-                title={item.label}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="nav-active"
-                    className="absolute inset-0 bg-outlook-blue rounded-lg"
-                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  />
-                )}
-                <Icon size={20} className="relative z-10" />
-                <span className="absolute left-12 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
+          
+          {/* Primary Items - Core Functional Areas Grouping */}
+          <div>
+            {primaryNavItems.map((item) => {
+              const isActive = location.pathname.startsWith(item.path);
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => navigate(item.path)}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center mb-1 transition-colors relative group
+                    ${isActive ? 'text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                  title={item.label}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="nav-active"
+                      className="absolute inset-0 bg-outlook-blue rounded-lg"
+                      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                    />
+                  )}
+                  <Icon size={20} className="relative z-10" />
+                  <span className="absolute left-12 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
           <div className="flex-1" />
 
-          {bottomItems.map((item) => {
-            const isActive = location.pathname.startsWith(item.path);
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className={`w-10 h-10 rounded-lg flex items-center justify-center mb-1 transition-colors relative group
-                  ${isActive ? 'bg-outlook-blue text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-                title={item.label}
-              >
-                <Icon size={20} />
-                <span className="absolute left-12 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
+          {/* Support/Tools Items - Secondary Functional Areas Grouping */}
+          <div>
+            {supportNavItems.map((item) => {
+              const isActive = location.pathname.startsWith(item.path);
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => navigate(item.path)}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center mb-1 transition-colors relative group
+                    ${isActive ? 'bg-outlook-blue text-white' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
+                  `}
+                  title={item.label}
+                >
+                  <Icon size={20} />
+                  <span className="absolute left-12 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex-1" />
         </nav>
 
         {/* Main content area — subtle background gap around children */}
         <main className="flex-1 overflow-hidden bg-outlook-bg-tertiary p-0.5">
           {children}
         </main>
-      </div>
+      </div >
 
       {/* Bottom navigation bar — mobile / tablet only */}
       <nav
         className="lg:hidden flex items-stretch justify-around bg-outlook-bg-primary border-t border-outlook-border flex-shrink-0"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
-        {mobileNavItems.map((item) => {
+        {/* Mobile view structure is kept simple for maximum discoverability */}
+        {primaryNavItems.map((item) => {
           const isActive = location.pathname.startsWith(item.path);
           const Icon = item.icon;
           return (
@@ -251,7 +258,8 @@ export default function Layout({ children }: LayoutProps) {
               key={item.path}
               onClick={() => navigate(item.path)}
               className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] min-h-[52px] transition-colors
-                ${isActive ? 'text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                ${isActive ? 'text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
+              `}
               aria-label={item.label}
             >
               <Icon size={20} />
@@ -259,6 +267,22 @@ export default function Layout({ children }: LayoutProps) {
             </button>
           );
         })}
+
+        {/* Utility/Settings item for mobile bottom bar */}
+        {(supportNavItems as Array<{ path: string; icon: React.ElementType; label: string }>[])[0] && (
+             <button
+              key={supportNavItems[0].path}
+              onClick={() => navigate(supportNavItems[0].path)}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] min-h-[52px] transition-colors
+                ${location.pathname.startsWith('/settings') ? 'text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
+              `}
+              aria-label={supportNavItems[0].label}
+            >
+              <Settings size={20} />
+              <span className="leading-tight truncate max-w-full px-1">{supportNavItems[0].label}</span>
+          </button>
+        )}
+
       </nav>
     </div>
   );
