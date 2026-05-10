@@ -15,7 +15,7 @@ import { inspectIncoming, SecurityVerdict } from '../../crypto/inbound';
 import { useSecurityStore } from '../../stores/securityStore';
 import NextcloudFolderPicker from '../ui/NextcloudFolderPicker';
 
-type AttachmentActionMode = 'preview' | 'download' | 'menu';
+type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
 type PreviewAttachmentState = {
   name: string;
@@ -371,6 +371,10 @@ export default function MessageView({
     }
     if (attachmentActionMode === 'menu') {
       setActiveAttachmentMenuIndex(prev => (prev === index ? null : index));
+      return;
+    }
+    if (attachmentActionMode === 'nextcloud' && ncLinked) {
+      setNcSaveTarget({ kind: 'one', att });
       return;
     }
     await openAttachmentPreview(att);

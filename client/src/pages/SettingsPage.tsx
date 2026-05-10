@@ -223,7 +223,7 @@ function MailBehaviorSettings() {
     queryFn: api.getSettings,
   });
 
-  const [attachmentActionMode, setAttachmentActionMode] = useState<'preview' | 'download' | 'menu'>('preview');
+  const [attachmentActionMode, setAttachmentActionMode] = useState<'preview' | 'download' | 'menu' | 'nextcloud'>('preview');
 
   const updateMutation = useMutation({
     mutationFn: api.updateSettings,
@@ -233,7 +233,7 @@ function MailBehaviorSettings() {
 
   useEffect(() => {
     const mode = settings?.attachment_action_mode;
-    if (mode === 'preview' || mode === 'download' || mode === 'menu') {
+    if (mode === 'preview' || mode === 'download' || mode === 'menu' || mode === 'nextcloud') {
       setAttachmentActionMode(mode);
     }
   }, [settings?.attachment_action_mode]);
@@ -246,12 +246,13 @@ function MailBehaviorSettings() {
           <label className="text-sm text-outlook-text-secondary">Ouverture des pièces jointes</label>
           <select
             value={attachmentActionMode}
-            onChange={(e) => setAttachmentActionMode(e.target.value as 'preview' | 'download' | 'menu')}
+            onChange={(e) => setAttachmentActionMode(e.target.value as 'preview' | 'download' | 'menu' | 'nextcloud')}
             className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1"
           >
             <option value="preview">Aperçu</option>
             <option value="download">Téléchargement</option>
-            <option value="menu">Menu (Aperçu / Télécharger)</option>
+            <option value="menu">Menu (Aperçu / Téléchargement)</option>
+            <option value="nextcloud">Nextcloud</option>
           </select>
           <p className="text-xs text-outlook-text-disabled mt-1">
             Cette préférence est identique à l'option du ruban Afficher &gt; Pièce jointe.

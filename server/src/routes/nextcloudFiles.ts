@@ -74,6 +74,22 @@ const uploadSchema = z.object({
   ensureFolder: z.boolean().optional(),
 });
 
+// GET /api/nextcloud/files/get?path=/foo/bar.pdf — download a file (returns base64 + metadata).
+nextcloudFilesRouter.get('/get', async (req: AuthRequest, res) => {
+  try {
+    const client = await getUserClient(req.userId!);
+    if (!client) return res.status(409).json({ error: 'NextCloud not linked' });
+    const rawPath = typeof req.query.path === 'string' ? req.query.path : '';
+    if (!rawPath) return res.status(400).json({ error: 'Missing path' });
+    const { buffer, contentType, filename } = await client.getFile(rawPath);
+    if (buffer.length > 100 * 1024 * 1024) return res.status(413).json({ error: 'File too large' });
+    res.json({ filename, contentType, contentBase64: buffer.toString('base64') });
+  } catch (e) {
+    logger.error(e as Error, 'nextcloud-files get error');
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 // Cap upload size to avoid memory abuse. Mirrors common attachment limits.
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
 
