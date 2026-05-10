@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: webmail-app
+    container_name: ${STACK_NAME:-webmail}-app
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
@@ -40,7 +40,7 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: webmail-db
+    container_name: ${STACK_NAME:-webmail}-db
     restart: unless-stopped
     environment:
       - POSTGRES_DB=webmail
@@ -58,8 +58,11 @@ services:
 
 volumes:
   postgres_data:
+    name: ${STACK_NAME:-webmail}_postgres_data
   app_data:
+    name: ${STACK_NAME:-webmail}_app_data
 
 networks:
   webmail-network:
+    name: ${STACK_NAME:-webmail}-network
     driver: bridge
