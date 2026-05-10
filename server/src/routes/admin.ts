@@ -494,7 +494,8 @@ adminRouter.post('/mail-accounts/oauth/:provider/start', async (req: AuthRequest
       req.session.save((err) => (err ? reject(err) : resolve())),
     );
     const loginHint = typeof req.body?.loginHint === 'string' ? req.body.loginHint : undefined;
-    const url = await buildAuthorizeUrl(provider, state, loginHint);
+    const forceConsent = req.body?.forceConsent === true;
+    const url = await buildAuthorizeUrl(provider, state, loginHint, forceConsent);
     res.json({ url, state });
   } catch (error: any) {
     res.status(400).json({ error: error.message });

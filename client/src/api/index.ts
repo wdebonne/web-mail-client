@@ -672,10 +672,10 @@ export const api = {
     request(`/admin/mail-accounts/${id}`, { method: 'DELETE' }),
   testAdminMailAccount: (id: string) =>
     request<{ success: boolean; error?: string }>(`/admin/mail-accounts/${id}/test`, { method: 'POST' }),
-  startAdminMailAccountOAuth: (provider: 'microsoft', loginHint?: string) =>
+  startAdminMailAccountOAuth: (provider: 'microsoft', loginHint?: string, forceConsent?: boolean) =>
     request<{ url: string; state: string }>(`/admin/mail-accounts/oauth/${provider}/start`, {
       method: 'POST',
-      body: JSON.stringify({ loginHint }),
+      body: JSON.stringify({ loginHint, forceConsent }),
     }),
   getMicrosoftOAuthSettings: () =>
     request<{
