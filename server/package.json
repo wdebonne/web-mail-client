@@ -1,6 +1,6 @@
 {
   "name": "webmail-server",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Backend API pour le client mail web",
   "main": "dist/index.js",
   "scripts": {
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.0",
+    "adm-zip": "^0.5.17",
     "asn1js": "^3.0.10",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
@@ -44,6 +45,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.7.5",
     "@types/connect-pg-simple": "^7.0.3",
