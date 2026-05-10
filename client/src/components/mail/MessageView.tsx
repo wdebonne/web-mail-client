@@ -592,7 +592,16 @@ export default function MessageView({
               </button>
             )}
             {visibleAttachments.map((att, i) => (
-              <div key={i} className="relative">
+              <div key={i} className="relative inline-flex items-center">
+                {ncLinked && att.content && attachmentActionMode !== 'menu' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setNcSaveTarget({ kind: 'one', att }); }}
+                    className="mr-1 inline-flex items-center justify-center p-1 rounded hover:bg-outlook-bg-hover text-outlook-blue"
+                    title="Enregistrer dans Nextcloud"
+                  >
+                    <CloudUpload size={12} />
+                  </button>
+                )}
                 <button
                   onClick={() => handleAttachmentOpen(att, i)}
                   className="flex items-center gap-1.5 bg-white border border-outlook-border rounded px-2 py-1 text-xs hover:bg-outlook-bg-hover transition-colors"
@@ -604,18 +613,9 @@ export default function MessageView({
                   </span>
                   {attachmentActionMode === 'menu' && <ChevronDown size={11} className="text-outlook-text-secondary" />}
                 </button>
-                {ncLinked && att.content && attachmentActionMode !== 'menu' && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setNcSaveTarget({ kind: 'one', att }); }}
-                    className="ml-1 inline-flex items-center justify-center p-1 rounded hover:bg-outlook-bg-hover text-outlook-blue"
-                    title="Enregistrer dans Nextcloud"
-                  >
-                    <CloudUpload size={12} />
-                  </button>
-                )}
 
                 {attachmentActionMode === 'menu' && activeAttachmentMenuIndex === i && (
-                  <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-outlook-border rounded-md shadow-lg py-1 min-w-40">
+                  <div className="absolute top-full right-0 mt-1 z-30 bg-white border border-outlook-border rounded-md shadow-lg py-1 min-w-40">
                     <button
                       onClick={async () => {
                         setActiveAttachmentMenuIndex(null);
