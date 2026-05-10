@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+// Assuming i18next and react-i18next are used for internationalization
+import { useTranslation } from 'react-i18next'; 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api } from '../api';
 import { useMailStore, ComposeData } from '../stores/mailStore';
@@ -49,6 +51,8 @@ type AttachmentActionMode = 'preview' | 'download' | 'menu';
 export default function MailPage() {
   const isOnline = useNetworkStatus();
   const queryClient = useQueryClient();
+  // Initialize translation function 't' to fix the runtime error
+  const { t } = useTranslation(); 
   const {
     accounts, selectedAccount, selectedFolder, folders, messages, selectedMessage,
     isComposing, composeData,
@@ -157,8 +161,8 @@ export default function MailPage() {
   useEffect(() => {
     const appName = branding?.app_name || 'WebMail';
     let folderLabel = '';
-    if (virtualFolder === 'unified-inbox') folderLabel = 'Boîte de réception (unifiée)';
-    else if (virtualFolder === 'unified-sent') folderLabel = 'Éléments envoyés (unifiés)';
+    if (virtualFolder === 'unified-inbox') folderLabel = t('mail.folder.combined_inbox');
+    else if (virtualFolder === 'unified-sent') folderLabel = t('mail.folder.combined_sent');
     else if (selectedFolder) folderLabel = resolveFolderDisplayName(selectedFolder);
 
     document.title = folderLabel ? `${folderLabel} — ${appName}` : appName;
@@ -997,10 +1001,10 @@ export default function MailPage() {
       bodyHtml: splitComposeReply
         ? ''
         : `<br/><br/><div style="border-left:2px solid #0078D4;padding-left:12px;margin-left:0;color:#605E5C">
-        <p><b>De :</b> ${message.from?.name || message.from?.address}<br/>
-        <b>Envoyé :</b> ${new Date(message.date).toLocaleString('fr-FR')}<br/>
-        <b>À :</b> ${message.to?.map((t: any) => t.name || t.address).join('; ')}<br/>
-        <b>Objet :</b> ${message.subject}</p>
+        <p><b>${t('message_headers.from')}</b> ${message.from?.name || message.from?.address}<br/>
+        <b>${t('message_headers.sent')}:</b> ${new Date(message.date).toLocaleString()}<br/>
+        <b>${t('message_headers.to')}</b> ${message.to?.map((t: any) => t.name || t.address).join('; ')}<br/>
+        <b>${t('message_headers.subject')}:</b> ${message.subject}</p>
         ${message.bodyHtml || message.bodyText || ''}
       </div>`,
       inReplyTo: message.messageId,
@@ -1022,11 +1026,11 @@ export default function MailPage() {
       bodyHtml: splitComposeReply
         ? ''
         : `<br/><br/><div style="border-top:1px solid #E1DFDD;padding-top:12px;color:#605E5C">
-        <p><b>---------- Message transféré ----------</b><br/>
-        <b>De :</b> ${message.from?.name || message.from?.address}<br/>
-        <b>Date :</b> ${new Date(message.date).toLocaleString('fr-FR')}<br/>
-        <b>Objet :</b> ${message.subject}<br/>
-        <b>À :</b> ${message.to?.map((t: any) => t.name || t.address).join('; ')}</p>
+        <p><b>{t('mail.forward.separator')}</b><br/>
+        <b>{t('message_headers.from')}:</b> ${message.from?.name || message.from?.address}<br/>
+        <b>{t('message_headers.date')}:</b> ${new Date(message.date).toLocaleString()}<br/>
+        <b>{t('message_headers.subject')}:</b> ${message.subject}<br/>
+        <b>{t('message_headers.to')}:</b> ${message.to?.map((t: any) => t.name || t.address).join('; ')}</p>
         ${message.bodyHtml || message.bodyText || ''}
       </div>`,
       accountId: accountId || selectedAccount?.id,
@@ -1631,9 +1635,9 @@ export default function MailPage() {
         <html><head><title>${selectedMessage.subject || ''}</title>
         <style>body{font-family:'Segoe UI',sans-serif;padding:20px;}</style>
         </head><body>
-        <h2>${selectedMessage.subject || '(Sans objet)'}</h2>
-        <p><b>De :</b> ${selectedMessage.from?.name || selectedMessage.from?.address || ''}</p>
-        <p><b>Date :</b> ${new Date(selectedMessage.date).toLocaleString('fr-FR')}</p>
+        <h2>${selectedMessage.subject || t('mail.subject_none')}</h2>
+        <p><b>{t('message_headers.from')}:</b> ${selectedMessage.from?.name || selectedMessage.from?.address || ''}</p>
+        <p><b>{t('message_headers.date')}:</b> ${new Date(selectedMessage.date).toLocaleString()}</p>
         <hr/>
         ${selectedMessage.bodyHtml || selectedMessage.bodyText || ''}
         </body></html>`);
@@ -1788,12 +1792,12 @@ export default function MailPage() {
           return;
         }
         setFolderPicker({
-          title: action === 'move' ? 'Déplacer vers…' : 'Copier vers…',
+          title: action === 'move' ? t('mail.swipe.move_title') : t('mail.swipe.copy_title'),
           description:
             action === 'move'
-              ? 'Choisissez un dossier de destination. Vous pouvez le définir par défaut dans les préférences pour un balayage plus rapide.'
-              : 'Choisissez un dossier de destination pour la copie.',
-          confirmLabel: action === 'move' ? 'Déplacer' : 'Copier',
+              ? t('mail.swipe.move_description')
+              : t('mail.swipe.copy_description'),
+          confirmLabel: action === 'move' ? t('action.move') : t('action.copy'),
           accountId: accId,
           folders: accFolders,
           initialPath: preset || null,
@@ -1981,9 +1985,9 @@ export default function MailPage() {
             </button>
             <span className="text-sm font-medium text-outlook-text-primary truncate">
               {virtualFolder === 'unified-inbox'
-                ? 'Boîte de réception (Favoris)'
+                ? t('mail.folder.combined_inbox')
                 : virtualFolder === 'unified-sent'
-                  ? 'Éléments envoyés (Favoris)'
+                  ? t('mail.folder.combined_sent')
                   : selectedAccount ? getAccountDisplayName(selectedAccount) : ''}
             </span>
           </div>
@@ -1995,7 +1999,7 @@ export default function MailPage() {
             onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
             onToggleFlag={(uid, flagged, aId, fld) => { const o = resolveOrigin(uid, aId, fld); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
             onDelete={(uid, aId, fld) => { const o = resolveOrigin(uid, aId, fld); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
-            folder={virtualFolder === 'unified-inbox' ? 'INBOX' : virtualFolder === 'unified-sent' ? 'Sent' : selectedFolder}
+            folder={virtualFolder === 'unified-inbox' ? t('mail.folder.inbox') : virtualFolder === 'unified-sent' ? t('mail.folder.sent') : selectedFolder}
             onReply={(msg) => handleReply(msg)}
             onReplyAll={(msg) => handleReply(msg, true)}
             onForward={(msg) => handleForward(msg)}
@@ -2167,8 +2171,8 @@ export default function MailPage() {
                 <ArrowLeft size={18} />
               </button>
               <span className="text-sm font-medium text-outlook-text-primary truncate">
-                {selectedMessage?.subject || 'Retour'}
-              </span>
+                {selectedMessage?.subject || t('mail.view.back')}
+            </span>
             </div>
 
             {/* Inline compose — replaces the reading pane when composing */}
@@ -2181,7 +2185,7 @@ export default function MailPage() {
                     type="button"
                     onClick={() => { setComposeAlongsideMessage(null); setComposeExpanded(true); }}
                     className="absolute top-2 right-2 z-10 w-7 h-7 flex items-center justify-center rounded hover:bg-outlook-bg-hover text-outlook-text-secondary hover:text-outlook-text bg-white/80 backdrop-blur-sm border border-outlook-border shadow-sm"
-                    title="Masquer le mail d'origine (écriture pleine largeur)"
+                    title={t('mail.view.hide_source')}
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -2545,7 +2549,7 @@ export default function MailPage() {
           is configured for the account (or when the configured folder is gone). */}
       <FolderPickerDialog
         open={!!folderPicker}
-        title={folderPicker?.title || ''}
+        title={folderPicker?.title || 'Move to…'}
         description={folderPicker?.description}
         confirmLabel={folderPicker?.confirmLabel || 'Sélectionner'}
         folders={folderPicker?.folders || []}

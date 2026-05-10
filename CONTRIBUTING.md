@@ -26,6 +26,15 @@ Merci de votre intérêt pour WebMail ! Ce document explique comment contribuer 
 
 ## Comment contribuer
 
+### Contribuer aux traductions (i18n)
+
+L’application est traduite en français et en anglais. Pour corriger une traduction ou ajouter une nouvelle langue :
+- Modifiez ou créez un fichier dans `client/src/i18n/` (ex : `es.json` pour l’espagnol).
+- Respectez la structure des fichiers existants (`en.json`, `fr.json`).
+- Vérifiez que toutes les clés sont présentes et cohérentes.
+- Testez l’affichage dans l’application (la langue du navigateur est détectée automatiquement).
+- Proposez vos modifications via une Pull Request.
+
 1. **Forkez** le dépôt
 2. **Créez** une branche pour votre fonctionnalité (`git checkout -b feature/ma-fonctionnalite`)
 3. **Committez** vos modifications (`git commit -m 'feat: ajout de ma fonctionnalité'`)

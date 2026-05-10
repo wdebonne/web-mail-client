@@ -1,0 +1,29 @@
+{
+  "translation": {
+    "appName": "Client de messagerie web",
+    "welcomeMessage": "Bienvenue dans votre client de messagerie sécurisé.",
+    "loginTitle": "Connexion",
+    "passwordPlaceholder": "Entrez le mot de passe",
+    "mailPageTitle": "Boîte de réception",
+    "unreadEmailsCount": "Vous avez {{count}} e-mail(s) non lu(s).",
+    "nav": {
+      "mailbox": "Boîte de réception",
+      "calendar": "Calendrier",
+      "contacts": "Contacts",
+      "settings": "Paramètres",
+      "security": "Sécurité",
+      "admin": "Administration"
+    },
+    "layout": {
+      "search_placeholder": "Rechercher…",
+      "show_hide_sidebar": "Afficher ou masquer le volet latéral",
+      "theme": "Thème",
+      "theme_system": "Système",
+      "theme_light": "Clair",
+      "theme_dark": "Sombre",
+      "theme_current_dark": "Actuellement : sombre",
+      "theme_current_light": "Actuellement : clair",
+      "logout": "Déconnexion"
+    }
+  }
+}

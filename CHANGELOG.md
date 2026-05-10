@@ -7,6 +7,14 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Internationalisation (i18n)
+
+- **Ajout d'une gestion complète de l’internationalisation** :
+  - Interface traduite en français et anglais, détection automatique de la langue du navigateur.
+  - Fichiers de traduction modulaires (`client/src/i18n/en.json`, `fr.json`).
+  - Documentation enrichie pour expliquer comment contribuer à l’ajout ou la correction de traductions.
+  - Section dédiée dans le README.md et CONTRIBUTING.md pour guider la contribution i18n.
+
 ### Corrigé
 
 #### Endpoint `folders/status` qui crashait sur compte OAuth expiré

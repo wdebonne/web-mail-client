@@ -1,0 +1,29 @@
+{
+  "translation": {
+    "appName": "Web Mail Client",
+    "welcomeMessage": "Welcome to your secure mail client.",
+    "loginTitle": "Sign In",
+    "passwordPlaceholder": "Enter password",
+    "mailPageTitle": "Inbox",
+    "unreadEmailsCount": "You have {{count}} unread email(s).",
+    "nav": {
+      "mailbox": "Inbox",
+      "calendar": "Calendar",
+      "contacts": "Contacts",
+      "settings": "Settings",
+      "security": "Security",
+      "admin": "Administration"
+    },
+    "layout": {
+      "search_placeholder": "Search…",
+      "show_hide_sidebar": "Show or hide the sidebar",
+      "theme": "Theme",
+      "theme_system": "System",
+      "theme_light": "Light",
+      "theme_dark": "Dark",
+      "theme_current_dark": "Currently: dark",
+      "theme_current_light": "Currently: light",
+      "logout": "Sign out"
+    }
+  }
+}

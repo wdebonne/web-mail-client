@@ -10,6 +10,21 @@ WebMail est un client de messagerie web complet conçu pour offrir une expérien
 
 Pour une analyse détaillée, veuillez consulter les sections suivantes du fichier.
 
+### Internationalisation (i18n)
+WebMail est entièrement multilingue (français et anglais par défaut). L’interface détecte automatiquement la langue du navigateur et affiche la traduction appropriée. Vous pouvez contribuer à l’ajout d’autres langues ou à l’amélioration des traductions existantes.
+
+**Contribuer à la traduction :**
+- Les fichiers de traduction se trouvent dans `client/src/i18n/en.json` (anglais) et `client/src/i18n/fr.json` (français).
+- Pour ajouter une langue, créez un fichier `xx.json` (où `xx` est le code langue ISO, ex : `es.json` pour l’espagnol) dans ce dossier, en reprenant la structure des fichiers existants.
+- Les clés de traduction sont utilisées dans tout le code via la fonction `t('clé')` du hook `useTranslation()` (voir [react-i18next](https://react.i18next.com/)).
+- Proposez vos ajouts ou corrections via une Pull Request (voir [CONTRIBUTING.md](CONTRIBUTING.md)).
+
+**Détection automatique :**
+La langue affichée est choisie selon l’ordre suivant :
+1. Langue sélectionnée par l’utilisateur (si implémenté dans les paramètres)
+2. Langue du navigateur
+3. Anglais par défaut
+
 ### Messagerie
 - 📧 Multi-comptes IMAP/SMTP (compatible o2switch / cPanel)
 - 📥 Boîte de réception, envoyés, brouillons, corbeille, spam, archives
