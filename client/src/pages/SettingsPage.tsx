@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
 import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
-  Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
+  Eye, EyeOff, Save, SlidersHorizontal, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
   Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder,
   Coffee,
@@ -76,18 +76,18 @@ export default function SettingsPage() {
   const autoResponderFeatureEnabled = arFeature?.enabled !== false;
 
   const tabs = [
-    { id: 'profile' as const, icon: User, label: t('settings.tab.profile') },
-    { id: 'accounts' as const, icon: Mail, label: t('settings.tab.accounts') },
-    { id: 'mail' as const, icon: Paperclip, label: t('settings.tab.mail') },
+    { id: 'profile' as const,      icon: User,              label: t('settings.tab.profile'),      group: t('settings.group.account') },
+    { id: 'accounts' as const,     icon: Mail,              label: t('settings.tab.accounts'),     group: t('settings.group.account') },
+    { id: 'mail' as const,         icon: SlidersHorizontal, label: t('settings.tab.mail'),         group: t('settings.group.mail') },
     ...(autoResponderFeatureEnabled
-      ? [{ id: 'autoresponder' as const, icon: Coffee, label: t('settings.tab.autoresponder') }]
+      ? [{ id: 'autoresponder' as const, icon: Coffee, label: t('settings.tab.autoresponder'), group: t('settings.group.mail') }]
       : []),
-    { id: 'appearance' as const, icon: Palette, label: t('settings.tab.appearance') },
-    { id: 'notifications' as const, icon: Bell, label: t('settings.tab.notifications') },
-    { id: 'devices' as const, icon: Monitor, label: t('settings.tab.devices') },
-    { id: 'security' as const, icon: ShieldCheck, label: t('settings.tab.security') },
-    { id: 'backup' as const, icon: HardDrive, label: t('settings.tab.backup') },
-    { id: 'cache' as const, icon: Database, label: t('settings.tab.cache') },
+    { id: 'appearance' as const,   icon: Palette,           label: t('settings.tab.appearance'),   group: t('settings.group.interface') },
+    { id: 'notifications' as const,icon: Bell,              label: t('settings.tab.notifications'),group: t('settings.group.interface') },
+    { id: 'security' as const,     icon: ShieldCheck,       label: t('settings.tab.security'),     group: t('settings.group.security') },
+    { id: 'devices' as const,      icon: Monitor,           label: t('settings.tab.devices'),      group: t('settings.group.security') },
+    { id: 'backup' as const,       icon: HardDrive,         label: t('settings.tab.backup'),       group: t('settings.group.data') },
+    { id: 'cache' as const,        icon: Database,          label: t('settings.tab.cache'),        group: t('settings.group.data') },
   ];
 
   return (
@@ -99,17 +99,24 @@ export default function SettingsPage() {
         className={`md:hidden ${mobileDetail ? 'hidden' : 'flex'} flex-col flex-1 overflow-y-auto bg-outlook-bg-primary`}
       >
         <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">{t('settings.title')}</h2>
-        {tabs.map(tabItem => {
+        {tabs.map((tabItem, index) => {
           const Icon = tabItem.icon;
+          const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
           return (
-            <button
-              key={tabItem.id}
-              onClick={() => { setTab(tabItem.id); setMobileDetail(true); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
-                ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Icon size={18} /> {tabItem.label}
-            </button>
+            <div key={tabItem.id}>
+              {tabItem.group !== prevGroup && (
+                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                  {tabItem.group}
+                </div>
+              )}
+              <button
+                onClick={() => { setTab(tabItem.id); setMobileDetail(true); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
+                  ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+              >
+                <Icon size={18} /> {tabItem.label}
+              </button>
+            </div>
           );
         })}
       </div>
@@ -117,17 +124,24 @@ export default function SettingsPage() {
       {/* Desktop sidebar */}
       <div className="hidden md:block w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
         <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('settings.title')}</h2>
-        {tabs.map(tabItem => {
+        {tabs.map((tabItem, index) => {
           const Icon = tabItem.icon;
+          const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
           return (
-            <button
-              key={tabItem.id}
-              onClick={() => setTab(tabItem.id)}
-              className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
-                ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Icon size={16} /> {tabItem.label}
-            </button>
+            <div key={tabItem.id}>
+              {tabItem.group !== prevGroup && (
+                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                  {tabItem.group}
+                </div>
+              )}
+              <button
+                onClick={() => setTab(tabItem.id)}
+                className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
+                  ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+              >
+                <Icon size={16} /> {tabItem.label}
+              </button>
+            </div>
           );
         })}
       </div>

@@ -38,22 +38,28 @@ export default function AdminPage() {
   }, [mobileSidebarSignal]);
 
   const tabs = [
-    { id: 'dashboard' as const, icon: LayoutDashboard, label: t('admin.tab.dashboard') },
-    { id: 'users' as const, icon: Users, label: t('admin.tab.users') },
-    { id: 'groups' as const, icon: Shield, label: t('admin.tab.groups') },
-    { id: 'mailaccounts' as const, icon: Mail, label: t('admin.tab.mailaccounts') },
-    { id: 'autoresponders' as const, icon: Coffee, label: t('admin.tab.autoresponders') },
-    { id: 'mailtemplates' as const, icon: FileText, label: t('admin.tab.mailtemplates') },
-    { id: 'rules' as const, icon: Filter, label: t('admin.tab.rules') },
-    { id: 'calendars' as const, icon: Calendar, label: t('admin.tab.calendars') },
-    { id: 'o2switch' as const, icon: Server, label: t('admin.tab.o2switch') },
-    { id: 'plugins' as const, icon: Plug, label: t('admin.tab.plugins') },
-    { id: 'nextcloud' as const, icon: Cloud, label: t('admin.tab.nextcloud') },
-    { id: 'logs' as const, icon: ScrollText, label: t('admin.tab.logs') },
-    { id: 'loginAppearance' as const, icon: Palette, label: t('admin.tab.loginAppearance') },
-    { id: 'devices' as const, icon: Monitor, label: t('admin.tab.devices') },
-    { id: 'notifications' as const, icon: Bell, label: t('admin.tab.notifications') },
-    { id: 'system' as const, icon: Settings, label: t('admin.tab.system') },
+    // Général
+    { id: 'dashboard' as const,      icon: LayoutDashboard, label: t('admin.tab.dashboard'),     group: t('admin.group.general') },
+    // Utilisateurs
+    { id: 'users' as const,          icon: Users,           label: t('admin.tab.users'),          group: t('admin.group.users') },
+    { id: 'groups' as const,         icon: Shield,          label: t('admin.tab.groups'),         group: t('admin.group.users') },
+    // Messagerie
+    { id: 'mailaccounts' as const,   icon: Mail,            label: t('admin.tab.mailaccounts'),   group: t('admin.group.mail') },
+    { id: 'autoresponders' as const, icon: Coffee,          label: t('admin.tab.autoresponders'), group: t('admin.group.mail') },
+    { id: 'mailtemplates' as const,  icon: FileText,        label: t('admin.tab.mailtemplates'),  group: t('admin.group.mail') },
+    { id: 'rules' as const,          icon: Filter,          label: t('admin.tab.rules'),          group: t('admin.group.mail') },
+    // Calendrier
+    { id: 'calendars' as const,      icon: Calendar,        label: t('admin.tab.calendars'),      group: t('admin.group.calendar') },
+    // Intégrations
+    { id: 'o2switch' as const,       icon: Server,          label: t('admin.tab.o2switch'),       group: t('admin.group.integrations') },
+    { id: 'plugins' as const,        icon: Plug,            label: t('admin.tab.plugins'),        group: t('admin.group.integrations') },
+    { id: 'nextcloud' as const,      icon: Cloud,           label: t('admin.tab.nextcloud'),      group: t('admin.group.integrations') },
+    // Système
+    { id: 'loginAppearance' as const,icon: Palette,         label: t('admin.tab.loginAppearance'),group: t('admin.group.system') },
+    { id: 'notifications' as const,  icon: Bell,            label: t('admin.tab.notifications'),  group: t('admin.group.system') },
+    { id: 'devices' as const,        icon: Monitor,         label: t('admin.tab.devices'),        group: t('admin.group.system') },
+    { id: 'logs' as const,           icon: ScrollText,      label: t('admin.tab.logs'),           group: t('admin.group.system') },
+    { id: 'system' as const,         icon: Settings,        label: t('admin.tab.system'),         group: t('admin.group.system') },
   ];
 
   return (
@@ -63,17 +69,24 @@ export default function AdminPage() {
         className={`md:hidden ${mobileDetail ? 'hidden' : 'flex'} flex-col flex-1 overflow-y-auto bg-outlook-bg-primary`}
       >
         <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">{t('admin.title')}</h2>
-        {tabs.map(tabItem => {
+        {tabs.map((tabItem, index) => {
           const Icon = tabItem.icon;
+          const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
           return (
-            <button
-              key={tabItem.id}
-              onClick={() => { setTab(tabItem.id); setMobileDetail(true); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
-                ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Icon size={18} /> {tabItem.label}
-            </button>
+            <div key={tabItem.id}>
+              {tabItem.group !== prevGroup && (
+                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                  {tabItem.group}
+                </div>
+              )}
+              <button
+                onClick={() => { setTab(tabItem.id); setMobileDetail(true); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
+                  ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+              >
+                <Icon size={18} /> {tabItem.label}
+              </button>
+            </div>
           );
         })}
       </div>
@@ -81,17 +94,24 @@ export default function AdminPage() {
       {/* Desktop sidebar */}
       <div className="hidden md:block w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
         <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('admin.title')}</h2>
-        {tabs.map(tabItem => {
+        {tabs.map((tabItem, index) => {
           const Icon = tabItem.icon;
+          const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
           return (
-            <button
-              key={tabItem.id}
-              onClick={() => setTab(tabItem.id)}
-              className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
-                ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Icon size={16} /> {tabItem.label}
-            </button>
+            <div key={tabItem.id}>
+              {tabItem.group !== prevGroup && (
+                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                  {tabItem.group}
+                </div>
+              )}
+              <button
+                onClick={() => setTab(tabItem.id)}
+                className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
+                  ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+              >
+                <Icon size={16} /> {tabItem.label}
+              </button>
+            </div>
           );
         })}
       </div>

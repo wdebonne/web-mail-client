@@ -85,11 +85,18 @@
     },
     "settings": {
       "title": "Paramètres",
+      "group": {
+        "account": "Compte",
+        "mail": "Messagerie",
+        "interface": "Interface",
+        "security": "Sécurité",
+        "data": "Données"
+      },
       "tab": {
         "profile": "Profil",
         "accounts": "Mes boîtes mail",
-        "mail": "Messagerie",
-        "autoresponder": "Répondeur",
+        "mail": "Comportement mail",
+        "autoresponder": "Répondeur auto",
         "appearance": "Apparence",
         "notifications": "Notifications",
         "devices": "Mes appareils",
@@ -100,23 +107,31 @@
     },
     "admin": {
       "title": "Administration",
+      "group": {
+        "general": "Général",
+        "users": "Utilisateurs",
+        "mail": "Messagerie",
+        "calendar": "Calendrier",
+        "integrations": "Intégrations",
+        "system": "Système"
+      },
       "tab": {
         "dashboard": "Tableau de bord",
         "users": "Utilisateurs",
         "groups": "Groupes",
         "mailaccounts": "Comptes mail",
-        "autoresponders": "Répondeurs",
-        "mailtemplates": "Modèles",
-        "rules": "Règles",
+        "autoresponders": "Répondeurs auto",
+        "mailtemplates": "Modèles de mail",
+        "rules": "Règles de filtrage",
         "calendars": "Calendriers",
         "o2switch": "O2Switch",
-        "plugins": "Plugins",
+        "plugins": "Extensions",
         "nextcloud": "NextCloud",
-        "logs": "Logs",
-        "loginAppearance": "Apparence connexion",
-        "devices": "Appareils",
-        "notifications": "Notifications",
-        "system": "Système"
+        "logs": "Journaux",
+        "loginAppearance": "Page de connexion",
+        "devices": "Sessions actives",
+        "notifications": "Notifications par défaut",
+        "system": "Paramètres système"
       }
     },
     "security_page": {

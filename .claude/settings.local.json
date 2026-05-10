@@ -3,7 +3,9 @@
     "allow": [
       "Bash(Remove-Item \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\client\\\\src\\\\i18n\\\\config.ts\")",
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Recurse -Path \"client/src\" -Directory)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }
