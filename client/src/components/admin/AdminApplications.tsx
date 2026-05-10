@@ -65,6 +65,33 @@ async function getGithubRuns(token: string, owner: string, repo: string) {
   return res.json() as Promise<Array<{ id: number; status: string; conclusion: string | null; createdAt: string; htmlUrl: string }>>;
 }
 
+async function downloadArtifacts(token: string, owner: string, repo: string, runId: number) {
+  const res = await fetch(`${API}/build/github/download-artifacts`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ token, owner, repo, runId }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+  return res.json() as Promise<{ files: string[] }>;
+}
+
+// ── Persistance des paramètres GitHub ────────────────────────────────────────
+
+const GH_SETTINGS_KEY = 'webmail:github-build-settings';
+
+interface GhSettings {
+  owner: string; repo: string; branch: string;
+  serverUrl: string; version: string; token: string;
+}
+
+function loadGhSettings(): Partial<GhSettings> {
+  try { return JSON.parse(localStorage.getItem(GH_SETTINGS_KEY) ?? '{}'); } catch { return {}; }
+}
+
+function saveGhSettings(s: Partial<GhSettings>) {
+  localStorage.setItem(GH_SETTINGS_KEY, JSON.stringify(s));
+}
+
 async function deleteFile(filename: string) {
   const res = await fetch(`${API}/download/${encodeURIComponent(filename)}`, {
     method: 'DELETE', headers: authHeaders(),
@@ -262,14 +289,20 @@ function DockerBuilderSection({ builderAvailable }: { builderAvailable: boolean 
 
 function GithubActionsSection() {
   const queryClient = useQueryClient();
-  const [token, setToken] = useState('');
-  const [owner, setOwner] = useState('');
-  const [repo, setRepo] = useState('');
-  const [branch, setBranch] = useState('main');
-  const [serverUrl, setServerUrl] = useState(window.location.origin);
-  const [version, setVersion] = useState('1.7.0');
+  const saved = loadGhSettings();
+  const [token, setToken] = useState(saved.token ?? '');
+  const [owner, setOwner] = useState(saved.owner ?? '');
+  const [repo, setRepo] = useState(saved.repo ?? '');
+  const [branch, setBranch] = useState(saved.branch ?? 'main');
+  const [serverUrl, setServerUrl] = useState(saved.serverUrl ?? window.location.origin);
+  const [version, setVersion] = useState(saved.version ?? '1.7.0');
   const [showToken, setShowToken] = useState(false);
   const [runUrl, setRunUrl] = useState<string | null>(null);
+
+  // Sauvegarder automatiquement à chaque changement
+  useEffect(() => {
+    saveGhSettings({ token, owner, repo, branch, serverUrl, version });
+  }, [token, owner, repo, branch, serverUrl, version]);
 
   const runsQuery = useQuery({
     queryKey: ['github-runs', owner, repo, token],
@@ -284,6 +317,15 @@ function GithubActionsSection() {
       setRunUrl(data.runUrl ?? null);
       toast.success('Workflow GitHub Actions déclenché !');
       queryClient.invalidateQueries({ queryKey: ['github-runs'] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const downloadMutation = useMutation({
+    mutationFn: (runId: number) => downloadArtifacts(token, owner, repo, runId),
+    onSuccess: (data) => {
+      toast.success(`${data.files.length} fichier(s) récupéré(s) : ${data.files.join(', ')}`);
+      queryClient.invalidateQueries({ queryKey: ['admin-applications'] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -406,15 +448,30 @@ function GithubActionsSection() {
           <div className="text-xs font-medium text-outlook-text-primary mb-1.5">Derniers workflows</div>
           <div className="space-y-1">
             {runsQuery.data.map(run => (
-              <div key={run.id} className="flex items-center gap-2 text-xs">
+              <div key={run.id} className="flex items-center gap-2 text-xs flex-wrap">
                 <span className={`px-2 py-0.5 rounded border text-[11px] whitespace-nowrap ${statusColor(run.status, run.conclusion)}`}>
                   {statusLabel(run.status, run.conclusion)}
                 </span>
                 <span className="text-outlook-text-secondary">{new Date(run.createdAt).toLocaleString('fr-FR')}</span>
-                <a href={run.htmlUrl} target="_blank" rel="noreferrer"
-                  className="ml-auto flex items-center gap-1 text-outlook-blue hover:underline">
-                  <ExternalLink size={11} /> Voir
-                </a>
+                <div className="ml-auto flex items-center gap-1.5">
+                  {run.conclusion === 'success' && (
+                    <button
+                      onClick={() => downloadMutation.mutate(run.id)}
+                      disabled={downloadMutation.isPending}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded border border-green-600 text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
+                      title="Récupérer les binaires vers le serveur"
+                    >
+                      {downloadMutation.isPending
+                        ? <Loader2 size={11} className="animate-spin" />
+                        : <Download size={11} />}
+                      Récupérer
+                    </button>
+                  )}
+                  <a href={run.htmlUrl} target="_blank" rel="noreferrer"
+                    className="flex items-center gap-1 text-outlook-blue hover:underline">
+                    <ExternalLink size={11} /> Voir
+                  </a>
+                </div>
               </div>
             ))}
           </div>

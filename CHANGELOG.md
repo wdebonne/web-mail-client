@@ -11,6 +11,36 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.7.1] - 2026-05-10
+
+### Ajouté
+
+#### Applications Desktop — fonctionnalités natives Tauri v2
+
+- **Barre système (system tray)** : icône WebMail dans la taskbar Windows/macOS avec menu contextuel (*Ouvrir WebMail*, *✉ Nouveau message*, *Quitter*). Clic gauche affiche/masque la fenêtre. Le tooltip affiche le nombre de mails non lus (ex: *WebMail — 3 non lu(s)*), synchronisé toutes les 60 s via `GET /api/mail/badge`.
+- **Fermeture dans le tray** : la croix de la fenêtre masque l'application au lieu de la quitter. Seul le menu tray "Quitter" termine le processus.
+- **Raccourci global `Ctrl+Shift+M`** : affiche ou masque l'application depuis n'importe quelle autre application Windows/macOS, même quand WebMail est en arrière-plan.
+- **Démarrage automatique avec Windows** : l'application se lance au démarrage du système en arrière-plan (`--hidden`). Activable/désactivable via le hook `useAutostart()` — prêt à brancher dans les Paramètres.
+- **Instance unique** (`tauri-plugin-single-instance`) : relancer l'exécutable met le focus sur la fenêtre existante au lieu d'en ouvrir une seconde.
+- **Protocole `mailto:`** (`tauri-plugin-deep-link`) : cliquer sur un lien `mailto:` dans Chrome/Edge/Firefox ouvre directement la fenêtre de composition avec les champs `To`, `CC`, `Subject` et `Body` pré-remplis. Scheme custom `webmail://` également enregistré.
+- **Hook `useTauri.ts`** (`client/src/hooks/useTauri.ts`) : utilitaires frontend pour `isTauri`, `updateTrayBadge()`, `getAutostart()`, `setAutostart()`, `useTauriCompose()`, `useTauriDeepLink()`.
+- **Capabilities Tauri** (`src-tauri/capabilities/default.json`) : permissions déclaratives pour tous les plugins (global-shortcut, autostart, deep-link, notification).
+
+#### Applications — panneau admin amélioré
+
+- **Persistance des paramètres GitHub** : owner, repo, branche, URL du serveur, version et token sont sauvegardés dans `localStorage` (`webmail:github-build-settings`) et rechargés automatiquement à chaque ouverture de l'onglet.
+- **Bouton "Récupérer"** sur chaque run GitHub Actions réussi : télécharge automatiquement les artefacts du run (`.exe`, `.msi`, `.deb`, `.AppImage`, `.dmg`) depuis l'API GitHub, les extrait du ZIP et les dépose dans `server/downloads/` — ils apparaissent immédiatement dans la liste de téléchargements sans manipulation manuelle.
+- **Endpoint `POST /api/admin/applications/build/github/download-artifacts`** : accepte `{ token, owner, repo, runId }`, liste les artefacts du run via l'API GitHub, télécharge chaque ZIP, extrait les binaires reconnus avec `adm-zip` et les copie dans le dossier de téléchargements.
+
+### Modifié
+
+- `src-tauri/Cargo.toml` : ajout de `tauri-plugin-single-instance`, `tauri-plugin-autostart`, `tauri-plugin-global-shortcut`, `tauri-plugin-deep-link`, `tauri-plugin-notification` ; feature `tray-icon` activée sur `tauri`.
+- `src-tauri/tauri.conf.json` : `withGlobalTauri: true`, config `plugins.deepLink` avec schemes `webmail` et `mailto`, icône tray.
+- `server/package.json` : ajout de `adm-zip` pour l'extraction ZIP des artefacts GitHub.
+- `client/src/App.tsx` : intégration des hooks `useTauriCompose` (menu tray → compose) et `useTauriDeepLink` (mailto: → compose), mise à jour du badge tray toutes les 60 s.
+
+---
+
 ## [1.7.0] - 2026-05-10
 
 ### Ajouté

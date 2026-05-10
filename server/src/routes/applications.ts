@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { AuthRequest, adminMiddleware } from '../middleware/auth';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import AdmZip from 'adm-zip';
 import { logger } from '../utils/logger';
 
 export const applicationsRouter = Router();
@@ -226,6 +228,82 @@ applicationsRouter.get('/build/github/runs', async (req: AuthRequest, res) => {
     const runs = await getGithubRuns(token, owner, repo);
     res.json(runs);
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/applications/build/github/download-artifacts
+// Télécharge les artefacts d'un run GitHub réussi et les extrait dans downloads/
+applicationsRouter.post('/build/github/download-artifacts', async (req: AuthRequest, res) => {
+  const { token, owner, repo, runId } = req.body as {
+    token: string; owner: string; repo: string; runId: number;
+  };
+  if (!token || !owner || !repo || !runId) {
+    return res.status(400).json({ error: 'token, owner, repo, runId requis' });
+  }
+
+  try {
+    // Lister les artefacts du run
+    const listRes = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}/artifacts?per_page=20`,
+      { headers: GH_HEADERS(token) }
+    );
+    if (!listRes.ok) {
+      const body = await listRes.json().catch(() => ({})) as any;
+      return res.status(422).json({ error: body?.message ?? `GitHub API ${listRes.status}` });
+    }
+    const { artifacts } = await listRes.json() as {
+      artifacts: Array<{ id: number; name: string; size_in_bytes: number }>
+    };
+
+    if (!artifacts?.length) {
+      return res.status(404).json({ error: 'Aucun artefact trouvé pour ce run.' });
+    }
+
+    ensureDownloadsDir();
+    const extracted: string[] = [];
+
+    for (const artifact of artifacts) {
+      // Télécharger le ZIP de l'artefact (GitHub redirige vers une URL signée)
+      const dlRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/actions/artifacts/${artifact.id}/zip`,
+        { headers: GH_HEADERS(token), redirect: 'follow' }
+      );
+      if (!dlRes.ok) {
+        logger.warn(`Artefact ${artifact.name} non téléchargeable (${dlRes.status})`);
+        continue;
+      }
+
+      // Sauvegarder en fichier temporaire
+      const tmpPath = path.join(os.tmpdir(), `wm-artifact-${artifact.id}.zip`);
+      const buf = Buffer.from(await dlRes.arrayBuffer());
+      fs.writeFileSync(tmpPath, buf);
+
+      // Extraire uniquement les binaires reconnus
+      try {
+        const zip = new AdmZip(tmpPath);
+        for (const entry of zip.getEntries()) {
+          const name = path.basename(entry.entryName);
+          if (/\.(exe|msi|deb|AppImage|dmg|apk)$/i.test(name) && !entry.isDirectory) {
+            const dest = path.join(DOWNLOADS_DIR, name);
+            fs.writeFileSync(dest, entry.getData());
+            extracted.push(name);
+          }
+        }
+      } finally {
+        try { fs.unlinkSync(tmpPath); } catch {}
+      }
+    }
+
+    if (!extracted.length) {
+      return res.status(404).json({
+        error: 'Aucun binaire (.exe, .msi, .deb, .AppImage, .dmg) trouvé dans les artefacts.',
+      });
+    }
+
+    res.json({ ok: true, files: extracted });
+  } catch (err: any) {
+    logger.error('Download artifacts error', err);
     res.status(500).json({ error: err.message });
   }
 });
