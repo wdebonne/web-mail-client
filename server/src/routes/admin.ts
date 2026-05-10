@@ -70,7 +70,7 @@ adminRouter.put('/settings', async (req: AuthRequest, res) => {
 adminRouter.get('/users', async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.email, u.display_name, u.role, u.is_admin, u.language, u.created_at,
+      `SELECT u.id, u.email, u.display_name, u.role, u.is_admin, u.is_active, u.language, u.created_at,
               ARRAY_AGG(DISTINCT g.name) FILTER (WHERE g.name IS NOT NULL) as groups,
               COUNT(DISTINCT ma.id) as account_count
        FROM users u

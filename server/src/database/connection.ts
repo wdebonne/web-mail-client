@@ -708,6 +708,10 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_mail_rule_shares_group ON mail_rule_shares(group_id);
     `);
 
+    await client.query(`
+      ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+    `);
+
     // One-shot data fix: keep `is_admin` aligned with `role`. Older builds
     // of the admin UI submitted `role='admin'` without setting `is_admin`,
     // which left users with admin role but `is_admin=false`, hiding the
