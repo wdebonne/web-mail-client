@@ -92,7 +92,7 @@ export default function AdminPage() {
       </div>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:block w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
+      <div className="hidden md:block w-64 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
         <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('admin.title')}</h2>
         {tabs.map((tabItem, index) => {
           const Icon = tabItem.icon;
