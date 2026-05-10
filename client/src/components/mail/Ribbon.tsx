@@ -2143,8 +2143,8 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
       for (const item of files) {
         const res = await api.nextcloudFilesGet(item.path);
         const mimeType = (res.contentType || '').split(';')[0].trim() || 'application/octet-stream';
-        // Use fetch(dataUrl) for reliable base64 → Blob conversion (avoids atob/Uint8Array quirks).
-        const blob = await (await fetch(`data:${mimeType};base64,${res.contentBase64}`)).blob();
+        const bytes = Uint8Array.from(atob(res.contentBase64), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: mimeType });
         fileObjects.push(new File([blob], res.filename || item.name, { type: mimeType }));
       }
       onAttachFiles(fileObjects);
