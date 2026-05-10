@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: webmail-app
+    container_name: ${STACK_NAME}-app
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
@@ -30,53 +30,57 @@ services:
     volumes:
       - ./plugins:/app/plugins
       - ./uploads:/app/uploads
-      - webmail_app_data:/app/data
-      - webmail_tauri_downloads:/app/server/downloads
+      - app_data:/app/data
+      - tauri_downloads:/app/server/downloads
     depends_on:
       db:
         condition: service_healthy
     networks:
-      - webmail-network
+      - internal
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
   db:
     image: postgres:16-alpine
-    container_name: webmail-db
+    container_name: ${STACK_NAME}-db
     restart: unless-stopped
     environment:
       - POSTGRES_DB=webmail
       - POSTGRES_USER=webmail
       - POSTGRES_PASSWORD=${DB_PASSWORD:-webmail_secure_pwd}
     volumes:
-      - webmail_postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U webmail"]
       interval: 5s
       timeout: 5s
       retries: 5
     networks:
-      - webmail-network
+      - internal
 
   tauri-builder:
     build:
       context: .
       dockerfile: Dockerfile.tauri-builder
-    container_name: webmail-tauri-builder
+    container_name: ${STACK_NAME}-tauri-builder
     restart: unless-stopped
     volumes:
       - .:/project:ro
-      - webmail_tauri_downloads:/downloads
+      - tauri_downloads:/downloads
     networks:
-      - webmail-network
+      - internal
     profiles:
       - builder
 
 volumes:
-  webmail_postgres_data:
-  webmail_app_data:
-  webmail_tauri_downloads:
+  postgres_data:
+    name: ${STACK_NAME}_postgres_data
+  app_data:
+    name: ${STACK_NAME}_app_data
+  tauri_downloads:
+    name: ${STACK_NAME}_tauri_downloads
 
 networks:
-  webmail-network:
+  internal:
+    name: ${STACK_NAME}-network
     driver: bridge
