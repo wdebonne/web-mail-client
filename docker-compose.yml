@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ${STACK_NAME:-webmail}-app
+    container_name: webmail-app
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
@@ -30,8 +30,8 @@ services:
     volumes:
       - ./plugins:/app/plugins
       - ./uploads:/app/uploads
-      - app_data:/app/data
-      - tauri_downloads:/app/server/downloads
+      - webmail_app_data:/app/data
+      - webmail_tauri_downloads:/app/server/downloads
     depends_on:
       db:
         condition: service_healthy
@@ -42,14 +42,14 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: ${STACK_NAME:-webmail}-db
+    container_name: webmail-db
     restart: unless-stopped
     environment:
       - POSTGRES_DB=webmail
       - POSTGRES_USER=webmail
       - POSTGRES_PASSWORD=${DB_PASSWORD:-webmail_secure_pwd}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - webmail_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U webmail"]
       interval: 5s
@@ -62,28 +62,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.tauri-builder
-    container_name: ${STACK_NAME:-webmail}-tauri-builder
+    container_name: webmail-tauri-builder
     restart: unless-stopped
     volumes:
-      # Source du projet (lecture seule) pour compiler
       - .:/project:ro
-      # Volume partagé pour déposer les binaires générés
-      - tauri_downloads:/downloads
+      - webmail_tauri_downloads:/downloads
     networks:
       - webmail-network
-    # Pas exposé sur l'extérieur — accessible uniquement depuis app
     profiles:
       - builder
 
 volumes:
-  postgres_data:
-    name: ${STACK_NAME:-webmail}_postgres_data
-  app_data:
-    name: ${STACK_NAME:-webmail}_app_data
-  tauri_downloads:
-    name: ${STACK_NAME:-webmail}_tauri_downloads
+  webmail_postgres_data:
+  webmail_app_data:
+  webmail_tauri_downloads:
 
 networks:
   webmail-network:
-    name: ${STACK_NAME:-webmail}-network
     driver: bridge
