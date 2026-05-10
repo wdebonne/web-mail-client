@@ -137,7 +137,12 @@ async function getConfig(provider: OAuthProvider): Promise<OAuthConfig> {
  * `prompt=select_account` lets the user pick the right MS account even if
  * they are already signed in.
  */
-export async function buildAuthorizeUrl(provider: OAuthProvider, state: string, loginHint?: string): Promise<string> {
+export async function buildAuthorizeUrl(
+  provider: OAuthProvider,
+  state: string,
+  loginHint?: string,
+  forceConsent?: boolean,
+): Promise<string> {
   const cfg = await getConfig(provider);
   const params = new URLSearchParams({
     client_id: cfg.clientId,
@@ -146,7 +151,10 @@ export async function buildAuthorizeUrl(provider: OAuthProvider, state: string, 
     response_mode: 'query',
     scope: cfg.scope,
     state,
-    prompt: 'select_account',
+    // Use 'consent' when re-authenticating so Microsoft re-shows the permission
+    // screen and re-grants all scopes (including IMAP.AccessAsUser.All).
+    // Without this, a prior authorization without IMAP scope is silently reused.
+    prompt: forceConsent ? 'consent' : 'select_account',
   });
   if (loginHint) params.set('login_hint', loginHint);
   return `${cfg.authorizeUrl}?${params.toString()}`;

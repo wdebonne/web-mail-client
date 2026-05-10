@@ -1572,7 +1572,7 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
     if (!provider?.oauthProvider) return;
     setOauthConnecting(true);
     try {
-      const { url } = await api.startAdminMailAccountOAuth(provider.oauthProvider, email || undefined);
+      const { url } = await api.startAdminMailAccountOAuth(provider.oauthProvider, email || undefined, accountUsesOAuth);
       const width = 520;
       const height = 640;
       const left = window.screenX + (window.outerWidth - width) / 2;
