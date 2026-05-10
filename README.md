@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.7.1-blue)
+![Version](https://img.shields.io/badge/version-1.7.2-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -46,7 +46,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🧹 Affichage du nom court des sous-dossiers (ex. `INBOX.test.sous` → « sous ») sans altérer le chemin IMAP réel
 - 📎 Pièces jointes avec aperçu avancé (images, PDF, DOCX, XLSX, HEIC/HEIF)
 - ℹ️ Aperçu DOCX/XLSX actuellement **simplifié** (contenu prioritaire, fidélité visuelle partielle)
-- 🎛️ Comportement d'ouverture des pièces jointes configurable par utilisateur (Aperçu / Téléchargement / Menu)
+- 🎛️ Comportement d'ouverture des pièces jointes configurable par utilisateur (Aperçu / Téléchargement / Menu / **Nextcloud** — enregistrement direct dans le drive NC au clic)
 - ✏️ **Éditeur riche (HTML) style messagerie professionnelle** avec formatage avancé :
   - Police (Arial, Times, Courier, Georgia, Verdana, etc.) et taille (8px-72px)
   - **Gras**, *Italique*, <u>Souligné</u>, ~~Barré~~
@@ -103,6 +103,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🔍 Recherche par email, nom, prénom, entreprise
 - 📋 Groupes de contacts et listes de distribution
 - 🔗 Enrichissement depuis NextCloud (photo, fonction, rôle)
+- ☁️ **Joindre un fichier depuis Nextcloud** : bouton *Nextcloud* dans le ruban **Insérer → Inclure** (visible si NC est synchronisé) — modal de navigation dans le drive NC pour sélectionner un ou plusieurs fichiers à attacher directement à l'e-mail en cours de rédaction
 - 📥 **Expéditeurs automatiques** : tout expéditeur de mail reçu est enregistré comme "contact non permanent"
 - ✅ **Promotion de contact** : conversion d'un expéditeur en contact permanent
 - 🔤 **Autocomplétion intelligente** dans le composeur avec affichage des noms (seuil 1 caractère)

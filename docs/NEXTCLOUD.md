@@ -16,6 +16,8 @@ L'intégration NextCloud est **optionnelle**. Quand elle est activée, elle perm
 - Synchroniser **bidirectionnellement** calendriers et contacts (polling + à la demande)
 - Récupérer les photos de profil NextCloud
 - **Enregistrer les pièces jointes** des mails dans le drive Files de l'utilisateur, dans n'importe quel dossier (avec création d'arborescence à la volée)
+- **Joindre un fichier depuis Nextcloud** lors de la rédaction d'un e-mail (ruban Insérer)
+- **Mode d'ouverture « Nextcloud »** pour les pièces jointes reçues : clic = enregistrement direct dans NC
 
 ---
 
@@ -160,6 +162,35 @@ Une modale de confirmation liste les gains et pertes de chaque direction (partag
 
 ---
 
+## Gestion des fichiers (drive NC)
+
+### Enregistrer une pièce jointe dans Nextcloud
+
+Sur chaque pièce jointe reçue, un bouton **CloudUpload** permet d'enregistrer le fichier dans le drive NC. Une modal de sélection de dossier (`NextcloudFolderPicker`) permet de choisir la destination, avec création de sous-dossiers à la volée.
+
+**Mode d'ouverture « Nextcloud »** : dans **Afficher → Pièce jointe** ou **Paramètres → Messagerie**, l'option *Nextcloud* déclenche directement l'enregistrement NC au clic sur une pièce jointe (sans passer par le menu). Nécessite un compte NC lié.
+
+### Joindre un fichier depuis Nextcloud (rédaction)
+
+Dans le ruban **Insérer → Inclure**, le bouton *Nextcloud* (icône nuage) est visible dès que le compte NC est synchronisé.
+
+1. Cliquer sur **Nextcloud** — la modal `NextcloudFilePicker` s'ouvre
+2. Naviguer dans l'arborescence du drive (dossiers + fichiers, fil d'Ariane)
+3. Cocher un ou plusieurs fichiers (la taille est affichée)
+4. Cliquer **Joindre** — les fichiers sont téléchargés depuis NC et attachés à l'e-mail
+
+**Endpoints utilisés :**
+
+| Méthode | URL | Description |
+|---------|-----|-------------|
+| `GET` | `/api/nextcloud/files/status` | Vérifier si NC est lié (retourne `{ linked }`) |
+| `GET` | `/api/nextcloud/files/list?path=` | Lister les enfants d'un dossier |
+| `GET` | `/api/nextcloud/files/get?path=` | Télécharger un fichier (base64, 100 Mo max) |
+| `POST` | `/api/nextcloud/files/mkdir` | Créer un dossier (récursif) |
+| `POST` | `/api/nextcloud/files/upload` | Uploader une pièce jointe dans NC |
+
+---
+
 ## Sécurité
 
 - Tous les mots de passe NC (admin **et** par utilisateur) sont chiffrés avec `encrypt()` (AES-256-GCM)
@@ -192,6 +223,8 @@ Tables ajoutées :
 | « NC user already exists; skipping auto-provision » | Le compte NC existe déjà → utiliser *Lier existant* |
 | Sync en erreur « 401 » | App Password révoqué ou changé → re-saisir le mot de passe de l'utilisateur |
 | Aucune invitation iMIP reçue | Vérifier que l'app NextCloud « DAV » est active et que le SMTP NC est configuré |
+| Bouton Nextcloud absent dans le ruban Insérer | Vérifier que le compte NC est bien lié (barre de statut « Lié NC »). Le bouton n'apparaît que si `linked: true` dans `/calendar/nextcloud-status` |
+| Erreur « NextCloud not linked » lors du téléchargement | Le mot de passe NC stocké ne peut pas être décrypté (rotation de `ENCRYPTION_KEY` ?) → re-saisir le mot de passe via *Lier existant* dans l'admin |
 | Lien public vide | L'app « calendar » NextCloud doit être activée pour que `<CS:publish-calendar>` fonctionne |
 | « there is no unique or exclusion constraint matching the ON CONFLICT specification » (code `42P10`) sur `NextCloudService.syncCalendars` / `syncContacts` | Les index uniques partiels `idx_contacts_nc_email_unique`, `idx_contacts_nc_external_unique` et `idx_calendars_nc_external_unique` sont manquants ou ont un prédicat plus strict que la clause `WHERE source='nextcloud'` des requêtes. Redémarrer le serveur : la migration force un `DROP INDEX IF EXISTS` puis recrée les index avec le bon prédicat. Si la recréation échoue, c'est qu'il existe des doublons en base — les supprimer puis relancer. |
 

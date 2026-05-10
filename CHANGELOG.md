@@ -11,6 +11,28 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.7.2] - 2026-05-10
+
+### Ajouté
+
+#### Nextcloud — intégration fichiers étendue
+
+- **Joindre un fichier depuis Nextcloud** : nouveau bouton *Nextcloud* (icône nuage) dans le ruban **Insérer → Inclure**, visible uniquement lorsque le compte Nextcloud de l'utilisateur est synchronisé. En cliquant dessus, une modal de navigation s'ouvre et permet de parcourir l'arborescence du drive NC (dossiers et fichiers), de sélectionner un ou plusieurs fichiers (cases à cocher, taille affichée) et de les télécharger automatiquement depuis Nextcloud pour les attacher à l'e-mail en cours de rédaction. Disponible en mode ruban *classique* et *simplifié*.
+- **Mode d'ouverture « Nextcloud »** : nouveau mode dans **Afficher → Pièce jointe** (et **Paramètres → Messagerie → Ouverture des pièces jointes**). Quand il est actif, cliquer sur une pièce jointe reçue ouvre directement le sélecteur de dossier Nextcloud pour l'enregistrer dans le drive NC — sans passer par le menu intermédiaire. Désactivé automatiquement si NC n'est pas lié.
+
+### Modifié
+
+- Vérification de la liaison Nextcloud dans le ruban Insérer : désormais basée sur `GET /calendar/nextcloud-status` (même endpoint que la barre de statut), plus fiable que l'ancienne vérification via `GET /nextcloud/files/status`.
+
+### Technique
+
+- **Serveur** : ajout de la méthode `NextCloudService.getFile(relPath)` — télécharge un fichier du drive NC en tant que `Buffer` via GET WebDAV.
+- **Serveur** : nouvelle route `GET /api/nextcloud/files/get?path=` — exposée via `nextcloudFilesRouter`, renvoie `{ filename, contentType, contentBase64 }` (limite 100 Mo).
+- **Client** : nouvelle fonction `api.nextcloudFilesGet(path)` correspondante.
+- **Client** : nouveau composant `NextcloudFilePicker.tsx` — modal de navigation fichiers + dossiers NC avec multi-sélection, affichage de la taille, navigation par fil d'Ariane.
+
+---
+
 ## [1.7.1] - 2026-05-10
 
 ### Ajouté
