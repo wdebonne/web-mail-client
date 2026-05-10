@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Folder, File as FileIcon, ChevronLeft, X, Home, Loader2, Check, Cloud } from 'lucide-react';
+import { Folder, ChevronLeft, X, Home, Loader2, Check, Cloud, Search } from 'lucide-react';
 import { api } from '../../api';
 
 /**
@@ -37,11 +37,13 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
 
   const load = async (p: string) => {
     setLoading(true);
     setError(null);
     setSelected(new Set());
+    setSearch('');
     try {
       const res = await api.nextcloudFilesList(p);
       setItems(res.items);
@@ -58,9 +60,16 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
     if (open) {
       setPath('/');
       setSelected(new Set());
+      setSearch('');
       load('/');
     }
   }, [open]);
+
+  const filteredItems = useMemo(() => {
+    if (!search.trim()) return items;
+    const q = search.trim().toLowerCase();
+    return items.filter(i => i.name.toLowerCase().includes(q));
+  }, [items, search]);
 
   if (!open) return null;
 
@@ -119,6 +128,25 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
           </button>
         </div>
 
+        {/* Search */}
+        <div className="px-3 py-2 border-b border-outlook-border flex-shrink-0">
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outlook-text-disabled pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Rechercher dans ce dossier…"
+              className="w-full pl-7 pr-3 py-1.5 text-xs border border-outlook-border rounded focus:outline-none focus:border-outlook-blue bg-white"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled hover:text-outlook-text-primary">
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Breadcrumb / nav */}
         <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/40 flex items-center gap-1 text-xs flex-shrink-0 overflow-x-auto">
           <button
@@ -157,13 +185,13 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
             </div>
           ) : error ? (
             <div className="px-4 py-6 text-sm text-red-600">{error}</div>
-          ) : items.length === 0 ? (
+          ) : filteredItems.length === 0 ? (
             <div className="px-4 py-8 text-sm text-outlook-text-disabled text-center">
-              Ce dossier est vide.
+              {search ? `Aucun résultat pour « ${search} »` : 'Ce dossier est vide.'}
             </div>
           ) : (
             <ul>
-              {items.map(item => {
+              {filteredItems.map(item => {
                 const isSelected = !item.isFolder && selected.has(item.path);
                 return (
                   <li key={item.path}>

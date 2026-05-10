@@ -2142,12 +2142,13 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
       const fileObjects: File[] = [];
       for (const item of files) {
         const res = await api.nextcloudFilesGet(item.path);
-        const binary = atob(res.contentBase64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        fileObjects.push(new File([bytes], res.filename, { type: res.contentType || 'application/octet-stream' }));
+        const mimeType = (res.contentType || '').split(';')[0].trim() || 'application/octet-stream';
+        // Use fetch(dataUrl) for reliable base64 → Blob conversion (avoids atob/Uint8Array quirks).
+        const blob = await (await fetch(`data:${mimeType};base64,${res.contentBase64}`)).blob();
+        fileObjects.push(new File([blob], res.filename || item.name, { type: mimeType }));
       }
       onAttachFiles(fileObjects);
+      toast.success(`${fileObjects.length} fichier${fileObjects.length > 1 ? 's' : ''} joint${fileObjects.length > 1 ? 's' : ''} depuis Nextcloud`);
     } catch (e: any) {
       toast.error(`Erreur Nextcloud : ${e?.message || 'Échec du téléchargement'}`);
     } finally {
