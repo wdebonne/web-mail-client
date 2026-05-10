@@ -141,7 +141,7 @@ La langue affichée est choisie selon l’ordre suivant :
 
 ### Administration
 - 📊 Dashboard temps réel (stats utilisateurs, mails, infra)
-- 👤 Gestion des utilisateurs et groupes
+- 👤 **Gestion avancée des utilisateurs** : modifier le profil, activer/désactiver un compte, changer le mot de passe, générer un lien de réinitialisation (valable 24 h) — en plus de la suppression
 - ⚙️ Paramètres globaux
 - 🎨 **Branding personnalisable** : téléversement à chaud du favicon et des icônes PWA (192×192, 512×512, Apple Touch) depuis l'onglet *Système*, sans rebuild ni redéploiement. Aperçu, réinitialisation et application immédiate au rafraîchissement.
 - 🪟 **Titre d'onglet dynamique** (style messagerie professionnelle) : l'onglet du navigateur affiche `<Nom du dossier> — <Nom de l'app>` (ex. *Boîte de réception — WebMail*).
@@ -385,6 +385,13 @@ webmail/
 |---------|-------|-------------|
 | GET | `/api/admin/dashboard` | Statistiques système |
 | GET | `/api/admin/logs` | Logs d'audit |
+| GET | `/api/admin/users` | Liste des utilisateurs |
+| POST | `/api/admin/users` | Créer un utilisateur |
+| PUT | `/api/admin/users/:id` | Modifier un utilisateur (nom, email, rôle, actif/inactif) |
+| DELETE | `/api/admin/users/:id` | Supprimer un utilisateur |
+| PUT | `/api/admin/users/:id/password` | Changer le mot de passe d'un utilisateur |
+| POST | `/api/admin/users/:id/reset-link` | Générer un lien de réinitialisation de mot de passe (token 24 h) |
+| POST | `/api/auth/reset-password` | Consommer un token de réinitialisation (route publique) |
 | GET | `/api/admin/devices` | Sessions actives de tous les utilisateurs (groupées) |
 | DELETE | `/api/admin/devices/:id` | Déconnecter un appareil (admin) |
 | DELETE | `/api/admin/users/:userId/devices` | Déconnecter tous les appareils d'un utilisateur |

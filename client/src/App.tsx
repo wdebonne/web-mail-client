@@ -16,6 +16,7 @@ import ContactsPage from './pages/ContactsPage';
 import SettingsPage from './pages/SettingsPage';
 import SecurityPage from './pages/SecurityPage';
 import AdminPage from './pages/AdminPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import { listenForNotificationClicks } from './pwa/push';
 import { syncAllCache, refreshCacheStats } from './services/cacheService';
 import { startPrefsSync } from './services/prefsSync';
@@ -121,6 +122,9 @@ function App() {
   }
 
   if (!user) {
+    if (location.pathname === '/reset-password') {
+      return <ResetPasswordPage />;
+    }
     return <LoginPage />;
   }
 

@@ -11,6 +11,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+#### Administration — gestion avancée des utilisateurs
+
+- **Correction du statut utilisateur** : la colonne `is_active` manquait dans la table `users` (migration automatique `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`) — le statut affichait toujours « Inactif » même pour les comptes connectés.
+- **Quatre nouvelles actions par utilisateur** dans le tableau de bord Admin → Utilisateurs :
+  - ✏️ **Modifier** : modale permettant de changer le nom d'affichage, l'e-mail et le rôle.
+  - ✅/❌ **Activer / Désactiver** : bascule en un clic ; un compte désactivé ne peut plus se connecter (erreur 403 à la connexion).
+  - 🛡️ **Changer le mot de passe** : modale avec champ de confirmation et validation de concordance.
+  - 🔗 **Lien de réinitialisation** : génère un token sécurisé (24 h) et affiche le lien à copier/envoyer manuellement à l'utilisateur.
+- **Page publique `/reset-password?token=…`** : formulaire permettant à l'utilisateur de définir un nouveau mot de passe via le lien reçu. Le token ne peut être utilisé qu'une seule fois.
+- **Table `password_resets`** : stockage des tokens de réinitialisation avec expiration, marquage `used_at` pour éviter la réutilisation.
+- **Blocage à la connexion** pour les comptes désactivés (`is_active = false`) : message « Ce compte est désactivé ».
+
 #### Page Paramètres utilisateur — refonte de l'organisation
 
 - **Groupes visuels dans les sidebars** (`Compte / Messagerie / Interface / Sécurité / Données`) : séparateurs de groupe avec label en petites capitales, présents sur mobile, tablette et desktop.

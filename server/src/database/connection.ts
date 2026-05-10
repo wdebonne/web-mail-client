@@ -712,6 +712,18 @@ export async function initDatabase() {
       ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token VARCHAR(128) NOT NULL UNIQUE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token);
+    `);
+
     // One-shot data fix: keep `is_admin` aligned with `role`. Older builds
     // of the admin UI submitted `role='admin'` without setting `is_admin`,
     // which left users with admin role but `is_admin=false`, hiding the

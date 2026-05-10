@@ -619,6 +619,9 @@ function O2SwitchLinkForm({ email, users, groups, onSubmit, onCancel, loading }:
 function UserManagement() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [passwordUser, setPasswordUser] = useState<any>(null);
+  const [resetLinkResult, setResetLinkResult] = useState<{ resetUrl: string; email: string } | null>(null);
 
   const { data: users = [] } = useQuery({
     queryKey: ['admin-users'],
@@ -640,6 +643,22 @@ function UserManagement() {
       setShowForm(false);
       toast.success('Utilisateur créé');
     },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      api.adminToggleUserActive(id, isActive),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast.success(vars.isActive ? 'Utilisateur activé' : 'Utilisateur désactivé');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const resetLinkMutation = useMutation({
+    mutationFn: (id: string) => api.adminGenerateResetLink(id),
+    onSuccess: (data) => setResetLinkResult({ resetUrl: data.resetUrl, email: data.email }),
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -680,9 +699,43 @@ function UserManagement() {
                 )}
               </td>
               <td className="py-2 px-3">
-                <button onClick={() => confirm('Supprimer cet utilisateur ?') && deleteMutation.mutate(user.id)} className="p-1 hover:bg-red-50 rounded text-outlook-text-disabled hover:text-outlook-danger">
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    title="Modifier"
+                    onClick={() => setEditingUser(user)}
+                    className="p-1 hover:bg-outlook-bg-hover rounded text-outlook-text-disabled hover:text-outlook-blue"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    title={user.is_active ? 'Désactiver' : 'Activer'}
+                    onClick={() => toggleActiveMutation.mutate({ id: user.id, isActive: !user.is_active })}
+                    className={`p-1 rounded ${user.is_active ? 'hover:bg-orange-50 text-outlook-text-disabled hover:text-orange-500' : 'hover:bg-green-50 text-outlook-text-disabled hover:text-green-600'}`}
+                  >
+                    {user.is_active ? <XCircle size={14} /> : <CheckCircle size={14} />}
+                  </button>
+                  <button
+                    title="Changer le mot de passe"
+                    onClick={() => setPasswordUser(user)}
+                    className="p-1 hover:bg-outlook-bg-hover rounded text-outlook-text-disabled hover:text-outlook-blue"
+                  >
+                    <Shield size={14} />
+                  </button>
+                  <button
+                    title="Envoyer un lien de réinitialisation"
+                    onClick={() => resetLinkMutation.mutate(user.id)}
+                    className="p-1 hover:bg-outlook-bg-hover rounded text-outlook-text-disabled hover:text-outlook-blue"
+                  >
+                    <Link size={14} />
+                  </button>
+                  <button
+                    title="Supprimer"
+                    onClick={() => confirm('Supprimer cet utilisateur ?') && deleteMutation.mutate(user.id)}
+                    className="p-1 hover:bg-red-50 rounded text-outlook-text-disabled hover:text-outlook-danger"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -697,6 +750,143 @@ function UserManagement() {
           </div>
         </div>
       )}
+
+      {editingUser && (
+        <EditUserModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+            setEditingUser(null);
+          }}
+        />
+      )}
+
+      {passwordUser && (
+        <SetPasswordModal
+          user={passwordUser}
+          onClose={() => setPasswordUser(null)}
+        />
+      )}
+
+      {resetLinkResult && (
+        <ResetLinkModal
+          resetUrl={resetLinkResult.resetUrl}
+          email={resetLinkResult.email}
+          onClose={() => setResetLinkResult(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditUserModal({ user, onClose, onSaved }: { user: any; onClose: () => void; onSaved: () => void }) {
+  const [displayName, setDisplayName] = useState(user.display_name || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [role, setRole] = useState(user.role || 'user');
+
+  const mutation = useMutation({
+    mutationFn: (data: any) => api.updateAdminUser(user.id, data),
+    onSuccess: () => { toast.success('Utilisateur mis à jour'); onSaved(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold mb-4">Modifier l'utilisateur</h3>
+        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate({ displayName, email, role }); }} className="space-y-3">
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Nom</label>
+            <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} required className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary">E-mail</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Rôle</label>
+            <select value={role} onChange={e => setRole(e.target.value)} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm">
+              <option value="user">Utilisateur</option>
+              <option value="admin">Administrateur</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Annuler</button>
+            <button type="submit" disabled={mutation.isPending} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50">
+              {mutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function SetPasswordModal({ user, onClose }: { user: any; onClose: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: (pwd: string) => api.adminSetUserPassword(user.id, pwd),
+    onSuccess: () => { toast.success('Mot de passe mis à jour'); onClose(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const mismatch = confirm.length > 0 && password !== confirm;
+
+  return (
+    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold mb-1">Changer le mot de passe</h3>
+        <p className="text-xs text-outlook-text-secondary mb-4">{user.display_name} — {user.email}</p>
+        <form onSubmit={(e) => { e.preventDefault(); if (!mismatch) mutation.mutate(password); }} className="space-y-3">
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Nouveau mot de passe</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Confirmer</label>
+            <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} required className={`w-full border rounded-md px-3 py-2 text-sm ${mismatch ? 'border-red-400' : 'border-outlook-border'}`} />
+            {mismatch && <p className="text-xs text-red-500 mt-1">Les mots de passe ne correspondent pas</p>}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Annuler</button>
+            <button type="submit" disabled={mutation.isPending || mismatch || password.length < 8} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50">
+              {mutation.isPending ? 'Mise à jour...' : 'Mettre à jour'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ResetLinkModal({ resetUrl, email, onClose }: { resetUrl: string; email: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(resetUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-[500px] p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold mb-1">Lien de réinitialisation</h3>
+        <p className="text-xs text-outlook-text-secondary mb-4">Envoyez ce lien à <strong>{email}</strong>. Il expire dans 24h.</p>
+        <div className="flex items-center gap-2 bg-outlook-bg-hover rounded-md p-3 mb-4">
+          <span className="text-xs text-outlook-text-secondary break-all flex-1 select-all">{resetUrl}</span>
+          <button onClick={handleCopy} className="shrink-0 p-1.5 rounded hover:bg-outlook-border" title="Copier">
+            {copied ? <CheckCircle size={16} className="text-green-500" /> : <Link size={16} />}
+          </button>
+        </div>
+        <div className="flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Fermer</button>
+        </div>
+      </div>
     </div>
   );
 }
