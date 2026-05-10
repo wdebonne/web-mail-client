@@ -10,7 +10,7 @@ on:
       version:
         description: "Version de l'app"
         required: false
-        default: "1.6.0"
+        default: "1.7.0"
 
 jobs:
   build:
@@ -20,13 +20,13 @@ jobs:
         include:
           - os: ubuntu-22.04
             platform: linux
-            targets: "--bundles deb,appimage"
+            bundles: deb,appimage
           - os: windows-latest
             platform: windows
-            targets: "--bundles msi,nsis"
+            bundles: msi,nsis
           - os: macos-latest
             platform: macos
-            targets: "--bundles dmg"
+            bundles: dmg
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.platform }}
@@ -37,7 +37,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: client/package-lock.json
 
@@ -64,17 +64,28 @@ jobs:
         run: npm ci
         working-directory: client
 
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@^2
+
+      # Écrire le config override dans un fichier évite les problèmes
+      # d'échappement JSON dans les arguments shell multi-plateformes.
+      - name: Write Tauri config override
+        shell: bash
+        run: |
+          printf '{"build":{"frontendDist":"%s"},"version":"%s"}' \
+            "${{ inputs.server_url }}" \
+            "${{ inputs.version }}" \
+            > tauri-build-config.json
+          cat tauri-build-config.json
+
       - name: Build Tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SERVER_URL: ${{ github.event.inputs.server_url }}
         with:
           projectPath: .
-          tauriScript: npx tauri
-          args: >
-            ${{ matrix.targets }}
-            --config '{"build":{"frontendDist":"${{ github.event.inputs.server_url }}"},"version":"${{ github.event.inputs.version }}"}'
+          tauriScript: tauri
+          args: --bundles ${{ matrix.bundles }} --config tauri-build-config.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
