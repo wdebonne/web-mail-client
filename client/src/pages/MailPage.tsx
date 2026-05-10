@@ -46,7 +46,7 @@ import { resolveFolderDisplayName } from '../components/mail/MessageList';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import type { MailFolder } from '../types';
 
-type AttachmentActionMode = 'preview' | 'download' | 'menu';
+type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
 export default function MailPage() {
   const isOnline = useNetworkStatus();
@@ -126,7 +126,7 @@ export default function MailPage() {
     ? Math.max(0, Number(userSettings?.attachment_visibility_min_kb))
     : 10;
 
-  const attachmentActionMode: AttachmentActionMode = ['preview', 'download', 'menu'].includes(userSettings?.attachment_action_mode)
+  const attachmentActionMode: AttachmentActionMode = ['preview', 'download', 'menu', 'nextcloud'].includes(userSettings?.attachment_action_mode)
     ? userSettings.attachment_action_mode
     : 'preview';
 

@@ -15,8 +15,10 @@ import {
   Tag, MessagesSquare, ShieldAlert, ShieldOff, Coffee,
   Maximize2, Minimize2,
   FileText, Settings as SettingsIcon, Filter,
-  Clock, BellDot,
+  Clock, BellDot, Cloud,
 } from 'lucide-react';
+import { api } from '../../api';
+import NextcloudFilePicker, { type NextcloudFileItem } from '../ui/NextcloudFilePicker';
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
 import { getSignatures, MailSignature, wrapSignatureHtml } from '../../utils/signatures';
@@ -48,7 +50,7 @@ import {
 
 type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer';
 type RibbonMode = 'classic' | 'simplified';
-type AttachmentActionMode = 'preview' | 'download' | 'menu';
+type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
 const FONT_FAMILIES = ['Arial', 'Calibri', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana', 'Trebuchet MS'];
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36', '48', '72'];
@@ -1538,6 +1540,13 @@ export default function Ribbon({
                           <span className={`w-2 h-2 rounded-full ${attachmentActionMode === 'menu' ? 'bg-outlook-blue' : 'bg-transparent border border-outlook-border'}`} />
                           Menu (Aperçu / Téléchargement)
                         </button>
+                        <button
+                          onClick={() => { onChangeAttachmentActionMode('nextcloud'); setShowAttachmentMenu(false); }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                        >
+                          <span className={`w-2 h-2 rounded-full ${attachmentActionMode === 'nextcloud' ? 'bg-outlook-blue' : 'bg-transparent border border-outlook-border'}`} />
+                          Nextcloud
+                        </button>
                       </div>
                     </>,
                     document.body
@@ -2112,6 +2121,39 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
   const [showEmoji, setShowEmoji] = useState(false);
   const [showTableGrid, setShowTableGrid] = useState(false);
 
+  // ── Nextcloud file picker ─────────────────────────────────────────────
+  const [ncLinked, setNcLinked] = useState(false);
+  const [showNcPicker, setShowNcPicker] = useState(false);
+  const [ncAttaching, setNcAttaching] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api.nextcloudFilesStatus()
+      .then(s => { if (!cancelled) setNcLinked(!!s.linked); })
+      .catch(() => { if (!cancelled) setNcLinked(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleNcPick = async (files: NextcloudFileItem[]) => {
+    setShowNcPicker(false);
+    if (!files.length || !onAttachFiles) return;
+    setNcAttaching(true);
+    try {
+      const fileObjects: File[] = [];
+      for (const item of files) {
+        const res = await api.nextcloudFilesGet(item.path);
+        const binary = atob(res.contentBase64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        fileObjects.push(new File([bytes], res.filename, { type: res.contentType || 'application/octet-stream' }));
+      }
+      onAttachFiles(fileObjects);
+    } catch (e: any) {
+      toast.error(`Erreur Nextcloud : ${e?.message || 'Échec du téléchargement'}`);
+    } finally {
+      setNcAttaching(false);
+    }
+  };
+
   // ── Signatures ───────────────────────────────────────────────────────
   const signatureBtnRef = useRef<HTMLElement | null>(null);
   const [showSignatureMenu, setShowSignatureMenu] = useState(false);
@@ -2320,6 +2362,13 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
           </div>
         </AnchoredPortal>
       )}
+      {showNcPicker && (
+        <NextcloudFilePicker
+          open={showNcPicker}
+          onPick={handleNcPick}
+          onClose={() => setShowNcPicker(false)}
+        />
+      )}
     </>
   );
 
@@ -2340,6 +2389,9 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
           }}
         />
         <SimplifiedButton icon={Paperclip} label="Joindre" onClick={triggerAttach} />
+        {ncLinked && (
+          <SimplifiedButton icon={Cloud} label="Nextcloud" onClick={() => setShowNcPicker(true)} active={showNcPicker || ncAttaching} />
+        )}
         <span ref={el => { linkBtnRef.current = el; }} className="inline-flex">
           <SimplifiedButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(v => !v); }} />
         </span>
@@ -2396,6 +2448,14 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
       {/* Inclure */}
       <RibbonGroup label="Inclure">
         <RibbonButton icon={Paperclip} label="Joindre un fichier" onClick={triggerAttach} />
+        {ncLinked && (
+          <RibbonButton
+            icon={Cloud}
+            label="Nextcloud"
+            onClick={() => setShowNcPicker(true)}
+            active={showNcPicker || ncAttaching}
+          />
+        )}
         <span ref={el => { linkBtnRef.current = el; }} className="inline-flex">
           <RibbonButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(s => !s); }} />
         </span>

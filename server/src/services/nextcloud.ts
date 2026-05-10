@@ -998,6 +998,29 @@ export class NextCloudService {
     return '/' + relPath;
   }
 
+  /**
+   * Download a file from the user's NextCloud storage.
+   * Returns the raw binary buffer and detected content-type.
+   */
+  async getFile(relPath: string): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+    const clean = (relPath || '').replace(/\\/g, '/').replace(/\.\.+/g, '').replace(/\/{2,}/g, '/').replace(/^\/+/, '');
+    const url = this.filesUrl(clean);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: this.getAuthHeader() },
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`GET file failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType = res.headers.get('content-type') || 'application/octet-stream';
+    const segs = clean.split('/').filter(Boolean);
+    const filename = segs[segs.length - 1] || 'fichier';
+    return { buffer, contentType, filename };
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   // Utilities
   // ═══════════════════════════════════════════════════════════════════

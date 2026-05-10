@@ -523,6 +523,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ path }),
     }),
+  nextcloudFilesGet: (path: string) =>
+    request<{ filename: string; contentType: string; contentBase64: string }>(
+      `/nextcloud/files/get?path=${encodeURIComponent(path)}`
+    ),
   nextcloudFilesUpload: (data: {
     folderPath: string;
     filename: string;
