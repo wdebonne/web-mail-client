@@ -9,6 +9,10 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+---
+
+## [1.6.0] - 2026-05-10
+
 ### Ajouté
 
 #### Administration — gestion avancée des utilisateurs
@@ -19,6 +23,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
   - ✅/❌ **Activer / Désactiver** : bascule en un clic ; un compte désactivé ne peut plus se connecter (erreur 403 à la connexion).
   - 🛡️ **Changer le mot de passe** : modale avec champ de confirmation et validation de concordance.
   - 🔗 **Lien de réinitialisation** : génère un token sécurisé (24 h) et affiche le lien à copier/envoyer manuellement à l'utilisateur.
+- **Recherche et filtrage des utilisateurs** : champ de recherche instantanée (nom, e-mail, rôle) avec bouton ✕ pour effacer, filtre rapide Tous / Actifs / Inactifs, et compteur dynamique (`X / Y` quand un filtre est actif).
 - **Page publique `/reset-password?token=…`** : formulaire permettant à l'utilisateur de définir un nouveau mot de passe via le lien reçu. Le token ne peut être utilisé qu'une seule fois.
 - **Table `password_resets`** : stockage des tokens de réinitialisation avec expiration, marquage `used_at` pour éviter la réutilisation.
 - **Blocage à la connexion** pour les comptes désactivés (`is_active = false`) : message « Ce compte est désactivé ».
@@ -58,7 +63,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 #### Système de versioning
 
-- **Version unique** dans `package.json` racine, `client/package.json`, `server/package.json` (`1.5.0`).
+- **Version unique** dans `package.json` racine, `client/package.json`, `server/package.json` (`1.6.0`).
 - **Injection Vite** via `define: { __APP_VERSION__ }` — `process.env.npm_package_version` permet de ne jamais désynchroniser le numéro affiché du `package.json`.
 - **`client/src/utils/version.ts`** : export `APP_VERSION` utilisable partout dans le front-end.
 

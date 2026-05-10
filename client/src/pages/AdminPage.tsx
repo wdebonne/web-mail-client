@@ -622,11 +622,27 @@ function UserManagement() {
   const [editingUser, setEditingUser] = useState<any>(null);
   const [passwordUser, setPasswordUser] = useState<any>(null);
   const [resetLinkResult, setResetLinkResult] = useState<{ resetUrl: string; email: string } | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const { data: users = [] } = useQuery({
     queryKey: ['admin-users'],
     queryFn: api.getAdminUsers,
   });
+
+  const filteredUsers = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return users.filter((u: any) => {
+      if (statusFilter === 'active' && !u.is_active) return false;
+      if (statusFilter === 'inactive' && u.is_active) return false;
+      if (!q) return true;
+      return (
+        (u.display_name || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.role === 'admin' ? 'admin administrateur' : 'utilisateur').includes(q)
+      );
+    });
+  }, [users, search, statusFilter]);
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteAdminUser,
@@ -664,11 +680,45 @@ function UserManagement() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold">Utilisateurs ({users.length})</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-base font-semibold">
+          Utilisateurs ({filteredUsers.length}{filteredUsers.length !== users.length ? ` / ${users.length}` : ''})
+        </h3>
         <button onClick={() => setShowForm(true)} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5">
           <Plus size={14} /> Nouvel utilisateur
         </button>
+      </div>
+
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outlook-text-disabled pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher par nom, e-mail ou rôle…"
+            className="w-full pl-8 pr-8 py-1.5 text-sm border border-outlook-border rounded-md focus:outline-none focus:ring-2 focus:ring-outlook-blue/30"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled hover:text-outlook-text-primary"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center rounded-md border border-outlook-border overflow-hidden text-xs shrink-0">
+          {(['all', 'active', 'inactive'] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 transition-colors ${statusFilter === s ? 'bg-outlook-blue text-white' : 'hover:bg-outlook-bg-hover text-outlook-text-secondary'}`}
+            >
+              {s === 'all' ? 'Tous' : s === 'active' ? 'Actifs' : 'Inactifs'}
+            </button>
+          ))}
+        </div>
       </div>
 
       <table className="w-full text-sm">
@@ -682,7 +732,14 @@ function UserManagement() {
           </tr>
         </thead>
         <tbody>
-          {users.map((user: any) => (
+          {filteredUsers.length === 0 && (
+            <tr>
+              <td colSpan={5} className="py-8 text-center text-sm text-outlook-text-disabled">
+                Aucun utilisateur ne correspond à votre recherche.
+              </td>
+            </tr>
+          )}
+          {filteredUsers.map((user: any) => (
             <tr key={user.id} className="border-b border-outlook-border hover:bg-outlook-bg-hover">
               <td className="py-2 px-3 font-medium">{user.display_name}</td>
               <td className="py-2 px-3 text-outlook-text-secondary">{user.email}</td>
