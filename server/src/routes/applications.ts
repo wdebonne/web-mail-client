@@ -64,10 +64,11 @@ async function triggerGithubBuild(opts: {
   token: string;
   owner: string;
   repo: string;
+  branch: string;
   serverUrl: string;
   version: string;
 }): Promise<{ ok: boolean; runUrl?: string; error?: string }> {
-  const { token, owner, repo, serverUrl, version } = opts;
+  const { token, owner, repo, branch, serverUrl, version } = opts;
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/actions/workflows/tauri-build.yml/dispatches`,
     {
@@ -79,7 +80,7 @@ async function triggerGithubBuild(opts: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ref: 'main',
+        ref: branch,
         inputs: { server_url: serverUrl, version },
       }),
     }
@@ -89,6 +90,17 @@ async function triggerGithubBuild(opts: {
     return { ok: true, runUrl: `https://github.com/${owner}/${repo}/actions` };
   }
   const body = await res.json().catch(() => ({})) as any;
+
+  // Fournir un message d'erreur explicite selon le code HTTP
+  if (res.status === 403) {
+    return { ok: false, error: `403 — Token insuffisant. Un PAT classique nécessite le scope "workflow". Un PAT fin-grained nécessite "Actions: Read and write" sur ce dépôt.` };
+  }
+  if (res.status === 404) {
+    return { ok: false, error: `404 — Dépôt introuvable ou workflow absent. Vérifiez owner/repo et que le fichier .github/workflows/tauri-build.yml est bien poussé sur la branche "${branch}".` };
+  }
+  if (res.status === 422) {
+    return { ok: false, error: `422 — La branche "${branch}" n'existe pas dans ce dépôt.` };
+  }
   return { ok: false, error: body?.message ?? `GitHub API ${res.status}` };
 }
 
@@ -165,13 +177,13 @@ applicationsRouter.get('/build/docker/log', async (req: AuthRequest, res) => {
 
 // POST /api/admin/applications/build/github
 applicationsRouter.post('/build/github', async (req: AuthRequest, res) => {
-  const { token, owner, repo, serverUrl = 'http://localhost:3000', version = '1.6.0' } = req.body as {
-    token: string; owner: string; repo: string; serverUrl?: string; version?: string;
+  const { token, owner, repo, branch = 'main', serverUrl = 'http://localhost:3000', version = '1.7.0' } = req.body as {
+    token: string; owner: string; repo: string; branch?: string; serverUrl?: string; version?: string;
   };
   if (!token || !owner || !repo) {
     return res.status(400).json({ error: 'token, owner et repo sont requis' });
   }
-  const result = await triggerGithubBuild({ token, owner, repo, serverUrl, version });
+  const result = await triggerGithubBuild({ token, owner, repo, branch, serverUrl, version });
   if (!result.ok) return res.status(422).json({ error: result.error });
   res.json({ ok: true, runUrl: result.runUrl });
 });

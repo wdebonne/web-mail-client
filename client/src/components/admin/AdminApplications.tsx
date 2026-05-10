@@ -48,7 +48,7 @@ async function triggerDockerBuild(serverUrl: string) {
   return res.json();
 }
 
-async function triggerGithubBuild(payload: { token: string; owner: string; repo: string; serverUrl: string; version: string }) {
+async function triggerGithubBuild(payload: { token: string; owner: string; repo: string; branch: string; serverUrl: string; version: string }) {
   const res = await fetch(`${API}/build/github`, {
     method: 'POST',
     headers: authHeaders(),
@@ -265,8 +265,9 @@ function GithubActionsSection() {
   const [token, setToken] = useState('');
   const [owner, setOwner] = useState('');
   const [repo, setRepo] = useState('');
+  const [branch, setBranch] = useState('main');
   const [serverUrl, setServerUrl] = useState(window.location.origin);
-  const [version, setVersion] = useState('1.6.0');
+  const [version, setVersion] = useState('1.7.0');
   const [showToken, setShowToken] = useState(false);
   const [runUrl, setRunUrl] = useState<string | null>(null);
 
@@ -278,7 +279,7 @@ function GithubActionsSection() {
   });
 
   const buildMutation = useMutation({
-    mutationFn: () => triggerGithubBuild({ token, owner, repo, serverUrl, version }),
+    mutationFn: () => triggerGithubBuild({ token, owner, repo, branch, serverUrl, version }),
     onSuccess: (data) => {
       setRunUrl(data.runUrl ?? null);
       toast.success('Workflow GitHub Actions déclenché !');
@@ -309,8 +310,29 @@ function GithubActionsSection() {
         <Github size={16} /> Build multi-plateforme via GitHub Actions
       </h3>
       <p className="text-xs text-outlook-text-secondary">
-        Déclenche un workflow sur runners GitHub (Windows, Linux, macOS). Produit <strong>.exe/.msi + .deb/.AppImage + .dmg</strong>. Les artefacts sont disponibles dans GitHub puis téléchargeables ici.
+        Déclenche un workflow sur runners GitHub (Windows, Linux, macOS). Produit <strong>.exe/.msi + .deb/.AppImage + .dmg</strong>.
       </p>
+
+      {/* Token instructions */}
+      <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs space-y-2">
+        <div className="font-semibold text-blue-800">Créer un token GitHub avec les bonnes permissions :</div>
+        <div className="space-y-1 text-blue-700">
+          <div className="font-medium">Option A — Token classique (plus simple)</div>
+          <ol className="list-decimal list-inside space-y-0.5 pl-1">
+            <li>Aller sur <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer" className="underline">github.com/settings/tokens/new</a></li>
+            <li>Cocher le scope <code className="bg-blue-100 px-1 rounded font-mono">workflow</code></li>
+            <li>Générer et copier le token <code className="bg-blue-100 px-1 rounded font-mono">ghp_…</code></li>
+          </ol>
+        </div>
+        <div className="space-y-1 text-blue-700">
+          <div className="font-medium">Option B — Fine-grained token</div>
+          <ol className="list-decimal list-inside space-y-0.5 pl-1">
+            <li>Aller sur <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer" className="underline">github.com/settings/personal-access-tokens/new</a></li>
+            <li>Choisir le dépôt cible</li>
+            <li>Permissions → <strong>Actions</strong> → <code className="bg-blue-100 px-1 rounded font-mono">Read and write</code></li>
+          </ol>
+        </div>
+      </div>
 
       {/* Config */}
       <div className="grid grid-cols-2 gap-2">
@@ -325,7 +347,7 @@ function GithubActionsSection() {
             className="w-full text-sm border border-outlook-border rounded px-2 py-1.5 bg-white focus:outline-none focus:border-outlook-blue" />
         </div>
         <div className="col-span-2">
-          <label className="block text-xs font-medium text-outlook-text-primary mb-1">Token GitHub (scope: <code>workflow</code>)</label>
+          <label className="block text-xs font-medium text-outlook-text-primary mb-1">Token</label>
           <div className="flex gap-1">
             <input type={showToken ? 'text' : 'password'} value={token} onChange={e => setToken(e.target.value)}
               placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
@@ -335,19 +357,21 @@ function GithubActionsSection() {
               {showToken ? 'Masquer' : 'Voir'}
             </button>
           </div>
-          <p className="text-xs text-outlook-text-disabled mt-0.5">
-            Créez un token sur <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="underline">github.com/settings/tokens</a> avec le scope <code>workflow</code>.
-          </p>
         </div>
         <div>
-          <label className="block text-xs font-medium text-outlook-text-primary mb-1">URL du serveur</label>
-          <input type="url" value={serverUrl} onChange={e => setServerUrl(e.target.value)}
-            placeholder="https://mail.mondomaine.com"
+          <label className="block text-xs font-medium text-outlook-text-primary mb-1">Branche</label>
+          <input value={branch} onChange={e => setBranch(e.target.value)} placeholder="main"
             className="w-full text-sm border border-outlook-border rounded px-2 py-1.5 bg-white focus:outline-none focus:border-outlook-blue" />
         </div>
         <div>
           <label className="block text-xs font-medium text-outlook-text-primary mb-1">Version</label>
-          <input value={version} onChange={e => setVersion(e.target.value)} placeholder="1.6.0"
+          <input value={version} onChange={e => setVersion(e.target.value)} placeholder="1.7.0"
+            className="w-full text-sm border border-outlook-border rounded px-2 py-1.5 bg-white focus:outline-none focus:border-outlook-blue" />
+        </div>
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-outlook-text-primary mb-1">URL du serveur</label>
+          <input type="url" value={serverUrl} onChange={e => setServerUrl(e.target.value)}
+            placeholder="https://mail.mondomaine.com"
             className="w-full text-sm border border-outlook-border rounded px-2 py-1.5 bg-white focus:outline-none focus:border-outlook-blue" />
         </div>
       </div>
