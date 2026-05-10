@@ -9,7 +9,7 @@
     "frontendDist": "http://localhost:3000"
   },
   "app": {
-    "withGlobalTauri": false,
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
@@ -20,9 +20,15 @@
         "minHeight": 600,
         "center": true,
         "resizable": true,
-        "visible": true
+        "visible": true,
+        "decorations": true
       }
     ],
+    "trayIcon": {
+      "id": "main",
+      "iconPath": "icons/icon.ico",
+      "iconAsTemplate": false
+    },
     "security": {
       "csp": null,
       "dangerousDisableAssetCspModification": true
@@ -51,6 +57,14 @@
     },
     "macOS": {
       "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "deepLink": {
+      "mobile": [],
+      "desktop": {
+        "schemes": ["webmail", "mailto"]
+      }
     }
   }
 }

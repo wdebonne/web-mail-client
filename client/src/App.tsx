@@ -21,6 +21,7 @@ import { listenForNotificationClicks } from './pwa/push';
 import { syncAllCache, refreshCacheStats } from './services/cacheService';
 import { startPrefsSync } from './services/prefsSync';
 import { startAppBadgeService, requestAppBadgeRefresh } from './services/appBadgeService';
+import { isTauri, updateTrayBadge, useTauriCompose, useTauriDeepLink } from './hooks/useTauri';
 
 function App() {
   const { user, token, checkAuth, isLoading } = useAuthStore();
@@ -109,6 +110,41 @@ function App() {
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [user]);
+
+  // ── Tauri : badge tray synchronisé avec le compteur non-lus ─────────────
+  useEffect(() => {
+    if (!isTauri || !user) return;
+    const sync = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch('/api/mail/badge', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          updateTrayBadge(data.count ?? 0);
+        }
+      } catch {}
+    };
+    sync();
+    const interval = setInterval(sync, 60_000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // ── Tauri : "Nouveau message" depuis le menu tray ────────────────────────
+  useTauriCompose(() => {
+    navigate('/mail?compose=new');
+  });
+
+  // ── Tauri : deep link mailto: ────────────────────────────────────────────
+  useTauriDeepLink((data) => {
+    const params = new URLSearchParams();
+    if (data.to)      params.set('to',      data.to);
+    if (data.subject) params.set('subject', data.subject);
+    if (data.body)    params.set('body',    data.body);
+    if (data.cc)      params.set('cc',      data.cc);
+    navigate(`/mail?compose=new&${params.toString()}`);
+  });
 
   if (isLoading && token) {
     return (
