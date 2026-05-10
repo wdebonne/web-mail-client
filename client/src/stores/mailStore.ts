@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { MailAccount, MailFolder, Email, EmailAddress } from '../types';
+import { purgeStaleAccountPreferences } from '../utils/mailPreferences';
 
 export interface OpenTab {
   id: string;
@@ -95,6 +96,7 @@ export const useMailStore = create<MailState>((set, get) => ({
   maxTabs: parseInt(localStorage.getItem('maxTabs') || '6', 10),
 
   setAccounts: (accounts) => {
+    purgeStaleAccountPreferences(accounts.map(a => a.id));
     set({ accounts });
     const current = get().selectedAccount;
     const stillExists = current && accounts.some(a => a.id === current.id);
