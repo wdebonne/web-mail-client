@@ -96,9 +96,11 @@ export const useMailStore = create<MailState>((set, get) => ({
 
   setAccounts: (accounts) => {
     set({ accounts });
-    if (!get().selectedAccount && accounts.length > 0) {
+    const current = get().selectedAccount;
+    const stillExists = current && accounts.some(a => a.id === current.id);
+    if (!stillExists && accounts.length > 0) {
       const defaultAccount = accounts.find(a => a.is_default) || accounts[0];
-      set({ selectedAccount: defaultAccount });
+      set({ selectedAccount: defaultAccount, selectedFolder: 'INBOX', virtualFolder: null, categoryFilter: null, messages: [], selectedMessage: null, currentPage: 1 });
     }
   },
 

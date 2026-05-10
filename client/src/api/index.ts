@@ -72,8 +72,10 @@ async function request<T>(url: string, options: RequestInit = {}, _retry = false
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Erreur réseau' }));
-    throw new Error(error.error || `Erreur ${response.status}`);
+    const body = await response.json().catch(() => ({ error: 'Erreur réseau' }));
+    const err = new Error(body.error || `Erreur ${response.status}`) as Error & { status: number };
+    err.status = response.status;
+    throw err;
   }
 
   return response.json();
