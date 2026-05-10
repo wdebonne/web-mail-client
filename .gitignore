@@ -11,3 +11,12 @@ Thumbs.db
 *.swo
 coverage/
 .nyc_output/
+
+# Tauri
+src-tauri/target/
+server/downloads/*.exe
+server/downloads/*.msi
+server/downloads/*.deb
+server/downloads/*.AppImage
+server/downloads/*.dmg
+server/downloads/*.apk

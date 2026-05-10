@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: webmail-app
+    container_name: ${STACK_NAME}-app
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
@@ -26,10 +26,12 @@ services:
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
       - VAPID_CONTACT=${VAPID_CONTACT:-}
       - NEW_MAIL_POLL_INTERVAL_MS=${NEW_MAIL_POLL_INTERVAL_MS:-60000}
+      - TAURI_BUILDER_URL=${TAURI_BUILDER_URL:-http://tauri-builder:4000}
     volumes:
       - ./plugins:/app/plugins
       - ./uploads:/app/uploads
       - app_data:/app/data
+      - tauri_downloads:/app/server/downloads
     depends_on:
       db:
         condition: service_healthy
@@ -40,7 +42,7 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: webmail-db
+    container_name: ${STACK_NAME}-db
     restart: unless-stopped
     environment:
       - POSTGRES_DB=webmail
@@ -56,10 +58,29 @@ services:
     networks:
       - webmail-network
 
+  tauri-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.tauri-builder
+    container_name: ${STACK_NAME}-tauri-builder
+    restart: unless-stopped
+    volumes:
+      - .:/project:ro
+      - tauri_downloads:/downloads
+    networks:
+      - webmail-network
+    profiles:
+      - builder
+
 volumes:
   postgres_data:
+    name: ${STACK_NAME}_postgres_data
   app_data:
+    name: ${STACK_NAME}_app_data
+  tauri_downloads:
+    name: ${STACK_NAME}_tauri_downloads
 
 networks:
   webmail-network:
+    name: ${STACK_NAME}-network
     driver: bridge

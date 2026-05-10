@@ -95,6 +95,12 @@ export const api = {
 
   logout: () => request('/auth/logout', { method: 'POST' }),
 
+  authResetPassword: (token: string, password: string) =>
+    request<{ success: boolean }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
+
   getMe: () => request<any>('/auth/me'),
 
   // Device sessions ("stay signed in" per device)
@@ -471,6 +477,12 @@ export const api = {
     request(`/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteAdminUser: (id: string) =>
     request(`/admin/users/${id}`, { method: 'DELETE' }),
+  adminToggleUserActive: (id: string, isActive: boolean) =>
+    request(`/admin/users/${id}`, { method: 'PUT', body: JSON.stringify({ isActive }) }),
+  adminSetUserPassword: (id: string, password: string) =>
+    request(`/admin/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
+  adminGenerateResetLink: (id: string) =>
+    request<{ resetUrl: string; expiresAt: string; email: string }>(`/admin/users/${id}/reset-link`, { method: 'POST' }),
   getAdminGroups: () => request<any[]>('/admin/groups'),
   createAdminGroup: (data: any) =>
     request('/admin/groups', { method: 'POST', body: JSON.stringify(data) }),

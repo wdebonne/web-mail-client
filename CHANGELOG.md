@@ -5,7 +5,137 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
+---
+
 ## [Unreleased]
+
+---
+
+## [1.7.0] - 2026-05-10
+
+### Ajouté
+
+#### Applications Desktop & Mobile — génération native depuis l'admin
+
+- **Nouveau panneau d'administration « Applications »** (`Admin → Applications`) permettant de gérer l'ensemble des distributions natives de l'application depuis l'interface web.
+- **Détection automatique de l'environnement** : le panneau identifie si l'utilisateur consulte la page depuis un navigateur web standard, une PWA installée (`display-mode: standalone`) ou une application desktop Tauri (`__TAURI_INTERNALS__`), et adapte l'affichage en conséquence.
+
+#### PWA — installation depuis l'admin
+
+- **Bouton d'installation PWA contextuel** dans le panneau Applications : utilise l'événement natif `beforeinstallprompt` du navigateur pour proposer l'installation en un clic, sans redirection. Désactivé si la PWA est déjà installée ou si le navigateur ne supporte pas l'installation.
+
+#### Applications Desktop — Tauri v2
+
+- **Projet Tauri v2 intégré** (`src-tauri/`) : la webview native charge directement l'URL du serveur Express en cours d'exécution (`frontendDist` = URL du serveur), ce qui garantit que l'API REST et le WebSocket fonctionnent sans aucune modification de code.
+- **Support multi-plateforme** :
+  - 🪟 Windows : `.exe` (NSIS) + `.msi`
+  - 🐧 Linux : `.deb` + `.AppImage`
+  - 🍎 macOS : `.dmg`
+- **Scripts npm dédiés** dans `package.json` (racine et `client/`) :
+  - `npm run tauri:dev` — fenêtre desktop en mode développement (Vite dev server)
+  - `npm run tauri:build` — build de production
+  - `npm run tauri:icon` — génération des icônes depuis `icon-512.png`
+
+#### Builder Docker — build Linux depuis Portainer
+
+- **Nouveau service Docker `tauri-builder`** (`Dockerfile.tauri-builder`) basé sur Ubuntu 22.04 avec Rust stable, Cargo, Tauri CLI et toutes les dépendances système WebKit2GTK / AppIndicator nécessaires à la compilation Tauri sur Linux.
+- **Micro-serveur HTTP** (`tauri-builder/server.mjs`) exposé en interne sur le port 4000 : accepte les requêtes de build (`POST /build`) et diffuse les logs en temps réel via **Server-Sent Events** (`GET /log`).
+- **Volume Docker partagé** `tauri_downloads` monté dans les deux conteneurs (`/downloads` côté builder, `/app/server/downloads` côté app) : les binaires générés sont immédiatement disponibles au téléchargement depuis l'admin sans copie manuelle.
+- **Activation via profile Docker Compose** : `docker compose --profile builder up -d tauri-builder` — n'impacte pas les déploiements existants qui ne démarrent pas ce service.
+- **Variable d'environnement** `TAURI_BUILDER_URL` (défaut : `http://tauri-builder:4000`) pour pointer vers le builder depuis le serveur principal.
+
+#### GitHub Actions — build multi-plateforme
+
+- **Workflow `.github/workflows/tauri-build.yml`** déclenché manuellement (`workflow_dispatch`) ou depuis le panneau admin : builds parallèles sur runners GitHub Windows, Linux et macOS avec la matrice `ubuntu-22.04 / windows-latest / macos-latest`.
+- **URL du serveur configurable** en entrée du workflow (`server_url`) — baked dans l'application générée via le flag `--config` de Tauri CLI, sans modifier les fichiers source.
+- **Artefacts GitHub** conservés 30 jours sur le run Actions, téléchargeables directement depuis GitHub.
+- **Interface admin dédiée** : formulaire owner/repo/token GitHub, déclenchement en un clic, suivi des derniers runs (statut, date, lien direct GitHub Actions).
+
+#### Endpoint API `/api/admin/applications`
+
+- `GET /info` — état du builder Docker (ping) + liste des binaires disponibles.
+- `POST /build/docker` — déclenche un build Linux dans le conteneur `tauri-builder`.
+- `GET /build/docker/log` — proxy SSE temps réel vers les logs du builder.
+- `POST /build/github` — déclenche le workflow GitHub Actions via l'API REST GitHub.
+- `GET /build/github/runs` — liste les 5 derniers runs du workflow avec statut et lien.
+- `GET /download/:filename` — téléchargement d'un binaire depuis `server/downloads/`.
+- `DELETE /download/:filename` — suppression d'un binaire.
+
+### Modifié
+
+- **`docker-compose.yml`** : ajout du service `tauri-builder` (profile `builder`), du volume `tauri_downloads`, de la variable `TAURI_BUILDER_URL` dans le service `app`.
+- **`.gitignore`** : exclusion de `src-tauri/target/` et des binaires dans `server/downloads/`.
+- **`client/package.json`** : ajout de `@tauri-apps/cli ^2` en devDependency et des scripts `tauri:*`.
+
+---
+
+## [1.6.0] - 2026-05-10
+
+### Ajouté
+
+#### Administration — gestion avancée des utilisateurs
+
+- **Correction du statut utilisateur** : la colonne `is_active` manquait dans la table `users` (migration automatique `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`) — le statut affichait toujours « Inactif » même pour les comptes connectés.
+- **Quatre nouvelles actions par utilisateur** dans le tableau de bord Admin → Utilisateurs :
+  - ✏️ **Modifier** : modale permettant de changer le nom d'affichage, l'e-mail et le rôle.
+  - ✅/❌ **Activer / Désactiver** : bascule en un clic ; un compte désactivé ne peut plus se connecter (erreur 403 à la connexion).
+  - 🛡️ **Changer le mot de passe** : modale avec champ de confirmation et validation de concordance.
+  - 🔗 **Lien de réinitialisation** : génère un token sécurisé (24 h) et affiche le lien à copier/envoyer manuellement à l'utilisateur.
+- **Recherche et filtrage des utilisateurs** : champ de recherche instantanée (nom, e-mail, rôle) avec bouton ✕ pour effacer, filtre rapide Tous / Actifs / Inactifs, et compteur dynamique (`X / Y` quand un filtre est actif).
+- **Page publique `/reset-password?token=…`** : formulaire permettant à l'utilisateur de définir un nouveau mot de passe via le lien reçu. Le token ne peut être utilisé qu'une seule fois.
+- **Table `password_resets`** : stockage des tokens de réinitialisation avec expiration, marquage `used_at` pour éviter la réutilisation.
+- **Blocage à la connexion** pour les comptes désactivés (`is_active = false`) : message « Ce compte est désactivé ».
+
+#### Page Paramètres utilisateur — refonte de l'organisation
+
+- **Groupes visuels dans les sidebars** (`Compte / Messagerie / Interface / Sécurité / Données`) : séparateurs de groupe avec label en petites capitales, présents sur mobile, tablette et desktop.
+- **Réorganisation des onglets** : `Sécurité` placé avant `Mes appareils` (logique : credentials de sécurité > gestion des sessions) ; `Comportement mail` (ex `Messagerie`) avec icône `SlidersHorizontal` plus représentative.
+- **Sidebar élargie** : `w-56` → `w-60` pour accommoder les libellés de groupes.
+- **Badge de version** `v{APP_VERSION}` en bas de la sidebar, persistent entre rechargements.
+
+#### Profil utilisateur — nouveaux champs
+
+- **Sélecteur de langue fonctionnel** : boutons visuels Français 🇫🇷 / English 🇬🇧 ; appelle `i18n.changeLanguage()` et persiste dans `localStorage('user.language')` — survit aux rechargements de page (lecture au démarrage dans `main.tsx`).
+- **Sélecteur de fuseau horaire** : liste de 25 fuseaux organisés par région (Europe / Amérique / Asie-Pacifique / UTC), détection automatique du fuseau navigateur affiché en indication.
+- **Indicateur de force du mot de passe** : barre à 4 niveaux (rouge → vert) avec label textuel.
+- **Champ de confirmation du mot de passe** : validation visuelle (bordure rouge + message) si les deux champs ne correspondent pas ; bouton désactivé jusqu'à concordance.
+
+#### Apparence — thème fonctionnel
+
+- **Thème branché sur `useThemeStore`** : les 3 modes (Clair / Sombre / Système) sont désormais fonctionnels (sélect était précédemment mort, sans état ni onChange).
+- Affichage en 3 cartes avec description de chaque mode et coche active.
+- Langue et fuseau horaire supprimés de cet onglet (déplacés dans Profil).
+- Sections `Mise en page mobile` et `Lisibilité` avec séparateurs visuels.
+
+#### Page Administration — refonte de la navigation
+
+- **Groupes visuels** (`Général / Utilisateurs / Messagerie / Calendrier / Intégrations / Système`) dans les sidebars.
+- **Sidebar élargie** : `w-56` → `w-64` pour les labels plus longs.
+- **Badge de version** `v{APP_VERSION}` dans le titre du Tableau de bord et en bas de sidebar.
+
+#### Internationalisation — noms d'onglets améliorés
+
+- `Répondeur` → `Répondeur auto` / `Messagerie` → `Comportement mail`
+- Admin : `Logs` → `Journaux`, `Apparence connexion` → `Page de connexion`, `Appareils` → `Sessions actives`, `Modèles` → `Modèles de mail`, `Règles` → `Règles de filtrage`, `Plugins` → `Extensions`, `Notifications` → `Notifications par défaut`, `Système` → `Paramètres système`
+- Ajout des clés `settings.group.*` et `admin.group.*` dans `fr.json` et `en.json`.
+
+#### Système de versioning
+
+- **Version unique** dans `package.json` racine, `client/package.json`, `server/package.json` (`1.6.0`).
+- **Injection Vite** via `define: { __APP_VERSION__ }` — `process.env.npm_package_version` permet de ne jamais désynchroniser le numéro affiché du `package.json`.
+- **`client/src/utils/version.ts`** : export `APP_VERSION` utilisable partout dans le front-end.
+
+---
+
+## [1.5.0] - 2026-05-10
+
+### Internationalisation (i18n)
+
+- **Ajout d'une gestion complète de l’internationalisation** :
+  - Interface traduite en français et anglais, détection automatique de la langue du navigateur.
+  - Fichiers de traduction modulaires (`client/src/i18n/en.json`, `fr.json`).
+  - Documentation enrichie pour expliquer comment contribuer à l’ajout ou la correction de traductions.
+  - Section dédiée dans le README.md et CONTRIBUTING.md pour guider la contribution i18n.
 
 ### Corrigé
 

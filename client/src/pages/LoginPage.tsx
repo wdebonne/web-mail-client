@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../api';
 import { Mail, Lock, User, AlertCircle, Fingerprint, KeyRound } from 'lucide-react';
@@ -18,6 +19,7 @@ import { startAuthentication } from '@simplewebauthn/browser';
  *     panel → "Apparence connexion".
  */
 export default function LoginPage() {
+  const { t } = useTranslation();
   const { login, register, finalizeLogin, isLoading } = useAuthStore();
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
@@ -66,7 +68,7 @@ export default function LoginPage() {
       const result = await api.webauthnLoginVerify(token, response);
       finalizeLogin(result.token, result.user);
     } catch (err: any) {
-      setError(err?.message || 'Authentification biométrique annulée');
+      setError(err?.message || t('login.error_biometric_cancelled'));
     } finally {
       setVerifying(false);
     }
@@ -81,7 +83,7 @@ export default function LoginPage() {
       const result = await api.webauthnPasskeyVerify(response);
       finalizeLogin(result.token, result.user);
     } catch (err: any) {
-      setError(err?.message || 'Connexion par clé d\'accès annulée');
+      setError(err?.message || t('login.error_passkey_cancelled'));
     } finally {
       setPasskeyLoading(false);
     }
@@ -101,7 +103,7 @@ export default function LoginPage() {
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Une erreur est survenue');
+      setError(err.message || t('login.error_generic'));
     }
   };
 
@@ -151,7 +153,7 @@ export default function LoginPage() {
             {appearance?.title || appName}
           </h1>
           <p className="text-outlook-text-secondary text-sm mt-1">
-            {appearance?.subtitle || (isRegister ? 'Créer un compte' : 'Connectez-vous à votre messagerie')}
+            {appearance?.subtitle || (isRegister ? t('login.subtitle_register') : t('login.subtitle_login'))}
           </p>
         </div>
 
@@ -174,10 +176,10 @@ export default function LoginPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4 flex flex-col items-center text-center">
             <Fingerprint size={32} className="text-outlook-blue mb-2" />
             <p className="text-sm text-outlook-text-primary font-medium mb-1">
-              Vérification biométrique
+              {t('login.biometric_title')}
             </p>
             <p className="text-xs text-outlook-text-secondary mb-3">
-              Confirmez votre identité avec Touch ID, Face ID ou Windows Hello.
+              {t('login.biometric_confirm')}
             </p>
             <button
               type="button"
@@ -186,7 +188,7 @@ export default function LoginPage() {
               className="bg-outlook-blue hover:bg-outlook-blue-hover text-white text-sm px-4 py-2 rounded-md disabled:opacity-50"
               style={primaryBtnStyle}
             >
-              {verifying ? 'En attente…' : 'Réessayer'}
+              {verifying ? t('login.biometric_waiting') : t('login.biometric_retry')}
             </button>
           </div>
         )}
@@ -200,11 +202,11 @@ export default function LoginPage() {
               className="w-full border border-outlook-border hover:border-outlook-blue hover:bg-outlook-bg-hover text-outlook-text-primary py-2.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mb-4"
             >
               <KeyRound size={18} />
-              {passkeyLoading ? 'Détection de la clé d\'accès…' : 'Se connecter avec une clé d\'accès'}
+              {passkeyLoading ? t('login.passkey_detecting') : t('login.passkey_button')}
             </button>
             <div className="flex items-center gap-3 mb-4">
               <div className="flex-1 h-px bg-outlook-border" />
-              <span className="text-xs text-outlook-text-disabled uppercase tracking-wide">ou</span>
+              <span className="text-xs text-outlook-text-disabled uppercase tracking-wide">{t('login.divider_or')}</span>
               <div className="flex-1 h-px bg-outlook-border" />
             </div>
           </>
@@ -214,7 +216,7 @@ export default function LoginPage() {
           {isRegister && (
             <div>
               <label className="block text-sm font-medium text-outlook-text-primary mb-1">
-                Nom d'affichage
+                {t('login.display_name_label')}
               </label>
               <div className="relative">
                 <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
@@ -222,7 +224,7 @@ export default function LoginPage() {
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Votre nom"
+                  placeholder={t('login.display_name_placeholder')}
                   required
                   className="w-full pl-10 pr-4 py-2.5 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
                 />
@@ -232,7 +234,7 @@ export default function LoginPage() {
 
           <div>
             <label className="block text-sm font-medium text-outlook-text-primary mb-1">
-              Adresse e-mail
+              {t('login.email_label')}
             </label>
             <div className="relative">
               <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
@@ -240,7 +242,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="votre@email.com"
+                placeholder={t('login.email_placeholder')}
                 required
                 autoComplete="email webauthn"
                 className="w-full pl-10 pr-4 py-2.5 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
@@ -250,7 +252,7 @@ export default function LoginPage() {
 
           <div>
             <label className="block text-sm font-medium text-outlook-text-primary mb-1">
-              Mot de passe
+              {t('login.password_label')}
             </label>
             <div className="relative">
               <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
@@ -258,7 +260,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder={t('login.password_placeholder')}
                 required
                 minLength={isRegister ? 8 : 6}
                 autoComplete={isRegister ? 'new-password' : 'current-password webauthn'}
@@ -273,7 +275,7 @@ export default function LoginPage() {
             className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white py-2.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
             style={primaryBtnStyle}
           >
-            {isLoading ? 'Chargement...' : isRegister ? 'Créer le compte' : 'Se connecter'}
+            {isLoading ? t('login.loading') : isRegister ? t('login.submit_create') : t('login.submit_login')}
           </button>
         </form>
 
@@ -284,7 +286,7 @@ export default function LoginPage() {
               className="text-outlook-blue hover:text-outlook-blue-hover text-sm"
               style={appearance?.accentColor ? { color: appearance.accentColor } : undefined}
             >
-              {isRegister ? 'Déjà un compte ? Se connecter' : 'Créer un compte'}
+              {isRegister ? t('login.switch_to_login') : t('login.switch_to_register')}
             </button>
           </div>
         )}

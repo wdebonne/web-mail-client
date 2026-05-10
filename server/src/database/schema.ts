@@ -9,6 +9,7 @@ export const users = pgTable('users', {
   avatarUrl: text('avatar_url'),
   role: varchar('role', { length: 50 }).default('user'),
   isAdmin: boolean('is_admin').default(false),
+  isActive: boolean('is_active').default(true),
   language: varchar('language', { length: 10 }).default('fr'),
   timezone: varchar('timezone', { length: 50 }).default('Europe/Paris'),
   theme: varchar('theme', { length: 20 }).default('light'),

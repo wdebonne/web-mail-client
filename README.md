@@ -1,8 +1,33 @@
-# WebMail - Client Mail Web (style messagerie professionnelle)
+# WebMail - Client Mail Professionnel Moderne
 
-Client de messagerie web complet avec interface style messagerie professionnelle, intégration NextCloud optionnelle, PWA hors-ligne, système de plugins et déploiement Docker.
+![Version](https://img.shields.io/badge/version-1.7.0-blue)
+![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
+![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
-## Fonctionnalités
+## Aperçu Général
+WebMail est un client de messagerie web complet conçu pour offrir une expérience utilisateur comparable à celle des applications de bureau professionnelles (style Outlook). Il centralise la gestion multi-comptes IMAP/SMTP tout en intégrant des fonctionnalités avancées telles que le support S/MIME et OpenPGP, la synchronisation complète des calendriers et contacts, ainsi qu'une architecture extensible via un système de plugins. L'application est construite pour être robuste, fonctionnant en mode hors ligne (PWA) et adhérant aux meilleures pratiques de messagerie moderne.
+
+**Fonctionnalités Clés :**
+*   ✅ **Multi-Comptes :** Gestion simultanée de plusieurs boîtes mail IMAP/SMTP (compatibilité o2switch/cPanel).
+*   🖼️ **Interface Pro :** Expérience utilisateur riche avec des catégories personnalisables, le chiffrement PGP/S/MIME et un éditeur HTML avancé.
+*   ⚡ **Fonctionnalités Avancées :** Synchronisation Cloud (préférences), mode hors ligne (PWA) et support de l'IA intégrée via plugins Ollama.
+*   🖥️ **Applications Natives :** PWA installable + applications Desktop (Windows, Linux, macOS) générées directement depuis le panneau d'administration via Docker ou GitHub Actions.
+
+Pour une analyse détaillée, veuillez consulter les sections suivantes du fichier.
+
+### Internationalisation (i18n)
+WebMail est entièrement multilingue (français et anglais par défaut). L’interface détecte automatiquement la langue du navigateur et affiche la traduction appropriée. Vous pouvez contribuer à l’ajout d’autres langues ou à l’amélioration des traductions existantes.
+
+**Contribuer à la traduction :**
+- Les fichiers de traduction se trouvent dans `client/src/i18n/en.json` (anglais) et `client/src/i18n/fr.json` (français).
+- Pour ajouter une langue, créez un fichier `xx.json` (où `xx` est le code langue ISO, ex : `es.json` pour l’espagnol) dans ce dossier, en reprenant la structure des fichiers existants.
+- Les clés de traduction sont utilisées dans tout le code via la fonction `t('clé')` du hook `useTranslation()` (voir [react-i18next](https://react.i18next.com/)).
+- Proposez vos ajouts ou corrections via une Pull Request (voir [CONTRIBUTING.md](CONTRIBUTING.md)).
+
+**Sélection de la langue :**
+La langue affichée est choisie selon l’ordre suivant :
+1. Préférence enregistrée par l’utilisateur dans **Paramètres → Profil → Langue** (persistée en `localStorage`)
+2. Français par défaut (modifiable dans `main.tsx`)
 
 ### Messagerie
 - 📧 Multi-comptes IMAP/SMTP (compatible o2switch / cPanel)
@@ -91,6 +116,16 @@ Client de messagerie web complet avec interface style messagerie professionnelle
 - 👥 Participants aux événements
 - 🔔 Rappels
 
+### Applications Desktop & Mobile (Tauri)
+
+- 🖥️ **Application Desktop native** générée depuis le panneau d'administration — la webview charge directement l'URL de ton serveur : l'API REST, le WebSocket et les notifications fonctionnent sans aucune modification de code.
+- 🪟 **Windows** : `.exe` (NSIS) + `.msi` — via GitHub Actions (runner Windows)
+- 🐧 **Linux** : `.deb` + `.AppImage` — via le service Docker `tauri-builder` (Portainer) **ou** GitHub Actions
+- 🍎 **macOS** : `.dmg` — via GitHub Actions (runner macOS)
+- 🐳 **Builder Docker** (`docker compose --profile builder up -d tauri-builder`) : Ubuntu 22.04 + Rust + Tauri CLI ; binaires déposés dans un volume partagé, disponibles immédiatement dans la liste de téléchargements.
+- ⚙️ **GitHub Actions** (`workflow_dispatch`) : builds parallèles sur tous les OS, URL du serveur baked dans l'app via `--config`, suivi des runs et lien direct depuis l'admin.
+- 📥 **Panneau Admin → Applications** : détection de l'environnement actuel (Web / PWA / Tauri), bouton d'installation PWA, formulaire de build avec URL du serveur, console de logs SSE temps réel, liste des binaires téléchargeables et supprimables.
+
 ### PWA & Hors-ligne
 - 📱 Application installable (Progressive Web App)
 - 📖 Lecture des mails en mode hors-ligne
@@ -116,8 +151,9 @@ Client de messagerie web complet avec interface style messagerie professionnelle
 - 📝 Préparation de l'intégration d'un rendu bureautique fidèle via l'écosystème Office de NextCloud (à activer ultérieurement selon l'instance)
 
 ### Administration
+- 📦 **Applications natives** : panneau dédié pour générer/distribuer les apps Desktop (Tauri) et installer la PWA, avec build Docker (Linux) et GitHub Actions (tous OS).
 - 📊 Dashboard temps réel (stats utilisateurs, mails, infra)
-- 👤 Gestion des utilisateurs et groupes
+- 👤 **Gestion avancée des utilisateurs** : modifier le profil, activer/désactiver un compte, changer le mot de passe, générer un lien de réinitialisation (valable 24 h) — en plus de la suppression
 - ⚙️ Paramètres globaux
 - 🎨 **Branding personnalisable** : téléversement à chaud du favicon et des icônes PWA (192×192, 512×512, Apple Touch) depuis l'onglet *Système*, sans rebuild ni redéploiement. Aperçu, réinitialisation et application immédiate au rafraîchissement.
 - 🪟 **Titre d'onglet dynamique** (style messagerie professionnelle) : l'onglet du navigateur affiche `<Nom du dossier> — <Nom de l'app>` (ex. *Boîte de réception — WebMail*).
@@ -191,21 +227,31 @@ Vous pouvez ajouter vos images et captures d'écran dans le dossier `docs/images
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────┐
-│                  Navigateur (PWA)                    │
-│  React + TypeScript + Tailwind CSS + IndexedDB      │
-├────────────────────────────────────────────────────┤
-│                API REST + WebSocket                  │
-├────────────────────────────────────────────────────┤
-│          Express.js + TypeScript Backend             │
-│  ┌──────────┐ ┌──────────┐ ┌───────────┐           │
-│  │ IMAP/SMTP│ │ CalDAV/  │ │  Plugin   │           │
-│  │ imapflow │ │ CardDAV  │ │  System   │           │
-│  │nodemailer│ │ NextCloud│ │           │           │
-│  └──────────┘ └──────────┘ └───────────┘           │
-├────────────────────────────────────────────────────┤
-│              PostgreSQL (Drizzle ORM)               │
-└────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│           Clients                                          │
+│  ┌─────────────┐  ┌───────────────┐  ┌─────────────────┐  │
+│  │  Navigateur │  │  PWA installée│  │  Desktop (Tauri)│  │
+│  │  (Web)      │  │  (standalone) │  │  Win/Linux/macOS│  │
+│  └─────────────┘  └───────────────┘  └─────────────────┘  │
+│        React + TypeScript + Tailwind CSS + IndexedDB        │
+├────────────────────────────────────────────────────────────┤
+│                    API REST + WebSocket                     │
+├────────────────────────────────────────────────────────────┤
+│               Express.js + TypeScript Backend               │
+│  ┌──────────┐ ┌──────────┐ ┌───────────┐ ┌────────────┐  │
+│  │ IMAP/SMTP│ │ CalDAV/  │ │  Plugin   │ │  Tauri     │  │
+│  │ imapflow │ │ CardDAV  │ │  System   │ │  Builder   │  │
+│  │nodemailer│ │ NextCloud│ │  (Ollama) │ │  API       │  │
+│  └──────────┘ └──────────┘ └───────────┘ └────────────┘  │
+├────────────────────────────────────────────────────────────┤
+│                PostgreSQL (Drizzle ORM)                     │
+├────────────────────────────────────────────────────────────┤
+│  Docker Services                                           │
+│  ┌──────────────┐  ┌────────────────────────────────────┐ │
+│  │  app :3000   │  │  tauri-builder :4000 (profile)     │ │
+│  │  (prod)      │  │  Ubuntu+Rust — builds .deb/.AppImage│ │
+│  └──────────────┘  └────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ## Prérequis
@@ -252,6 +298,27 @@ L'application sera accessible sur `http://localhost:3000`
 
 ### 4. Premier utilisateur
 Le premier utilisateur inscrit devient automatiquement administrateur.
+
+## Applications Desktop (optionnel)
+
+### Build Linux depuis Portainer/Docker
+
+```bash
+# Démarrer le service builder (Ubuntu + Rust, ~5 min au premier lancement)
+docker compose --profile builder up -d tauri-builder
+
+# Puis depuis l'interface : Admin → Applications → Build Linux
+```
+
+### Build multi-plateforme via GitHub Actions
+
+1. Pousser le projet sur GitHub
+2. Admin → Applications → section GitHub Actions
+3. Renseigner owner/repo + token (`workflow` scope) + URL du serveur
+4. Cliquer **Déclencher le build**
+5. Les artefacts (.exe, .msi, .deb, .AppImage, .dmg) apparaissent dans les runs GitHub
+
+> L'application desktop générée se connecte directement à l'URL du serveur spécifiée au moment du build — aucune installation locale requise.
 
 ## Déploiement avec Portainer
 
@@ -319,8 +386,20 @@ webmail/
 │   ├── ATTACHMENTS.md      # Pièces jointes (aperçu, modes, limites)
 │   ├── BACKUP.md           # Sauvegarde & restauration de la config locale
 │   └── PWA.md              # Mode hors-ligne
-├── docker-compose.yml
+├── src-tauri/              # Projet Tauri v2 (Desktop natif)
+│   ├── src/
+│   │   ├── main.rs         # Point d'entrée Rust
+│   │   └── lib.rs          # Config Tauri
+│   ├── tauri.conf.json     # Config Tauri (URL serveur, bundle)
+│   └── Cargo.toml
+├── tauri-builder/          # Micro-serveur du conteneur builder
+│   └── server.mjs          # API HTTP + SSE pour le build Linux
+├── .github/
+│   └── workflows/
+│       └── tauri-build.yml # Build multi-plateforme (Win/Linux/macOS)
+├── docker-compose.yml      # Inclut le service tauri-builder (profile builder)
 ├── Dockerfile
+├── Dockerfile.tauri-builder
 └── .env.example
 ```
 
@@ -361,6 +440,13 @@ webmail/
 |---------|-------|-------------|
 | GET | `/api/admin/dashboard` | Statistiques système |
 | GET | `/api/admin/logs` | Logs d'audit |
+| GET | `/api/admin/users` | Liste des utilisateurs |
+| POST | `/api/admin/users` | Créer un utilisateur |
+| PUT | `/api/admin/users/:id` | Modifier un utilisateur (nom, email, rôle, actif/inactif) |
+| DELETE | `/api/admin/users/:id` | Supprimer un utilisateur |
+| PUT | `/api/admin/users/:id/password` | Changer le mot de passe d'un utilisateur |
+| POST | `/api/admin/users/:id/reset-link` | Générer un lien de réinitialisation de mot de passe (token 24 h) |
+| POST | `/api/auth/reset-password` | Consommer un token de réinitialisation (route publique) |
 | GET | `/api/admin/devices` | Sessions actives de tous les utilisateurs (groupées) |
 | DELETE | `/api/admin/devices/:id` | Déconnecter un appareil (admin) |
 | DELETE | `/api/admin/users/:userId/devices` | Déconnecter tous les appareils d'un utilisateur |
@@ -368,6 +454,18 @@ webmail/
 | POST | `/api/admin/o2switch/accounts` | Ajouter un compte O2Switch |
 | POST | `/api/admin/o2switch/accounts/:id/sync` | Synchroniser emails |
 | POST | `/api/admin/o2switch/accounts/:id/link` | Lier un email |
+
+### Applications & builds natifs
+
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/admin/applications/info` | État du builder Docker + liste des binaires |
+| POST | `/api/admin/applications/build/docker` | Déclenche un build Linux (conteneur tauri-builder) |
+| GET | `/api/admin/applications/build/docker/log` | SSE — logs du build en temps réel |
+| POST | `/api/admin/applications/build/github` | Déclenche le workflow GitHub Actions |
+| GET | `/api/admin/applications/build/github/runs` | Derniers runs du workflow |
+| GET | `/api/admin/applications/download/:file` | Télécharger un binaire généré |
+| DELETE | `/api/admin/applications/download/:file` | Supprimer un binaire |
 
 ## Plugin Ollama AI
 

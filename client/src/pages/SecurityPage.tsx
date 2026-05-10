@@ -4,6 +4,7 @@
  * All private key material stays inside the browser (IndexedDB + WebCrypto wrap).
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import {
   KeyRound, Shield, ShieldCheck, Upload, Download, Trash2, Plus, Lock, Unlock, Star, StarOff, Copy,
@@ -17,6 +18,7 @@ import { useAuthStore } from '../stores/authStore';
 type Tab = 'pgp' | 'smime';
 
 export default function SecurityPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('pgp');
   const user = useAuthStore(s => s.user);
   const { keys, reloadKeys, unlockPgp, unlockSmime, lock, unlockedPgp, unlockedSmime } = useSecurityStore();
@@ -35,7 +37,7 @@ export default function SecurityPage() {
     <div className="h-full flex">
       <aside className="w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4">
         <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary flex items-center gap-2">
-          <Shield size={18} /> Sécurité
+          <Shield size={18} /> {t('security_page.title')}
         </h2>
         <TabButton active={tab === 'pgp'} onClick={() => setTab('pgp')} icon={<KeyRound size={16} />}>OpenPGP</TabButton>
         <TabButton active={tab === 'smime'} onClick={() => setTab('smime')} icon={<ShieldCheck size={16} />}>S/MIME</TabButton>

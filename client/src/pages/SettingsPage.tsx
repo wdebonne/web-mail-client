@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useThemeStore, type ThemeMode } from '../stores/themeStore';
 import { api } from '../api';
 import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
 import {
   User, Mail, Lock, Palette, Globe, Bell, Plug,
-  Eye, EyeOff, Save, Paperclip, HardDrive, Download, Upload,
+  Eye, EyeOff, Save, SlidersHorizontal, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
   Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder,
   Coffee,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CacheSettings from '../components/CacheSettings';
+import { APP_VERSION } from '../utils/version';
 import AutoResponderForm from '../components/mail/AutoResponderForm';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import {
@@ -48,9 +51,46 @@ import {
 } from '../utils/notificationPrefs';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 
+const TIMEZONES: { value: string; label: string }[] = [
+  // Europe
+  { value: 'Europe/Paris',      label: 'Paris (France, Belgique, Suisse) — UTC+1/+2' },
+  { value: 'Europe/London',     label: 'Londres — UTC+0/+1' },
+  { value: 'Europe/Madrid',     label: 'Madrid — UTC+1/+2' },
+  { value: 'Europe/Zurich',     label: 'Zurich — UTC+1/+2' },
+  { value: 'Europe/Berlin',     label: 'Berlin — UTC+1/+2' },
+  { value: 'Europe/Amsterdam',  label: 'Amsterdam — UTC+1/+2' },
+  { value: 'Europe/Rome',       label: 'Rome — UTC+1/+2' },
+  { value: 'Europe/Lisbon',     label: 'Lisbonne — UTC+0/+1' },
+  { value: 'Europe/Helsinki',   label: 'Helsinki — UTC+2/+3' },
+  { value: 'Europe/Moscow',     label: 'Moscou — UTC+3' },
+  // Amérique
+  { value: 'America/New_York',    label: 'New York (Est) — UTC-5/-4' },
+  { value: 'America/Chicago',     label: 'Chicago (Centre) — UTC-6/-5' },
+  { value: 'America/Denver',      label: 'Denver (Montagne) — UTC-7/-6' },
+  { value: 'America/Los_Angeles', label: 'Los Angeles (Pacifique) — UTC-8/-7' },
+  { value: 'America/Toronto',     label: 'Toronto / Montréal — UTC-5/-4' },
+  { value: 'America/Vancouver',   label: 'Vancouver — UTC-8/-7' },
+  { value: 'America/Sao_Paulo',   label: 'São Paulo — UTC-3' },
+  // Asie / Pacifique
+  { value: 'Asia/Dubai',       label: 'Dubaï — UTC+4' },
+  { value: 'Asia/Kolkata',     label: 'New Delhi — UTC+5:30' },
+  { value: 'Asia/Bangkok',     label: 'Bangkok — UTC+7' },
+  { value: 'Asia/Shanghai',    label: 'Shanghai — UTC+8' },
+  { value: 'Asia/Tokyo',       label: 'Tokyo — UTC+9' },
+  { value: 'Australia/Sydney', label: 'Sydney — UTC+10/+11' },
+  { value: 'Pacific/Auckland', label: 'Auckland — UTC+12/+13' },
+  { value: 'UTC',              label: 'UTC (Temps universel coordonné)' },
+];
+
+export function getUserTimezone(): string {
+  try { return localStorage.getItem('user.timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris'; }
+  catch { return 'Europe/Paris'; }
+}
+
 type Tab = 'profile' | 'accounts' | 'mail' | 'autoresponder' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('profile');
   // On mobile/tablet (< md), `mobileDetail` toggles between the list of
   // sections (false) and the selected section's content (true). On desktop
@@ -74,18 +114,18 @@ export default function SettingsPage() {
   const autoResponderFeatureEnabled = arFeature?.enabled !== false;
 
   const tabs = [
-    { id: 'profile' as const, icon: User, label: 'Profil' },
-    { id: 'accounts' as const, icon: Mail, label: 'Mes boîtes mail' },
-    { id: 'mail' as const, icon: Paperclip, label: 'Messagerie' },
+    { id: 'profile' as const,      icon: User,              label: t('settings.tab.profile'),      group: t('settings.group.account') },
+    { id: 'accounts' as const,     icon: Mail,              label: t('settings.tab.accounts'),     group: t('settings.group.account') },
+    { id: 'mail' as const,         icon: SlidersHorizontal, label: t('settings.tab.mail'),         group: t('settings.group.mail') },
     ...(autoResponderFeatureEnabled
-      ? [{ id: 'autoresponder' as const, icon: Coffee, label: 'Répondeur' }]
+      ? [{ id: 'autoresponder' as const, icon: Coffee, label: t('settings.tab.autoresponder'), group: t('settings.group.mail') }]
       : []),
-    { id: 'appearance' as const, icon: Palette, label: 'Apparence' },
-    { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
-    { id: 'devices' as const, icon: Monitor, label: 'Mes appareils' },
-    { id: 'security' as const, icon: ShieldCheck, label: 'Sécurité' },
-    { id: 'backup' as const, icon: HardDrive, label: 'Sauvegarde' },
-    { id: 'cache' as const, icon: Database, label: 'Cache local' },
+    { id: 'appearance' as const,   icon: Palette,           label: t('settings.tab.appearance'),   group: t('settings.group.interface') },
+    { id: 'notifications' as const,icon: Bell,              label: t('settings.tab.notifications'),group: t('settings.group.interface') },
+    { id: 'security' as const,     icon: ShieldCheck,       label: t('settings.tab.security'),     group: t('settings.group.security') },
+    { id: 'devices' as const,      icon: Monitor,           label: t('settings.tab.devices'),      group: t('settings.group.security') },
+    { id: 'backup' as const,       icon: HardDrive,         label: t('settings.tab.backup'),       group: t('settings.group.data') },
+    { id: 'cache' as const,        icon: Database,          label: t('settings.tab.cache'),        group: t('settings.group.data') },
   ];
 
   return (
@@ -96,38 +136,60 @@ export default function SettingsPage() {
       <div
         className={`md:hidden ${mobileDetail ? 'hidden' : 'flex'} flex-col flex-1 overflow-y-auto bg-outlook-bg-primary`}
       >
-        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">Paramètres</h2>
-        {tabs.map(t => {
-          const Icon = t.icon;
+        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">{t('settings.title')}</h2>
+        {tabs.map((tabItem, index) => {
+          const Icon = tabItem.icon;
+          const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
           return (
-            <button
-              key={t.id}
-              onClick={() => { setTab(t.id); setMobileDetail(true); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
-                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Icon size={18} /> {t.label}
-            </button>
+            <div key={tabItem.id}>
+              {tabItem.group !== prevGroup && (
+                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                  {tabItem.group}
+                </div>
+              )}
+              <button
+                onClick={() => { setTab(tabItem.id); setMobileDetail(true); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
+                  ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+              >
+                <Icon size={18} /> {tabItem.label}
+              </button>
+            </div>
           );
         })}
+        <div className="mt-auto px-4 py-3 text-[10px] text-outlook-text-disabled border-t border-outlook-border">
+          v{APP_VERSION}
+        </div>
       </div>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:block w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
-        <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">Paramètres</h2>
-        {tabs.map(t => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
-                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Icon size={16} /> {t.label}
-            </button>
-          );
-        })}
+      <div className="hidden md:block w-60 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto flex flex-col">
+        <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('settings.title')}</h2>
+        <div className="flex-1">
+          {tabs.map((tabItem, index) => {
+            const Icon = tabItem.icon;
+            const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
+            return (
+              <div key={tabItem.id}>
+                {tabItem.group !== prevGroup && (
+                  <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                    {tabItem.group}
+                  </div>
+                )}
+                <button
+                  onClick={() => setTab(tabItem.id)}
+                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
+                    ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                >
+                  <Icon size={16} /> {tabItem.label}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="px-4 pt-3 pb-2 text-[10px] text-outlook-text-disabled border-t border-outlook-border mt-4">
+          v{APP_VERSION}
+        </div>
       </div>
 
       {/* Content (detail view). Hidden on mobile until the user picks a
@@ -486,10 +548,16 @@ function FolderTargetRow({
 
 function ProfileSettings() {
   const { user, updateUser } = useAuthStore();
+  const { i18n } = useTranslation();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [language, setLanguage] = useState(() => {
+    try { return localStorage.getItem('user.language') || i18n.language || 'fr'; } catch { return 'fr'; }
+  });
+  const [timezone, setTimezone] = useState(() => getUserTimezone());
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => api.updateSettings(data),
@@ -505,15 +573,40 @@ function ProfileSettings() {
     onSuccess: () => {
       setCurrentPassword('');
       setNewPassword('');
+      setConfirmPassword('');
       toast.success('Mot de passe modifié');
     },
     onError: (e: any) => toast.error(e.message),
   });
 
+  const handleLanguageChange = (lang: string) => {
+    setLanguage(lang);
+    i18n.changeLanguage(lang);
+    try { localStorage.setItem('user.language', lang); } catch {}
+    toast.success(lang === 'fr' ? 'Langue changée en Français' : 'Language changed to English');
+  };
+
+  const handleTimezoneChange = (tz: string) => {
+    setTimezone(tz);
+    try { localStorage.setItem('user.timezone', tz); } catch {}
+    toast.success('Fuseau horaire mis à jour');
+  };
+
+  const passwordStrength = (() => {
+    if (!newPassword) return null;
+    if (newPassword.length < 8) return { level: 0, label: 'Trop court (min. 8 caractères)', color: 'bg-red-500' };
+    const score = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/].filter(r => r.test(newPassword)).length;
+    if (score <= 1) return { level: 1, label: 'Faible', color: 'bg-red-400' };
+    if (score === 2) return { level: 2, label: 'Moyen', color: 'bg-amber-400' };
+    if (score === 3) return { level: 3, label: 'Fort', color: 'bg-green-400' };
+    return { level: 4, label: 'Très fort', color: 'bg-green-600' };
+  })();
+
   return (
     <div className="space-y-6">
+      {/* Informations du compte */}
       <section>
-        <h3 className="text-base font-semibold mb-3">Profil</h3>
+        <h3 className="text-base font-semibold mb-3">Informations du compte</h3>
         <div className="space-y-3">
           <div>
             <label className="text-sm text-outlook-text-secondary">Nom d'affichage</label>
@@ -523,18 +616,77 @@ function ProfileSettings() {
             />
           </div>
           <div>
-            <label className="text-sm text-outlook-text-secondary">E-mail</label>
-            <input type="email" value={user?.email || ''} disabled className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1 bg-gray-50" />
+            <label className="text-sm text-outlook-text-secondary">Adresse e-mail</label>
+            <input type="email" value={user?.email || ''} disabled
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1 bg-outlook-bg-hover text-outlook-text-disabled cursor-not-allowed" />
+            <p className="text-xs text-outlook-text-disabled mt-1">L'adresse e-mail est gérée par l'administrateur.</p>
           </div>
           <button
             onClick={() => updateMutation.mutate({ displayName })}
-            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 rounded-md text-sm flex items-center gap-2"
+            disabled={updateMutation.isPending}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 rounded-md text-sm flex items-center gap-2 disabled:opacity-50"
           >
-            <Save size={14} /> Enregistrer
+            <Save size={14} /> {updateMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </div>
       </section>
 
+      {/* Préférences régionales */}
+      <section className="border-t border-outlook-border pt-6">
+        <h3 className="text-base font-semibold mb-1">Préférences régionales</h3>
+        <p className="text-sm text-outlook-text-secondary mb-4">
+          Ces paramètres s'appliquent immédiatement et sont conservés entre les sessions sur cet appareil.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-outlook-text-primary block mb-1">
+              <Globe size={14} className="inline mr-1.5 -mt-0.5" />
+              Langue de l'interface
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { value: 'fr', label: 'Français', flag: '🇫🇷' },
+                { value: 'en', label: 'English',  flag: '🇬🇧' },
+              ] as const).map(({ value, label, flag }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => handleLanguageChange(value)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-md border text-sm transition-colors ${
+                    language === value
+                      ? 'border-outlook-blue bg-outlook-blue/10 text-outlook-blue font-medium'
+                      : 'border-outlook-border hover:bg-outlook-bg-hover text-outlook-text-primary'
+                  }`}
+                >
+                  <span className="text-base">{flag}</span>
+                  {label}
+                  {language === value && <CheckCircle2 size={14} className="ml-auto text-outlook-blue" />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-outlook-text-primary block mb-1">
+              Fuseau horaire
+            </label>
+            <select
+              value={timezone}
+              onChange={(e) => handleTimezoneChange(e.target.value)}
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-outlook-blue"
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz.value} value={tz.value}>{tz.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-outlook-text-disabled mt-1">
+              Fuseau détecté par le navigateur : <strong>{Intl.DateTimeFormat().resolvedOptions().timeZone}</strong>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Changer le mot de passe */}
       <section className="border-t border-outlook-border pt-6">
         <h3 className="text-base font-semibold mb-3">Changer le mot de passe</h3>
         <div className="space-y-3">
@@ -556,13 +708,35 @@ function ProfileSettings() {
               type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8}
               className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1 focus:outline-none focus:border-outlook-blue"
             />
+            {passwordStrength && (
+              <div className="mt-1.5">
+                <div className="flex gap-1 mb-1">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className={`h-1 flex-1 rounded-full transition-colors ${i <= passwordStrength.level ? passwordStrength.color : 'bg-outlook-border'}`} />
+                  ))}
+                </div>
+                <span className="text-xs text-outlook-text-disabled">{passwordStrength.label}</span>
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="text-sm text-outlook-text-secondary">Confirmer le nouveau mot de passe</label>
+            <input
+              type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+              className={`w-full border rounded-md px-3 py-2 text-sm mt-1 focus:outline-none focus:border-outlook-blue ${
+                confirmPassword && confirmPassword !== newPassword ? 'border-red-400' : 'border-outlook-border'
+              }`}
+            />
+            {confirmPassword && confirmPassword !== newPassword && (
+              <p className="text-xs text-red-500 mt-1">Les mots de passe ne correspondent pas.</p>
+            )}
           </div>
           <button
             onClick={() => passwordMutation.mutate()}
-            disabled={!currentPassword || !newPassword || newPassword.length < 8}
+            disabled={!currentPassword || !newPassword || newPassword.length < 8 || newPassword !== confirmPassword || passwordMutation.isPending}
             className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 rounded-md text-sm disabled:opacity-50 flex items-center gap-2"
           >
-            <Lock size={14} /> Modifier le mot de passe
+            <Lock size={14} /> {passwordMutation.isPending ? 'Modification…' : 'Modifier le mot de passe'}
           </button>
         </div>
       </section>
@@ -646,40 +820,62 @@ function AccountSettings() {
 }
 
 function AppearanceSettings() {
-  const updateMutation = useMutation({
-    mutationFn: api.updateSettings,
-    onSuccess: () => toast.success('Préférences sauvegardées'),
-  });
+  const { mode, setMode } = useThemeStore();
+
+  const themes: { value: ThemeMode; label: string; hint: string }[] = [
+    { value: 'light',  label: 'Clair',   hint: 'Fond blanc, texte sombre.' },
+    { value: 'dark',   label: 'Sombre',  hint: 'Fond sombre, texte clair.' },
+    { value: 'system', label: 'Système', hint: 'Suit automatiquement les préférences du système d\'exploitation.' },
+  ];
 
   return (
     <div>
       <h3 className="text-base font-semibold mb-3">Apparence</h3>
-      <div className="space-y-4">
+      <div className="space-y-6">
+
+        {/* Thème */}
         <div>
-          <label className="text-sm text-outlook-text-secondary">Thème</label>
-          <select className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1">
-            <option value="light">Clair</option>
-            <option value="dark">Sombre</option>
-            <option value="system">Système</option>
-          </select>
+          <label className="text-sm font-medium text-outlook-text-primary block mb-2">Thème de l'interface</label>
+          <div className="grid grid-cols-3 gap-2">
+            {themes.map(({ value, label, hint }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => { setMode(value); toast.success(`Thème ${label.toLowerCase()} activé`); }}
+                className={`flex flex-col items-start p-3 rounded-md border text-left transition-colors ${
+                  mode === value
+                    ? 'border-outlook-blue bg-outlook-blue/10'
+                    : 'border-outlook-border hover:bg-outlook-bg-hover'
+                }`}
+              >
+                <span className={`text-sm font-medium ${mode === value ? 'text-outlook-blue' : 'text-outlook-text-primary'}`}>{label}</span>
+                <span className="text-[11px] text-outlook-text-disabled mt-0.5 leading-tight">{hint}</span>
+                {mode === value && <CheckCircle2 size={12} className="text-outlook-blue mt-1.5" />}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-outlook-text-disabled mt-2">
+            La langue et le fuseau horaire se configurent dans l'onglet <strong>Profil</strong>.
+          </p>
         </div>
-        <div>
-          <label className="text-sm text-outlook-text-secondary">Langue</label>
-          <select className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1">
-            <option value="fr">Français</option>
-            <option value="en">English</option>
-          </select>
+
+        {/* Mise en page mobile */}
+        <div className="border-t border-outlook-border pt-4">
+          <label className="text-sm font-medium text-outlook-text-primary block mb-1">Mise en page mobile</label>
+          <p className="text-xs text-outlook-text-disabled mb-3">Options visuelles pour les écrans tactiles (téléphone et tablette).</p>
+          <FabPositionPicker />
         </div>
-        <div>
-          <label className="text-sm text-outlook-text-secondary">Fuseau horaire</label>
-          <select className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm mt-1">
-            <option value="Europe/Paris">Europe/Paris (UTC+1/+2)</option>
-            <option value="Europe/London">Europe/London (UTC+0/+1)</option>
-          </select>
+
+        {/* Densité / lisibilité */}
+        <div className="border-t border-outlook-border pt-4">
+          <label className="text-sm font-medium text-outlook-text-primary block mb-1">Lisibilité</label>
+          <p className="text-xs text-outlook-text-disabled mb-3">Taille du texte dans le volet des dossiers et indicateurs de messages non lus.</p>
+          <div className="space-y-5">
+            <FolderPaneFontSizePicker />
+            <UnreadIndicatorsPicker />
+          </div>
         </div>
-        <FabPositionPicker />
-        <FolderPaneFontSizePicker />
-        <UnreadIndicatorsPicker />
+
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import {
@@ -6,7 +7,7 @@ import {
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
-  ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter,
+  ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -15,15 +16,18 @@ import AdminCalendarManagement from '../components/admin/AdminCalendarManagement
 import AdminAutoResponders from '../components/admin/AdminAutoResponders';
 import AdminMailTemplates from '../components/admin/AdminMailTemplates';
 import AdminRulesManagement from '../components/admin/AdminRulesManagement';
+import AdminApplications from '../components/admin/AdminApplications';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
   type NotificationPrefs,
 } from '../utils/notificationPrefs';
+import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
 
 export default function AdminPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('dashboard');
   // Master/detail toggle for mobile/tablet (< md). Ignored on desktop.
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -36,22 +40,29 @@ export default function AdminPage() {
   }, [mobileSidebarSignal]);
 
   const tabs = [
-    { id: 'dashboard' as const, icon: LayoutDashboard, label: 'Tableau de bord' },
-    { id: 'users' as const, icon: Users, label: 'Utilisateurs' },
-    { id: 'groups' as const, icon: Shield, label: 'Groupes' },
-    { id: 'mailaccounts' as const, icon: Mail, label: 'Comptes mail' },
-    { id: 'autoresponders' as const, icon: Coffee, label: 'Répondeurs' },
-    { id: 'mailtemplates' as const, icon: FileText, label: 'Modèles' },
-    { id: 'rules' as const, icon: Filter, label: 'Règles' },
-    { id: 'calendars' as const, icon: Calendar, label: 'Calendriers' },
-    { id: 'o2switch' as const, icon: Server, label: 'O2Switch' },
-    { id: 'plugins' as const, icon: Plug, label: 'Plugins' },
-    { id: 'nextcloud' as const, icon: Cloud, label: 'NextCloud' },
-    { id: 'logs' as const, icon: ScrollText, label: 'Logs' },
-    { id: 'loginAppearance' as const, icon: Palette, label: 'Apparence connexion' },
-    { id: 'devices' as const, icon: Monitor, label: 'Appareils' },
-    { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
-    { id: 'system' as const, icon: Settings, label: 'Système' },
+    // Général
+    { id: 'dashboard' as const,      icon: LayoutDashboard, label: t('admin.tab.dashboard'),     group: t('admin.group.general') },
+    // Utilisateurs
+    { id: 'users' as const,          icon: Users,           label: t('admin.tab.users'),          group: t('admin.group.users') },
+    { id: 'groups' as const,         icon: Shield,          label: t('admin.tab.groups'),         group: t('admin.group.users') },
+    // Messagerie
+    { id: 'mailaccounts' as const,   icon: Mail,            label: t('admin.tab.mailaccounts'),   group: t('admin.group.mail') },
+    { id: 'autoresponders' as const, icon: Coffee,          label: t('admin.tab.autoresponders'), group: t('admin.group.mail') },
+    { id: 'mailtemplates' as const,  icon: FileText,        label: t('admin.tab.mailtemplates'),  group: t('admin.group.mail') },
+    { id: 'rules' as const,          icon: Filter,          label: t('admin.tab.rules'),          group: t('admin.group.mail') },
+    // Calendrier
+    { id: 'calendars' as const,      icon: Calendar,        label: t('admin.tab.calendars'),      group: t('admin.group.calendar') },
+    // Intégrations
+    { id: 'o2switch' as const,       icon: Server,          label: t('admin.tab.o2switch'),       group: t('admin.group.integrations') },
+    { id: 'plugins' as const,        icon: Plug,            label: t('admin.tab.plugins'),        group: t('admin.group.integrations') },
+    { id: 'nextcloud' as const,      icon: Cloud,           label: t('admin.tab.nextcloud'),      group: t('admin.group.integrations') },
+    { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
+    // Système
+    { id: 'loginAppearance' as const,icon: Palette,         label: t('admin.tab.loginAppearance'),group: t('admin.group.system') },
+    { id: 'notifications' as const,  icon: Bell,            label: t('admin.tab.notifications'),  group: t('admin.group.system') },
+    { id: 'devices' as const,        icon: Monitor,         label: t('admin.tab.devices'),        group: t('admin.group.system') },
+    { id: 'logs' as const,           icon: ScrollText,      label: t('admin.tab.logs'),           group: t('admin.group.system') },
+    { id: 'system' as const,         icon: Settings,        label: t('admin.tab.system'),         group: t('admin.group.system') },
   ];
 
   return (
@@ -60,38 +71,57 @@ export default function AdminPage() {
       <div
         className={`md:hidden ${mobileDetail ? 'hidden' : 'flex'} flex-col flex-1 overflow-y-auto bg-outlook-bg-primary`}
       >
-        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">Administration</h2>
-        {tabs.map(t => {
-          const Icon = t.icon;
+        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">{t('admin.title')}</h2>
+        {tabs.map((tabItem, index) => {
+          const Icon = tabItem.icon;
+          const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
           return (
-            <button
-              key={t.id}
-              onClick={() => { setTab(t.id); setMobileDetail(true); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
-                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Icon size={18} /> {t.label}
-            </button>
+            <div key={tabItem.id}>
+              {tabItem.group !== prevGroup && (
+                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                  {tabItem.group}
+                </div>
+              )}
+              <button
+                onClick={() => { setTab(tabItem.id); setMobileDetail(true); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
+                  ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+              >
+                <Icon size={18} /> {tabItem.label}
+              </button>
+            </div>
           );
         })}
       </div>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:block w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
-        <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">Administration</h2>
-        {tabs.map(t => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
-                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <Icon size={16} /> {t.label}
-            </button>
-          );
-        })}
+      <div className="hidden md:flex w-64 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 flex-col overflow-y-auto">
+        <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('admin.title')}</h2>
+        <div className="flex-1">
+          {tabs.map((tabItem, index) => {
+            const Icon = tabItem.icon;
+            const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
+            return (
+              <div key={tabItem.id}>
+                {tabItem.group !== prevGroup && (
+                  <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                    {tabItem.group}
+                  </div>
+                )}
+                <button
+                  onClick={() => setTab(tabItem.id)}
+                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
+                    ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                >
+                  <Icon size={16} /> {tabItem.label}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="px-4 pt-3 pb-2 text-[10px] text-outlook-text-disabled border-t border-outlook-border mt-4">
+          v{APP_VERSION}
+        </div>
       </div>
 
       <div
@@ -110,6 +140,7 @@ export default function AdminPage() {
             {tab === 'o2switch' && <O2SwitchManagement />}
             {tab === 'plugins' && <PluginManagement />}
             {tab === 'nextcloud' && <NextCloudSettings />}
+            {tab === 'applications' && <AdminApplications />}
             {tab === 'logs' && <LogsPanel />}
             {tab === 'loginAppearance' && <LoginAppearanceSettings />}
             {tab === 'devices' && <DeviceSessionsManagement />}
@@ -168,7 +199,12 @@ function DashboardPanel() {
 
   return (
     <div>
-      <h3 className="text-base font-semibold mb-4">Tableau de bord</h3>
+      <div className="flex items-center gap-3 mb-4">
+        <h3 className="text-base font-semibold">Tableau de bord</h3>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-outlook-blue/10 text-outlook-blue font-mono font-medium">
+          v{APP_VERSION}
+        </span>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard icon={Users} label="Utilisateurs" value={stats.users} />
         <StatCard icon={Shield} label="Groupes" value={stats.groups} color="bg-purple-500" />
@@ -586,11 +622,30 @@ function O2SwitchLinkForm({ email, users, groups, onSubmit, onCancel, loading }:
 function UserManagement() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [passwordUser, setPasswordUser] = useState<any>(null);
+  const [resetLinkResult, setResetLinkResult] = useState<{ resetUrl: string; email: string } | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const { data: users = [] } = useQuery({
     queryKey: ['admin-users'],
     queryFn: api.getAdminUsers,
   });
+
+  const filteredUsers = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return users.filter((u: any) => {
+      if (statusFilter === 'active' && !u.is_active) return false;
+      if (statusFilter === 'inactive' && u.is_active) return false;
+      if (!q) return true;
+      return (
+        (u.display_name || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.role === 'admin' ? 'admin administrateur' : 'utilisateur').includes(q)
+      );
+    });
+  }, [users, search, statusFilter]);
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteAdminUser,
@@ -610,13 +665,63 @@ function UserManagement() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      api.adminToggleUserActive(id, isActive),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast.success(vars.isActive ? 'Utilisateur activé' : 'Utilisateur désactivé');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const resetLinkMutation = useMutation({
+    mutationFn: (id: string) => api.adminGenerateResetLink(id),
+    onSuccess: (data) => setResetLinkResult({ resetUrl: data.resetUrl, email: data.email }),
+    onError: (e: any) => toast.error(e.message),
+  });
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold">Utilisateurs ({users.length})</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-base font-semibold">
+          Utilisateurs ({filteredUsers.length}{filteredUsers.length !== users.length ? ` / ${users.length}` : ''})
+        </h3>
         <button onClick={() => setShowForm(true)} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5">
           <Plus size={14} /> Nouvel utilisateur
         </button>
+      </div>
+
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outlook-text-disabled pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher par nom, e-mail ou rôle…"
+            className="w-full pl-8 pr-8 py-1.5 text-sm border border-outlook-border rounded-md focus:outline-none focus:ring-2 focus:ring-outlook-blue/30"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled hover:text-outlook-text-primary"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center rounded-md border border-outlook-border overflow-hidden text-xs shrink-0">
+          {(['all', 'active', 'inactive'] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 transition-colors ${statusFilter === s ? 'bg-outlook-blue text-white' : 'hover:bg-outlook-bg-hover text-outlook-text-secondary'}`}
+            >
+              {s === 'all' ? 'Tous' : s === 'active' ? 'Actifs' : 'Inactifs'}
+            </button>
+          ))}
+        </div>
       </div>
 
       <table className="w-full text-sm">
@@ -630,7 +735,14 @@ function UserManagement() {
           </tr>
         </thead>
         <tbody>
-          {users.map((user: any) => (
+          {filteredUsers.length === 0 && (
+            <tr>
+              <td colSpan={5} className="py-8 text-center text-sm text-outlook-text-disabled">
+                Aucun utilisateur ne correspond à votre recherche.
+              </td>
+            </tr>
+          )}
+          {filteredUsers.map((user: any) => (
             <tr key={user.id} className="border-b border-outlook-border hover:bg-outlook-bg-hover">
               <td className="py-2 px-3 font-medium">{user.display_name}</td>
               <td className="py-2 px-3 text-outlook-text-secondary">{user.email}</td>
@@ -647,9 +759,43 @@ function UserManagement() {
                 )}
               </td>
               <td className="py-2 px-3">
-                <button onClick={() => confirm('Supprimer cet utilisateur ?') && deleteMutation.mutate(user.id)} className="p-1 hover:bg-red-50 rounded text-outlook-text-disabled hover:text-outlook-danger">
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    title="Modifier"
+                    onClick={() => setEditingUser(user)}
+                    className="p-1 hover:bg-outlook-bg-hover rounded text-outlook-text-disabled hover:text-outlook-blue"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    title={user.is_active ? 'Désactiver' : 'Activer'}
+                    onClick={() => toggleActiveMutation.mutate({ id: user.id, isActive: !user.is_active })}
+                    className={`p-1 rounded ${user.is_active ? 'hover:bg-orange-50 text-outlook-text-disabled hover:text-orange-500' : 'hover:bg-green-50 text-outlook-text-disabled hover:text-green-600'}`}
+                  >
+                    {user.is_active ? <XCircle size={14} /> : <CheckCircle size={14} />}
+                  </button>
+                  <button
+                    title="Changer le mot de passe"
+                    onClick={() => setPasswordUser(user)}
+                    className="p-1 hover:bg-outlook-bg-hover rounded text-outlook-text-disabled hover:text-outlook-blue"
+                  >
+                    <Shield size={14} />
+                  </button>
+                  <button
+                    title="Envoyer un lien de réinitialisation"
+                    onClick={() => resetLinkMutation.mutate(user.id)}
+                    className="p-1 hover:bg-outlook-bg-hover rounded text-outlook-text-disabled hover:text-outlook-blue"
+                  >
+                    <Link size={14} />
+                  </button>
+                  <button
+                    title="Supprimer"
+                    onClick={() => confirm('Supprimer cet utilisateur ?') && deleteMutation.mutate(user.id)}
+                    className="p-1 hover:bg-red-50 rounded text-outlook-text-disabled hover:text-outlook-danger"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -664,6 +810,143 @@ function UserManagement() {
           </div>
         </div>
       )}
+
+      {editingUser && (
+        <EditUserModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+            setEditingUser(null);
+          }}
+        />
+      )}
+
+      {passwordUser && (
+        <SetPasswordModal
+          user={passwordUser}
+          onClose={() => setPasswordUser(null)}
+        />
+      )}
+
+      {resetLinkResult && (
+        <ResetLinkModal
+          resetUrl={resetLinkResult.resetUrl}
+          email={resetLinkResult.email}
+          onClose={() => setResetLinkResult(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditUserModal({ user, onClose, onSaved }: { user: any; onClose: () => void; onSaved: () => void }) {
+  const [displayName, setDisplayName] = useState(user.display_name || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [role, setRole] = useState(user.role || 'user');
+
+  const mutation = useMutation({
+    mutationFn: (data: any) => api.updateAdminUser(user.id, data),
+    onSuccess: () => { toast.success('Utilisateur mis à jour'); onSaved(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold mb-4">Modifier l'utilisateur</h3>
+        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate({ displayName, email, role }); }} className="space-y-3">
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Nom</label>
+            <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} required className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary">E-mail</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Rôle</label>
+            <select value={role} onChange={e => setRole(e.target.value)} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm">
+              <option value="user">Utilisateur</option>
+              <option value="admin">Administrateur</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Annuler</button>
+            <button type="submit" disabled={mutation.isPending} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50">
+              {mutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function SetPasswordModal({ user, onClose }: { user: any; onClose: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: (pwd: string) => api.adminSetUserPassword(user.id, pwd),
+    onSuccess: () => { toast.success('Mot de passe mis à jour'); onClose(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const mismatch = confirm.length > 0 && password !== confirm;
+
+  return (
+    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold mb-1">Changer le mot de passe</h3>
+        <p className="text-xs text-outlook-text-secondary mb-4">{user.display_name} — {user.email}</p>
+        <form onSubmit={(e) => { e.preventDefault(); if (!mismatch) mutation.mutate(password); }} className="space-y-3">
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Nouveau mot de passe</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-outlook-text-secondary">Confirmer</label>
+            <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} required className={`w-full border rounded-md px-3 py-2 text-sm ${mismatch ? 'border-red-400' : 'border-outlook-border'}`} />
+            {mismatch && <p className="text-xs text-red-500 mt-1">Les mots de passe ne correspondent pas</p>}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Annuler</button>
+            <button type="submit" disabled={mutation.isPending || mismatch || password.length < 8} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-2 text-sm rounded-md disabled:opacity-50">
+              {mutation.isPending ? 'Mise à jour...' : 'Mettre à jour'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ResetLinkModal({ resetUrl, email, onClose }: { resetUrl: string; email: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(resetUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-[500px] p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold mb-1">Lien de réinitialisation</h3>
+        <p className="text-xs text-outlook-text-secondary mb-4">Envoyez ce lien à <strong>{email}</strong>. Il expire dans 24h.</p>
+        <div className="flex items-center gap-2 bg-outlook-bg-hover rounded-md p-3 mb-4">
+          <span className="text-xs text-outlook-text-secondary break-all flex-1 select-all">{resetUrl}</span>
+          <button onClick={handleCopy} className="shrink-0 p-1.5 rounded hover:bg-outlook-border" title="Copier">
+            {copied ? <CheckCircle size={16} className="text-green-500" /> : <Link size={16} />}
+          </button>
+        </div>
+        <div className="flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover">Fermer</button>
+        </div>
+      </div>
     </div>
   );
 }

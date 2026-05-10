@@ -26,6 +26,7 @@ import { mailTemplateRouter, adminMailTemplateRouter } from './routes/mailTempla
 import { rulesRouter, adminRulesRouter } from './routes/rules';
 import { nextcloudFilesRouter } from './routes/nextcloudFiles';
 import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES } from './routes/branding';
+import { applicationsRouter } from './routes/applications';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { setupWebSocket } from './services/websocket';
@@ -123,6 +124,7 @@ app.use('/api/admin/mail-templates', authMiddleware, adminMailTemplateRouter);
 app.use('/api/rules', authMiddleware, rulesRouter);
 app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
+app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

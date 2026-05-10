@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { execSync } from 'child_process';
 import { buildIcs } from '../utils/ical';
+import crypto from 'crypto';
 import {
   listAllActiveDeviceSessions,
   revokeAllUserDeviceSessions,
@@ -70,7 +71,7 @@ adminRouter.put('/settings', async (req: AuthRequest, res) => {
 adminRouter.get('/users', async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.email, u.display_name, u.role, u.is_admin, u.language, u.created_at,
+      `SELECT u.id, u.email, u.display_name, u.role, u.is_admin, u.is_active, u.language, u.created_at,
               ARRAY_AGG(DISTINCT g.name) FILTER (WHERE g.name IS NOT NULL) as groups,
               COUNT(DISTINCT ma.id) as account_count
        FROM users u
@@ -139,7 +140,7 @@ adminRouter.post('/users', async (req: AuthRequest, res) => {
 adminRouter.put('/users/:id', async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { email, displayName, role, isAdmin, groupIds } = req.body;
+    const { email, displayName, role, isAdmin, isActive, groupIds } = req.body;
     // When the caller updates `role`, mirror it to `is_admin` unless an
     // explicit boolean was also provided. This keeps both columns in sync
     // and avoids the case where role='admin' but is_admin=false (which
@@ -150,14 +151,15 @@ adminRouter.put('/users/:id', async (req: AuthRequest, res) => {
     }
 
     const result = await pool.query(
-      `UPDATE users SET 
+      `UPDATE users SET
         email = COALESCE($1, email),
         display_name = COALESCE($2, display_name),
         role = COALESCE($3, role),
         is_admin = COALESCE($4, is_admin),
+        is_active = COALESCE($5, is_active),
         updated_at = NOW()
-       WHERE id = $5 RETURNING id, email, display_name, role, is_admin`,
-      [email, displayName, role, effectiveIsAdmin, id]
+       WHERE id = $6 RETURNING id, email, display_name, role, is_admin, is_active`,
+      [email, displayName, role, effectiveIsAdmin, isActive ?? null, id]
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });
@@ -196,7 +198,7 @@ adminRouter.delete('/users/:id', async (req: AuthRequest, res) => {
   }
 });
 
-// Reset user password
+// Reset user password (admin sets it directly)
 adminRouter.put('/users/:id/password', async (req: AuthRequest, res) => {
   try {
     const { password } = req.body;
@@ -206,6 +208,34 @@ adminRouter.put('/users/:id/password', async (req: AuthRequest, res) => {
     const hash = await bcrypt.hash(password, 12);
     await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, req.params.id]);
     res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate a password reset link for a user (token valid 24h)
+adminRouter.post('/users/:id/reset-link', async (req: AuthRequest, res) => {
+  try {
+    const userResult = await pool.query('SELECT id, email FROM users WHERE id = $1', [req.params.id]);
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+
+    const token = crypto.randomBytes(48).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    // Invalidate previous unused tokens for this user
+    await pool.query(
+      'DELETE FROM password_resets WHERE user_id = $1 AND used_at IS NULL',
+      [req.params.id]
+    );
+    await pool.query(
+      'INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)',
+      [req.params.id, token, expiresAt]
+    );
+
+    const origin = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+    const resetUrl = `${origin}/reset-password?token=${token}`;
+
+    res.json({ resetUrl, expiresAt, email: userResult.rows[0].email });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
