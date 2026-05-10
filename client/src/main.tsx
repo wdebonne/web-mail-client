@@ -9,12 +9,13 @@ import App from './App';
 import './index.css';
 import { registerSW } from './pwa/register';
 import { startAutoBackupWatcher } from './utils/backup';
+import enTranslations from './i18n/en.json';
+import frTranslations from './i18n/fr.json';
 
-// Initialize i18next before rendering the app
 i18n.use(initReactI18next).init({
   resources: {
-    en: require('./i18n/en.json'),
-    fr: require('./i18n/fr.json'),
+    en: enTranslations,
+    fr: frTranslations,
   },
   lng: 'fr',
   fallbackLng: 'en',
@@ -37,7 +38,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        {/* Now the App component and all nested components will have access to t() function */}
         <App />
         <Toaster
           position="bottom-right"
