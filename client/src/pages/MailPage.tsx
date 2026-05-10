@@ -913,6 +913,13 @@ export default function MailPage() {
     renameFolderMutation.mutate({ accountId, oldPath, newPath });
   };
 
+  const handleMarkFolderAllRead = async (accountId: string, folderPath: string) => {
+    await api.markFolderAllRead(accountId, folderPath);
+    queryClient.invalidateQueries({ queryKey: ['messages', accountId, folderPath] });
+    queryClient.invalidateQueries({ queryKey: ['folder-status'] });
+    queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+  };
+
   // Send mutation
   const sendMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -1956,6 +1963,7 @@ export default function MailPage() {
                 onDeleteFolder={handleDeleteFolder}
                 onCopyFolderBetweenAccounts={handleCopyFolder}
                 onMoveFolder={handleMoveFolder}
+                onMarkFolderAllRead={handleMarkFolderAllRead}
                 onPreferencesChanged={() => {
                   // Accounts list is server-driven; a lightweight refresh to pick up local name overrides happens on next render.
                   queryClient.invalidateQueries({ queryKey: ['accounts'] });

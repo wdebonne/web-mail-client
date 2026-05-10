@@ -463,6 +463,37 @@ mailRouter.patch('/accounts/:accountId/messages/:uid/read', async (req: AuthRequ
   }
 });
 
+// Mark all messages in a folder as read
+mailRouter.patch('/accounts/:accountId/folders/mark-all-read', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const folder = (req.query.folder as string) || 'INBOX';
+
+    const account = await getAccountForUser(accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const mailService = new MailService(account);
+    const client = (mailService as any).createImapClient();
+    await client.connect();
+    const lock = await client.getMailboxLock(folder);
+    try {
+      await client.messageFlagsAdd('1:*', ['\\Seen'], { uid: false });
+    } finally {
+      lock.release();
+      await client.logout();
+    }
+
+    await pool.query(
+      'UPDATE cached_emails SET is_read = true WHERE account_id = $1 AND folder = $2',
+      [accountId, folder]
+    );
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Flag/unflag message
 mailRouter.patch('/accounts/:accountId/messages/:uid/flag', async (req: AuthRequest, res) => {
   try {

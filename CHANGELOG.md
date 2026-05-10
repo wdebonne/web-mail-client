@@ -11,6 +11,20 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.7.3] - 2026-05-10
+
+### Ajouté
+
+- **Marquer tout comme lu** : nouvelle option dans le menu contextuel des dossiers (clic droit sur un dossier) permettant de marquer d'un seul clic l'ensemble des messages du dossier comme lus. L'opération est appliquée côté serveur via IMAP (`\Seen` sur toute la séquence), le cache SQL est mis à jour immédiatement et les vues (liste de messages, compteurs non lus, dossiers virtuels) se rafraîchissent automatiquement.
+
+### Technique
+
+- **Serveur** : nouvel endpoint `PATCH /mail/accounts/:accountId/folders/mark-all-read?folder=` — applique `messageFlagsAdd('1:*', ['\\Seen'])` puis met à jour la table `cached_emails`.
+- **Client** : nouvelle fonction `api.markFolderAllRead(accountId, folder)` dans `api/index.ts`.
+- **Client** : prop `onMarkFolderAllRead` ajoutée à `FolderPane` ; handler `handleMarkFolderAllRead` dans `MailPage` invalidant les caches React Query (`messages`, `folder-status`, `virtual-messages`).
+
+---
+
 ## [1.7.2] - 2026-05-10
 
 ### Ajouté

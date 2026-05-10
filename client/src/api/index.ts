@@ -281,6 +281,11 @@ export const api = {
       body: JSON.stringify({ isRead }),
     }),
 
+  markFolderAllRead: (accountId: string, folder: string) =>
+    request(`/mail/accounts/${accountId}/folders/mark-all-read?folder=${encodeURIComponent(folder)}`, {
+      method: 'PATCH',
+    }),
+
   toggleFlag: (accountId: string, uid: number, isFlagged: boolean, folder: string) =>
     request(`/mail/accounts/${accountId}/messages/${uid}/flag?folder=${encodeURIComponent(folder)}`, {
       method: 'PATCH',
