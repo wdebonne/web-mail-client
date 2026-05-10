@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import {
@@ -24,6 +25,7 @@ import {
 type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
 
 export default function AdminPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('dashboard');
   // Master/detail toggle for mobile/tablet (< md). Ignored on desktop.
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -36,22 +38,22 @@ export default function AdminPage() {
   }, [mobileSidebarSignal]);
 
   const tabs = [
-    { id: 'dashboard' as const, icon: LayoutDashboard, label: 'Tableau de bord' },
-    { id: 'users' as const, icon: Users, label: 'Utilisateurs' },
-    { id: 'groups' as const, icon: Shield, label: 'Groupes' },
-    { id: 'mailaccounts' as const, icon: Mail, label: 'Comptes mail' },
-    { id: 'autoresponders' as const, icon: Coffee, label: 'Répondeurs' },
-    { id: 'mailtemplates' as const, icon: FileText, label: 'Modèles' },
-    { id: 'rules' as const, icon: Filter, label: 'Règles' },
-    { id: 'calendars' as const, icon: Calendar, label: 'Calendriers' },
-    { id: 'o2switch' as const, icon: Server, label: 'O2Switch' },
-    { id: 'plugins' as const, icon: Plug, label: 'Plugins' },
-    { id: 'nextcloud' as const, icon: Cloud, label: 'NextCloud' },
-    { id: 'logs' as const, icon: ScrollText, label: 'Logs' },
-    { id: 'loginAppearance' as const, icon: Palette, label: 'Apparence connexion' },
-    { id: 'devices' as const, icon: Monitor, label: 'Appareils' },
-    { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
-    { id: 'system' as const, icon: Settings, label: 'Système' },
+    { id: 'dashboard' as const, icon: LayoutDashboard, label: t('admin.tab.dashboard') },
+    { id: 'users' as const, icon: Users, label: t('admin.tab.users') },
+    { id: 'groups' as const, icon: Shield, label: t('admin.tab.groups') },
+    { id: 'mailaccounts' as const, icon: Mail, label: t('admin.tab.mailaccounts') },
+    { id: 'autoresponders' as const, icon: Coffee, label: t('admin.tab.autoresponders') },
+    { id: 'mailtemplates' as const, icon: FileText, label: t('admin.tab.mailtemplates') },
+    { id: 'rules' as const, icon: Filter, label: t('admin.tab.rules') },
+    { id: 'calendars' as const, icon: Calendar, label: t('admin.tab.calendars') },
+    { id: 'o2switch' as const, icon: Server, label: t('admin.tab.o2switch') },
+    { id: 'plugins' as const, icon: Plug, label: t('admin.tab.plugins') },
+    { id: 'nextcloud' as const, icon: Cloud, label: t('admin.tab.nextcloud') },
+    { id: 'logs' as const, icon: ScrollText, label: t('admin.tab.logs') },
+    { id: 'loginAppearance' as const, icon: Palette, label: t('admin.tab.loginAppearance') },
+    { id: 'devices' as const, icon: Monitor, label: t('admin.tab.devices') },
+    { id: 'notifications' as const, icon: Bell, label: t('admin.tab.notifications') },
+    { id: 'system' as const, icon: Settings, label: t('admin.tab.system') },
   ];
 
   return (
@@ -60,17 +62,17 @@ export default function AdminPage() {
       <div
         className={`md:hidden ${mobileDetail ? 'hidden' : 'flex'} flex-col flex-1 overflow-y-auto bg-outlook-bg-primary`}
       >
-        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">Administration</h2>
-        {tabs.map(t => {
-          const Icon = t.icon;
+        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">{t('admin.title')}</h2>
+        {tabs.map(tabItem => {
+          const Icon = tabItem.icon;
           return (
             <button
-              key={t.id}
-              onClick={() => { setTab(t.id); setMobileDetail(true); }}
+              key={tabItem.id}
+              onClick={() => { setTab(tabItem.id); setMobileDetail(true); }}
               className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
-                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
             >
-              <Icon size={18} /> {t.label}
+              <Icon size={18} /> {tabItem.label}
             </button>
           );
         })}
@@ -78,17 +80,17 @@ export default function AdminPage() {
 
       {/* Desktop sidebar */}
       <div className="hidden md:block w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
-        <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">Administration</h2>
-        {tabs.map(t => {
-          const Icon = t.icon;
+        <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('admin.title')}</h2>
+        {tabs.map(tabItem => {
+          const Icon = tabItem.icon;
           return (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={tabItem.id}
+              onClick={() => setTab(tabItem.id)}
               className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
-                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
             >
-              <Icon size={16} /> {t.label}
+              <Icon size={16} /> {tabItem.label}
             </button>
           );
         })}

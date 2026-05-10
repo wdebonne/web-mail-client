@@ -24,6 +24,103 @@
       "theme_current_dark": "Actuellement : sombre",
       "theme_current_light": "Actuellement : clair",
       "logout": "Déconnexion"
+    },
+    "action": {
+      "move": "Déplacer",
+      "copy": "Copier"
+    },
+    "mail": {
+      "folder": {
+        "combined_inbox": "Boîte de réception unifiée",
+        "combined_sent": "Éléments envoyés unifiés",
+        "inbox": "Boîte de réception",
+        "sent": "Éléments envoyés"
+      },
+      "forward": {
+        "separator": "Message transféré"
+      },
+      "subject_none": "(Sans objet)",
+      "swipe": {
+        "move_title": "Déplacer vers",
+        "copy_title": "Copier vers",
+        "move_description": "Choisissez le dossier de destination",
+        "copy_description": "Choisissez le dossier de copie"
+      },
+      "view": {
+        "back": "Retour",
+        "hide_source": "Masquer le code source"
+      }
+    },
+    "message_headers": {
+      "from": "De",
+      "to": "À",
+      "date": "Date",
+      "sent": "Envoyé",
+      "subject": "Objet"
+    },
+    "login": {
+      "subtitle_login": "Connectez-vous à votre messagerie",
+      "subtitle_register": "Créer un compte",
+      "biometric_title": "Vérification biométrique",
+      "biometric_confirm": "Confirmez votre identité avec Touch ID, Face ID ou Windows Hello.",
+      "biometric_waiting": "En attente…",
+      "biometric_retry": "Réessayer",
+      "passkey_detecting": "Détection de la clé d'accès…",
+      "passkey_button": "Se connecter avec une clé d'accès",
+      "divider_or": "ou",
+      "display_name_label": "Nom d'affichage",
+      "display_name_placeholder": "Votre nom",
+      "email_label": "Adresse e-mail",
+      "email_placeholder": "votre@email.com",
+      "password_label": "Mot de passe",
+      "password_placeholder": "••••••••",
+      "loading": "Chargement...",
+      "submit_create": "Créer le compte",
+      "submit_login": "Se connecter",
+      "switch_to_register": "Créer un compte",
+      "switch_to_login": "Déjà un compte ? Se connecter",
+      "error_biometric_cancelled": "Authentification biométrique annulée",
+      "error_passkey_cancelled": "Connexion par clé d'accès annulée",
+      "error_generic": "Une erreur est survenue"
+    },
+    "settings": {
+      "title": "Paramètres",
+      "tab": {
+        "profile": "Profil",
+        "accounts": "Mes boîtes mail",
+        "mail": "Messagerie",
+        "autoresponder": "Répondeur",
+        "appearance": "Apparence",
+        "notifications": "Notifications",
+        "devices": "Mes appareils",
+        "security": "Sécurité",
+        "backup": "Sauvegarde",
+        "cache": "Cache local"
+      }
+    },
+    "admin": {
+      "title": "Administration",
+      "tab": {
+        "dashboard": "Tableau de bord",
+        "users": "Utilisateurs",
+        "groups": "Groupes",
+        "mailaccounts": "Comptes mail",
+        "autoresponders": "Répondeurs",
+        "mailtemplates": "Modèles",
+        "rules": "Règles",
+        "calendars": "Calendriers",
+        "o2switch": "O2Switch",
+        "plugins": "Plugins",
+        "nextcloud": "NextCloud",
+        "logs": "Logs",
+        "loginAppearance": "Apparence connexion",
+        "devices": "Appareils",
+        "notifications": "Notifications",
+        "system": "Système"
+      }
+    },
+    "security_page": {
+      "title": "Sécurité"
     }
   }
 }

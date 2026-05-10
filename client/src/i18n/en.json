@@ -24,6 +24,103 @@
       "theme_current_dark": "Currently: dark",
       "theme_current_light": "Currently: light",
       "logout": "Sign out"
+    },
+    "action": {
+      "move": "Move",
+      "copy": "Copy"
+    },
+    "mail": {
+      "folder": {
+        "combined_inbox": "Unified Inbox",
+        "combined_sent": "Unified Sent",
+        "inbox": "Inbox",
+        "sent": "Sent"
+      },
+      "forward": {
+        "separator": "Forwarded message"
+      },
+      "subject_none": "(No subject)",
+      "swipe": {
+        "move_title": "Move to",
+        "copy_title": "Copy to",
+        "move_description": "Choose the destination folder",
+        "copy_description": "Choose the copy folder"
+      },
+      "view": {
+        "back": "Back",
+        "hide_source": "Hide source code"
+      }
+    },
+    "message_headers": {
+      "from": "From",
+      "to": "To",
+      "date": "Date",
+      "sent": "Sent",
+      "subject": "Subject"
+    },
+    "login": {
+      "subtitle_login": "Sign in to your mailbox",
+      "subtitle_register": "Create an account",
+      "biometric_title": "Biometric verification",
+      "biometric_confirm": "Confirm your identity with Touch ID, Face ID or Windows Hello.",
+      "biometric_waiting": "Waiting…",
+      "biometric_retry": "Retry",
+      "passkey_detecting": "Detecting passkey…",
+      "passkey_button": "Sign in with a passkey",
+      "divider_or": "or",
+      "display_name_label": "Display name",
+      "display_name_placeholder": "Your name",
+      "email_label": "Email address",
+      "email_placeholder": "your@email.com",
+      "password_label": "Password",
+      "password_placeholder": "••••••••",
+      "loading": "Loading...",
+      "submit_create": "Create account",
+      "submit_login": "Sign in",
+      "switch_to_register": "Create an account",
+      "switch_to_login": "Already have an account? Sign in",
+      "error_biometric_cancelled": "Biometric authentication cancelled",
+      "error_passkey_cancelled": "Passkey sign-in cancelled",
+      "error_generic": "An error occurred"
+    },
+    "settings": {
+      "title": "Settings",
+      "tab": {
+        "profile": "Profile",
+        "accounts": "My mailboxes",
+        "mail": "Messaging",
+        "autoresponder": "Auto-reply",
+        "appearance": "Appearance",
+        "notifications": "Notifications",
+        "devices": "My devices",
+        "security": "Security",
+        "backup": "Backup",
+        "cache": "Local cache"
+      }
+    },
+    "admin": {
+      "title": "Administration",
+      "tab": {
+        "dashboard": "Dashboard",
+        "users": "Users",
+        "groups": "Groups",
+        "mailaccounts": "Mail accounts",
+        "autoresponders": "Auto-replies",
+        "mailtemplates": "Templates",
+        "rules": "Rules",
+        "calendars": "Calendars",
+        "o2switch": "O2Switch",
+        "plugins": "Plugins",
+        "nextcloud": "NextCloud",
+        "logs": "Logs",
+        "loginAppearance": "Login appearance",
+        "devices": "Devices",
+        "notifications": "Notifications",
+        "system": "System"
+      }
+    },
+    "security_page": {
+      "title": "Security"
     }
   }
 }

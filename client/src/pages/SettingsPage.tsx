@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useAuthStore } from '../stores/authStore';
@@ -51,6 +52,7 @@ import NotificationPreferencesEditor from '../components/notifications/Notificat
 type Tab = 'profile' | 'accounts' | 'mail' | 'autoresponder' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('profile');
   // On mobile/tablet (< md), `mobileDetail` toggles between the list of
   // sections (false) and the selected section's content (true). On desktop
@@ -74,18 +76,18 @@ export default function SettingsPage() {
   const autoResponderFeatureEnabled = arFeature?.enabled !== false;
 
   const tabs = [
-    { id: 'profile' as const, icon: User, label: 'Profil' },
-    { id: 'accounts' as const, icon: Mail, label: 'Mes boîtes mail' },
-    { id: 'mail' as const, icon: Paperclip, label: 'Messagerie' },
+    { id: 'profile' as const, icon: User, label: t('settings.tab.profile') },
+    { id: 'accounts' as const, icon: Mail, label: t('settings.tab.accounts') },
+    { id: 'mail' as const, icon: Paperclip, label: t('settings.tab.mail') },
     ...(autoResponderFeatureEnabled
-      ? [{ id: 'autoresponder' as const, icon: Coffee, label: 'Répondeur' }]
+      ? [{ id: 'autoresponder' as const, icon: Coffee, label: t('settings.tab.autoresponder') }]
       : []),
-    { id: 'appearance' as const, icon: Palette, label: 'Apparence' },
-    { id: 'notifications' as const, icon: Bell, label: 'Notifications' },
-    { id: 'devices' as const, icon: Monitor, label: 'Mes appareils' },
-    { id: 'security' as const, icon: ShieldCheck, label: 'Sécurité' },
-    { id: 'backup' as const, icon: HardDrive, label: 'Sauvegarde' },
-    { id: 'cache' as const, icon: Database, label: 'Cache local' },
+    { id: 'appearance' as const, icon: Palette, label: t('settings.tab.appearance') },
+    { id: 'notifications' as const, icon: Bell, label: t('settings.tab.notifications') },
+    { id: 'devices' as const, icon: Monitor, label: t('settings.tab.devices') },
+    { id: 'security' as const, icon: ShieldCheck, label: t('settings.tab.security') },
+    { id: 'backup' as const, icon: HardDrive, label: t('settings.tab.backup') },
+    { id: 'cache' as const, icon: Database, label: t('settings.tab.cache') },
   ];
 
   return (
@@ -96,17 +98,17 @@ export default function SettingsPage() {
       <div
         className={`md:hidden ${mobileDetail ? 'hidden' : 'flex'} flex-col flex-1 overflow-y-auto bg-outlook-bg-primary`}
       >
-        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">Paramètres</h2>
-        {tabs.map(t => {
-          const Icon = t.icon;
+        <h2 className="text-lg font-semibold px-4 pt-4 pb-2 text-outlook-text-primary">{t('settings.title')}</h2>
+        {tabs.map(tabItem => {
+          const Icon = tabItem.icon;
           return (
             <button
-              key={t.id}
-              onClick={() => { setTab(t.id); setMobileDetail(true); }}
+              key={tabItem.id}
+              onClick={() => { setTab(tabItem.id); setMobileDetail(true); }}
               className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b border-outlook-border transition-colors
-                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
             >
-              <Icon size={18} /> {t.label}
+              <Icon size={18} /> {tabItem.label}
             </button>
           );
         })}
@@ -114,17 +116,17 @@ export default function SettingsPage() {
 
       {/* Desktop sidebar */}
       <div className="hidden md:block w-56 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
-        <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">Paramètres</h2>
-        {tabs.map(t => {
-          const Icon = t.icon;
+        <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('settings.title')}</h2>
+        {tabs.map(tabItem => {
+          const Icon = tabItem.icon;
           return (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={tabItem.id}
+              onClick={() => setTab(tabItem.id)}
               className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
-                ${tab === t.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
             >
-              <Icon size={16} /> {t.label}
+              <Icon size={16} /> {tabItem.label}
             </button>
           );
         })}
