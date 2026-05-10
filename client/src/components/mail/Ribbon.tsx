@@ -2127,8 +2127,9 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
   const [ncAttaching, setNcAttaching] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    api.nextcloudFilesStatus()
-      .then(s => { if (!cancelled) setNcLinked(!!s.linked); })
+    // Use the same status endpoint as the bottom status bar (more reliable than files/status).
+    api.getUserNextcloudStatus()
+      .then(s => { if (!cancelled) setNcLinked(!!(s.enabled && s.linked)); })
       .catch(() => { if (!cancelled) setNcLinked(false); });
     return () => { cancelled = true; };
   }, []);
