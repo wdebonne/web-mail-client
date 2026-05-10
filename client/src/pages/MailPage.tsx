@@ -169,11 +169,21 @@ export default function MailPage() {
   }, [branding?.app_name, selectedFolder, virtualFolder]);
 
   // Load folders
-  const { data: foldersData } = useQuery({
+  const { data: foldersData, error: foldersError } = useQuery({
     queryKey: ['folders', selectedAccount?.id],
     queryFn: () => selectedAccount ? api.getFolders(selectedAccount.id) : Promise.resolve([]),
     enabled: !!selectedAccount,
+    retry: (failureCount, error: any) => {
+      if (error?.status === 404) return false;
+      return failureCount < 3;
+    },
   });
+
+  useEffect(() => {
+    if ((foldersError as any)?.status === 404) {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    }
+  }, [foldersError]);
 
   useEffect(() => {
     if (foldersData) {
