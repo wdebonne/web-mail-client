@@ -7,7 +7,7 @@ import {
   Edit2, CheckCircle, XCircle, RefreshCw, Globe, Mail, UserPlus, TestTube,
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
-  ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter,
+  ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -16,6 +16,7 @@ import AdminCalendarManagement from '../components/admin/AdminCalendarManagement
 import AdminAutoResponders from '../components/admin/AdminAutoResponders';
 import AdminMailTemplates from '../components/admin/AdminMailTemplates';
 import AdminRulesManagement from '../components/admin/AdminRulesManagement';
+import AdminApplications from '../components/admin/AdminApplications';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
@@ -23,7 +24,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -55,6 +56,7 @@ export default function AdminPage() {
     { id: 'o2switch' as const,       icon: Server,          label: t('admin.tab.o2switch'),       group: t('admin.group.integrations') },
     { id: 'plugins' as const,        icon: Plug,            label: t('admin.tab.plugins'),        group: t('admin.group.integrations') },
     { id: 'nextcloud' as const,      icon: Cloud,           label: t('admin.tab.nextcloud'),      group: t('admin.group.integrations') },
+    { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
     // Système
     { id: 'loginAppearance' as const,icon: Palette,         label: t('admin.tab.loginAppearance'),group: t('admin.group.system') },
     { id: 'notifications' as const,  icon: Bell,            label: t('admin.tab.notifications'),  group: t('admin.group.system') },
@@ -138,6 +140,7 @@ export default function AdminPage() {
             {tab === 'o2switch' && <O2SwitchManagement />}
             {tab === 'plugins' && <PluginManagement />}
             {tab === 'nextcloud' && <NextCloudSettings />}
+            {tab === 'applications' && <AdminApplications />}
             {tab === 'logs' && <LogsPanel />}
             {tab === 'loginAppearance' && <LoginAppearanceSettings />}
             {tab === 'devices' && <DeviceSessionsManagement />}

@@ -11,6 +11,64 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.7.0] - 2026-05-10
+
+### Ajouté
+
+#### Applications Desktop & Mobile — génération native depuis l'admin
+
+- **Nouveau panneau d'administration « Applications »** (`Admin → Applications`) permettant de gérer l'ensemble des distributions natives de l'application depuis l'interface web.
+- **Détection automatique de l'environnement** : le panneau identifie si l'utilisateur consulte la page depuis un navigateur web standard, une PWA installée (`display-mode: standalone`) ou une application desktop Tauri (`__TAURI_INTERNALS__`), et adapte l'affichage en conséquence.
+
+#### PWA — installation depuis l'admin
+
+- **Bouton d'installation PWA contextuel** dans le panneau Applications : utilise l'événement natif `beforeinstallprompt` du navigateur pour proposer l'installation en un clic, sans redirection. Désactivé si la PWA est déjà installée ou si le navigateur ne supporte pas l'installation.
+
+#### Applications Desktop — Tauri v2
+
+- **Projet Tauri v2 intégré** (`src-tauri/`) : la webview native charge directement l'URL du serveur Express en cours d'exécution (`frontendDist` = URL du serveur), ce qui garantit que l'API REST et le WebSocket fonctionnent sans aucune modification de code.
+- **Support multi-plateforme** :
+  - 🪟 Windows : `.exe` (NSIS) + `.msi`
+  - 🐧 Linux : `.deb` + `.AppImage`
+  - 🍎 macOS : `.dmg`
+- **Scripts npm dédiés** dans `package.json` (racine et `client/`) :
+  - `npm run tauri:dev` — fenêtre desktop en mode développement (Vite dev server)
+  - `npm run tauri:build` — build de production
+  - `npm run tauri:icon` — génération des icônes depuis `icon-512.png`
+
+#### Builder Docker — build Linux depuis Portainer
+
+- **Nouveau service Docker `tauri-builder`** (`Dockerfile.tauri-builder`) basé sur Ubuntu 22.04 avec Rust stable, Cargo, Tauri CLI et toutes les dépendances système WebKit2GTK / AppIndicator nécessaires à la compilation Tauri sur Linux.
+- **Micro-serveur HTTP** (`tauri-builder/server.mjs`) exposé en interne sur le port 4000 : accepte les requêtes de build (`POST /build`) et diffuse les logs en temps réel via **Server-Sent Events** (`GET /log`).
+- **Volume Docker partagé** `tauri_downloads` monté dans les deux conteneurs (`/downloads` côté builder, `/app/server/downloads` côté app) : les binaires générés sont immédiatement disponibles au téléchargement depuis l'admin sans copie manuelle.
+- **Activation via profile Docker Compose** : `docker compose --profile builder up -d tauri-builder` — n'impacte pas les déploiements existants qui ne démarrent pas ce service.
+- **Variable d'environnement** `TAURI_BUILDER_URL` (défaut : `http://tauri-builder:4000`) pour pointer vers le builder depuis le serveur principal.
+
+#### GitHub Actions — build multi-plateforme
+
+- **Workflow `.github/workflows/tauri-build.yml`** déclenché manuellement (`workflow_dispatch`) ou depuis le panneau admin : builds parallèles sur runners GitHub Windows, Linux et macOS avec la matrice `ubuntu-22.04 / windows-latest / macos-latest`.
+- **URL du serveur configurable** en entrée du workflow (`server_url`) — baked dans l'application générée via le flag `--config` de Tauri CLI, sans modifier les fichiers source.
+- **Artefacts GitHub** conservés 30 jours sur le run Actions, téléchargeables directement depuis GitHub.
+- **Interface admin dédiée** : formulaire owner/repo/token GitHub, déclenchement en un clic, suivi des derniers runs (statut, date, lien direct GitHub Actions).
+
+#### Endpoint API `/api/admin/applications`
+
+- `GET /info` — état du builder Docker (ping) + liste des binaires disponibles.
+- `POST /build/docker` — déclenche un build Linux dans le conteneur `tauri-builder`.
+- `GET /build/docker/log` — proxy SSE temps réel vers les logs du builder.
+- `POST /build/github` — déclenche le workflow GitHub Actions via l'API REST GitHub.
+- `GET /build/github/runs` — liste les 5 derniers runs du workflow avec statut et lien.
+- `GET /download/:filename` — téléchargement d'un binaire depuis `server/downloads/`.
+- `DELETE /download/:filename` — suppression d'un binaire.
+
+### Modifié
+
+- **`docker-compose.yml`** : ajout du service `tauri-builder` (profile `builder`), du volume `tauri_downloads`, de la variable `TAURI_BUILDER_URL` dans le service `app`.
+- **`.gitignore`** : exclusion de `src-tauri/target/` et des binaires dans `server/downloads/`.
+- **`client/package.json`** : ajout de `@tauri-apps/cli ^2` en devDependency et des scripts `tauri:*`.
+
+---
+
 ## [1.6.0] - 2026-05-10
 
 ### Ajouté

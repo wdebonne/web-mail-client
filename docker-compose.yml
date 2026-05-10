@@ -26,10 +26,12 @@ services:
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
       - VAPID_CONTACT=${VAPID_CONTACT:-}
       - NEW_MAIL_POLL_INTERVAL_MS=${NEW_MAIL_POLL_INTERVAL_MS:-60000}
+      - TAURI_BUILDER_URL=${TAURI_BUILDER_URL:-http://tauri-builder:4000}
     volumes:
       - ./plugins:/app/plugins
       - ./uploads:/app/uploads
       - app_data:/app/data
+      - tauri_downloads:/app/server/downloads
     depends_on:
       db:
         condition: service_healthy
@@ -56,11 +58,30 @@ services:
     networks:
       - webmail-network
 
+  tauri-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.tauri-builder
+    container_name: ${STACK_NAME:-webmail}-tauri-builder
+    restart: unless-stopped
+    volumes:
+      # Source du projet (lecture seule) pour compiler
+      - .:/project:ro
+      # Volume partagé pour déposer les binaires générés
+      - tauri_downloads:/downloads
+    networks:
+      - webmail-network
+    # Pas exposé sur l'extérieur — accessible uniquement depuis app
+    profiles:
+      - builder
+
 volumes:
   postgres_data:
     name: ${STACK_NAME:-webmail}_postgres_data
   app_data:
     name: ${STACK_NAME:-webmail}_app_data
+  tauri_downloads:
+    name: ${STACK_NAME:-webmail}_tauri_downloads
 
 networks:
   webmail-network:

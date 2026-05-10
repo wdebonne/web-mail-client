@@ -131,7 +131,8 @@
         "loginAppearance": "Page de connexion",
         "devices": "Sessions actives",
         "notifications": "Notifications par défaut",
-        "system": "Paramètres système"
+        "system": "Paramètres système",
+        "applications": "Applications"
       }
     },
     "security_page": {
