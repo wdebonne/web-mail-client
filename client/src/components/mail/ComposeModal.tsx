@@ -607,6 +607,27 @@ export default function ComposeModal({
         )}
       </div>
 
+      {/* Attachments preview — shown just below subject like in received emails */}
+      {attachments.length > 0 && (
+        <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/30 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Paperclip size={14} className="text-outlook-text-secondary flex-shrink-0" />
+            {attachments.map((att, i) => (
+              <div key={i} className="relative inline-flex items-center gap-1 bg-white border border-outlook-border rounded px-2 py-1 text-xs hover:bg-outlook-bg-hover transition-colors">
+                <span className="truncate max-w-32">{att.filename}</span>
+                <button
+                  onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                  className="text-outlook-text-disabled hover:text-outlook-danger flex-shrink-0"
+                  aria-label="Supprimer"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Editor toolbar */}
       {!hideInlineToolbar && <RichTextToolbar editorRef={editorRef} />}
       {/* Editor */}
@@ -624,21 +645,6 @@ export default function ComposeModal({
       {selectedAccount?.signature_html && (
         <div className="px-4 pb-2 text-xs text-outlook-text-secondary border-t border-outlook-border pt-2"
           dangerouslySetInnerHTML={{ __html: selectedAccount.signature_html }} />
-      )}
-
-      {/* Attachments preview */}
-      {attachments.length > 0 && (
-        <div className="px-4 py-2 border-t border-outlook-border flex gap-2 flex-wrap">
-          {attachments.map((att, i) => (
-            <div key={i} className="flex items-center gap-1 bg-outlook-bg-primary rounded px-2 py-1 text-xs">
-              <Paperclip size={10} />
-              <span className="truncate max-w-24">{att.filename}</span>
-              <button onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-outlook-text-disabled hover:text-outlook-danger">
-                <X size={10} />
-              </button>
-            </div>
-          ))}
-        </div>
       )}
 
       {/* Bottom toolbar — hidden in inline mode (actions are in top toolbar) */}
