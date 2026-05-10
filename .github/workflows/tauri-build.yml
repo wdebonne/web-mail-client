@@ -67,6 +67,11 @@ jobs:
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli@^2
 
+      # Générer tous les formats d'icônes requis par Tauri
+      # (32x32.png, 128x128.png, icon.ico, icon.icns, …) depuis icon-512.png
+      - name: Generate Tauri icons
+        run: tauri icon client/public/icon-512.png
+
       # Écrire le config override dans un fichier évite les problèmes
       # d'échappement JSON dans les arguments shell multi-plateformes.
       - name: Write Tauri config override
