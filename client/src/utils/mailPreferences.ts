@@ -235,6 +235,52 @@ export function setFavoritesExpanded(expanded: boolean) {
   localStorage.setItem(KEY_FAVORITES_EXPANDED, String(expanded));
 }
 
+/**
+ * Remove all localStorage preference entries that reference account IDs no
+ * longer in the live accounts list. Call this whenever the account list is
+ * refreshed from the server so stale UUIDs (deleted / replaced accounts) do
+ * not continue to trigger API requests.
+ */
+export function purgeStaleAccountPreferences(liveAccountIds: string[]): void {
+  const live = new Set(liveAccountIds);
+
+  // Favorite folders: drop entries for gone accounts
+  const favs = getFavoriteFolders().filter((f) => live.has(f.accountId));
+  setFavoriteFolders(favs);
+
+  // Unified account selection: keep only live IDs
+  const unified = getUnifiedAccountIds().filter((id) => live.has(id));
+  setUnifiedAccountIds(unified);
+
+  // Account ordering: keep only live IDs
+  const order = getAccountOrder().filter((id) => live.has(id));
+  setAccountOrder(order);
+
+  // Expanded accounts: keep only live IDs
+  const expanded = readJSON<string[]>(KEY_EXPANDED_ACCOUNTS, []).filter((id) => live.has(id));
+  writeJSON(KEY_EXPANDED_ACCOUNTS, expanded);
+
+  // Folder order map: drop keys for gone accounts
+  const folderMap = getFolderOrderMap();
+  for (const id of Object.keys(folderMap)) {
+    if (!live.has(id)) delete folderMap[id];
+  }
+  writeJSON(KEY_FOLDER_ORDER, folderMap);
+
+  // Account display names / colors: drop keys for gone accounts
+  const names = readJSON<Record<string, string>>(KEY_ACCOUNT_NAMES, {});
+  for (const id of Object.keys(names)) {
+    if (!live.has(id)) delete names[id];
+  }
+  writeJSON(KEY_ACCOUNT_NAMES, names);
+
+  const colors = readJSON<Record<string, string>>(KEY_ACCOUNT_COLORS, {});
+  for (const id of Object.keys(colors)) {
+    if (!live.has(id)) delete colors[id];
+  }
+  writeJSON(KEY_ACCOUNT_COLORS, colors);
+}
+
 /** Return the Sent folder path for an account, preferring specialUse, then common names. */
 export function findSentFolderPath(folders: MailFolder[]): string | null {
   const bySpecial = folders.find((f) => f.specialUse === '\\Sent');
