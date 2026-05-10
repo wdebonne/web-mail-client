@@ -1,5 +1,9 @@
 # WebMail - Client Mail Professionnel Moderne
 
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
+![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
+![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
+
 ## Aperçu Général
 WebMail est un client de messagerie web complet conçu pour offrir une expérience utilisateur comparable à celle des applications de bureau professionnelles (style Outlook). Il centralise la gestion multi-comptes IMAP/SMTP tout en intégrant des fonctionnalités avancées telles que le support S/MIME et OpenPGP, la synchronisation complète des calendriers et contacts, ainsi qu'une architecture extensible via un système de plugins. L'application est construite pour être robuste, fonctionnant en mode hors ligne (PWA) et adhérant aux meilleures pratiques de messagerie moderne.
 
@@ -19,11 +23,10 @@ WebMail est entièrement multilingue (français et anglais par défaut). L’int
 - Les clés de traduction sont utilisées dans tout le code via la fonction `t('clé')` du hook `useTranslation()` (voir [react-i18next](https://react.i18next.com/)).
 - Proposez vos ajouts ou corrections via une Pull Request (voir [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-**Détection automatique :**
+**Sélection de la langue :**
 La langue affichée est choisie selon l’ordre suivant :
-1. Langue sélectionnée par l’utilisateur (si implémenté dans les paramètres)
-2. Langue du navigateur
-3. Anglais par défaut
+1. Préférence enregistrée par l’utilisateur dans **Paramètres → Profil → Langue** (persistée en `localStorage`)
+2. Français par défaut (modifiable dans `main.tsx`)
 
 ### Messagerie
 - 📧 Multi-comptes IMAP/SMTP (compatible o2switch / cPanel)

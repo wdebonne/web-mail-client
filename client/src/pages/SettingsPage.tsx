@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CacheSettings from '../components/CacheSettings';
+import { APP_VERSION } from '../utils/version';
 import AutoResponderForm from '../components/mail/AutoResponderForm';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import {
@@ -156,31 +157,39 @@ export default function SettingsPage() {
             </div>
           );
         })}
+        <div className="mt-auto px-4 py-3 text-[10px] text-outlook-text-disabled border-t border-outlook-border">
+          v{APP_VERSION}
+        </div>
       </div>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:block w-60 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
+      <div className="hidden md:block w-60 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto flex flex-col">
         <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('settings.title')}</h2>
-        {tabs.map((tabItem, index) => {
-          const Icon = tabItem.icon;
-          const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
-          return (
-            <div key={tabItem.id}>
-              {tabItem.group !== prevGroup && (
-                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
-                  {tabItem.group}
-                </div>
-              )}
-              <button
-                onClick={() => setTab(tabItem.id)}
-                className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
-                  ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-              >
-                <Icon size={16} /> {tabItem.label}
-              </button>
-            </div>
-          );
-        })}
+        <div className="flex-1">
+          {tabs.map((tabItem, index) => {
+            const Icon = tabItem.icon;
+            const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
+            return (
+              <div key={tabItem.id}>
+                {tabItem.group !== prevGroup && (
+                  <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                    {tabItem.group}
+                  </div>
+                )}
+                <button
+                  onClick={() => setTab(tabItem.id)}
+                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
+                    ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                >
+                  <Icon size={16} /> {tabItem.label}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="px-4 pt-3 pb-2 text-[10px] text-outlook-text-disabled border-t border-outlook-border mt-4">
+          v{APP_VERSION}
+        </div>
       </div>
 
       {/* Content (detail view). Hidden on mobile until the user picks a

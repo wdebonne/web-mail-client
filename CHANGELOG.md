@@ -5,7 +5,54 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
+---
+
 ## [Unreleased]
+
+### Ajouté
+
+#### Page Paramètres utilisateur — refonte de l'organisation
+
+- **Groupes visuels dans les sidebars** (`Compte / Messagerie / Interface / Sécurité / Données`) : séparateurs de groupe avec label en petites capitales, présents sur mobile, tablette et desktop.
+- **Réorganisation des onglets** : `Sécurité` placé avant `Mes appareils` (logique : credentials de sécurité > gestion des sessions) ; `Comportement mail` (ex `Messagerie`) avec icône `SlidersHorizontal` plus représentative.
+- **Sidebar élargie** : `w-56` → `w-60` pour accommoder les libellés de groupes.
+- **Badge de version** `v{APP_VERSION}` en bas de la sidebar, persistent entre rechargements.
+
+#### Profil utilisateur — nouveaux champs
+
+- **Sélecteur de langue fonctionnel** : boutons visuels Français 🇫🇷 / English 🇬🇧 ; appelle `i18n.changeLanguage()` et persiste dans `localStorage('user.language')` — survit aux rechargements de page (lecture au démarrage dans `main.tsx`).
+- **Sélecteur de fuseau horaire** : liste de 25 fuseaux organisés par région (Europe / Amérique / Asie-Pacifique / UTC), détection automatique du fuseau navigateur affiché en indication.
+- **Indicateur de force du mot de passe** : barre à 4 niveaux (rouge → vert) avec label textuel.
+- **Champ de confirmation du mot de passe** : validation visuelle (bordure rouge + message) si les deux champs ne correspondent pas ; bouton désactivé jusqu'à concordance.
+
+#### Apparence — thème fonctionnel
+
+- **Thème branché sur `useThemeStore`** : les 3 modes (Clair / Sombre / Système) sont désormais fonctionnels (sélect était précédemment mort, sans état ni onChange).
+- Affichage en 3 cartes avec description de chaque mode et coche active.
+- Langue et fuseau horaire supprimés de cet onglet (déplacés dans Profil).
+- Sections `Mise en page mobile` et `Lisibilité` avec séparateurs visuels.
+
+#### Page Administration — refonte de la navigation
+
+- **Groupes visuels** (`Général / Utilisateurs / Messagerie / Calendrier / Intégrations / Système`) dans les sidebars.
+- **Sidebar élargie** : `w-56` → `w-64` pour les labels plus longs.
+- **Badge de version** `v{APP_VERSION}` dans le titre du Tableau de bord et en bas de sidebar.
+
+#### Internationalisation — noms d'onglets améliorés
+
+- `Répondeur` → `Répondeur auto` / `Messagerie` → `Comportement mail`
+- Admin : `Logs` → `Journaux`, `Apparence connexion` → `Page de connexion`, `Appareils` → `Sessions actives`, `Modèles` → `Modèles de mail`, `Règles` → `Règles de filtrage`, `Plugins` → `Extensions`, `Notifications` → `Notifications par défaut`, `Système` → `Paramètres système`
+- Ajout des clés `settings.group.*` et `admin.group.*` dans `fr.json` et `en.json`.
+
+#### Système de versioning
+
+- **Version unique** dans `package.json` racine, `client/package.json`, `server/package.json` (`1.5.0`).
+- **Injection Vite** via `define: { __APP_VERSION__ }` — `process.env.npm_package_version` permet de ne jamais désynchroniser le numéro affiché du `package.json`.
+- **`client/src/utils/version.ts`** : export `APP_VERSION` utilisable partout dans le front-end.
+
+---
+
+## [1.5.0] - 2026-05-10
 
 ### Internationalisation (i18n)
 

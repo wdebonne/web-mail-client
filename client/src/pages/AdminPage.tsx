@@ -21,6 +21,7 @@ import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
   type NotificationPrefs,
 } from '../utils/notificationPrefs';
+import { APP_VERSION } from '../utils/version';
 
 type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
 
@@ -92,28 +93,33 @@ export default function AdminPage() {
       </div>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:block w-64 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 overflow-y-auto">
+      <div className="hidden md:flex w-64 border-r border-outlook-border bg-outlook-bg-primary flex-shrink-0 py-4 flex-col overflow-y-auto">
         <h2 className="text-lg font-semibold px-4 mb-4 text-outlook-text-primary">{t('admin.title')}</h2>
-        {tabs.map((tabItem, index) => {
-          const Icon = tabItem.icon;
-          const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
-          return (
-            <div key={tabItem.id}>
-              {tabItem.group !== prevGroup && (
-                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
-                  {tabItem.group}
-                </div>
-              )}
-              <button
-                onClick={() => setTab(tabItem.id)}
-                className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
-                  ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-              >
-                <Icon size={16} /> {tabItem.label}
-              </button>
-            </div>
-          );
-        })}
+        <div className="flex-1">
+          {tabs.map((tabItem, index) => {
+            const Icon = tabItem.icon;
+            const prevGroup = index > 0 ? tabs[index - 1].group : undefined;
+            return (
+              <div key={tabItem.id}>
+                {tabItem.group !== prevGroup && (
+                  <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-outlook-text-disabled">
+                    {tabItem.group}
+                  </div>
+                )}
+                <button
+                  onClick={() => setTab(tabItem.id)}
+                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors
+                    ${tab === tabItem.id ? 'bg-outlook-bg-selected font-medium text-outlook-text-primary border-l-2 border-l-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                >
+                  <Icon size={16} /> {tabItem.label}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="px-4 pt-3 pb-2 text-[10px] text-outlook-text-disabled border-t border-outlook-border mt-4">
+          v{APP_VERSION}
+        </div>
       </div>
 
       <div
@@ -190,7 +196,12 @@ function DashboardPanel() {
 
   return (
     <div>
-      <h3 className="text-base font-semibold mb-4">Tableau de bord</h3>
+      <div className="flex items-center gap-3 mb-4">
+        <h3 className="text-base font-semibold">Tableau de bord</h3>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-outlook-blue/10 text-outlook-blue font-mono font-medium">
+          v{APP_VERSION}
+        </span>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard icon={Users} label="Utilisateurs" value={stats.users} />
         <StatCard icon={Shield} label="Groupes" value={stats.groups} color="bg-purple-500" />
