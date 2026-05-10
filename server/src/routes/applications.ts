@@ -60,6 +60,29 @@ async function triggerDockerBuild(serverUrl: string): Promise<{ ok: boolean; err
   }
 }
 
+const GH_HEADERS = (token: string) => ({
+  Authorization: `Bearer ${token}`,
+  Accept: 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28',
+  'Content-Type': 'application/json',
+});
+
+async function resolveWorkflowId(token: string, owner: string, repo: string): Promise<number | null> {
+  // GitHub indexe les workflows depuis la branche par défaut.
+  // On liste tous les workflows pour trouver l'ID numérique de tauri-build.yml,
+  // ce qui fonctionne même si le fichier n'est pas sur main.
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/actions/workflows?per_page=100`,
+    { headers: GH_HEADERS(token) }
+  );
+  if (!res.ok) return null;
+  const data = await res.json() as { workflows?: Array<{ id: number; path: string }> };
+  const found = (data.workflows ?? []).find(
+    w => w.path === '.github/workflows/tauri-build.yml'
+  );
+  return found?.id ?? null;
+}
+
 async function triggerGithubBuild(opts: {
   token: string;
   owner: string;
@@ -69,16 +92,24 @@ async function triggerGithubBuild(opts: {
   version: string;
 }): Promise<{ ok: boolean; runUrl?: string; error?: string }> {
   const { token, owner, repo, branch, serverUrl, version } = opts;
+
+  // Résoudre l'ID numérique du workflow (contourne le bug 404 quand le
+  // fichier n'est pas sur la branche par défaut du dépôt)
+  const workflowId = await resolveWorkflowId(token, owner, repo);
+  if (!workflowId) {
+    return {
+      ok: false,
+      error: `Workflow introuvable dans ${owner}/${repo}. `
+        + `Le fichier .github/workflows/tauri-build.yml doit être présent sur la branche par défaut (main). `
+        + `Fusionnez-le depuis Dev → main, ou changez la branche par défaut du dépôt sur GitHub (Settings → Branches).`,
+    };
+  }
+
   const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/actions/workflows/tauri-build.yml/dispatches`,
+    `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-      },
+      headers: GH_HEADERS(token),
       body: JSON.stringify({
         ref: branch,
         inputs: { server_url: serverUrl, version },
@@ -91,12 +122,11 @@ async function triggerGithubBuild(opts: {
   }
   const body = await res.json().catch(() => ({})) as any;
 
-  // Fournir un message d'erreur explicite selon le code HTTP
   if (res.status === 403) {
-    return { ok: false, error: `403 — Token insuffisant. Un PAT classique nécessite le scope "workflow". Un PAT fin-grained nécessite "Actions: Read and write" sur ce dépôt.` };
+    return { ok: false, error: `403 — Token insuffisant. PAT classique : scope "workflow" requis. PAT fine-grained : permission "Actions → Read and write" requise.` };
   }
   if (res.status === 404) {
-    return { ok: false, error: `404 — Dépôt introuvable ou workflow absent. Vérifiez owner/repo et que le fichier .github/workflows/tauri-build.yml est bien poussé sur la branche "${branch}".` };
+    return { ok: false, error: `404 — Dépôt "${owner}/${repo}" introuvable ou token sans accès à ce dépôt.` };
   }
   if (res.status === 422) {
     return { ok: false, error: `422 — La branche "${branch}" n'existe pas dans ce dépôt.` };
