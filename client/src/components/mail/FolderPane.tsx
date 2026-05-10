@@ -1,7 +1,7 @@
 import {
   Inbox, Send, FileText, Trash2, Archive, Star, AlertTriangle,
   ChevronDown, ChevronRight, Plus, FolderIcon, FolderPlus, Pencil,
-  Trash, Copy, GripVertical, RotateCcw, Tag, Palette,
+  Trash, Copy, GripVertical, RotateCcw, Tag, Palette, MailCheck,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
@@ -67,6 +67,7 @@ interface FolderPaneProps {
     dest: { accountId: string; path: string },
   ) => void;
   onMoveFolder?: (accountId: string, oldPath: string, newPath: string) => void;
+  onMarkFolderAllRead?: (accountId: string, folderPath: string) => void;
   onPreferencesChanged?: () => void;
   /** Called after any folder/virtual-folder selection so the parent can close the
    *  pane on mobile/tablet without duplicating the breakpoint logic in here. */
@@ -139,7 +140,7 @@ export default function FolderPane({
   accounts, selectedAccount, folders, selectedFolder,
   onSelectAccount, onSelectFolderInAccount, onCompose,
   onDropMessage, onCreateFolder, onRenameFolder, onDeleteFolder,
-  onCopyFolderBetweenAccounts, onMoveFolder, onPreferencesChanged, onAfterSelect,
+  onCopyFolderBetweenAccounts, onMoveFolder, onMarkFolderAllRead, onPreferencesChanged, onAfterSelect,
   externalPrefsVersion,
 }: FolderPaneProps) {
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => {
@@ -451,6 +452,7 @@ export default function FolderPane({
             onDeleteFolder,
             onCopyFolderBetweenAccounts,
             triggerRerender,
+            onMarkFolderAllRead,
           )}
         />
       )}
@@ -891,6 +893,7 @@ function buildFolderContextMenu(
     dest: { accountId: string; path: string },
   ) => void,
   onChange?: () => void,
+  onMarkAllRead?: (accountId: string, folderPath: string) => void,
 ): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
   const special = isSpecialFolder(folder);
@@ -956,6 +959,15 @@ function buildFolderContextMenu(
       icon: <Trash size={14} />,
       onClick: () => onDeleteFolder(account.id, folder.path),
       danger: true,
+    });
+  }
+
+  if (onMarkAllRead) {
+    items.push({ label: '', separator: true, onClick: () => {} });
+    items.push({
+      label: 'Marquer tout comme lu',
+      icon: <MailCheck size={14} />,
+      onClick: () => onMarkAllRead(account.id, folder.path),
     });
   }
 
