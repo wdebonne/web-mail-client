@@ -198,7 +198,7 @@ export default function Layout({ children }: LayoutProps) {
 
           <div className="flex-1" />
 
-          <div>
+          <div className="pb-2">
             {supportNavItems.map((item) => {
               const isActive = location.pathname.startsWith(item.path);
               const Icon = item.icon;
@@ -220,8 +220,6 @@ export default function Layout({ children }: LayoutProps) {
               );
             })}
           </div>
-
-          <div className="flex-1" />
         </nav>
 
         <main className="flex-1 overflow-hidden bg-outlook-bg-tertiary p-0.5">
