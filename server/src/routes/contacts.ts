@@ -60,11 +60,16 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
 
     if (search) {
       query += ` AND (
-        c.email ILIKE $${paramIdx} OR 
-        c.first_name ILIKE $${paramIdx} OR 
-        c.last_name ILIKE $${paramIdx} OR 
+        c.email ILIKE $${paramIdx} OR
+        c.first_name ILIKE $${paramIdx} OR
+        c.last_name ILIKE $${paramIdx} OR
         c.display_name ILIKE $${paramIdx} OR
         c.company ILIKE $${paramIdx} OR
+        c.job_title ILIKE $${paramIdx} OR
+        c.department ILIKE $${paramIdx} OR
+        c.phone ILIKE $${paramIdx} OR
+        c.mobile ILIKE $${paramIdx} OR
+        c.notes ILIKE $${paramIdx} OR
         CONCAT(c.first_name, ' ', c.last_name) ILIKE $${paramIdx}
       )`;
       params.push(`%${search}%`);
@@ -96,7 +101,14 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
     }
 
     if (search) {
-      countQuery += ` AND (c.email ILIKE $${countParamIdx} OR c.first_name ILIKE $${countParamIdx} OR c.last_name ILIKE $${countParamIdx} OR c.display_name ILIKE $${countParamIdx})`;
+      countQuery += ` AND (
+        c.email ILIKE $${countParamIdx} OR c.first_name ILIKE $${countParamIdx} OR
+        c.last_name ILIKE $${countParamIdx} OR c.display_name ILIKE $${countParamIdx} OR
+        c.company ILIKE $${countParamIdx} OR c.job_title ILIKE $${countParamIdx} OR
+        c.department ILIKE $${countParamIdx} OR c.phone ILIKE $${countParamIdx} OR
+        c.mobile ILIKE $${countParamIdx} OR c.notes ILIKE $${countParamIdx} OR
+        CONCAT(c.first_name, ' ', c.last_name) ILIKE $${countParamIdx}
+      )`;
       countParams.push(`%${search}%`);
       countParamIdx++;
     }
@@ -400,12 +412,12 @@ contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
     }
 
     const result = await pool.query(
-      `SELECT id, email, first_name, last_name, display_name, avatar_url, company, job_title
-       FROM contacts 
+      `SELECT id, email, first_name, last_name, display_name, avatar_url, avatar_data, company, job_title
+       FROM contacts
        WHERE user_id = $1 AND (
-         email ILIKE $2 OR 
-         first_name ILIKE $2 OR 
-         last_name ILIKE $2 OR 
+         email ILIKE $2 OR
+         first_name ILIKE $2 OR
+         last_name ILIKE $2 OR
          display_name ILIKE $2 OR
          CONCAT(first_name, ' ', last_name) ILIKE $2
        )
