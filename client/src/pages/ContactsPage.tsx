@@ -2005,7 +2005,7 @@ function DistListForm({ list, contactsMap = new Map(), onSubmit, onClose, isSubm
   const [members, setMembers] = useState<{ email: string; name?: string }[]>(
     Array.isArray(list?.members) ? list.members : []
   );
-  const [avatarData, setAvatarData] = useState<string | null>(list?.avatar_data || null);
+  const [avatarData, setAvatarData] = useState<string | null>(toAvatarSrc(list?.avatar_data));
   const [memberInput, setMemberInput] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
