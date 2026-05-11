@@ -813,6 +813,39 @@ export class MailService {
     }
   }
 
+  async deleteMessages(folder: string, uids: number[]) {
+    if (uids.length === 0) return;
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        await client.messageDelete(uids.join(','), { uid: true });
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  async moveMessages(fromFolder: string, uids: number[], toFolder: string) {
+    if (uids.length === 0) return;
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      try { await client.mailboxCreate(toFolder); } catch {}
+      const lock = await client.getMailboxLock(fromFolder);
+      try {
+        await client.messageMove(uids.join(','), toFolder, { uid: true });
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
   async searchMessages(folder: string, query: string) {
     const client = this.createImapClient();
     try {

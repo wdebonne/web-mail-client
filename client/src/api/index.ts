@@ -339,6 +339,12 @@ export const api = {
       method: 'DELETE',
     }),
 
+  deleteMessages: (accountId: string, uids: number[], folder: string, toTrash?: boolean, trashFolder?: string) =>
+    request<{ deleted: number[] }>(
+      `/mail/accounts/${accountId}/messages/bulk-delete`,
+      { method: 'POST', body: JSON.stringify({ uids, folder, toTrash, trashFolder }) },
+    ),
+
   // Contacts
   getContacts: (params?: { search?: string; groupId?: string; source?: string; limit?: number; offset?: number }) => {
     const query = new URLSearchParams();

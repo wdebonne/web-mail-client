@@ -44,7 +44,7 @@ import { useAuthStore } from '../stores/authStore';
 import { CategoryEditorModal, CategoryManageModal, CategoryPicker } from '../components/mail/CategoryModals';
 import { resolveFolderDisplayName } from '../components/mail/MessageList';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
-import type { MailFolder } from '../types';
+import type { MailFolder, Email } from '../types';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
@@ -627,7 +627,18 @@ export default function MailPage() {
     onMutate: ({ uid, accountId, folder }) => {
       const accId = accountId || selectedAccount?.id;
       const fld = folder || selectedFolder;
-      const prev = useMailStore.getState().messages;
+      const messages = useMailStore.getState().messages;
+      // Find and store only the specific message being deleted so that onError
+      // can re-insert it without overwriting concurrent successful deletes.
+      // Storing the full snapshot (old approach) caused rollbacks of other
+      // messages that had already been deleted when rapid deletion was used.
+      const removedMessage = messages.find(m => {
+        if (m.uid !== uid) return false;
+        if (accId && m._accountId && m._accountId !== accId) return false;
+        if (fld && m._folder && m._folder !== fld) return false;
+        return true;
+      });
+      const removedIndex = removedMessage ? messages.indexOf(removedMessage) : -1;
       // Capture the selection BEFORE removeMessage runs — the store nulls it
       // out itself when the deleted UID matches, so we need to know the
       // previous state to decide whether to navigate back to the list.
@@ -640,7 +651,7 @@ export default function MailPage() {
       if (wasViewingDeleted) {
         setMobileView('list');
       }
-      return { prev };
+      return { removedMessage, removedIndex };
     },
     onSuccess: (data: any, { accountId, uid, folder }) => {
       if (data?.moved) {
@@ -656,7 +667,16 @@ export default function MailPage() {
       removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, folder || selectedFolder);
     },
     onError: (err: any, _vars, ctx: any) => {
-      if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
+      // Re-insert only the specific message that failed, at its original position,
+      // rather than restoring the full snapshot. Restoring the full snapshot would
+      // undo concurrent successful deletes (the root cause of "rollback" on rapid deletion).
+      if (ctx?.removedMessage) {
+        const current = useMailStore.getState().messages;
+        const idx = ctx.removedIndex >= 0 ? Math.min(ctx.removedIndex, current.length) : current.length;
+        useMailStore.setState({
+          messages: [...current.slice(0, idx), ctx.removedMessage, ...current.slice(idx)],
+        });
+      }
       toast.error(err?.message || 'Erreur lors de la suppression');
     },
   });
@@ -772,6 +792,60 @@ export default function MailPage() {
     });
   }, [selectedAccount, selectedFolder, deleteMutation, queryClient]);
 
+  // Bulk delete — groups selected messages by account+folder, uses a single
+  // IMAP sequence-set operation per group instead of N individual requests.
+  const handleBulkDelete = useCallback(async (selectedMessages: Email[]) => {
+    if (selectedMessages.length === 0) return;
+
+    // Group by accountId + folder
+    const groups = new Map<string, { accountId: string; folder: string; uids: number[]; msgs: Email[] }>();
+    for (const m of selectedMessages) {
+      const accId = (m as any)._accountId || selectedAccount?.id;
+      const fld = (m as any)._folder || selectedFolder;
+      if (!accId) continue;
+      const key = `${accId}::${fld}`;
+      if (!groups.has(key)) groups.set(key, { accountId: accId, folder: fld, uids: [], msgs: [] });
+      groups.get(key)!.uids.push(m.uid);
+      groups.get(key)!.msgs.push(m);
+    }
+
+    // Optimistic removal of all selected messages from the store
+    const snapshot = useMailStore.getState().messages;
+    for (const m of selectedMessages) {
+      const accId = (m as any)._accountId || selectedAccount?.id;
+      const fld = (m as any)._folder || selectedFolder;
+      removeMessage(m.uid, accId, fld);
+      removeMessageFromVirtualCaches(m.uid, accId, fld);
+    }
+
+    let errorCount = 0;
+    for (const { accountId, folder, uids } of groups.values()) {
+      let accFolders = queryClient.getQueryData<MailFolder[]>(['folders', accountId]);
+      if (!accFolders) {
+        try {
+          accFolders = await queryClient.fetchQuery({ queryKey: ['folders', accountId], queryFn: () => api.getFolders(accountId) });
+        } catch { accFolders = []; }
+      }
+      const trashPath = findTrashFolderPath(accFolders || []);
+      const permanent = isTrashFolderPath(accFolders || [], folder) || !trashPath;
+
+      try {
+        await api.deleteMessages(accountId, uids, folder, !permanent, trashPath || undefined);
+        if (!permanent) queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+      } catch {
+        errorCount++;
+      }
+    }
+
+    if (errorCount > 0) {
+      useMailStore.setState({ messages: snapshot });
+      toast.error('Certains messages n\'ont pas pu être supprimés');
+    } else {
+      const n = selectedMessages.length;
+      toast.success(`${n} message${n > 1 ? 's' : ''} supprimé${n > 1 ? 's' : ''}`);
+    }
+  }, [selectedAccount, selectedFolder, queryClient, removeMessage, removeMessageFromVirtualCaches]);
+
   // Move mutation
   const moveMutation = useMutation({
     mutationFn: ({ uid, toFolder, accountId, fromFolder }: { uid: number; toFolder: string; accountId?: string; fromFolder?: string }) => {
@@ -782,16 +856,29 @@ export default function MailPage() {
     onMutate: ({ uid, accountId, fromFolder }) => {
       const accId = accountId || selectedAccount?.id;
       const src = fromFolder || selectedFolder;
-      const prev = useMailStore.getState().messages;
+      const messages = useMailStore.getState().messages;
+      const removedMessage = messages.find(m => {
+        if (m.uid !== uid) return false;
+        if (accId && m._accountId && m._accountId !== accId) return false;
+        if (src && m._folder && m._folder !== src) return false;
+        return true;
+      });
+      const removedIndex = removedMessage ? messages.indexOf(removedMessage) : -1;
       removeMessage(uid, accId, src);
-      return { prev };
+      return { removedMessage, removedIndex };
     },
     onSuccess: (_data, { uid, accountId, fromFolder }) => {
       toast.success('Message déplacé');
       removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, fromFolder || selectedFolder);
     },
     onError: (err: any, _vars, ctx: any) => {
-      if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
+      if (ctx?.removedMessage) {
+        const current = useMailStore.getState().messages;
+        const idx = ctx.removedIndex >= 0 ? Math.min(ctx.removedIndex, current.length) : current.length;
+        useMailStore.setState({
+          messages: [...current.slice(0, idx), ctx.removedMessage, ...current.slice(idx)],
+        });
+      }
       toast.error(err?.message || 'Erreur lors du déplacement');
     },
   });
@@ -808,9 +895,16 @@ export default function MailPage() {
     onMutate: ({ uid, accountId, fromFolder }) => {
       const accId = accountId || selectedAccount?.id;
       const src = fromFolder || selectedFolder;
-      const prev = useMailStore.getState().messages;
+      const messages = useMailStore.getState().messages;
+      const removedMessage = messages.find(m => {
+        if (m.uid !== uid) return false;
+        if (accId && m._accountId && m._accountId !== accId) return false;
+        if (src && m._folder && m._folder !== src) return false;
+        return true;
+      });
+      const removedIndex = removedMessage ? messages.indexOf(removedMessage) : -1;
       removeMessage(uid, accId, src);
-      return { prev };
+      return { removedMessage, removedIndex };
     },
     onSuccess: (data: any, { uid, accountId, fromFolder }) => {
       const where = data?.destFolder ? ` (${data.destFolder})` : '';
@@ -819,7 +913,13 @@ export default function MailPage() {
       removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, fromFolder || selectedFolder);
     },
     onError: (err: any, _vars, ctx: any) => {
-      if (ctx?.prev) useMailStore.setState({ messages: ctx.prev });
+      if (ctx?.removedMessage) {
+        const current = useMailStore.getState().messages;
+        const idx = ctx.removedIndex >= 0 ? Math.min(ctx.removedIndex, current.length) : current.length;
+        useMailStore.setState({
+          messages: [...current.slice(0, idx), ctx.removedMessage, ...current.slice(idx)],
+        });
+      }
       toast.error(err?.message || 'Erreur d\'archivage');
     },
   });
@@ -2044,6 +2144,7 @@ export default function MailPage() {
             onLoadMore={handleLoadMore}
             loadAllActive={loadAllActive}
             isVirtualFolder={!!virtualFolder}
+            onBulkDelete={handleBulkDelete}
             onFavoritesChanged={() => {
               bumpPrefs();
               queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
@@ -2141,6 +2242,7 @@ export default function MailPage() {
                   onLoadMore={handleLoadMore}
                   loadAllActive={loadAllActive}
                   isVirtualFolder={!!virtualFolder}
+                  onBulkDelete={handleBulkDelete}
                   onFavoritesChanged={() => {
                     bumpPrefs();
                     queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
