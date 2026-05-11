@@ -407,30 +407,26 @@ contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
       [req.userId, `%${query}%`]
     );
 
-    // Also search distribution lists — fallback for pre-migration servers
+    // Also search distribution lists (owned + shared)
+    const uid = req.userId as string;
     let lists;
     try {
       lists = await pool.query(
         `SELECT dl.id, dl.name, dl.description, dl.members FROM distribution_lists dl
-         WHERE COALESCE(dl.is_deleted, false) = false AND dl.name ILIKE $2 AND (
-           dl.user_id = $1
-           OR COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
-                jsonb_build_object('type'::text, 'user'::text, 'id'::text, $1::text))
-           OR EXISTS (
-             SELECT 1 FROM user_groups ug
-             WHERE ug.user_id = $1
-               AND COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
-                     jsonb_build_object('type'::text, 'group'::text, 'id'::text, ug.group_id::text))
+         WHERE (dl.is_deleted IS NULL OR dl.is_deleted = false)
+           AND dl.name ILIKE $2
+           AND (
+             dl.user_id = $1
+             OR (dl.shared_with IS NOT NULL AND dl.shared_with::text LIKE $3)
            )
-         )
          LIMIT 5`,
-        [req.userId, `%${query}%`]
+        [uid, `%${query}%`, `%"id":"${uid}"%`]
       );
     } catch {
       lists = await pool.query(
         `SELECT id, name, description, members FROM distribution_lists
          WHERE user_id = $1 AND name ILIKE $2 LIMIT 5`,
-        [req.userId, `%${query}%`]
+        [uid, `%${query}%`]
       );
     }
 
@@ -606,41 +602,45 @@ async function autoAddMemberContacts(userId: string, members: { email: string; n
 }
 
 contactRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
+  const uid = req.userId as string;
   try {
-    // Full query: requires is_deleted + shared_with columns (added by migration)
+    // Tier 1: full query with sharing support (requires new columns)
     const result = await pool.query(
       `SELECT dl.*, u.email as owner_email, u.display_name as owner_name
        FROM distribution_lists dl
        LEFT JOIN users u ON u.id = dl.user_id
-       WHERE COALESCE(dl.is_deleted, false) = false AND (
+       WHERE (dl.is_deleted IS NULL OR dl.is_deleted = false) AND (
          dl.user_id = $1
-         OR COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
-              jsonb_build_object('type'::text, 'user'::text, 'id'::text, $1::text))
-         OR EXISTS (
-           SELECT 1 FROM user_groups ug
-           WHERE ug.user_id = $1
-             AND COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
-                   jsonb_build_object('type'::text, 'group'::text, 'id'::text, ug.group_id::text))
-         )
+         OR (dl.shared_with IS NOT NULL
+             AND (
+               dl.shared_with::text LIKE $2
+               OR EXISTS (
+                 SELECT 1 FROM user_groups ug
+                 WHERE ug.user_id = $1
+                   AND dl.shared_with::text LIKE '%"id":"' || ug.group_id::text || '"%'
+               )
+             ))
        )
        ORDER BY dl.name ASC`,
-      [req.userId]
+      [uid, `%"id":"${uid}"%`]
     );
     res.json(result.rows);
-  } catch {
-    // Fallback: migration columns not yet present (server not restarted after deploy)
+  } catch (err1: any) {
+    logger.warn({ err: err1.message }, 'distribution-lists full query failed, trying fallback');
+    // Tier 2: no sharing filter (pre-migration or column issue)
     try {
-      const fallback = await pool.query(
+      const result2 = await pool.query(
         `SELECT dl.*, u.email as owner_email, u.display_name as owner_name
          FROM distribution_lists dl
          LEFT JOIN users u ON u.id = dl.user_id
          WHERE dl.user_id = $1
          ORDER BY dl.name ASC`,
-        [req.userId]
+        [uid]
       );
-      res.json(fallback.rows);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.json(result2.rows);
+    } catch (err2: any) {
+      logger.error({ err: err2.message }, 'distribution-lists fallback also failed');
+      res.status(500).json({ error: err2.message });
     }
   }
 });
