@@ -11,6 +11,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.7.6] - 2026-05-11
+
+### Corrigé
+
+- **WebSocket : reconnexion infinie sur token expiré** : l'access token JWT expire toutes les 15 minutes. Jusqu'ici, un token expiré provoquait une boucle infinie (`invalid_token` → attente 8 s → reconnexion avec le même token expiré), obligeant l'utilisateur à se déconnecter et reconnecter manuellement. Désormais, à réception du code 4001, le client rafraîchit automatiquement le token via le cookie de session (valide 90 jours) avant de se reconnecter — sans aucune action utilisateur.
+
+### Technique
+
+- **Client** : `useWebSocket.ts` — sur fermeture avec code 4001, appel explicite à `tryRestoreSession()` avant la reconnexion. Si le refresh échoue (cookie expiré), les tentatives de reconnexion s'arrêtent ; le prochain appel HTTP redirige vers la page de login.
+
+---
+
 ## [1.7.5] - 2026-05-11
 
 ### Ajouté

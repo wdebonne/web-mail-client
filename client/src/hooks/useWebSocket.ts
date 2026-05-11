@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '../stores/authStore';
+import { tryRestoreSession } from '../api';
 
 type MessageHandler = (data: any) => void;
 
@@ -86,10 +87,23 @@ export function useWebSocket(handlers: Record<string, MessageHandler> = {}) {
     socket.onclose = (ev) => {
       log('close', ev.code, ev.reason);
       if (closedByClient.current) return;
-      // 4001 = invalid_token (server side). Wait a bit longer so the auth
-      // refresh interceptor has time to rotate the JWT.
-      const delay = ev.code === 4001 ? 8000 : 5000;
-      reconnectTimer.current = setTimeout(connect, delay);
+      if (ev.code === 4001) {
+        // Access token expired — refresh the session cookie before reconnecting.
+        // The HTTP interceptor only refreshes on API 401s, so we must do it
+        // explicitly here; otherwise we loop forever with the same stale token.
+        tryRestoreSession().then((ok) => {
+          if (closedByClient.current) return;
+          if (ok) {
+            reconnectTimer.current = setTimeout(connect, 500);
+          } else {
+            // Refresh cookie is also expired — the next HTTP call will redirect
+            // to login; no point hammering the WS endpoint until then.
+            log('session refresh failed, stopping WS reconnect');
+          }
+        });
+      } else {
+        reconnectTimer.current = setTimeout(connect, 5000);
+      }
     };
 
     socket.onerror = (ev) => {
