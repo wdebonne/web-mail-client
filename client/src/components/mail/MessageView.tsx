@@ -14,6 +14,7 @@ import { api } from '../../api';
 import { inspectIncoming, SecurityVerdict } from '../../crypto/inbound';
 import { useSecurityStore } from '../../stores/securityStore';
 import NextcloudFolderPicker from '../ui/NextcloudFolderPicker';
+import { HoverCard } from './ContactHoverCard';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
@@ -451,9 +452,14 @@ export default function MessageView({
 
             {/* Desktop: full sender name + email always visible. */}
             <div className="hidden md:flex flex-wrap items-baseline gap-x-1 gap-y-0 min-w-0">
-              <span className="font-semibold text-sm text-outlook-text-primary truncate max-w-full">
-                {message.from?.name || message.from?.address || 'Inconnu'}
-              </span>
+              <HoverCard
+                email={message.from?.address}
+                data={{ email: message.from?.address, name: message.from?.name }}
+              >
+                <span className="font-semibold text-sm text-outlook-text-primary truncate max-w-full cursor-pointer hover:underline hover:text-outlook-blue transition-colors">
+                  {message.from?.name || message.from?.address || 'Inconnu'}
+                </span>
+              </HoverCard>
               {message.from?.name && (
                 <span className="text-xs text-outlook-text-secondary truncate max-w-full">
                   &lt;{message.from.address}&gt;
@@ -469,22 +475,26 @@ export default function MessageView({
             )}
 
             {/* Recipients/cc/date — always visible on desktop, hidden by default on mobile. */}
-            <div className={`text-xs text-outlook-text-secondary mt-0.5 truncate ${mobileSenderExpanded ? '' : 'hidden md:block'}`}>
+            <div className={`text-xs text-outlook-text-secondary mt-0.5 ${mobileSenderExpanded ? '' : 'hidden md:block'}`}>
               <span>À : </span>
               {message.to?.map((addr, i) => (
                 <span key={i}>
                   {i > 0 && '; '}
-                  <span className="text-outlook-blue">{addr.name || addr.address}</span>
+                  <HoverCard email={addr.address} data={{ email: addr.address, name: addr.name }}>
+                    <span className="text-outlook-blue hover:underline cursor-pointer">{addr.name || addr.address}</span>
+                  </HoverCard>
                 </span>
               ))}
             </div>
             {message.cc && message.cc.length > 0 && (
-              <div className={`text-xs text-outlook-text-secondary truncate ${mobileSenderExpanded ? '' : 'hidden md:block'}`}>
+              <div className={`text-xs text-outlook-text-secondary ${mobileSenderExpanded ? '' : 'hidden md:block'}`}>
                 <span>Cc : </span>
                 {message.cc.map((addr, i) => (
                   <span key={i}>
                     {i > 0 && '; '}
-                    {addr.name || addr.address}
+                    <HoverCard email={addr.address} data={{ email: addr.address, name: addr.name }}>
+                      <span className="text-outlook-text-secondary hover:text-outlook-blue hover:underline cursor-pointer">{addr.name || addr.address}</span>
+                    </HoverCard>
                   </span>
                 ))}
               </div>
