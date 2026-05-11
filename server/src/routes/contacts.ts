@@ -388,7 +388,7 @@ contactRouter.get('/directory/users', async (req: AuthRequest, res) => {
 contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
   try {
     const query = req.query.q as string;
-    if (!query || query.length < 2) {
+    if (!query || query.length < 1) {
       return res.json({ contacts: [], distributionLists: [] });
     }
 
@@ -412,14 +412,13 @@ contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
       `SELECT dl.id, dl.name, dl.description, dl.members FROM distribution_lists dl
        WHERE COALESCE(dl.is_deleted, false) = false AND dl.name ILIKE $2 AND (
          dl.user_id = $1
+         OR COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
+              jsonb_build_object('type', 'user', 'id', $1::text))
          OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(COALESCE(dl.shared_with, '[]'::jsonb)) sw
-           WHERE sw->>'type' = 'user' AND sw->>'id' = $1
-         )
-         OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(COALESCE(dl.shared_with, '[]'::jsonb)) sw
-           JOIN user_groups ug ON ug.group_id::text = sw->>'id' AND ug.user_id = $1
-           WHERE sw->>'type' = 'group'
+           SELECT 1 FROM user_groups ug
+           WHERE ug.user_id = $1
+             AND COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
+                   jsonb_build_object('type', 'group', 'id', ug.group_id::text))
          )
        )
        LIMIT 5`,
@@ -605,14 +604,13 @@ contactRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
        LEFT JOIN users u ON u.id = dl.user_id
        WHERE COALESCE(dl.is_deleted, false) = false AND (
          dl.user_id = $1
+         OR COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
+              jsonb_build_object('type', 'user', 'id', $1::text))
          OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(COALESCE(dl.shared_with, '[]'::jsonb)) sw
-           WHERE sw->>'type' = 'user' AND sw->>'id' = $1
-         )
-         OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(COALESCE(dl.shared_with, '[]'::jsonb)) sw
-           JOIN user_groups ug ON ug.group_id::text = sw->>'id' AND ug.user_id = $1
-           WHERE sw->>'type' = 'group'
+           SELECT 1 FROM user_groups ug
+           WHERE ug.user_id = $1
+             AND COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
+                   jsonb_build_object('type', 'group', 'id', ug.group_id::text))
          )
        )
        ORDER BY dl.name ASC`,
