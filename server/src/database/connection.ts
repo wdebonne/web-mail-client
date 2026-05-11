@@ -160,6 +160,15 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_cached_emails_date ON cached_emails(date DESC);
       CREATE INDEX IF NOT EXISTS idx_cached_emails_search ON cached_emails USING GIN(to_tsvector('french', coalesce(subject,'') || ' ' || coalesce(from_name,'') || ' ' || coalesce(body_text,'')));
 
+      -- Remove pre-existing duplicate rows before adding the unique index.
+      DELETE FROM cached_emails
+      WHERE id NOT IN (
+        SELECT DISTINCT ON (account_id, folder, uid) id
+        FROM cached_emails
+        ORDER BY account_id, folder, uid, created_at ASC
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_emails_unique ON cached_emails(account_id, folder, uid);
+
       -- Outbox (offline composed emails)
       CREATE TABLE IF NOT EXISTS outbox (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
