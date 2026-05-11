@@ -11,6 +11,24 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.8.1] - 2026-05-11
+
+### Corrigé
+
+- **Listes de distribution : erreur 500 systématique** — la route Express `GET /:id` (contacts individuels) capturait le chemin `/distribution-lists` avant la route dédiée, traitant `"distribution-lists"` comme un UUID et renvoyant `invalid input syntax for type uuid`. Corrigé en ajoutant une validation UUID (`UUID_RE`) au début des handlers `GET /:id`, `PUT /:id` et `DELETE /:id` : si l'id n'est pas un UUID, Express passe au handler suivant via `next()`.
+
+- **Build Docker : dépassement de limite PWA (2 MiB)** — le bundle principal (`index.js`) dépassait la limite de précache du service worker. Ajout de `maximumFileSizeToCacheInBytes: 5 * 1024 * 1024` dans `vite.config.ts` pour résoudre l'échec de build.
+
+- **Sélection vue Listes de distribution : requête contacts parasite** — le groupe virtuel `__distribution_lists__` n'était pas inclus dans `isVirtualView`, ce qui provoquait l'envoi d'un `groupId=__distribution_lists__` invalide à l'API contacts. Ajout de `isDistListView` dans `isVirtualView` et `enabled: !isDistListView` sur la query.
+
+### Technique
+
+- **Serveur** : `contacts.ts` — `UUID_RE` regex + `next()` sur les trois handlers à segment variable (`GET`, `PUT`, `DELETE /:id`). Route GET distribution-lists réécrite avec fallback SQL en cas de colonnes manquantes (migration non encore exécutée) et logging de l'erreur.
+- **Client** : `vite.config.ts` — `injectManifest.maximumFileSizeToCacheInBytes` passé à 5 MiB.
+- **Client** : `ContactsPage.tsx` — `isDistListView` ajouté à `isVirtualView` ; query contacts désactivée en vue DL.
+
+---
+
 ## [1.8.0] - 2026-05-11
 
 ### Ajouté
