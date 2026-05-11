@@ -2350,3 +2350,130 @@ adminRouter.delete('/auto-responders/account/:accountId', async (req: AuthReques
     res.status(500).json({ error: error.message });
   }
 });
+
+// ========================================
+// Admin — Distribution Lists
+// ========================================
+
+// GET /admin/distribution-lists?search=&userId=&includeDeleted=true
+adminRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
+  try {
+    const search = req.query.search as string | undefined;
+    const userId = req.query.userId as string | undefined;
+    const includeDeleted = req.query.includeDeleted === 'true';
+
+    let where = includeDeleted ? '' : 'WHERE dl.is_deleted = false';
+    const params: any[] = [];
+    let idx = 1;
+
+    if (!includeDeleted) {
+      if (userId) {
+        where += ` AND dl.user_id = $${idx}`;
+        params.push(userId);
+        idx++;
+      }
+      if (search) {
+        where += ` AND (dl.name ILIKE $${idx} OR u.email ILIKE $${idx} OR u.display_name ILIKE $${idx})`;
+        params.push(`%${search}%`);
+        idx++;
+      }
+    } else {
+      where = 'WHERE 1=1';
+      if (userId) {
+        where += ` AND dl.user_id = $${idx}`;
+        params.push(userId);
+        idx++;
+      }
+      if (search) {
+        where += ` AND (dl.name ILIKE $${idx} OR u.email ILIKE $${idx} OR u.display_name ILIKE $${idx})`;
+        params.push(`%${search}%`);
+        idx++;
+      }
+    }
+
+    const result = await pool.query(
+      `SELECT dl.*, u.email as owner_email, u.display_name as owner_name,
+              jsonb_array_length(dl.members) as member_count
+       FROM distribution_lists dl
+       LEFT JOIN users u ON u.id = dl.user_id
+       ${where}
+       ORDER BY dl.is_deleted ASC, dl.name ASC
+       LIMIT 200`,
+      params
+    );
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /admin/distribution-lists/:id — modify any list (admin override)
+adminRouter.put('/distribution-lists/:id', async (req: AuthRequest, res) => {
+  try {
+    const { name, description, members, sharedWith } = req.body;
+    const memberList = Array.isArray(members) ? members : undefined;
+    const result = await pool.query(
+      `UPDATE distribution_lists SET
+         name = COALESCE($1, name),
+         description = COALESCE($2, description),
+         members = CASE WHEN $3::jsonb IS NOT NULL THEN $3::jsonb ELSE members END,
+         shared_with = CASE WHEN $4::jsonb IS NOT NULL THEN $4::jsonb ELSE shared_with END,
+         updated_at = NOW()
+       WHERE id = $5 RETURNING *`,
+      [
+        name?.trim() || null,
+        description !== undefined ? description : null,
+        memberList !== undefined ? JSON.stringify(memberList) : null,
+        sharedWith !== undefined ? JSON.stringify(sharedWith) : null,
+        req.params.id,
+      ]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /admin/distribution-lists/:id — hard delete
+adminRouter.delete('/distribution-lists/:id', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM distribution_lists WHERE id = $1 RETURNING id',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /admin/distribution-lists/:id/share — share any list with users/groups
+adminRouter.post('/distribution-lists/:id/share', async (req: AuthRequest, res) => {
+  try {
+    const { sharedWith } = req.body;
+    const result = await pool.query(
+      `UPDATE distribution_lists SET shared_with = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [JSON.stringify(sharedWith || []), req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /admin/distribution-lists/:id/restore — restore soft-deleted list
+adminRouter.post('/distribution-lists/:id/restore', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE distribution_lists SET is_deleted = false, updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});

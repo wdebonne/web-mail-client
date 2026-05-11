@@ -153,6 +153,28 @@ export default function ComposeModal({
     setSuggestions([]);
   };
 
+  // When a distribution list is selected, expand all its members as individual recipients
+  const handleSuggestionSelect = (field: 'to' | 'cc' | 'bcc', s: any) => {
+    if (s.isDistributionList) {
+      const members: { email: string; name?: string }[] = s.members || [];
+      const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
+      const inputSetter = field === 'to' ? setToInput : field === 'cc' ? setCcInput : setBccInput;
+      setter(prev => {
+        const next = [...prev];
+        for (const m of members) {
+          if (m.email && !next.some(r => r.address === m.email)) {
+            next.push({ address: m.email, name: m.name });
+          }
+        }
+        return next;
+      });
+      inputSetter('');
+      setSuggestions([]);
+    } else {
+      addRecipient(field, { address: s.email, name: s.display_name || s.name });
+    }
+  };
+
   const removeRecipient = (field: 'to' | 'cc' | 'bcc', index: number) => {
     const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
     setter(prev => prev.filter((_, i) => i !== index));
@@ -546,7 +568,7 @@ export default function ComposeModal({
         onKeyDown={(e) => handleInputKeyDown(e, 'to', toInput)}
         onRemove={(i) => removeRecipient('to', i)}
         suggestions={activeField === 'to' ? suggestions : []}
-        onSelectSuggestion={(s) => addRecipient('to', { address: s.email, name: s.display_name || s.name })}
+        onSelectSuggestion={(s) => handleSuggestionSelect('to', s)}
         onFocus={() => { setActiveField('to'); if (toInput.length >= 1) searchContacts(toInput); }}
         onBlur={() => setTimeout(() => { setSuggestions([]); setActiveField(null); }, 150)}
         onLabelClick={() => setShowContactPicker('to')}
@@ -567,7 +589,7 @@ export default function ComposeModal({
           onKeyDown={(e) => handleInputKeyDown(e, 'cc', ccInput)}
           onRemove={(i) => removeRecipient('cc', i)}
           suggestions={activeField === 'cc' ? suggestions : []}
-          onSelectSuggestion={(s) => addRecipient('cc', { address: s.email, name: s.display_name || s.name })}
+          onSelectSuggestion={(s) => handleSuggestionSelect('cc', s)}
           onFocus={() => { setActiveField('cc'); if (ccInput.length >= 1) searchContacts(ccInput); }}
           onBlur={() => setTimeout(() => { setSuggestions([]); setActiveField(null); }, 150)}
           onLabelClick={() => setShowContactPicker('cc')}
@@ -583,7 +605,7 @@ export default function ComposeModal({
           onKeyDown={(e) => handleInputKeyDown(e, 'bcc', bccInput)}
           onRemove={(i) => removeRecipient('bcc', i)}
           suggestions={activeField === 'bcc' ? suggestions : []}
-          onSelectSuggestion={(s) => addRecipient('bcc', { address: s.email, name: s.display_name || s.name })}
+          onSelectSuggestion={(s) => handleSuggestionSelect('bcc', s)}
           onFocus={() => { setActiveField('bcc'); if (bccInput.length >= 1) searchContacts(bccInput); }}
           onBlur={() => setTimeout(() => { setSuggestions([]); setActiveField(null); }, 150)}
           onLabelClick={() => setShowContactPicker('bcc')}

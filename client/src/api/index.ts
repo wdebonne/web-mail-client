@@ -407,6 +407,30 @@ export const api = {
   deleteDistributionList: (id: string) =>
     request(`/contacts/distribution-lists/${id}`, { method: 'DELETE' }),
 
+  shareDistributionList: (id: string, sharedWith: any[]) =>
+    request(`/contacts/distribution-lists/${id}/share`, { method: 'POST', body: JSON.stringify({ sharedWith }) }),
+
+  // Admin distribution lists
+  getAdminDistributionLists: (params?: { search?: string; userId?: string; includeDeleted?: boolean }) => {
+    const q = new URLSearchParams();
+    if (params?.search) q.set('search', params.search);
+    if (params?.userId) q.set('userId', params.userId);
+    if (params?.includeDeleted) q.set('includeDeleted', 'true');
+    return request<any[]>(`/admin/distribution-lists${q.toString() ? `?${q}` : ''}`);
+  },
+
+  adminUpdateDistributionList: (id: string, data: any) =>
+    request(`/admin/distribution-lists/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  adminDeleteDistributionList: (id: string) =>
+    request(`/admin/distribution-lists/${id}`, { method: 'DELETE' }),
+
+  adminShareDistributionList: (id: string, sharedWith: any[]) =>
+    request(`/admin/distribution-lists/${id}/share`, { method: 'POST', body: JSON.stringify({ sharedWith }) }),
+
+  adminRestoreDistributionList: (id: string) =>
+    request(`/admin/distribution-lists/${id}/restore`, { method: 'POST' }),
+
   // Calendar
   getCalendars: () => request<any[]>('/calendar'),
 

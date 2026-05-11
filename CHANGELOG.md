@@ -11,6 +11,28 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.8.0] - 2026-05-11
+
+### Ajouté
+
+- **Listes de distribution** : créez des listes nommées (ex. « Restauration Responsable ») regroupant plusieurs destinataires. Lors de la composition d'un e-mail, tapez le nom de la liste dans les champs À/Cc/Cci — tous les membres sont automatiquement ajoutés comme destinataires individuels, sans avoir à saisir chaque adresse manuellement.
+
+  - **Création et édition** : depuis l'onglet « Listes de distribution » dans la page Contacts — ajoutez des membres en recherchant vos contacts existants ou en saisissant un e-mail manuellement (l'adresse est automatiquement ajoutée à vos contacts).
+  - **Suppression douce** : supprimer une liste l'archive (invisible pour l'utilisateur) mais elle reste visible et récupérable par les administrateurs.
+  - **Partage** : partagez vos listes avec d'autres utilisateurs ou des groupes. Les listes partagées apparaissent dans l'autocomplete de leurs destinataires.
+  - **Gestion administrateur** : nouvelle section « Listes de distribution » dans le panneau d'administration — filtrage par nom/utilisateur, affichage des listes archivées, modification, partage, restauration et suppression définitive de toutes les listes.
+
+### Technique
+
+- **BDD** : migration `distribution_lists` — ajout des colonnes `is_deleted BOOLEAN`, `shared_with JSONB` et `created_by UUID`.
+- **Serveur** : mise à jour des routes `contacts.ts` (soft delete, partage, auto-création de contacts, autocomplete filtré). Nouvelles routes admin `admin.ts` (`GET/PUT/DELETE /admin/distribution-lists`, `/share`, `/restore`).
+- **Client** : nouvelles méthodes API (`shareDistributionList`, `getAdminDistributionLists`, `adminUpdateDistributionList`, `adminDeleteDistributionList`, `adminShareDistributionList`, `adminRestoreDistributionList`).
+- **Client** : `ComposeModal` — `handleSuggestionSelect()` expand les membres d'une liste en destinataires individuels au lieu d'essayer d'ajouter l'adresse de la liste.
+- **Client** : `ContactsPage` — nouvel onglet « Listes de distribution » (virtual group `__distribution_lists__`) avec composants `DistListRow`, `DistListDetail`, `DistListForm`, `ShareDistListDialog`.
+- **Client** : `AdminPage` — nouvel onglet dans le groupe Messagerie avec composants `AdminDistributionLists`, `AdminDLEditModal`, `AdminDLShareModal`.
+
+---
+
 ## [1.7.6] - 2026-05-11
 
 ### Corrigé

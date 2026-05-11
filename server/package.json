@@ -1,6 +1,6 @@
 {
   "name": "webmail-server",
-  "version": "1.7.6",
+  "version": "1.8.0",
   "description": "Backend API pour le client mail web",
   "main": "dist/index.js",
   "scripts": {
