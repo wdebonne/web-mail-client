@@ -7,6 +7,7 @@ import {
   Users, Check, ShieldCheck, MoreHorizontal, FileText, BookOpen, Plus,
 } from 'lucide-react';
 import { HoverCard } from './ContactHoverCard';
+import { toAvatarSrc } from '../../utils/avatar';
 import { motion } from 'motion/react';
 import { ComposeData } from '../../stores/mailStore';
 import { MailAccount, EmailAddress, Contact } from '../../types';
@@ -988,9 +989,7 @@ function RecipientField({
       {suggestions.length > 0 && (
         <div className="absolute left-16 top-full bg-white border border-outlook-border rounded-md shadow-xl z-40 w-80 max-h-56 overflow-y-auto">
           {suggestions.map((s, i) => {
-            const avatarSrc = s.avatar_data
-              ? (s.avatar_data.startsWith('data:') ? s.avatar_data : `data:image/jpeg;base64,${s.avatar_data}`)
-              : s.avatar_url || null;
+            const avatarSrc = toAvatarSrc(s.avatar_data) ?? s.avatar_url ?? null;
             const displayName = s.isDistributionList ? s.name : (s.display_name || s.name || s.email || '?');
             const hue = Math.abs(displayName.split('').reduce((h: number, c: string) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % 360;
 

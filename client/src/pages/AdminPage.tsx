@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
+import { toAvatarSrc } from '../utils/avatar';
 
 import AdminCalendarManagement from '../components/admin/AdminCalendarManagement';
 import AdminAutoResponders from '../components/admin/AdminAutoResponders';
@@ -3564,9 +3565,7 @@ function AdminDLEditModal({ list, onSave, onClose, isSaving }: {
     setSuggestions([]);
   };
 
-  const getAvatarSrc = (s: any) => s.avatar_data
-    ? (s.avatar_data.startsWith('data:') ? s.avatar_data : `data:image/jpeg;base64,${s.avatar_data}`)
-    : s.avatar_url || null;
+  const getAvatarSrc = (s: any) => toAvatarSrc(s.avatar_data) ?? s.avatar_url ?? null;
   const colorFor = (seed: string) => {
     const hue = Math.abs(seed.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % 360;
     return `hsl(${hue},50%,45%)`;
