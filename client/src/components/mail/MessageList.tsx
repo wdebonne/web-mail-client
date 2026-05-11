@@ -8,7 +8,7 @@ import {
   Flag, FolderInput, Copy, Archive, ChevronDown, ChevronRight,
   ArrowUpDown, ListFilter, Calendar, CheckSquare, FolderIcon,
   Check, MailCheck, PanelLeftOpen, PanelLeftClose,
-  Tag, MessagesSquare, Clock,
+  Tag, MessagesSquare, Clock, X,
 } from 'lucide-react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
@@ -132,6 +132,8 @@ interface MessageListProps {
   onFavoritesChanged?: () => void;
   /** True when displaying a virtual folder (unified inbox/sent). The header star is hidden in that case. */
   isVirtualFolder?: boolean;
+  /** Called when the user confirms bulk deletion of the currently selected messages. */
+  onBulkDelete?: (messages: Email[]) => void;
 }
 
 interface MessageGroup {
@@ -185,6 +187,7 @@ export default function MessageList({
   onToggleLoadAll,
   onFavoritesChanged,
   isVirtualFolder = false,
+  onBulkDelete,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -354,6 +357,15 @@ export default function MessageList({
         return next;
       });
     }
+  };
+
+  const handleBulkDeleteSelected = () => {
+    if (!onBulkDelete || selectedUids.size === 0) return;
+    const toDelete = messages.filter(m => selectedUids.has(selectionKey(m, folder)));
+    if (toDelete.length === 0) return;
+    onBulkDelete(toDelete);
+    setSelectedUids(new Set());
+    setSelectionMode(false);
   };
 
   // Sort messages
@@ -715,6 +727,32 @@ export default function MessageList({
           </div>
         )}
       </div>
+
+      {/* Bulk action bar — visible when messages are selected */}
+      {selectionMode && selectedUids.size > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-outlook-blue/5 border-b border-outlook-blue/20 flex-shrink-0">
+          <span className="text-xs font-medium text-outlook-blue flex-1">
+            {selectedUids.size} sélectionné{selectedUids.size > 1 ? 's' : ''}
+          </span>
+          {onBulkDelete && (
+            <button
+              onClick={handleBulkDeleteSelected}
+              className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors"
+              title="Supprimer la sélection"
+            >
+              <Trash2 size={13} />
+              Supprimer
+            </button>
+          )}
+          <button
+            onClick={() => { setSelectedUids(new Set()); setSelectionMode(false); }}
+            className="p-1 rounded text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary transition-colors"
+            title="Annuler la sélection"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {/* Column headers — wide mode only */}
       {(listDisplayMode === 'wide' || (listDisplayMode === 'auto' && (listWidth ?? 0) >= 400)) && (

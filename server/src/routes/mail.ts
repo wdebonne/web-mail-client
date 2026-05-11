@@ -646,6 +646,40 @@ mailRouter.delete('/accounts/:accountId/messages/:uid', async (req: AuthRequest,
   }
 });
 
+// Bulk delete messages (single IMAP connection, sequence set)
+mailRouter.post('/accounts/:accountId/messages/bulk-delete', async (req: AuthRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const schema = z.object({
+      uids: z.array(z.number().int().positive()).min(1).max(500),
+      folder: z.string().min(1),
+      toTrash: z.boolean().optional(),
+      trashFolder: z.string().optional(),
+    });
+    const { uids, folder, toTrash, trashFolder } = schema.parse(req.body);
+
+    const account = await getAccountForUser(accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+
+    const mailService = new MailService(account);
+
+    if (toTrash && trashFolder && trashFolder !== folder) {
+      await mailService.moveMessages(folder, uids, trashFolder);
+    } else {
+      await mailService.deleteMessages(folder, uids);
+    }
+
+    await pool.query(
+      'DELETE FROM cached_emails WHERE account_id = $1 AND uid = ANY($2::int[]) AND folder = $3',
+      [accountId, uids, folder],
+    );
+
+    res.json({ deleted: uids });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- Cross-account operations ---
 
 // Copy/move a single message from one account to another (or within the same account).

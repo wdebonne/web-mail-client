@@ -11,6 +11,26 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.7.4] - 2026-05-11
+
+### Ajouté
+
+- **Suppression en masse** : sélectionnez plusieurs messages via le mode sélection (bouton ☑ dans la barre d'outils de la liste), puis supprimez-les tous d'un clic grâce à la barre d'actions qui apparaît. L'opération utilise un seul appel IMAP par groupe de compte/dossier (sequence set), ce qui est nettement plus rapide que N suppressions individuelles. Fonctionne avec le déplacement vers la corbeille et la suppression définitive selon le dossier courant.
+
+### Corrigé
+
+- **Rollback intempestif lors de suppressions rapides** : quand plusieurs messages étaient supprimés en succession rapide, l'échec d'une mutation restaurait tout le snapshot de la liste — réaffichant des messages déjà supprimés avec succès. Le rollback est maintenant ciblé : seul le message dont la suppression a échoué est réinséré à son index d'origine dans l'état courant. Même correction appliquée aux mutations de déplacement et d'archivage.
+
+### Technique
+
+- **Serveur** : deux nouvelles méthodes dans `MailService` — `deleteMessages(folder, uids[])` et `moveMessages(fromFolder, uids[], toFolder)` — qui utilisent une sequence set IMAP (ex. `"1,3,7"`) pour traiter tous les UIDs en une seule connexion.
+- **Serveur** : nouvel endpoint `POST /mail/accounts/:accountId/messages/bulk-delete` acceptant `{ uids, folder, toTrash?, trashFolder? }`. La suppression SQL utilise `ANY($2::int[])` pour une requête atomique.
+- **Client** : nouvelle fonction `api.deleteMessages()` correspondante.
+- **Client** : `handleBulkDelete` dans `MailPage` — groupe les messages sélectionnés par compte+dossier, effectue la suppression optimiste, puis appelle l'endpoint bulk par groupe.
+- **Client** : prop `onBulkDelete` ajoutée à `MessageList` ; barre d'actions contextuelle (compteur + bouton Supprimer + bouton Annuler) visible uniquement quand au moins un message est coché.
+
+---
+
 ## [1.7.3] - 2026-05-10
 
 ### Ajouté
