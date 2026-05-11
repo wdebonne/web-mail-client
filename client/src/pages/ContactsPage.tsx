@@ -1901,39 +1901,55 @@ function DistListForm({ list, onSubmit, onClose, isSubmitting }: {
                 Membres ({members.length})
               </label>
               <p className="text-xs text-outlook-text-disabled mb-2">
-                Recherchez des contacts existants ou tapez un email directement puis Entrée.
+                Tapez un nom ou un email pour rechercher parmi vos contacts, ou entrez un email inconnu puis Entrée.
               </p>
               {/* Member input with autocomplete */}
               <div className="relative mb-2">
-                <AtSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
                 <input
                   type="text"
                   value={memberInput}
                   onChange={e => { setMemberInput(e.target.value); searchContacts(e.target.value); setShowSuggestions(true); }}
                   onKeyDown={handleMemberKeyDown}
-                  onFocus={() => { if (memberInput.length > 0) setShowSuggestions(true); }}
+                  onFocus={() => { if (memberInput.length > 0) { searchContacts(memberInput); setShowSuggestions(true); } }}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                  placeholder="Rechercher ou email@domaine.fr"
+                  placeholder="Nom ou email@domaine.fr..."
                   className="w-full pl-9 pr-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
                 />
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-xl z-40 w-full max-h-40 overflow-y-auto">
-                    {suggestions.map((s, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onMouseDown={() => addMember(s.email, s.display_name || s.name)}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
-                      >
-                        <div className="w-6 h-6 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
-                          {(s.display_name || s.email || '?')[0].toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-medium truncate">{s.display_name || s.name || s.email}</div>
-                          <div className="text-xs text-outlook-text-disabled truncate">{s.email}</div>
-                        </div>
-                      </button>
-                    ))}
+                {/* Hint: press Enter to add raw email */}
+                {memberInput.includes('@') && memberInput.includes('.') && !suggestions.filter(s => !members.some(m => m.email === s.email)).length && (
+                  <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-sm z-40 w-full px-3 py-2 text-xs text-outlook-text-secondary flex items-center gap-2">
+                    <AtSign size={12} className="text-outlook-text-disabled flex-shrink-0" />
+                    Appuyez sur <kbd className="bg-gray-100 border border-gray-300 rounded px-1 py-0.5 font-mono text-[10px]">Entrée</kbd> pour ajouter <strong className="text-outlook-text-primary">{memberInput}</strong>
+                  </div>
+                )}
+                {showSuggestions && suggestions.filter(s => !members.some(m => m.email === s.email)).length > 0 && (
+                  <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-xl z-40 w-full max-h-48 overflow-y-auto">
+                    {suggestions
+                      .filter(s => !members.some(m => m.email === s.email))
+                      .map((s, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onMouseDown={() => addMember(s.email, s.display_name || s.name)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2.5"
+                        >
+                          <div className="w-7 h-7 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
+                            {(s.display_name || s.email || '?')[0].toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium truncate text-outlook-text-primary">
+                              {s.display_name || s.name || s.email}
+                            </div>
+                            {(s.display_name || s.name) && (
+                              <div className="text-xs text-outlook-text-secondary truncate">{s.email}</div>
+                            )}
+                          </div>
+                          {s.company && (
+                            <span className="text-xs text-outlook-text-disabled flex-shrink-0 truncate max-w-[80px]">{s.company}</span>
+                          )}
+                        </button>
+                      ))}
                   </div>
                 )}
               </div>
