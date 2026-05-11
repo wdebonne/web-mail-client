@@ -11,23 +11,26 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
-## [1.7.4] - 2026-05-11
+## [1.7.5] - 2026-05-11
 
 ### Ajouté
 
-- **Suppression en masse** : sélectionnez plusieurs messages via le mode sélection (bouton ☑ dans la barre d'outils de la liste), puis supprimez-les tous d'un clic grâce à la barre d'actions qui apparaît. L'opération utilise un seul appel IMAP par groupe de compte/dossier (sequence set), ce qui est nettement plus rapide que N suppressions individuelles. Fonctionne avec le déplacement vers la corbeille et la suppression définitive selon le dossier courant.
+- **Suppression en masse (sélection)** : sélectionnez plusieurs messages via le mode sélection (bouton ☑ dans la barre d'outils de la liste), puis supprimez-les tous d'un clic grâce à la barre d'actions qui apparaît. L'opération utilise un seul appel IMAP par groupe de compte/dossier (sequence set).
+
+- **File d'attente debounce pour les suppressions manuelles** : supprimer des emails un par un ne déclenche plus d'appel IMAP immédiat. Chaque suppression retire instantanément le message de l'interface (optimiste), puis un minuteur de 7 secondes se réinitialise. Dès que plus aucune suppression n'arrive depuis 7 secondes, toutes les suppressions en attente sont envoyées en une seule opération IMAP batch — éliminant les erreurs de connexions concurrentes lors de suppressions rapides.
 
 ### Corrigé
 
-- **Rollback intempestif lors de suppressions rapides** : quand plusieurs messages étaient supprimés en succession rapide, l'échec d'une mutation restaurait tout le snapshot de la liste — réaffichant des messages déjà supprimés avec succès. Le rollback est maintenant ciblé : seul le message dont la suppression a échoué est réinséré à son index d'origine dans l'état courant. Même correction appliquée aux mutations de déplacement et d'archivage.
+- **Erreurs IMAP lors de suppressions rapides** : l'envoi de N connexions IMAP simultanées (une par suppression) causait des erreurs de rollback après 2-3 suppressions. Le nouveau système debounce regroupe toutes les suppressions en une seule séquence IMAP.
+- **Rollback intempestif** : en cas d'échec, seul le message dont la suppression a échoué est réinséré à son index d'origine — les autres suppressions réussies restent effectives.
 
 ### Technique
 
-- **Serveur** : deux nouvelles méthodes dans `MailService` — `deleteMessages(folder, uids[])` et `moveMessages(fromFolder, uids[], toFolder)` — qui utilisent une sequence set IMAP (ex. `"1,3,7"`) pour traiter tous les UIDs en une seule connexion.
-- **Serveur** : nouvel endpoint `POST /mail/accounts/:accountId/messages/bulk-delete` acceptant `{ uids, folder, toTrash?, trashFolder? }`. La suppression SQL utilise `ANY($2::int[])` pour une requête atomique.
-- **Client** : nouvelle fonction `api.deleteMessages()` correspondante.
-- **Client** : `handleBulkDelete` dans `MailPage` — groupe les messages sélectionnés par compte+dossier, effectue la suppression optimiste, puis appelle l'endpoint bulk par groupe.
-- **Client** : prop `onBulkDelete` ajoutée à `MessageList` ; barre d'actions contextuelle (compteur + bouton Supprimer + bouton Annuler) visible uniquement quand au moins un message est coché.
+- **Serveur** : deux nouvelles méthodes dans `MailService` — `deleteMessages(folder, uids[])` et `moveMessages(fromFolder, uids[], toFolder)` — IMAP sequence set en une seule connexion.
+- **Serveur** : nouvel endpoint `POST /mail/accounts/:accountId/messages/bulk-delete` (`{ uids, folder, toTrash?, trashFolder? }`). Suppression SQL via `ANY($2::int[])`.
+- **Client** : `api.deleteMessages()` correspondante.
+- **Client** : `pendingDeletesRef` + `deleteTimerRef` + `flushPendingDeletes` + `queueDelete` remplacent `deleteMutation`. `requestDelete` appelle maintenant `queueDelete` (le minuteur de 7 s est réinitialisé à chaque nouvelle suppression).
+- **Client** : prop `onBulkDelete` ajoutée à `MessageList` ; barre d'actions contextuelle visible quand au moins un message est coché.
 
 ---
 
