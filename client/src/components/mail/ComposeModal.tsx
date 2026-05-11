@@ -178,7 +178,12 @@ export default function ComposeModal({
         _dl: { id: s.id, name: s.name, description: s.description, members: s.members || [] },
       });
     } else {
-      addRecipient(field, { address: s.email, name: s.display_name || s.name });
+      // Pass the contact id so the HoverCard can navigate directly to the contact
+      addRecipient(field, {
+        address: s.email,
+        name: s.display_name || s.name,
+        _contactId: s.id,
+      } as any);
     }
   };
 
@@ -953,7 +958,7 @@ function RecipientField({
             </HoverCard>
           ) : (
             /* Regular contact chip */
-            <HoverCard key={i} email={r.address} data={{ email: r.address, name: r.name }}>
+            <HoverCard key={i} email={r.address} data={{ id: (r as any)._contactId, email: r.address, name: r.name }}>
               <span
                 className="bg-outlook-blue/10 border border-outlook-blue/30 text-outlook-blue rounded-full px-2.5 py-0.5 text-xs flex items-center gap-1 max-w-48"
                 title={r.address}

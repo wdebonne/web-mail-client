@@ -11,6 +11,31 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.8.2] - 2026-05-11
+
+### Ajouté
+
+- **Chip liste de distribution dans le composeur** : sélectionner une liste de distribution dans les champs À/Cc/Cci affiche désormais un chip violet avec le nom de la liste et le nombre de membres, au lieu d'expanser immédiatement. Un bouton `+` sur le chip développe la liste en destinataires individuels à la demande. À l'envoi, toutes les listes non-développées sont automatiquement expansées avant transmission.
+
+- **Popup de survol sur contacts et listes** : survoler un chip destinataire dans le compose, l'expéditeur ou les destinataires d'un mail reçu affiche une popup flottante avec :
+  - Pour les **contacts** : avatar complet (récupéré via la fiche complète incluant `avatar_data`), nom, poste, entreprise, email cliquable, téléphone.
+  - Pour les **listes de distribution** : nom, description, compteur et liste des membres.
+  - Un bouton `↗` (et un bouton en bas de popup) pour naviguer directement vers la fiche contact ou la liste sans allez-retours, avec pré-sélection automatique à l'arrivée sur la page Contacts.
+
+- **Navigation directe depuis la popup** : cliquer sur `↗` dans la popup d'un contact ouvre la page Contacts avec ce contact pré-sélectionné. Pour une liste, la page s'ouvre sur l'onglet "Listes de distribution" avec la liste active.
+
+- **Avatars complets dans les popups** : la popup effectue une double requête (autocomplete → `getContact(id)`) pour récupérer le champ `avatar_data` (image base64 téléversée) en plus de `avatar_url`. L'avatar personnalisé s'affiche correctement même s'il est stocké en base64.
+
+### Technique
+
+- **Client** : nouveau composant partagé `ContactHoverCard.tsx` (composants `HoverCard`, `PopupCard`, `ContactCard`, `DLCard`) — portal React, positionnement automatique (flip vertical si proche du bas), singleton global pour éviter plusieurs popups simultanés.
+- **Client** : `ComposeModal.tsx` — `handleSuggestionSelect` ajoute un chip DL unique (`address: __dl__<id>`, `_dl: {...}`). `expandDistributionList()` remplace le chip par les membres. `expandAllDL()` appelé dans `handleSend` avant envoi. `RecipientField` enrichi d'un prop `onExpandDL` et rend les chips DL en violet.
+- **Client** : `MessageView.tsx` — expéditeur et destinataires (À/Cc) wrappés dans `HoverCard`.
+- **Client** : `ContactsPage.tsx` — lit `location.state` (`contactId` / `dlId`) au montage pour pré-sélectionner le contact ou la liste après navigation depuis la popup.
+- **Client** : `types/index.ts` — `EmailAddress` enrichi du champ optionnel `_dl` pour les chips liste de distribution.
+
+---
+
 ## [1.8.1] - 2026-05-11
 
 ### Corrigé

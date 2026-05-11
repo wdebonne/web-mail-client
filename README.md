@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.8.1-blue)
+![Version](https://img.shields.io/badge/version-1.8.2-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -108,11 +108,13 @@ La langue affichée est choisie selon l’ordre suivant :
 - ✅ **Promotion de contact** : conversion d'un expéditeur en contact permanent
 - 🔤 **Autocomplétion intelligente** dans le composeur avec affichage des noms (seuil 1 caractère)
 - 🎯 **Modal de sélection de contacts** : clic sur "À", "Cc", "Cci" pour ouvrir le carnet d'adresses complet
+- 💬 **Popup de survol** : survoler l'expéditeur ou un destinataire dans un mail reçu, ou un chip dans le compose, affiche une fiche détaillée (avatar, poste, entreprise, email, téléphone) avec un bouton `↗` pour ouvrir directement la fiche contact
 
 ### Listes de distribution
 - 📋 **Création et gestion** : onglet « Listes de distribution » dédié dans la page Contacts — créez des listes nommées (ex. « Restauration Responsable ») regroupant plusieurs destinataires
 - ➕ **Ajout de membres** : recherchez parmi vos contacts existants ou saisissez un e-mail manuellement (ajout automatique aux contacts locaux)
-- ⚡ **Autocomplétion dans le composeur** : tapez le nom d'une liste dans les champs À/Cc/Cci — tous les membres sont automatiquement expandés comme destinataires individuels, sans saisir chaque adresse
+- ⚡ **Autocomplétion dans le composeur** : tapez le nom d'une liste dans les champs À/Cc/Cci — un chip violet apparaît avec le nom de la liste et le nombre de membres ; cliquer sur `+` développe les membres individuellement
+- 💬 **Popup de survol sur les listes** : survoler un chip liste affiche le détail (membres, description) avec un bouton `↗` pour ouvrir directement la liste dans les Contacts
 - 🔒 **Suppression douce** : une liste supprimée disparaît pour l'utilisateur mais reste visible et restaurable par les administrateurs
 - 🤝 **Partage** : partagez vos listes avec d'autres utilisateurs ou des groupes de l'organisation — les listes partagées apparaissent dans leur autocomplétion
 - 🛡️ **Administration** : panneau dédié « Listes de distribution » dans l'admin — recherche/filtre par nom ou propriétaire, affichage des listes archivées, modification / partage / restauration / suppression définitive de toutes les listes
