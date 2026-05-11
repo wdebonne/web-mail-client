@@ -8,7 +8,7 @@ import {
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
-  BookOpen, Share2, RotateCcw, AtSign, User,
+  BookOpen, Share2, RotateCcw, AtSign, User, Camera,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -3518,18 +3518,40 @@ function AdminDLEditModal({ list, onSave, onClose, isSaving }: {
   const [members, setMembers] = useState<{ email: string; name?: string }[]>(
     Array.isArray(list.members) ? list.members : []
   );
+  const [avatarData, setAvatarData] = useState<string | null>(list.avatar_data || null);
   const [memberInput, setMemberInput] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSugg, setShowSugg] = useState(false);
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFile = (file: File) => {
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image trop volumineuse (max 2 Mo)'); return; }
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const max = 256;
+        let { width, height } = img;
+        if (width > height) { height = (height / width) * max; width = max; }
+        else { width = (width / height) * max; height = max; }
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        setAvatarData(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const searchContacts = (q: string) => {
     if (searchRef.current) clearTimeout(searchRef.current);
-    if (!q) { setSuggestions([]); return; }
+    if (q.length < 1) { setSuggestions([]); return; }
     searchRef.current = setTimeout(async () => {
       try {
         const res = await api.searchContacts(q);
-        setSuggestions(res.contacts.filter((c: any) => c.email));
+        setSuggestions(res.contacts.filter((c: any) => c.email && !members.some(m => m.email === c.email)));
       } catch { setSuggestions([]); }
     }, 200);
   };
@@ -3542,72 +3564,157 @@ function AdminDLEditModal({ list, onSave, onClose, isSaving }: {
     setSuggestions([]);
   };
 
+  const getAvatarSrc = (s: any) => s.avatar_data
+    ? (s.avatar_data.startsWith('data:') ? s.avatar_data : `data:image/jpeg;base64,${s.avatar_data}`)
+    : s.avatar_url || null;
+  const colorFor = (seed: string) => {
+    const hue = Math.abs(seed.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % 360;
+    return `hsl(${hue},50%,45%)`;
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-outlook-border flex-shrink-0">
-          <h2 className="text-lg font-semibold">Modifier « {list.name} »</h2>
+          <h2 className="text-lg font-semibold text-outlook-text-primary">Modifier la liste</h2>
           <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded"><X size={18} /></button>
         </div>
+
         <div className="p-6 flex-1 overflow-y-auto space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Nom</label>
-            <input value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue" />
+          {/* Avatar */}
+          <div className="flex items-center gap-4">
+            <div className="relative flex-shrink-0">
+              <input ref={avatarFileRef} type="file" accept="image/*" className="hidden"
+                onChange={e => e.target.files?.[0] && handleAvatarFile(e.target.files[0])} />
+              <button type="button" onClick={() => avatarFileRef.current?.click()}
+                className="w-16 h-16 rounded-full overflow-hidden border-2 border-dashed border-outlook-border hover:border-purple-400 transition-colors relative group"
+                title="Changer l'avatar">
+                {avatarData ? (
+                  <img src={avatarData} className="w-full h-full object-cover" alt="Avatar" />
+                ) : (
+                  <div className="w-full h-full bg-purple-100 flex items-center justify-center">
+                    <BookOpen size={24} className="text-purple-500" />
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full">
+                  <Camera size={16} className="text-white" />
+                </div>
+              </button>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-outlook-text-primary">Avatar de la liste</p>
+              <p className="text-xs text-outlook-text-disabled mt-0.5">Cliquez pour choisir une image (max 2 Mo)</p>
+              {avatarData && (
+                <button type="button" onClick={() => setAvatarData(null)} className="text-xs text-red-500 hover:underline mt-1">
+                  Supprimer l'avatar
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Name */}
           <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <input value={description} onChange={e => setDescription(e.target.value)} className="w-full px-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue" />
+            <label className="block text-sm font-medium text-outlook-text-primary mb-1">
+              Nom <span className="text-red-500">*</span>
+            </label>
+            <input value={name} onChange={e => setName(e.target.value)} autoFocus
+              className="w-full px-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue" />
           </div>
+
+          {/* Description */}
           <div>
-            <label className="block text-sm font-medium mb-2">Membres ({members.length})</label>
+            <label className="block text-sm font-medium text-outlook-text-primary mb-1">Description</label>
+            <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Optionnel"
+              className="w-full px-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue" />
+          </div>
+
+          {/* Members */}
+          <div>
+            <label className="block text-sm font-medium text-outlook-text-primary mb-1">Membres ({members.length})</label>
+            <p className="text-xs text-outlook-text-disabled mb-2">
+              Tapez un nom ou un email pour rechercher parmi vos contacts, ou entrez un email inconnu puis Entrée.
+            </p>
             <div className="relative mb-2">
-              <AtSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
               <input
                 value={memberInput}
                 onChange={e => { setMemberInput(e.target.value); searchContacts(e.target.value); setShowSugg(true); }}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addMember(memberInput); } }}
+                onFocus={() => { if (memberInput.length > 0) setShowSugg(true); }}
                 onBlur={() => setTimeout(() => setShowSugg(false), 150)}
-                placeholder="Email ou rechercher..."
+                placeholder="Nom ou email@domaine.fr..."
                 className="w-full pl-9 pr-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
               />
+              {/* Hint for raw email */}
+              {memberInput.includes('@') && memberInput.includes('.') && !suggestions.length && (
+                <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-sm z-40 w-full px-3 py-2 text-xs text-outlook-text-secondary flex items-center gap-2">
+                  <AtSign size={12} className="text-outlook-text-disabled flex-shrink-0" />
+                  Appuyez sur <kbd className="bg-gray-100 border border-gray-300 rounded px-1 py-0.5 font-mono text-[10px]">Entrée</kbd> pour ajouter <strong className="text-outlook-text-primary">{memberInput}</strong>
+                </div>
+              )}
               {showSugg && suggestions.length > 0 && (
-                <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-xl z-40 w-full max-h-40 overflow-y-auto">
-                  {suggestions.map((s: any, i: number) => (
-                    <button key={i} type="button" onMouseDown={() => addMember(s.email, s.display_name)}
-                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
-                      <User size={12} className="text-outlook-text-disabled" />
-                      <span className="truncate">{s.display_name || s.email}</span>
-                      <span className="text-xs text-outlook-text-disabled">{s.email}</span>
-                    </button>
-                  ))}
+                <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-xl z-40 w-full max-h-48 overflow-y-auto">
+                  {suggestions.map((s: any, i: number) => {
+                    const src = getAvatarSrc(s);
+                    const label = s.display_name || s.name || s.email;
+                    return (
+                      <button key={i} type="button" onMouseDown={() => addMember(s.email, s.display_name || s.name)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2.5">
+                        {src
+                          ? <img src={src} className="w-7 h-7 rounded-full object-cover flex-shrink-0" alt={label} />
+                          : <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0" style={{ background: colorFor(label) }}>{label[0].toUpperCase()}</div>
+                        }
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium truncate text-outlook-text-primary">{label}</div>
+                          {(s.display_name || s.name) && <div className="text-xs text-outlook-text-secondary truncate">{s.email}</div>}
+                        </div>
+                        {s.company && <span className="text-xs text-outlook-text-disabled flex-shrink-0 truncate max-w-[80px]">{s.company}</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
-            <div className="space-y-1 max-h-48 overflow-y-auto border border-outlook-border rounded p-2">
-              {members.length === 0 ? (
-                <p className="text-sm text-outlook-text-disabled text-center py-2">Aucun membre</p>
-              ) : members.map((m, i) => (
-                <div key={i} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-outlook-bg-hover group">
-                  <User size={12} className="text-outlook-text-disabled flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    {m.name && <div className="text-xs truncate font-medium">{m.name}</div>}
-                    <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
-                  </div>
-                  <button type="button" onClick={() => setMembers(prev => prev.filter((_, j) => j !== i))}
-                    className="opacity-0 group-hover:opacity-100 text-outlook-text-disabled hover:text-red-500 p-0.5">
-                    <X size={11} />
-                  </button>
-                </div>
-              ))}
-            </div>
+
+            {/* Member list */}
+            {members.length > 0 ? (
+              <div className="space-y-1 max-h-48 overflow-y-auto border border-outlook-border rounded p-2">
+                {members.map((m, i) => {
+                  const hue = Math.abs((m.name || m.email).split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % 360;
+                  return (
+                    <div key={i} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-outlook-bg-hover group">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                        style={{ background: `hsl(${hue},50%,45%)` }}>
+                        {(m.name || m.email || '?')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {m.name && <div className="text-sm font-medium truncate">{m.name}</div>}
+                        <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
+                      </div>
+                      <button type="button" onClick={() => setMembers(prev => prev.filter((_, j) => j !== i))}
+                        className="opacity-0 group-hover:opacity-100 text-outlook-text-disabled hover:text-red-500 p-0.5 rounded">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-sm text-outlook-text-disabled text-center py-4 border border-dashed border-outlook-border rounded">
+                Aucun membre — ajoutez des contacts ci-dessus
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Footer */}
         <div className="px-6 py-3 border-t border-outlook-border flex justify-end gap-2 flex-shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded hover:bg-outlook-bg-hover">Annuler</button>
           <button
-            onClick={() => onSave({ name: name.trim(), description: description.trim() || null, members })}
+            onClick={() => onSave({ name: name.trim(), description: description.trim() || null, members, avatarData })}
             disabled={isSaving || !name.trim()}
-            className="bg-outlook-blue text-white px-5 py-2 text-sm rounded font-medium disabled:opacity-50 flex items-center gap-2"
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 text-sm rounded font-medium disabled:opacity-50 flex items-center gap-2"
           >
             {isSaving && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
             Enregistrer
