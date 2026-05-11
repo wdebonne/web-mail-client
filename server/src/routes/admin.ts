@@ -2362,7 +2362,7 @@ adminRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
     const userId = req.query.userId as string | undefined;
     const includeDeleted = req.query.includeDeleted === 'true';
 
-    let where = includeDeleted ? '' : 'WHERE dl.is_deleted = false';
+    let where = includeDeleted ? '' : 'WHERE COALESCE(dl.is_deleted, false) = false';
     const params: any[] = [];
     let idx = 1;
 
