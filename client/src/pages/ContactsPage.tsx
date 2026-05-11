@@ -12,6 +12,7 @@ import {
   BookOpen, Share2, AtSign, RotateCcw, Shield, ExternalLink,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
+import { toAvatarSrc } from '../utils/avatar';
 import toast from 'react-hot-toast';
 import {
   parseContactsFile, generateVCard, generateContactsCSV,
@@ -1770,9 +1771,7 @@ function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting, 
   const members: { email: string; name?: string }[] = Array.isArray(list.members) ? list.members : [];
   const sharedWith: { type: string; id: string; display?: string }[] = Array.isArray(list.shared_with) ? list.shared_with : [];
   const gradient = avatarColor(list.name || 'dl');
-  const avatarSrc = list.avatar_data
-    ? (list.avatar_data.startsWith('data:') ? list.avatar_data : `data:image/jpeg;base64,${list.avatar_data}`)
-    : null;
+  const avatarSrc = toAvatarSrc(list.avatar_data);
 
   // Visible fields — persisted in localStorage
   const [visibleFields, setVisibleFields] = useState<string[]>(() => {
@@ -1869,9 +1868,7 @@ function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting, 
                     ? (contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(' ') || m.name || m.email)
                     : (m.name || m.email);
                   const initials = (displayName[0] || '?').toUpperCase();
-                  const cAvatarSrc = contact?.avatar_data
-                    ? (contact.avatar_data.startsWith('data:') ? contact.avatar_data : `data:image/jpeg;base64,${contact.avatar_data}`)
-                    : contact?.avatar_url || null;
+                  const cAvatarSrc = toAvatarSrc(contact?.avatar_data) ?? contact?.avatar_url ?? null;
                   const seed = contact?.email || m.email || 'x';
 
                   return (
@@ -2410,11 +2407,7 @@ function MemberAvatar({ contact, name, size = 7 }: {
   contact?: Contact; name: string; size?: number;
 }) {
   const avatarSrc = contact
-    ? ((contact as any).avatar_data
-        ? ((contact as any).avatar_data.startsWith('data:')
-            ? (contact as any).avatar_data
-            : `data:image/jpeg;base64,${(contact as any).avatar_data}`)
-        : contact.avatar_url || null)
+    ? (toAvatarSrc((contact as any).avatar_data) ?? contact.avatar_url ?? null)
     : null;
 
   const initial = (name || '?')[0].toUpperCase();

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Mail, Phone, Building, Briefcase, BookOpen, User, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api';
+import { toAvatarSrc } from '../../utils/avatar';
 
 interface PopupContact {
   id?: string;
@@ -212,9 +213,7 @@ function PopupCard({ contact, dl, rect, loading, onClose }: {
 
 // ── Avatar helper ─────────────────────────────────────────────────────────────
 function Avatar({ contact }: { contact?: PopupContact }) {
-  const src = contact?.avatarData
-    ? (contact.avatarData.startsWith('data:') ? contact.avatarData : `data:image/jpeg;base64,${contact.avatarData}`)
-    : contact?.avatarUrl || null;
+  const src = toAvatarSrc(contact?.avatarData) ?? contact?.avatarUrl ?? null;
   const displayName = contact?.name || contact?.email || '?';
   const initials = displayName.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
