@@ -101,13 +101,21 @@ La langue affichée est choisie selon l’ordre suivant :
 ### Contacts
 - 👥 Gestion complète des contacts (CRUD)
 - 🔍 Recherche par email, nom, prénom, entreprise
-- 📋 Groupes de contacts et listes de distribution
+- 📋 Groupes de contacts
 - 🔗 Enrichissement depuis NextCloud (photo, fonction, rôle)
 - ☁️ **Joindre un fichier depuis Nextcloud** : bouton *Nextcloud* dans le ruban **Insérer → Inclure** (visible si NC est synchronisé) — modal de navigation dans le drive NC pour sélectionner un ou plusieurs fichiers à attacher directement à l'e-mail en cours de rédaction
 - 📥 **Expéditeurs automatiques** : tout expéditeur de mail reçu est enregistré comme "contact non permanent"
 - ✅ **Promotion de contact** : conversion d'un expéditeur en contact permanent
 - 🔤 **Autocomplétion intelligente** dans le composeur avec affichage des noms (seuil 1 caractère)
 - 🎯 **Modal de sélection de contacts** : clic sur "À", "Cc", "Cci" pour ouvrir le carnet d'adresses complet
+
+### Listes de distribution
+- 📋 **Création et gestion** : onglet « Listes de distribution » dédié dans la page Contacts — créez des listes nommées (ex. « Restauration Responsable ») regroupant plusieurs destinataires
+- ➕ **Ajout de membres** : recherchez parmi vos contacts existants ou saisissez un e-mail manuellement (ajout automatique aux contacts locaux)
+- ⚡ **Autocomplétion dans le composeur** : tapez le nom d'une liste dans les champs À/Cc/Cci — tous les membres sont automatiquement expandés comme destinataires individuels, sans saisir chaque adresse
+- 🔒 **Suppression douce** : une liste supprimée disparaît pour l'utilisateur mais reste visible et restaurable par les administrateurs
+- 🤝 **Partage** : partagez vos listes avec d'autres utilisateurs ou des groupes de l'organisation — les listes partagées apparaissent dans leur autocomplétion
+- 🛡️ **Administration** : panneau dédié « Listes de distribution » dans l'admin — recherche/filtre par nom ou propriétaire, affichage des listes archivées, modification / partage / restauration / suppression définitive de toutes les listes
 
 ### Calendrier
 - 📅 Vue mois/semaine/jour
@@ -164,6 +172,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - ☁️ Configuration NextCloud
 - ☕ **Répondeurs automatiques (admin)** : page dédiée listant tous les répondeurs configurés par les utilisateurs, avec filtre texte, bascule *afficher uniquement les actifs*, édition / désactivation, et création pour n'importe quel compte (autocomplétion couvrant aussi les boîtes partagées via `mailbox_assignments`). Bouton **Paramètres** (engrenage) à côté de *Nouveau répondeur* : toggle global d'activation de la fonctionnalité (masque le ruban et l'onglet utilisateur quand désactivé) et durée par défaut entre vérifications (`1 / 5 / 15 / 30 / 60 min`).
 - 📋 **Modèles de mail (admin)** : page dédiée listant tous les modèles de la plateforme (personnels par utilisateur + globaux), avec filtre texte sur nom / objet / propriétaire, badge de type, et actions modifier / partager / supprimer pour chaque ligne. Création d'un modèle pour le compte de n'importe quel utilisateur, ou en tant que **modèle global** automatiquement visible par tous les utilisateurs.
+- 📋 **Listes de distribution (admin)** : tableau listant toutes les listes de la plateforme avec recherche/filtre par nom ou propriétaire, affichage des listes archivées (supprimées par l'utilisateur), actions modifier / partager / restaurer / supprimer définitivement.
 - 📋 Logs d'audit avec filtrage par catégorie et recherche
 
 ### Intégration O2Switch (cPanel)

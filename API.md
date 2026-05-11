@@ -18,6 +18,7 @@ L'API utilise deux méthodes d'authentification :
 - [Comptes Mail](#comptes-mail)
 - [Messagerie](#messagerie)
 - [Contacts](#contacts)
+- [Listes de distribution](#administration--listes-de-distribution)
 - [Calendrier](#calendrier)
 - [Paramètres](#paramètres)
 - [Modèles de mail](#modèles-de-mail)
@@ -771,20 +772,141 @@ Supprime un groupe.
 
 ### GET /api/contacts/distribution-lists
 
-Liste les listes de distribution.
+Liste toutes les listes de distribution accessibles à l'utilisateur : listes dont il est propriétaire (non supprimées) + listes partagées avec lui directement ou via un groupe.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "user_id": "uuid-owner",
+    "name": "Restauration Responsable",
+    "description": "Équipe restauration",
+    "members": [
+      { "email": "alice@example.com", "name": "Alice" },
+      { "email": "bob@example.com", "name": "Bob" }
+    ],
+    "shared_with": [
+      { "type": "user", "id": "uuid", "display": "Jean Dupont" }
+    ],
+    "is_deleted": false,
+    "created_by": "uuid-owner",
+    "owner_email": "owner@example.com",
+    "owner_name": "Propriétaire"
+  }
+]
+```
 
 ### POST /api/contacts/distribution-lists
 
-Crée une liste de distribution.
+Crée une liste de distribution. Les adresses e-mail des membres qui n'existent pas encore dans les contacts sont automatiquement créées comme contacts locaux.
 
 **Body :**
 ```json
 {
-  "name": "Équipe Dev",
-  "description": "Tous les développeurs",
-  "members": ["uuid-contact-1", "uuid-contact-2"]
+  "name": "Restauration Responsable",
+  "description": "Équipe restauration (optionnel)",
+  "members": [
+    { "email": "alice@example.com", "name": "Alice" },
+    { "email": "bob@example.com" }
+  ]
 }
 ```
+
+**Réponse 201 :** objet liste créé.
+
+### PUT /api/contacts/distribution-lists/:id
+
+Met à jour une liste. Le propriétaire peut modifier tous les champs (y compris `sharedWith`). Un utilisateur avec qui la liste est partagée peut modifier `name`, `description` et `members`, mais pas `sharedWith`.
+
+**Body (tous les champs sont optionnels) :**
+```json
+{
+  "name": "Nouveau nom",
+  "description": "Nouvelle description",
+  "members": [{ "email": "carol@example.com", "name": "Carol" }],
+  "sharedWith": [{ "type": "user", "id": "uuid", "display": "Jean" }]
+}
+```
+
+### DELETE /api/contacts/distribution-lists/:id
+
+**Suppression douce** (soft delete) : la liste est marquée `is_deleted = true` et disparaît pour l'utilisateur. Elle reste visible et récupérable par les administrateurs via le panneau d'administration.
+
+**Réponse 200 :** `{ "success": true }`
+
+### POST /api/contacts/distribution-lists/:id/share
+
+Partage la liste avec des utilisateurs et/ou des groupes (propriétaire uniquement). Remplace entièrement la liste `shared_with`.
+
+**Body :**
+```json
+{
+  "sharedWith": [
+    { "type": "user",  "id": "uuid-user",  "display": "Jean Dupont" },
+    { "type": "group", "id": "uuid-group", "display": "Équipe RH" }
+  ]
+}
+```
+
+**Réponse 200 :** objet liste mis à jour.
+
+---
+
+## Administration — Listes de distribution
+
+> 🔒 Rôle `admin` requis
+
+### GET /api/admin/distribution-lists
+
+Liste toutes les listes de la plateforme avec filtres.
+
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `search` | string | Filtre sur le nom de la liste ou l'email/nom du propriétaire. |
+| `userId` | UUID | Filtre sur le propriétaire. |
+| `includeDeleted` | boolean | Si `true`, inclut les listes supprimées (soft-deleted). |
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Restauration Responsable",
+    "description": "...",
+    "members": [...],
+    "shared_with": [...],
+    "is_deleted": false,
+    "owner_email": "owner@example.com",
+    "owner_name": "Propriétaire",
+    "member_count": 5
+  }
+]
+```
+
+### PUT /api/admin/distribution-lists/:id
+
+Modifie n'importe quelle liste (surcharge admin, sans vérification de propriété).
+
+**Body :** identique à `PUT /api/contacts/distribution-lists/:id`.
+
+### DELETE /api/admin/distribution-lists/:id
+
+**Suppression définitive** (hard delete) — irréversible.
+
+**Réponse 200 :** `{ "success": true }`
+
+### POST /api/admin/distribution-lists/:id/share
+
+Partage n'importe quelle liste avec des utilisateurs/groupes (y compris une liste dont l'utilisateur a été re-partagée après soft-delete).
+
+**Body :** identique à `POST /api/contacts/distribution-lists/:id/share`.
+
+### POST /api/admin/distribution-lists/:id/restore
+
+Restaure une liste soft-deleted (`is_deleted` → `false`).
+
+**Réponse 200 :** objet liste restauré.
 
 ---
 
