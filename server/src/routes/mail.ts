@@ -884,7 +884,20 @@ async function cacheMessages(accountId: string, folder: string, messages: any[])
     await pool.query(
       `INSERT INTO cached_emails (account_id, message_id, uid, folder, subject, from_address, from_name, to_addresses, cc_addresses, date, snippet, is_read, is_flagged, has_attachments, attachments, size)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-       ON CONFLICT DO NOTHING`,
+       ON CONFLICT (account_id, folder, uid) DO UPDATE SET
+         message_id = EXCLUDED.message_id,
+         subject = EXCLUDED.subject,
+         from_address = EXCLUDED.from_address,
+         from_name = EXCLUDED.from_name,
+         to_addresses = EXCLUDED.to_addresses,
+         cc_addresses = EXCLUDED.cc_addresses,
+         date = EXCLUDED.date,
+         snippet = EXCLUDED.snippet,
+         is_read = EXCLUDED.is_read,
+         is_flagged = EXCLUDED.is_flagged,
+         has_attachments = EXCLUDED.has_attachments,
+         attachments = EXCLUDED.attachments,
+         size = EXCLUDED.size`,
       [accountId, msg.messageId, msg.uid, folder, msg.subject, msg.from?.address, msg.from?.name, JSON.stringify(msg.to), JSON.stringify(msg.cc), msg.date, msg.snippet, msg.flags?.seen, msg.flags?.flagged, msg.hasAttachments, JSON.stringify(msg.attachments), msg.size]
     );
   }
@@ -895,5 +908,18 @@ async function getCachedMessages(accountId: string, folder: string) {
     'SELECT * FROM cached_emails WHERE account_id = $1 AND folder = $2 ORDER BY date DESC LIMIT 100',
     [accountId, folder]
   );
-  return result.rows;
+  return result.rows.map((row: any) => ({
+    uid: row.uid,
+    messageId: row.message_id,
+    subject: row.subject,
+    from: { address: row.from_address || '', name: row.from_name || '' },
+    to: row.to_addresses || [],
+    cc: row.cc_addresses || [],
+    date: row.date,
+    snippet: row.snippet,
+    flags: { seen: !!row.is_read, flagged: !!row.is_flagged },
+    hasAttachments: !!row.has_attachments,
+    attachments: row.attachments || [],
+    size: row.size,
+  }));
 }
