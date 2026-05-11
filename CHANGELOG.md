@@ -11,6 +11,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.8.5] - 2026-05-11
+
+### Corrigé / Amélioré
+
+- **Harmonisation de la modal d'édition d'une liste de distribution (Admin)** : la modal `AdminDLEditModal` dans le panneau d'administration est désormais identique à `DistListForm` dans la page Contacts — avatar cliquable avec overlay caméra et prévisualisation, champ Nom avec astérisque obligatoire, description avec placeholder, search membres avec icône loupe, suggestions enrichies avec avatars (photo ou initiale colorée), indice « Appuyez sur Entrée » pour un email inconnu, liste membres stylée identique, bouton « Supprimer l'avatar », transmission de `avatarData` au save.
+
+### Technique
+
+- **Client** : `AdminPage.tsx` — `AdminDLEditModal` entièrement réécrite pour partager la même logique et le même rendu que `DistListForm`. Ajout de l'icône `Camera` dans les imports Lucide. Avatars dans les suggestions via `getAvatarSrc()` / `colorFor()` locaux. `avatarData` inclus dans le payload envoyé à `api.adminUpdateDistributionList`.
+
+---
+
 ## [1.8.4] - 2026-05-11
 
 ### Ajouté
