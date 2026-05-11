@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { Contact, ContactGroup } from '../types';
@@ -110,9 +111,16 @@ type SortBy = 'name' | 'recent' | 'company';
 export default function ContactsPage() {
   const queryClient = useQueryClient();
   const currentUser = useAuthStore(s => s.user);
+  const location = useLocation();
+  const navState = (location.state as { contactId?: string; dlId?: string } | null) ?? null;
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedGroup, setSelectedGroup] = useState<string | undefined>();
-  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<string | undefined>(
+    navState?.dlId ? DIST_LIST_GROUP_ID : undefined
+  );
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(
+    navState?.contactId ?? null
+  );
   const [showForm, setShowForm] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [showImport, setShowImport] = useState(false);
@@ -121,7 +129,9 @@ export default function ContactsPage() {
 
   // Distribution list state
   const isDistListView = selectedGroup === DIST_LIST_GROUP_ID;
-  const [selectedDistListId, setSelectedDistListId] = useState<string | null>(null);
+  const [selectedDistListId, setSelectedDistListId] = useState<string | null>(
+    navState?.dlId ?? null
+  );
   const [showDLForm, setShowDLForm] = useState(false);
   const [editingDL, setEditingDL] = useState<any>(null);
   const [showShareDialog, setShowShareDialog] = useState<any>(null);
