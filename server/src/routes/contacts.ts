@@ -121,10 +121,15 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
 });
 
 // Get single contact
-contactRouter.get('/:id', async (req: AuthRequest, res) => {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+contactRouter.get('/:id', async (req: AuthRequest, res, next) => {
+  // Pass to more-specific routes (e.g. /distribution-lists) if id is not a UUID
+  if (!UUID_RE.test(req.params.id)) return next();
+
   try {
     const result = await pool.query(
-      `SELECT c.*, 
+      `SELECT c.*,
          ARRAY_AGG(DISTINCT jsonb_build_object('id', cg.id, 'name', cg.name)) FILTER (WHERE cg.id IS NOT NULL) as groups
        FROM contacts c
        LEFT JOIN contact_group_members cgm ON cgm.contact_id = c.id
@@ -213,7 +218,8 @@ contactRouter.post('/', async (req: AuthRequest, res) => {
 });
 
 // Update contact
-contactRouter.put('/:id', async (req: AuthRequest, res) => {
+contactRouter.put('/:id', async (req: AuthRequest, res, next) => {
+  if (!UUID_RE.test(req.params.id)) return next();
   try {
     const { id } = req.params;
     const data = req.body;
@@ -262,7 +268,8 @@ contactRouter.put('/:id', async (req: AuthRequest, res) => {
 });
 
 // Delete contact
-contactRouter.delete('/:id', async (req: AuthRequest, res) => {
+contactRouter.delete('/:id', async (req: AuthRequest, res, next) => {
+  if (!UUID_RE.test(req.params.id)) return next();
   try {
     // Capture CardDAV info before deletion so we can also remove it remotely.
     const snap = await pool.query(
