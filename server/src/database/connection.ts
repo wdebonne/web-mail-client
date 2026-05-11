@@ -737,6 +737,7 @@ export async function initDatabase() {
       ALTER TABLE distribution_lists ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
       ALTER TABLE distribution_lists ADD COLUMN IF NOT EXISTS shared_with JSONB DEFAULT '[]';
       ALTER TABLE distribution_lists ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+      ALTER TABLE distribution_lists ADD COLUMN IF NOT EXISTS avatar_data TEXT;
     `);
 
     // One-shot data fix: keep `is_admin` aligned with `role`. Older builds

@@ -657,13 +657,14 @@ contactRouter.post('/distribution-lists', async (req: AuthRequest, res) => {
     const { name, description, members } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'Le nom est requis' });
     const memberList: { email: string; name?: string }[] = Array.isArray(members) ? members : [];
+    const { avatarData } = req.body;
     // Try with new columns first, fallback to base insert
     let result;
     try {
       result = await pool.query(
-        `INSERT INTO distribution_lists (user_id, created_by, name, description, members)
-         VALUES ($1, $1, $2, $3, $4) RETURNING *`,
-        [req.userId, name.trim(), description || null, JSON.stringify(memberList)]
+        `INSERT INTO distribution_lists (user_id, created_by, name, description, members, avatar_data)
+         VALUES ($1, $1, $2, $3, $4, $5) RETURNING *`,
+        [req.userId, name.trim(), description || null, JSON.stringify(memberList), avatarData || null]
       );
     } catch {
       result = await pool.query(
@@ -681,7 +682,7 @@ contactRouter.post('/distribution-lists', async (req: AuthRequest, res) => {
 
 contactRouter.put('/distribution-lists/:id', async (req: AuthRequest, res) => {
   try {
-    const { name, description, members, sharedWith } = req.body;
+    const { name, description, members, sharedWith, avatarData } = req.body;
     // Allow update if owner OR if list is shared with user (but only owner can change sharedWith)
     const check = await pool.query(
       `SELECT id, user_id FROM distribution_lists
@@ -704,6 +705,7 @@ contactRouter.put('/distribution-lists/:id', async (req: AuthRequest, res) => {
          description = COALESCE($2, description),
          members = COALESCE($3::jsonb, members),
          shared_with = CASE WHEN $5 THEN COALESCE($4::jsonb, shared_with) ELSE shared_with END,
+         avatar_data = CASE WHEN $7::text IS NOT NULL THEN $7::text ELSE avatar_data END,
          updated_at = NOW()
        WHERE id = $6 RETURNING *`,
       [
@@ -713,6 +715,7 @@ contactRouter.put('/distribution-lists/:id', async (req: AuthRequest, res) => {
         sharedWith !== undefined ? JSON.stringify(sharedWith) : null,
         isOwner,
         req.params.id,
+        avatarData !== undefined ? (avatarData || null) : null,
       ]
     );
     if (members !== undefined) autoAddMemberContacts(req.userId!, memberList).catch(() => {});
