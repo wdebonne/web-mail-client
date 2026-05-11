@@ -407,23 +407,32 @@ contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
       [req.userId, `%${query}%`]
     );
 
-    // Also search distribution lists (owned + shared, non-deleted)
-    const lists = await pool.query(
-      `SELECT dl.id, dl.name, dl.description, dl.members FROM distribution_lists dl
-       WHERE COALESCE(dl.is_deleted, false) = false AND dl.name ILIKE $2 AND (
-         dl.user_id = $1
-         OR COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
-              jsonb_build_object('type', 'user', 'id', $1::text))
-         OR EXISTS (
-           SELECT 1 FROM user_groups ug
-           WHERE ug.user_id = $1
-             AND COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
-                   jsonb_build_object('type', 'group', 'id', ug.group_id::text))
+    // Also search distribution lists — fallback for pre-migration servers
+    let lists;
+    try {
+      lists = await pool.query(
+        `SELECT dl.id, dl.name, dl.description, dl.members FROM distribution_lists dl
+         WHERE COALESCE(dl.is_deleted, false) = false AND dl.name ILIKE $2 AND (
+           dl.user_id = $1
+           OR COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
+                jsonb_build_object('type'::text, 'user'::text, 'id'::text, $1::text))
+           OR EXISTS (
+             SELECT 1 FROM user_groups ug
+             WHERE ug.user_id = $1
+               AND COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
+                     jsonb_build_object('type'::text, 'group'::text, 'id'::text, ug.group_id::text))
+           )
          )
-       )
-       LIMIT 5`,
-      [req.userId, `%${query}%`]
-    );
+         LIMIT 5`,
+        [req.userId, `%${query}%`]
+      );
+    } catch {
+      lists = await pool.query(
+        `SELECT id, name, description, members FROM distribution_lists
+         WHERE user_id = $1 AND name ILIKE $2 LIMIT 5`,
+        [req.userId, `%${query}%`]
+      );
+    }
 
     res.json({
       contacts: result.rows,
@@ -598,6 +607,7 @@ async function autoAddMemberContacts(userId: string, members: { email: string; n
 
 contactRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
   try {
+    // Full query: requires is_deleted + shared_with columns (added by migration)
     const result = await pool.query(
       `SELECT dl.*, u.email as owner_email, u.display_name as owner_name
        FROM distribution_lists dl
@@ -605,20 +615,33 @@ contactRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
        WHERE COALESCE(dl.is_deleted, false) = false AND (
          dl.user_id = $1
          OR COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
-              jsonb_build_object('type', 'user', 'id', $1::text))
+              jsonb_build_object('type'::text, 'user'::text, 'id'::text, $1::text))
          OR EXISTS (
            SELECT 1 FROM user_groups ug
            WHERE ug.user_id = $1
              AND COALESCE(dl.shared_with, '[]'::jsonb) @> jsonb_build_array(
-                   jsonb_build_object('type', 'group', 'id', ug.group_id::text))
+                   jsonb_build_object('type'::text, 'group'::text, 'id'::text, ug.group_id::text))
          )
        )
        ORDER BY dl.name ASC`,
       [req.userId]
     );
     res.json(result.rows);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch {
+    // Fallback: migration columns not yet present (server not restarted after deploy)
+    try {
+      const fallback = await pool.query(
+        `SELECT dl.*, u.email as owner_email, u.display_name as owner_name
+         FROM distribution_lists dl
+         LEFT JOIN users u ON u.id = dl.user_id
+         WHERE dl.user_id = $1
+         ORDER BY dl.name ASC`,
+        [req.userId]
+      );
+      res.json(fallback.rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
@@ -627,11 +650,21 @@ contactRouter.post('/distribution-lists', async (req: AuthRequest, res) => {
     const { name, description, members } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'Le nom est requis' });
     const memberList: { email: string; name?: string }[] = Array.isArray(members) ? members : [];
-    const result = await pool.query(
-      `INSERT INTO distribution_lists (user_id, created_by, name, description, members)
-       VALUES ($1, $1, $2, $3, $4) RETURNING *`,
-      [req.userId, name.trim(), description || null, JSON.stringify(memberList)]
-    );
+    // Try with new columns first, fallback to base insert
+    let result;
+    try {
+      result = await pool.query(
+        `INSERT INTO distribution_lists (user_id, created_by, name, description, members)
+         VALUES ($1, $1, $2, $3, $4) RETURNING *`,
+        [req.userId, name.trim(), description || null, JSON.stringify(memberList)]
+      );
+    } catch {
+      result = await pool.query(
+        `INSERT INTO distribution_lists (user_id, name, description, members)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [req.userId, name.trim(), description || null, JSON.stringify(memberList)]
+      );
+    }
     autoAddMemberContacts(req.userId!, memberList).catch(() => {});
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
