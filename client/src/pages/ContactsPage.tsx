@@ -1725,96 +1725,109 @@ function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting }
 }) {
   const members: { email: string; name?: string }[] = Array.isArray(list.members) ? list.members : [];
   const sharedWith: { type: string; id: string; display?: string }[] = Array.isArray(list.shared_with) ? list.shared_with : [];
+  const gradient = avatarColor(list.name || 'dl');
+  const avatarSrc = list.avatar_data
+    ? (list.avatar_data.startsWith('data:') ? list.avatar_data : `data:image/jpeg;base64,${list.avatar_data}`)
+    : null;
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="flex items-start gap-4 mb-6">
-        <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-          <BookOpen size={28} className="text-purple-600" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-semibold text-outlook-text-primary">{list.name}</h2>
-          {list.description && <p className="text-sm text-outlook-text-secondary mt-1">{list.description}</p>}
-          {!isOwner && list.owner_name && (
-            <p className="text-xs text-outlook-text-disabled mt-1">Partagée par {list.owner_name || list.owner_email}</p>
+    <div>
+      {/* Banner */}
+      <div className={`h-48 relative bg-gradient-to-br ${gradient} from-purple-400 to-purple-700`}>
+        <div className="absolute inset-0 bg-black/10" />
+        <div className="absolute top-3 right-3 flex gap-1">
+          {isOwner && (
+            <button onClick={onEdit} className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full text-white transition" title="Modifier">
+              <Edit2 size={16} />
+            </button>
+          )}
+          {isOwner && (
+            <button onClick={onShare} className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full text-white transition" title="Partager">
+              <Share2 size={16} />
+            </button>
+          )}
+          {isOwner && (
+            <button onClick={onDelete} disabled={isDeleting} className="p-2 bg-white/20 hover:bg-red-500/60 backdrop-blur-sm rounded-full text-white transition disabled:opacity-50" title="Supprimer">
+              <Trash2 size={16} />
+            </button>
           )}
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {isOwner && (
-          <button
-            onClick={onEdit}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover"
-          >
-            <Edit2 size={13} /> Modifier
-          </button>
-        )}
-        {isOwner && (
-          <button
-            onClick={onShare}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover text-outlook-blue"
-          >
-            <Share2 size={13} /> Partager
-          </button>
-        )}
-        {isOwner && (
-          <button
-            onClick={onDelete}
-            disabled={isDeleting}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-red-200 rounded hover:bg-red-50 text-red-600 disabled:opacity-50"
-          >
-            <Trash2 size={13} /> Supprimer
-          </button>
-        )}
-      </div>
-
-      {/* Members */}
-      <div className="mb-6">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-outlook-text-disabled mb-3">
-          Membres ({members.length})
-        </h3>
-        {members.length === 0 ? (
-          <p className="text-sm text-outlook-text-disabled">Aucun membre. Modifier la liste pour en ajouter.</p>
-        ) : (
-          <div className="space-y-1">
-            {members.map((m, i) => (
-              <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-outlook-bg-hover">
-                <div className="w-7 h-7 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
-                  {(m.name || m.email || '?')[0].toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  {m.name && <div className="text-sm text-outlook-text-primary truncate">{m.name}</div>}
-                  <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
-                </div>
+      <div className="max-w-3xl mx-auto px-6 pb-8 relative z-10">
+        {/* Avatar + name row */}
+        <div className="flex items-end gap-5 mb-6 -mt-14">
+          <div className="ring-4 ring-outlook-bg-primary rounded-full flex-shrink-0 relative z-10">
+            {avatarSrc ? (
+              <img src={avatarSrc} className="w-24 h-24 rounded-full object-cover" alt={list.name} />
+            ) : (
+              <div className="w-24 h-24 rounded-full bg-purple-100 flex items-center justify-center ring-4 ring-outlook-bg-primary">
+                <BookOpen size={36} className="text-purple-600" />
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
+          <div className="flex-1 pb-3 min-w-0">
+            <h1 className="text-2xl font-semibold text-outlook-text-primary leading-tight truncate">{list.name}</h1>
+            {list.description && (
+              <p className="text-sm text-outlook-text-secondary mt-1 truncate">{list.description}</p>
+            )}
+            {!isOwner && (list.owner_name || list.owner_email) && (
+              <p className="text-xs text-outlook-text-disabled mt-1 flex items-center gap-1">
+                <Share2 size={11} /> Partagée par {list.owner_name || list.owner_email}
+              </p>
+            )}
+          </div>
+        </div>
 
-      {/* Shared with */}
-      {isOwner && (
-        <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-outlook-text-disabled mb-3">
-            Partagée avec ({sharedWith.length})
-          </h3>
-          {sharedWith.length === 0 ? (
-            <p className="text-sm text-outlook-text-disabled">Non partagée. Cliquez sur "Partager" pour la partager.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {sharedWith.map((sw, i) => (
-                <span key={i} className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-full">
-                  {sw.type === 'group' ? <Shield size={10} /> : <User size={10} />}
-                  {sw.display || sw.id}
-                </span>
-              ))}
-            </div>
+        {/* Sections */}
+        <div className="space-y-4">
+          {/* Members section */}
+          <Section title={`Membres (${members.length})`} icon={<Users size={14} />}>
+            {members.length === 0 ? (
+              <p className="text-sm text-outlook-text-disabled sm:col-span-2">
+                Aucun membre.{isOwner ? ' Cliquez sur Modifier pour en ajouter.' : ''}
+              </p>
+            ) : (
+              <div className="sm:col-span-2 space-y-2">
+                {members.map((m, i) => (
+                  <div key={i} className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
+                      {(m.name || m.email || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {m.name && <div className="text-sm font-medium text-outlook-text-primary truncate">{m.name}</div>}
+                      <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
+                    </div>
+                    <a href={`mailto:${m.email}`} className="text-outlook-text-disabled hover:text-outlook-blue flex-shrink-0" title={`Écrire à ${m.email}`}>
+                      <Mail size={13} />
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* Shared with section */}
+          {isOwner && (
+            <Section title={`Partagée avec (${sharedWith.length})`} icon={<Share2 size={14} />}>
+              {sharedWith.length === 0 ? (
+                <p className="text-sm text-outlook-text-disabled sm:col-span-2">
+                  Non partagée. Cliquez sur <button onClick={onShare} className="text-outlook-blue hover:underline">Partager</button> pour la partager.
+                </p>
+              ) : (
+                <div className="sm:col-span-2 flex flex-wrap gap-1.5">
+                  {sharedWith.map((sw, i) => (
+                    <span key={i} className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full">
+                      {sw.type === 'group' ? <Shield size={10} /> : <User size={10} />}
+                      {sw.display || sw.id}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Section>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -1827,10 +1840,32 @@ function DistListForm({ list, onSubmit, onClose, isSubmitting }: {
   const [members, setMembers] = useState<{ email: string; name?: string }[]>(
     Array.isArray(list?.members) ? list.members : []
   );
+  const [avatarData, setAvatarData] = useState<string | null>(list?.avatar_data || null);
   const [memberInput, setMemberInput] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFile = (file: File) => {
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image trop volumineuse (max 2 Mo)'); return; }
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const max = 256;
+        let { width, height } = img;
+        if (width > height) { height = (height / width) * max; width = max; }
+        else { width = (width / height) * max; height = max; }
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        setAvatarData(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const searchContacts = useCallback((q: string) => {
     if (searchRef.current) clearTimeout(searchRef.current);
@@ -1862,7 +1897,7 @@ function DistListForm({ list, onSubmit, onClose, isSubmitting }: {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSubmit({ name: name.trim(), description: description.trim() || null, members });
+    onSubmit({ name: name.trim(), description: description.trim() || null, members, avatarData });
   };
 
   return (
@@ -1879,6 +1914,45 @@ function DistListForm({ list, onSubmit, onClose, isSubmitting }: {
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+            {/* Avatar */}
+            <div className="flex items-center gap-4">
+              <div className="relative flex-shrink-0">
+                <input
+                  ref={avatarFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => e.target.files?.[0] && handleAvatarFile(e.target.files[0])}
+                />
+                <button
+                  type="button"
+                  onClick={() => avatarFileRef.current?.click()}
+                  className="w-16 h-16 rounded-full overflow-hidden border-2 border-dashed border-outlook-border hover:border-purple-400 transition-colors relative group"
+                  title="Changer l'avatar"
+                >
+                  {avatarData ? (
+                    <img src={avatarData} className="w-full h-full object-cover" alt="Avatar" />
+                  ) : (
+                    <div className="w-full h-full bg-purple-100 flex items-center justify-center">
+                      <BookOpen size={24} className="text-purple-500" />
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full">
+                    <Camera size={16} className="text-white" />
+                  </div>
+                </button>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-outlook-text-primary">Avatar de la liste</p>
+                <p className="text-xs text-outlook-text-disabled mt-0.5">Cliquez pour choisir une image (max 2 Mo)</p>
+                {avatarData && (
+                  <button type="button" onClick={() => setAvatarData(null)} className="text-xs text-red-500 hover:underline mt-1">
+                    Supprimer l'avatar
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Name */}
             <div>
               <label className="block text-sm font-medium text-outlook-text-primary mb-1">Nom <span className="text-red-500">*</span></label>

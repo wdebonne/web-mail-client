@@ -319,15 +319,6 @@ function ContactCard({ contact, loading, onClose }: {
         )}
       </div>
 
-      {/* Footer action */}
-      {contact?.id && (
-        <button
-          onMouseDown={e => { e.preventDefault(); goToContact(); }}
-          className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs text-outlook-blue hover:bg-outlook-blue/5 border border-outlook-border rounded-lg py-1.5 transition-colors"
-        >
-          <ExternalLink size={11} /> Ouvrir la fiche contact
-        </button>
-      )}
     </div>
   );
 }
@@ -380,15 +371,6 @@ function DLCard({ dl, onClose }: { dl: PopupDL; onClose: () => void }) {
         ))}
       </div>
 
-      {/* Footer action */}
-      {dl.id && (
-        <button
-          onMouseDown={e => { e.preventDefault(); goToList(); }}
-          className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs text-purple-600 hover:bg-purple-50 border border-purple-200 rounded-lg py-1.5 transition-colors"
-        >
-          <ExternalLink size={11} /> Ouvrir la liste de distribution
-        </button>
-      )}
     </div>
   );
 }
