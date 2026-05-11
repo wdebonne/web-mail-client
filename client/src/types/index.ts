@@ -41,6 +41,13 @@ export interface MailFolder {
 export interface EmailAddress {
   address: string;
   name?: string;
+  /** Present only when this recipient is a distribution list (not yet expanded) */
+  _dl?: {
+    id: string;
+    name: string;
+    description?: string;
+    members: { email: string; name?: string }[];
+  };
 }
 
 export interface Email {

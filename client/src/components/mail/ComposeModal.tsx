@@ -4,8 +4,9 @@ import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link as LinkIcon, Image, Palette, Type, Indent, Outdent,
-  Users, Check, ShieldCheck, MoreHorizontal, FileText,
+  Users, Check, ShieldCheck, MoreHorizontal, FileText, BookOpen, Plus,
 } from 'lucide-react';
+import { HoverCard } from './ContactHoverCard';
 import { motion } from 'motion/react';
 import { ComposeData } from '../../stores/mailStore';
 import { MailAccount, EmailAddress, Contact } from '../../types';
@@ -153,26 +154,49 @@ export default function ComposeModal({
     setSuggestions([]);
   };
 
-  // When a distribution list is selected, expand all its members as individual recipients
+  // Expand a DL chip → replace it with individual member recipients
+  const expandDistributionList = (field: 'to' | 'cc' | 'bcc', index: number, dl: EmailAddress['_dl']) => {
+    if (!dl) return;
+    const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
+    setter(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      for (const m of dl.members) {
+        if (m.email && !next.some(r => r.address === m.email)) {
+          next.push({ address: m.email, name: m.name });
+        }
+      }
+      return next;
+    });
+  };
+
+  // When a DL is selected → add as a single named chip (not expanded yet)
   const handleSuggestionSelect = (field: 'to' | 'cc' | 'bcc', s: any) => {
     if (s.isDistributionList) {
-      const members: { email: string; name?: string }[] = s.members || [];
-      const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
-      const inputSetter = field === 'to' ? setToInput : field === 'cc' ? setCcInput : setBccInput;
-      setter(prev => {
-        const next = [...prev];
-        for (const m of members) {
-          if (m.email && !next.some(r => r.address === m.email)) {
-            next.push({ address: m.email, name: m.name });
-          }
-        }
-        return next;
+      addRecipient(field, {
+        address: `__dl__${s.id}`,
+        name: s.name,
+        _dl: { id: s.id, name: s.name, description: s.description, members: s.members || [] },
       });
-      inputSetter('');
-      setSuggestions([]);
     } else {
       addRecipient(field, { address: s.email, name: s.display_name || s.name });
     }
+  };
+
+  // Expand all DL chips before sending
+  const expandAllDL = (recipients: EmailAddress[]): EmailAddress[] => {
+    const out: EmailAddress[] = [];
+    for (const r of recipients) {
+      if (r._dl) {
+        for (const m of r._dl.members) {
+          if (m.email && !out.some(x => x.address === m.email)) {
+            out.push({ address: m.email, name: m.name });
+          }
+        }
+      } else {
+        out.push(r);
+      }
+    }
+    return out;
   };
 
   const removeRecipient = (field: 'to' | 'cc' | 'bcc', index: number) => {
@@ -293,6 +317,11 @@ export default function ComposeModal({
     if (toInput.trim()) addEmailIfValid(toInput, finalTo);
     if (ccInput.trim()) addEmailIfValid(ccInput, finalCc);
     if (bccInput.trim()) addEmailIfValid(bccInput, finalBcc);
+
+    // Expand distribution list chips into individual recipients
+    finalTo = expandAllDL(finalTo);
+    finalCc = expandAllDL(finalCc);
+    finalBcc = expandAllDL(finalBcc);
 
     if (finalTo.length === 0) {
       alert('Veuillez ajouter au moins un destinataire');
@@ -569,6 +598,7 @@ export default function ComposeModal({
         onRemove={(i) => removeRecipient('to', i)}
         suggestions={activeField === 'to' ? suggestions : []}
         onSelectSuggestion={(s) => handleSuggestionSelect('to', s)}
+        onExpandDL={(i, dl) => expandDistributionList('to', i, dl)}
         onFocus={() => { setActiveField('to'); if (toInput.length >= 1) searchContacts(toInput); }}
         onBlur={() => setTimeout(() => { setSuggestions([]); setActiveField(null); }, 150)}
         onLabelClick={() => setShowContactPicker('to')}
@@ -590,6 +620,7 @@ export default function ComposeModal({
           onRemove={(i) => removeRecipient('cc', i)}
           suggestions={activeField === 'cc' ? suggestions : []}
           onSelectSuggestion={(s) => handleSuggestionSelect('cc', s)}
+          onExpandDL={(i, dl) => expandDistributionList('cc', i, dl)}
           onFocus={() => { setActiveField('cc'); if (ccInput.length >= 1) searchContacts(ccInput); }}
           onBlur={() => setTimeout(() => { setSuggestions([]); setActiveField(null); }, 150)}
           onLabelClick={() => setShowContactPicker('cc')}
@@ -606,6 +637,7 @@ export default function ComposeModal({
           onRemove={(i) => removeRecipient('bcc', i)}
           suggestions={activeField === 'bcc' ? suggestions : []}
           onSelectSuggestion={(s) => handleSuggestionSelect('bcc', s)}
+          onExpandDL={(i, dl) => expandDistributionList('bcc', i, dl)}
           onFocus={() => { setActiveField('bcc'); if (bccInput.length >= 1) searchContacts(bccInput); }}
           onBlur={() => setTimeout(() => { setSuggestions([]); setActiveField(null); }, 150)}
           onLabelClick={() => setShowContactPicker('bcc')}
@@ -867,6 +899,7 @@ function AccountSelector({
 function RecipientField({
   label, recipients, inputValue, onInputChange, onKeyDown, onRemove,
   suggestions, onSelectSuggestion, onFocus, onBlur, extra, onLabelClick,
+  onExpandDL,
 }: {
   label: string;
   recipients: EmailAddress[];
@@ -880,6 +913,7 @@ function RecipientField({
   onBlur?: () => void;
   extra?: React.ReactNode;
   onLabelClick?: () => void;
+  onExpandDL?: (index: number, dl: EmailAddress['_dl']) => void;
 }) {
   return (
     <div className="flex items-start gap-2 px-4 py-1.5 border-b border-outlook-border relative flex-shrink-0">
@@ -892,16 +926,45 @@ function RecipientField({
       </button>
       <div className="flex-1 flex items-center gap-1 flex-wrap min-w-0">
         {recipients.map((r, i) => (
-          <span
-            key={i}
-            className="bg-outlook-blue/10 border border-outlook-blue/30 text-outlook-blue rounded-full px-2.5 py-0.5 text-xs flex items-center gap-1 max-w-48"
-            title={r.address}
-          >
-            <span className="truncate">{r.name || r.address}</span>
-            <button onClick={() => onRemove(i)} className="text-outlook-blue/60 hover:text-outlook-danger flex-shrink-0">
-              <X size={10} />
-            </button>
-          </span>
+          r._dl ? (
+            /* Distribution list chip */
+            <HoverCard key={i} distributionList={r._dl}>
+              <span
+                className="bg-purple-100 border border-purple-300 text-purple-700 rounded-full px-2 py-0.5 text-xs flex items-center gap-1 max-w-52"
+                title={`Liste : ${r._dl.name} (${r._dl.members.length} membres)`}
+              >
+                <BookOpen size={10} className="flex-shrink-0" />
+                <span className="truncate font-medium">{r._dl.name}</span>
+                <span className="text-purple-400 text-[10px] flex-shrink-0">({r._dl.members.length})</span>
+                <button
+                  onMouseDown={e => { e.preventDefault(); onExpandDL?.(i, r._dl); }}
+                  className="text-purple-500 hover:text-purple-800 flex-shrink-0 p-0.5 rounded hover:bg-purple-200"
+                  title="Développer les membres"
+                >
+                  <Plus size={9} />
+                </button>
+                <button
+                  onClick={() => onRemove(i)}
+                  className="text-purple-400 hover:text-red-500 flex-shrink-0"
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            </HoverCard>
+          ) : (
+            /* Regular contact chip */
+            <HoverCard key={i} email={r.address} data={{ email: r.address, name: r.name }}>
+              <span
+                className="bg-outlook-blue/10 border border-outlook-blue/30 text-outlook-blue rounded-full px-2.5 py-0.5 text-xs flex items-center gap-1 max-w-48"
+                title={r.address}
+              >
+                <span className="truncate">{r.name || r.address}</span>
+                <button onClick={() => onRemove(i)} className="text-outlook-blue/60 hover:text-outlook-danger flex-shrink-0">
+                  <X size={10} />
+                </button>
+              </span>
+            </HoverCard>
+          )
         ))}
         <input
           type="text"
