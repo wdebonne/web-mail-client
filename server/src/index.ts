@@ -62,11 +62,11 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
     "script-src 'self' 'unsafe-inline'; " +
-    "style-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "img-src 'self' data: blob: https:; " +
     "frame-src 'self' blob: data:; " +
     "connect-src 'self' wss: ws:; " +
-    "font-src 'self' data:; " +
+    "font-src 'self' data: https://fonts.gstatic.com; " +
     "worker-src 'self' blob:; " +
     "manifest-src 'self'"
   );
