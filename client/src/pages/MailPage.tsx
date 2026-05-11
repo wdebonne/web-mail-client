@@ -603,83 +603,114 @@ export default function MailPage() {
     });
   }, [queryClient]);
 
-  // Delete mutation — either moves a message to the Trash folder (safe
-  // delete, recoverable) or performs an IMAP permanent delete when
-  // toTrash=false or when a Trash folder cannot be located.
-  const deleteMutation = useMutation({
-    mutationFn: async (
-      { uid, accountId, folder, toTrash, trashPath }:
-      { uid: number; accountId?: string; folder?: string; toTrash?: boolean; trashPath?: string }
-    ) => {
-      const accId = accountId || selectedAccount?.id;
-      const fld = folder || selectedFolder;
-      if (!accId) return { moved: false };
-      if (toTrash && trashPath && trashPath !== fld) {
-        await api.moveMessage(accId, uid, fld, trashPath);
-        return { moved: true };
+  // ─── Debounced delete queue ────────────────────────────────────────────────
+  // Single-message deletes are batched: each deletion removes the email from
+  // the UI immediately (optimistic), then a 7-second inactivity timer is reset.
+  // When no new deletion arrives for 7 s the entire pending set is sent to the
+  // server as one bulk IMAP sequence-set operation — avoiding the concurrency
+  // errors that occur when multiple independent IMAP connections are opened in
+  // rapid succession.
+
+  const FLUSH_DELAY_MS = 7_000;
+
+  type PendingDeleteItem = {
+    uid: number;
+    accountId: string;
+    folder: string;
+    toTrash: boolean;
+    trashPath?: string;
+    removedMessage?: Email;
+    removedIndex: number;
+  };
+
+  const pendingDeletesRef = useRef<Map<string, PendingDeleteItem>>(new Map());
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPendingDeletes = useCallback(async () => {
+    deleteTimerRef.current = null;
+    const pending = pendingDeletesRef.current;
+    if (pending.size === 0) return;
+    pendingDeletesRef.current = new Map(); // clear before async so re-entrant calls start fresh
+
+    // Group by account + folder + trash mode for a single IMAP op per group.
+    const groups = new Map<string, PendingDeleteItem[]>();
+    for (const item of pending.values()) {
+      const gk = `${item.accountId}\0${item.folder}\0${item.toTrash}\0${item.trashPath ?? ''}`;
+      if (!groups.has(gk)) groups.set(gk, []);
+      groups.get(gk)!.push(item);
+    }
+
+    const failed: PendingDeleteItem[] = [];
+    for (const items of groups.values()) {
+      const { accountId, folder, toTrash, trashPath } = items[0];
+      try {
+        await api.deleteMessages(accountId, items.map(i => i.uid), folder, toTrash, trashPath);
+        if (toTrash) queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+      } catch {
+        failed.push(...items);
       }
-      await api.deleteMessage(accId, uid, fld);
-      return { moved: false };
-    },
-    // Optimistic removal: take the row out of the list immediately so the UI
-    // feels instant (the IMAP round-trip can take a few seconds). Rollback on
-    // error by restoring the snapshot.
-    onMutate: ({ uid, accountId, folder }) => {
-      const accId = accountId || selectedAccount?.id;
-      const fld = folder || selectedFolder;
-      const messages = useMailStore.getState().messages;
-      // Find and store only the specific message being deleted so that onError
-      // can re-insert it without overwriting concurrent successful deletes.
-      // Storing the full snapshot (old approach) caused rollbacks of other
-      // messages that had already been deleted when rapid deletion was used.
-      const removedMessage = messages.find(m => {
-        if (m.uid !== uid) return false;
-        if (accId && m._accountId && m._accountId !== accId) return false;
-        if (fld && m._folder && m._folder !== fld) return false;
-        return true;
-      });
-      const removedIndex = removedMessage ? messages.indexOf(removedMessage) : -1;
-      // Capture the selection BEFORE removeMessage runs — the store nulls it
-      // out itself when the deleted UID matches, so we need to know the
-      // previous state to decide whether to navigate back to the list.
-      const sel = useMailStore.getState().selectedMessage;
-      const wasViewingDeleted = !!(sel && sel.uid === uid && (!accId || (sel as any)._accountId === accId));
-      removeMessage(uid, accId, fld);
-      // On mobile / tablet the message column is shown full-screen; bring the
-      // user back to the message list instead of leaving them on the empty
-      // "Sélectionnez un message" placeholder.
-      if (wasViewingDeleted) {
-        setMobileView('list');
+    }
+
+    if (failed.length > 0) {
+      // Re-insert only the messages whose server-side delete failed, at their
+      // original positions, so successfully deleted messages stay removed.
+      const current = useMailStore.getState().messages;
+      const updated = [...current];
+      failed.sort((a, b) => a.removedIndex - b.removedIndex);
+      for (let i = 0; i < failed.length; i++) {
+        const item = failed[i];
+        if (item.removedMessage) {
+          // Each splice shifts subsequent indices by 1, hence +i.
+          updated.splice(Math.min(item.removedIndex + i, updated.length), 0, item.removedMessage);
+        }
       }
-      return { removedMessage, removedIndex };
-    },
-    onSuccess: (data: any, { accountId, uid, folder }) => {
-      if (data?.moved) {
-        toast.success('Message envoyé dans la corbeille');
-        // The trash folder count changed — refresh folders list for the account.
-        queryClient.invalidateQueries({ queryKey: ['folders', accountId || selectedAccount?.id] });
-      } else {
-        toast.success('Message supprimé');
-      }
-      // Unified inbox / Sent / favourite folder views aggregate across accounts —
-      // patch every cached `virtual-messages` query so the deleted row also
-      // disappears there without triggering a costly full re-pagination.
-      removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, folder || selectedFolder);
-    },
-    onError: (err: any, _vars, ctx: any) => {
-      // Re-insert only the specific message that failed, at its original position,
-      // rather than restoring the full snapshot. Restoring the full snapshot would
-      // undo concurrent successful deletes (the root cause of "rollback" on rapid deletion).
-      if (ctx?.removedMessage) {
-        const current = useMailStore.getState().messages;
-        const idx = ctx.removedIndex >= 0 ? Math.min(ctx.removedIndex, current.length) : current.length;
-        useMailStore.setState({
-          messages: [...current.slice(0, idx), ctx.removedMessage, ...current.slice(idx)],
-        });
-      }
-      toast.error(err?.message || 'Erreur lors de la suppression');
-    },
-  });
+      useMailStore.setState({ messages: updated });
+      const n = failed.length;
+      toast.error(`${n} message${n > 1 ? 's' : ''} n'ont pas pu être supprimés`);
+    }
+  }, [queryClient]);
+
+  // Flush remaining deletes when the component unmounts (e.g. user navigates away).
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current !== null) clearTimeout(deleteTimerRef.current);
+      void flushPendingDeletes();
+    };
+  }, [flushPendingDeletes]);
+
+  // Queue a single-message delete: remove from UI immediately, schedule flush.
+  const queueDelete = useCallback((args: {
+    uid: number;
+    accountId: string;
+    folder: string;
+    toTrash: boolean;
+    trashPath?: string;
+  }) => {
+    const { uid, accountId: accId, folder: fld, toTrash, trashPath } = args;
+
+    // Optimistic removal
+    const messages = useMailStore.getState().messages;
+    const removedMessage = messages.find(m => {
+      if (m.uid !== uid) return false;
+      if (accId && (m as any)._accountId && (m as any)._accountId !== accId) return false;
+      if (fld && (m as any)._folder && (m as any)._folder !== fld) return false;
+      return true;
+    });
+    const removedIndex = removedMessage ? messages.indexOf(removedMessage) : -1;
+    const sel = useMailStore.getState().selectedMessage;
+    const wasViewingDeleted = !!(sel && sel.uid === uid && (!accId || (sel as any)._accountId === accId));
+    removeMessage(uid, accId, fld);
+    removeMessageFromVirtualCaches(uid, accId, fld);
+    if (wasViewingDeleted) setMobileView('list');
+
+    // Add to queue (duplicate uid in same folder just overwrites — only deleted once).
+    const qKey = `${accId}\0${fld}\0${uid}`;
+    pendingDeletesRef.current.set(qKey, { uid, accountId: accId, folder: fld, toTrash, trashPath, removedMessage, removedIndex });
+
+    // Reset inactivity timer.
+    if (deleteTimerRef.current !== null) clearTimeout(deleteTimerRef.current);
+    deleteTimerRef.current = setTimeout(() => { void flushPendingDeletes(); }, FLUSH_DELAY_MS);
+  }, [removeMessage, removeMessageFromVirtualCaches, flushPendingDeletes]);
 
   // Confirmation dialog state (delete) — decoupled from the mutation so the
   // user can cancel without triggering any IMAP call.
@@ -770,15 +801,13 @@ export default function MailPage() {
     const alreadyInTrash = isTrashFolderPath(accFolders || [], fld);
     const permanent = alreadyInTrash || !trashPath;
 
-    const run = () => {
-      deleteMutation.mutate({
-        uid: args.uid,
-        accountId: accId,
-        folder: fld,
-        toTrash: !permanent,
-        trashPath: trashPath || undefined,
-      });
-    };
+    const run = () => queueDelete({
+      uid: args.uid,
+      accountId: accId,
+      folder: fld,
+      toTrash: !permanent,
+      trashPath: trashPath || undefined,
+    });
 
     if (!getDeleteConfirmEnabled()) { run(); return; }
 
@@ -790,7 +819,7 @@ export default function MailPage() {
       permanent,
       onConfirm: () => { setDeleteConfirm(null); run(); },
     });
-  }, [selectedAccount, selectedFolder, deleteMutation, queryClient]);
+  }, [selectedAccount, selectedFolder, queueDelete, queryClient]);
 
   // Bulk delete — groups selected messages by account+folder, uses a single
   // IMAP sequence-set operation per group instead of N individual requests.
@@ -1189,7 +1218,7 @@ export default function MailPage() {
         } else if (action === 'flag') {
           flagMutation.mutate({ uid, isFlagged: true, accountId, folder });
         } else if (action === 'delete') {
-          deleteMutation.mutate({ uid, accountId, folder, toTrash: true });
+          await requestDelete({ uid, accountId, folder });
           toast.success('Message supprimé');
         } else if (action === 'archive') {
           let folders = queryClient.getQueryData<MailFolder[]>(['folders', accountId]);
