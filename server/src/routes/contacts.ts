@@ -46,7 +46,7 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
     let paramIdx = 2;
 
     if (source === 'nextcloud') {
-      query += ` AND c.nc_managed = true`;
+      query += ` AND (c.nc_managed = true OR c.source = 'nextcloud')`;
     } else if (source) {
       query += ` AND c.source = $${paramIdx}`;
       params.push(source);
@@ -82,13 +82,29 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
 
     const result = await pool.query(query, params);
 
-    // Get total count
+    // Get total count (mirrors same filters as main query)
     let countQuery = 'SELECT COUNT(DISTINCT c.id) FROM contacts c LEFT JOIN contact_group_members cgm ON cgm.contact_id = c.id WHERE c.user_id = $1';
     const countParams: any[] = [req.userId];
-    
+    let countParamIdx = 2;
+
+    if (source === 'nextcloud') {
+      countQuery += ` AND (c.nc_managed = true OR c.source = 'nextcloud')`;
+    } else if (source) {
+      countQuery += ` AND c.source = $${countParamIdx}`;
+      countParams.push(source);
+      countParamIdx++;
+    }
+
     if (search) {
-      countQuery += ` AND (c.email ILIKE $2 OR c.first_name ILIKE $2 OR c.last_name ILIKE $2 OR c.display_name ILIKE $2)`;
+      countQuery += ` AND (c.email ILIKE $${countParamIdx} OR c.first_name ILIKE $${countParamIdx} OR c.last_name ILIKE $${countParamIdx} OR c.display_name ILIKE $${countParamIdx})`;
       countParams.push(`%${search}%`);
+      countParamIdx++;
+    }
+
+    if (groupId) {
+      countQuery += ` AND cgm.group_id = $${countParamIdx}`;
+      countParams.push(groupId);
+      countParamIdx++;
     }
 
     const countResult = await pool.query(countQuery, countParams);
