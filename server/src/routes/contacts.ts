@@ -412,12 +412,12 @@ contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
     }
 
     const result = await pool.query(
-      `SELECT id, email, first_name, last_name, display_name, avatar_url, company, job_title
-       FROM contacts 
+      `SELECT id, email, first_name, last_name, display_name, avatar_url, avatar_data, company, job_title
+       FROM contacts
        WHERE user_id = $1 AND (
-         email ILIKE $2 OR 
-         first_name ILIKE $2 OR 
-         last_name ILIKE $2 OR 
+         email ILIKE $2 OR
+         first_name ILIKE $2 OR
+         last_name ILIKE $2 OR
          display_name ILIKE $2 OR
          CONCAT(first_name, ' ', last_name) ILIKE $2
        )

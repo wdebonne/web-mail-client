@@ -11,6 +11,27 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.8.4] - 2026-05-11
+
+### Ajouté
+
+- **Avatars dans l'autocomplete du composeur (champ À/Cc/Cci)** : lors de la saisie d'un nom ou d'un e-mail dans les champs destinataires, la dropdown de suggestions affiche maintenant la photo du contact (priorité : `avatar_data` base64 → `avatar_url` → initiale colorée déterministe). Les listes de distribution conservent leur icône violette.
+
+- **Recherche contacts étendue à tous les champs** : le backend recherche désormais dans 11 champs au lieu de 6 — email, prénom, nom, nom affiché, **entreprise, fonction, service, téléphone, mobile, notes** et la concaténation prénom+nom. La requête de comptage (`COUNT`) est alignée en conséquence.
+
+- **Recherche dans les listes de distribution** : le champ de recherche de la page Contacts filtre maintenant les listes par nom, description, e-mail des membres et nom des membres (filtrage local, sans appel réseau). Le compteur indique « N listes sur M » quand un filtre est actif. Placeholder adaptatif : « Rechercher des listes (nom, membre…) » en vue DL.
+
+### Corrigé
+
+- **Avatars manquants dans le formulaire d'ajout de membres** : les suggestions d'autocomplete et la liste des membres déjà ajoutés dans le formulaire DL n'affichaient que des initiales. Le `contactsMap` est maintenant passé en prop à `DistListForm` ; le composant `MemberAvatar` utilise `avatar_data` ou `avatar_url` selon ce qui est disponible.
+
+### Technique
+
+- **Serveur** : `contacts.ts` — `avatar_data` ajouté au SELECT de l'endpoint `GET /contacts/search/autocomplete`. Champs de recherche étendus dans `GET /contacts` (liste et count).
+- **Client** : `ComposeModal.tsx` — dropdown suggestions : rendu conditionnel `<img>` / initiale colorée selon présence d'`avatar_data` ou `avatar_url`. `ContactsPage.tsx` — `filteredDLs` (memo filtrage local), placeholder adaptatif, `MemberAvatar` component partagé, `contactsMap` prop dans `DistListForm`.
+
+---
+
 ## [1.8.3] - 2026-05-11
 
 ### Ajouté

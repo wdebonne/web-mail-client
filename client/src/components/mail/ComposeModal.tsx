@@ -987,29 +987,43 @@ function RecipientField({
       {/* Suggestions dropdown */}
       {suggestions.length > 0 && (
         <div className="absolute left-16 top-full bg-white border border-outlook-border rounded-md shadow-xl z-40 w-80 max-h-56 overflow-y-auto">
-          {suggestions.map((s, i) => (
-            <button
-              key={i}
-              onMouseDown={(e) => { e.preventDefault(); onSelectSuggestion(s); }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2.5"
-            >
-              <div className="w-8 h-8 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
-                {s.isDistributionList
-                  ? <Users size={14} />
-                  : (s.display_name || s.email || s.name || '?')[0].toUpperCase()
-                }
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-medium truncate text-outlook-text-primary">
-                  {s.isDistributionList ? s.name : (s.display_name || s.name || s.email)}
-                </div>
-                {!s.isDistributionList && (
-                  <div className="text-xs text-outlook-text-secondary truncate">{s.email}</div>
+          {suggestions.map((s, i) => {
+            const avatarSrc = s.avatar_data
+              ? (s.avatar_data.startsWith('data:') ? s.avatar_data : `data:image/jpeg;base64,${s.avatar_data}`)
+              : s.avatar_url || null;
+            const displayName = s.isDistributionList ? s.name : (s.display_name || s.name || s.email || '?');
+            const hue = Math.abs(displayName.split('').reduce((h: number, c: string) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % 360;
+
+            return (
+              <button
+                key={i}
+                onMouseDown={(e) => { e.preventDefault(); onSelectSuggestion(s); }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2.5"
+              >
+                {s.isDistributionList ? (
+                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                    <Users size={14} className="text-purple-600" />
+                  </div>
+                ) : avatarSrc ? (
+                  <img src={avatarSrc} className="w-8 h-8 rounded-full object-cover flex-shrink-0" alt={displayName} />
+                ) : (
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                    style={{ background: `hsl(${hue},50%,45%)` }}
+                  >
+                    {displayName[0].toUpperCase()}
+                  </div>
                 )}
-                {s.company && <div className="text-xs text-outlook-text-disabled truncate">{s.company}</div>}
-              </div>
-            </button>
-          ))}
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium truncate text-outlook-text-primary">{displayName}</div>
+                  {!s.isDistributionList && (
+                    <div className="text-xs text-outlook-text-secondary truncate">{s.email}</div>
+                  )}
+                  {s.company && <div className="text-xs text-outlook-text-disabled truncate">{s.company}</div>}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
