@@ -11,6 +11,31 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.8.3] - 2026-05-11
+
+### Ajouté
+
+- **Avatars et infos enrichies dans la vue membres d'une liste** : chaque membre est automatiquement mis en correspondance avec le carnet d'adresses. Son avatar (photo ou initiales colorées), son nom complet et les champs configurés s'affichent directement dans la liste. Les informations manquantes sont silencieusement ignorées.
+
+- **Actions au survol dans la liste membres** : au survol d'un membre, deux icônes apparaissent — `↗` pour ouvrir directement sa fiche contact, `✉` pour lui écrire. L'icône `↗` est masquée si le membre n'est pas dans le carnet d'adresses.
+
+- **Clic droit → Réglages de la vue** : un clic droit sur la section Membres ouvre un menu contextuel avec l'entrée « Réglages de la vue ». La modal de réglages permet de cocher/décocher les champs à afficher pour chaque membre : Nom complet, Adresse e-mail, Téléphone, Mobile, Entreprise, Fonction, Service, Notes. Les préférences sont persistées en `localStorage` (`dl_member_visible_fields`).
+
+- **Page liste de distribution harmonisée avec la fiche contact** : bandeau dégradé (`h-48`), avatar 96 px chevauchant le bandeau, boutons d'action (Modifier / Partager / Supprimer) en haut à droite du bandeau, sections en cartes (`Section`) identiques à la fiche contact.
+
+- **Avatar personnalisé pour les listes de distribution** : dans le formulaire d'édition, un cercle cliquable en haut du modal permet de choisir une image. Elle est redimensionnée en 256×256 JPEG via canvas et stockée en base de données (`avatar_data TEXT`). Bouton « Supprimer l'avatar » pour réinitialiser.
+
+### Corrigé
+
+- **`operator does not exist: text = uuid` lors de la mise à jour d'une liste** : PostgreSQL inférait que le paramètre `$2` (user ID) était de type UUID à partir du contexte `user_id = $2`, puis échouait sur `sw->>'id' = $2` (`text = UUID inféré`). Résolu en utilisant `user_id::text = $2` et `id = $1::uuid` pour que les deux côtés de chaque comparaison soient du même type sans ambiguïté. Même correction appliquée aux routes `DELETE` et `share`.
+
+### Technique
+
+- **Serveur** : `contacts.ts` — check query du PUT réécrit avec `user_id::text = $2`, `id = $1::uuid`, et recherche de partage par `shared_with::text LIKE`. UPDATE query avec casts explicites `$1::uuid`, `$3::jsonb`, `$5::boolean`, `$4::jsonb`. Colonne `avatar_data TEXT` ajoutée à la migration `distribution_lists`.
+- **Client** : `ContactsPage.tsx` — `DistListDetail` reçoit `contactsMap: Map<string, Contact>` ; enrichissement des membres ; affichage conditionnel par `visibleFields` ; clic droit + menu contextuel ; nouveau composant `DLFieldsSettings`. `DistListForm` + état `avatarData` + `handleAvatarFile` + section avatar cliquable.
+
+---
+
 ## [1.8.2] - 2026-05-11
 
 ### Ajouté

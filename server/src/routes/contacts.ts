@@ -684,30 +684,30 @@ contactRouter.put('/distribution-lists/:id', async (req: AuthRequest, res) => {
   try {
     const { name, description, members, sharedWith, avatarData } = req.body;
     // Allow update if owner OR if list is shared with user (but only owner can change sharedWith)
+    const uid = req.userId as string;
     const check = await pool.query(
-      `SELECT id, user_id FROM distribution_lists
-       WHERE id = $1 AND is_deleted = false AND (
-         user_id = $2
-         OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(shared_with) sw
-           WHERE sw->>'type' = 'user' AND sw->>'id' = $2
-         )
-       )`,
-      [req.params.id, req.userId]
+      `SELECT id, user_id::text AS user_id_text FROM distribution_lists
+       WHERE id = $1::uuid
+         AND (is_deleted IS NULL OR is_deleted = false)
+         AND (
+           user_id::text = $2
+           OR (shared_with IS NOT NULL AND shared_with::text LIKE $3)
+         )`,
+      [req.params.id, uid, `%"id":"${uid}"%`]
     );
     if (check.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
-    const isOwner = check.rows[0].user_id === req.userId;
+    const isOwner = check.rows[0].user_id_text === uid;
     const memberList: { email: string; name?: string }[] = Array.isArray(members) ? members : [];
 
     const result = await pool.query(
       `UPDATE distribution_lists SET
-         name = COALESCE($1, name),
+         name        = COALESCE($1, name),
          description = COALESCE($2, description),
-         members = COALESCE($3::jsonb, members),
-         shared_with = CASE WHEN $5 THEN COALESCE($4::jsonb, shared_with) ELSE shared_with END,
-         avatar_data = CASE WHEN $7::text IS NOT NULL THEN $7::text ELSE avatar_data END,
-         updated_at = NOW()
-       WHERE id = $6 RETURNING *`,
+         members     = CASE WHEN $3::text IS NOT NULL THEN $3::jsonb ELSE members END,
+         shared_with = CASE WHEN $5::boolean AND $4::text IS NOT NULL THEN $4::jsonb ELSE shared_with END,
+         avatar_data = CASE WHEN $7::text IS NOT NULL THEN $7 ELSE avatar_data END,
+         updated_at  = NOW()
+       WHERE id = $6::uuid RETURNING *`,
       [
         name?.trim() || null,
         description !== undefined ? description : null,
@@ -730,7 +730,7 @@ contactRouter.delete('/distribution-lists/:id', async (req: AuthRequest, res) =>
   try {
     const result = await pool.query(
       `UPDATE distribution_lists SET is_deleted = true, updated_at = NOW()
-       WHERE id = $1 AND user_id = $2 RETURNING id`,
+       WHERE id = $1::uuid AND user_id::text = $2 RETURNING id`,
       [req.params.id, req.userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
@@ -745,8 +745,8 @@ contactRouter.post('/distribution-lists/:id/share', async (req: AuthRequest, res
   try {
     const { sharedWith } = req.body;
     const result = await pool.query(
-      `UPDATE distribution_lists SET shared_with = $1, updated_at = NOW()
-       WHERE id = $2 AND user_id = $3 RETURNING *`,
+      `UPDATE distribution_lists SET shared_with = $1::jsonb, updated_at = NOW()
+       WHERE id = $2::uuid AND user_id::text = $3 RETURNING *`,
       [JSON.stringify(sharedWith || []), req.params.id, req.userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });

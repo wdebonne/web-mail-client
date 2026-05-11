@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { Contact, ContactGroup } from '../types';
@@ -9,7 +9,7 @@ import {
   Camera, Globe, Calendar as CalIcon, MapPin, Briefcase, FileText,
   Loader2, ChevronDown, ChevronLeft, SortAsc, CheckCircle2, AlertCircle, Cloud,
   Palette, Image as ImageIcon, Move, Maximize2, Minimize2,
-  BookOpen, Share2, AtSign, RotateCcw, Shield,
+  BookOpen, Share2, AtSign, RotateCcw, Shield, ExternalLink,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
@@ -643,6 +643,7 @@ export default function ContactsPage() {
               <DistListDetail
                 list={selectedDistList}
                 isOwner={selectedDistList.user_id === currentUser?.id}
+                contactsMap={new Map(allStats.map((c: Contact) => [c.email?.toLowerCase() ?? '', c]))}
                 onEdit={() => { setEditingDL(selectedDistList); setShowDLForm(true); }}
                 onDelete={() => {
                   if (confirm('Supprimer cette liste ? Elle sera archivée et restera visible par les administrateurs.')) {
@@ -1719,16 +1720,53 @@ function DistListRow({ list, selected, isOwner, onClick }: {
   );
 }
 
-function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting }: {
+const DL_FIELDS_KEY = 'dl_member_visible_fields';
+const ALL_DL_FIELDS: { key: string; label: string }[] = [
+  { key: 'name',       label: 'Nom complet' },
+  { key: 'email',      label: 'Adresse e-mail' },
+  { key: 'phone',      label: 'Téléphone' },
+  { key: 'mobile',     label: 'Mobile' },
+  { key: 'company',    label: 'Entreprise' },
+  { key: 'job_title',  label: 'Fonction' },
+  { key: 'department', label: 'Service' },
+  { key: 'notes',      label: 'Notes' },
+];
+
+function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting, contactsMap }: {
   list: any; isOwner: boolean;
+  contactsMap: Map<string, Contact>;
   onEdit: () => void; onDelete: () => void; onShare: () => void; isDeleting: boolean;
 }) {
+  const navigate = useNavigate();
   const members: { email: string; name?: string }[] = Array.isArray(list.members) ? list.members : [];
   const sharedWith: { type: string; id: string; display?: string }[] = Array.isArray(list.shared_with) ? list.shared_with : [];
   const gradient = avatarColor(list.name || 'dl');
   const avatarSrc = list.avatar_data
     ? (list.avatar_data.startsWith('data:') ? list.avatar_data : `data:image/jpeg;base64,${list.avatar_data}`)
     : null;
+
+  // Visible fields — persisted in localStorage
+  const [visibleFields, setVisibleFields] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(DL_FIELDS_KEY) || '["name","email"]'); }
+    catch { return ['name', 'email']; }
+  });
+  const saveFields = (f: string[]) => { setVisibleFields(f); localStorage.setItem(DL_FIELDS_KEY, JSON.stringify(f)); };
+
+  // Context menu
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [showFieldSettings, setShowFieldSettings] = useState(false);
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [ctxMenu]);
+
+  // Enrich members with contact data
+  const enriched = members.map(m => ({
+    raw: m,
+    contact: contactsMap.get(m.email.toLowerCase()),
+  }));
 
   return (
     <div>
@@ -1781,31 +1819,103 @@ function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting }
 
         {/* Sections */}
         <div className="space-y-4">
-          {/* Members section */}
-          <Section title={`Membres (${members.length})`} icon={<Users size={14} />}>
+          {/* Members section — right-click for settings */}
+          <div
+            className="bg-outlook-bg-primary border border-outlook-border rounded-lg p-5"
+            onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
+          >
+            <h3 className="text-xs font-semibold text-outlook-text-secondary uppercase tracking-wider flex items-center gap-1.5 mb-4">
+              <Users size={14} /> Membres ({members.length})
+              <span className="ml-auto text-[10px] text-outlook-text-disabled font-normal normal-case tracking-normal">Clic droit → Réglages</span>
+            </h3>
+
             {members.length === 0 ? (
-              <p className="text-sm text-outlook-text-disabled sm:col-span-2">
+              <p className="text-sm text-outlook-text-disabled">
                 Aucun membre.{isOwner ? ' Cliquez sur Modifier pour en ajouter.' : ''}
               </p>
             ) : (
-              <div className="sm:col-span-2 space-y-2">
-                {members.map((m, i) => (
-                  <div key={i} className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
-                      {(m.name || m.email || '?')[0].toUpperCase()}
+              <div className="space-y-1">
+                {enriched.map(({ raw: m, contact }, i) => {
+                  const displayName = contact
+                    ? (contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(' ') || m.name || m.email)
+                    : (m.name || m.email);
+                  const initials = (displayName[0] || '?').toUpperCase();
+                  const cAvatarSrc = contact?.avatar_data
+                    ? (contact.avatar_data.startsWith('data:') ? contact.avatar_data : `data:image/jpeg;base64,${contact.avatar_data}`)
+                    : contact?.avatar_url || null;
+                  const seed = contact?.email || m.email || 'x';
+
+                  return (
+                    <div key={i} className="flex items-center gap-2.5 py-1.5 px-2 rounded hover:bg-outlook-bg-hover group">
+                      {/* Avatar */}
+                      {cAvatarSrc ? (
+                        <img src={cAvatarSrc} className="w-9 h-9 rounded-full object-cover flex-shrink-0" alt={displayName} />
+                      ) : (
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                          style={{ background: `hsl(${Math.abs(seed.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % 360},50%,45%)` }}
+                        >
+                          {initials}
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        {visibleFields.includes('name') && (
+                          <div className="text-sm font-medium text-outlook-text-primary truncate">{displayName}</div>
+                        )}
+                        {visibleFields.includes('email') && (
+                          <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
+                        )}
+                        {contact && (
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                            {visibleFields.includes('phone') && contact.phone && (
+                              <span className="text-xs text-outlook-text-disabled flex items-center gap-1"><Phone size={9} />{contact.phone}</span>
+                            )}
+                            {visibleFields.includes('mobile') && contact.mobile && (
+                              <span className="text-xs text-outlook-text-disabled flex items-center gap-1"><Phone size={9} />{contact.mobile}</span>
+                            )}
+                            {visibleFields.includes('company') && contact.company && (
+                              <span className="text-xs text-outlook-text-disabled flex items-center gap-1"><Building size={9} />{contact.company}</span>
+                            )}
+                            {visibleFields.includes('job_title') && contact.job_title && (
+                              <span className="text-xs text-outlook-text-disabled flex items-center gap-1"><Briefcase size={9} />{contact.job_title}</span>
+                            )}
+                            {visibleFields.includes('department') && contact.department && (
+                              <span className="text-xs text-outlook-text-disabled flex items-center gap-1"><Users size={9} />{contact.department}</span>
+                            )}
+                            {visibleFields.includes('notes') && contact.notes && (
+                              <span className="text-xs text-outlook-text-disabled flex items-center gap-1"><FileText size={9} />{contact.notes.slice(0, 60)}{contact.notes.length > 60 ? '…' : ''}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions — visible on hover */}
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                        {contact?.id && (
+                          <button
+                            onClick={() => navigate('/contacts', { state: { contactId: contact.id } })}
+                            className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-disabled hover:text-outlook-blue"
+                            title="Ouvrir la fiche contact"
+                          >
+                            <ExternalLink size={13} />
+                          </button>
+                        )}
+                        <a
+                          href={`mailto:${m.email}`}
+                          className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-disabled hover:text-outlook-blue"
+                          title={`Écrire à ${m.email}`}
+                        >
+                          <Mail size={13} />
+                        </a>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      {m.name && <div className="text-sm font-medium text-outlook-text-primary truncate">{m.name}</div>}
-                      <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
-                    </div>
-                    <a href={`mailto:${m.email}`} className="text-outlook-text-disabled hover:text-outlook-blue flex-shrink-0" title={`Écrire à ${m.email}`}>
-                      <Mail size={13} />
-                    </a>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
-          </Section>
+          </div>
 
           {/* Shared with section */}
           {isOwner && (
@@ -1828,6 +1938,31 @@ function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting }
           )}
         </div>
       </div>
+
+      {/* Context menu */}
+      {ctxMenu && (
+        <div
+          className="fixed z-50 bg-white border border-outlook-border rounded-lg shadow-xl py-1 min-w-[160px]"
+          style={{ top: ctxMenu.y, left: ctxMenu.x }}
+        >
+          <button
+            className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+            onClick={() => { setCtxMenu(null); setShowFieldSettings(true); }}
+          >
+            <CheckCircle2 size={14} className="text-outlook-text-disabled" />
+            Réglages de la vue
+          </button>
+        </div>
+      )}
+
+      {/* Field settings modal */}
+      {showFieldSettings && (
+        <DLFieldsSettings
+          visibleFields={visibleFields}
+          onChange={saveFields}
+          onClose={() => setShowFieldSettings(false)}
+        />
+      )}
     </div>
   );
 }
@@ -2230,6 +2365,82 @@ function ShareDistListDialog({ list, onSave, onClose, isSaving }: {
             {isSaving && <Loader2 size={13} className="animate-spin" />}
             Enregistrer le partage
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DL Field Settings Modal
+// ─────────────────────────────────────────────────────────────────────────────
+function DLFieldsSettings({ visibleFields, onChange, onClose }: {
+  visibleFields: string[];
+  onChange: (fields: string[]) => void;
+  onClose: () => void;
+}) {
+  const [local, setLocal] = useState<string[]>(visibleFields);
+
+  const toggle = (key: string) => {
+    setLocal(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outlook-border">
+          <h2 className="text-base font-semibold text-outlook-text-primary flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-outlook-blue" />
+            Champs affichés dans la liste
+          </h2>
+          <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-3">
+          <p className="text-xs text-outlook-text-disabled mb-4">
+            Cochez les informations à afficher pour chaque membre. Un champ non renseigné ne sera jamais affiché.
+          </p>
+          {ALL_DL_FIELDS.map(({ key, label }) => (
+            <label key={key} className="flex items-center gap-3 cursor-pointer group">
+              <div
+                className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors
+                  ${local.includes(key)
+                    ? 'bg-outlook-blue border-outlook-blue'
+                    : 'border-outlook-border group-hover:border-outlook-blue'}`}
+                onClick={() => toggle(key)}
+              >
+                {local.includes(key) && <CheckCircle2 size={10} className="text-white" />}
+              </div>
+              <span className="text-sm text-outlook-text-primary">{label}</span>
+              {key === 'name' || key === 'email' ? (
+                <span className="ml-auto text-xs text-outlook-text-disabled">recommandé</span>
+              ) : null}
+            </label>
+          ))}
+        </div>
+
+        <div className="px-6 py-3 border-t border-outlook-border flex justify-between gap-2">
+          <button
+            onClick={() => setLocal(['name', 'email'])}
+            className="text-xs text-outlook-text-disabled hover:text-outlook-text-primary"
+          >
+            Réinitialiser
+          </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded hover:bg-outlook-bg-hover">
+              Annuler
+            </button>
+            <button
+              onClick={() => { onChange(local); onClose(); }}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 text-sm rounded font-medium"
+            >
+              Appliquer
+            </button>
+          </div>
         </div>
       </div>
     </div>
