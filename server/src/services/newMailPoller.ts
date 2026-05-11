@@ -57,7 +57,15 @@ async function refreshAdminDefaults(): Promise<void> {
 
 function stripHtml(s: string | null | undefined): string {
   if (!s) return '';
-  return s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return s
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&[a-z]{2,6};/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function checkAccount(row: any) {
