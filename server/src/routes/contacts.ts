@@ -410,14 +410,14 @@ contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
     // Also search distribution lists (owned + shared, non-deleted)
     const lists = await pool.query(
       `SELECT dl.id, dl.name, dl.description, dl.members FROM distribution_lists dl
-       WHERE dl.is_deleted = false AND dl.name ILIKE $2 AND (
+       WHERE COALESCE(dl.is_deleted, false) = false AND dl.name ILIKE $2 AND (
          dl.user_id = $1
          OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(dl.shared_with) sw
+           SELECT 1 FROM jsonb_array_elements(COALESCE(dl.shared_with, '[]'::jsonb)) sw
            WHERE sw->>'type' = 'user' AND sw->>'id' = $1
          )
          OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(dl.shared_with) sw
+           SELECT 1 FROM jsonb_array_elements(COALESCE(dl.shared_with, '[]'::jsonb)) sw
            JOIN user_groups ug ON ug.group_id::text = sw->>'id' AND ug.user_id = $1
            WHERE sw->>'type' = 'group'
          )
@@ -603,14 +603,14 @@ contactRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
       `SELECT dl.*, u.email as owner_email, u.display_name as owner_name
        FROM distribution_lists dl
        LEFT JOIN users u ON u.id = dl.user_id
-       WHERE dl.is_deleted = false AND (
+       WHERE COALESCE(dl.is_deleted, false) = false AND (
          dl.user_id = $1
          OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(dl.shared_with) sw
+           SELECT 1 FROM jsonb_array_elements(COALESCE(dl.shared_with, '[]'::jsonb)) sw
            WHERE sw->>'type' = 'user' AND sw->>'id' = $1
          )
          OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(dl.shared_with) sw
+           SELECT 1 FROM jsonb_array_elements(COALESCE(dl.shared_with, '[]'::jsonb)) sw
            JOIN user_groups ug ON ug.group_id::text = sw->>'id' AND ug.user_id = $1
            WHERE sw->>'type' = 'group'
          )

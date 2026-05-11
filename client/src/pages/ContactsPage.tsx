@@ -158,7 +158,7 @@ export default function ContactsPage() {
   const isFavView = selectedGroup === FAV_GROUP_ID;
   const isLocalView = selectedGroup === LOCAL_GROUP_ID;
   const isNextcloudView = selectedGroup === NEXTCLOUD_GROUP_ID;
-  const isVirtualView = isSenderView || isFavView || isLocalView || isNextcloudView;
+  const isVirtualView = isSenderView || isFavView || isLocalView || isNextcloudView || isDistListView;
 
   const sourceFilter = isSenderView ? 'sender'
     : isLocalView ? 'local'
@@ -173,6 +173,7 @@ export default function ContactsPage() {
       source: sourceFilter,
       limit: 500,
     }),
+    enabled: !isDistListView,
   });
 
   const { data: sendersCount } = useQuery({
