@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { Contact, ContactGroup } from '../types';
@@ -8,7 +8,9 @@ import {
   Camera, Globe, Calendar as CalIcon, MapPin, Briefcase, FileText,
   Loader2, ChevronDown, ChevronLeft, SortAsc, CheckCircle2, AlertCircle, Cloud,
   Palette, Image as ImageIcon, Move, Maximize2, Minimize2,
+  BookOpen, Share2, AtSign, RotateCcw, Shield,
 } from 'lucide-react';
+import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
 import {
   parseContactsFile, generateVCard, generateContactsCSV,
@@ -19,6 +21,7 @@ const SENDER_GROUP_ID = '__senders__';
 const FAV_GROUP_ID = '__favorites__';
 const LOCAL_GROUP_ID = '__registered__';
 const NEXTCLOUD_GROUP_ID = '__nextcloud__';
+const DIST_LIST_GROUP_ID = '__distribution_lists__';
 
 // Palette de couleurs déterministes pour les avatars
 const AVATAR_COLORS = [
@@ -106,6 +109,7 @@ type SortBy = 'name' | 'recent' | 'company';
 
 export default function ContactsPage() {
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore(s => s.user);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string | undefined>();
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -114,6 +118,13 @@ export default function ContactsPage() {
   const [showImport, setShowImport] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>('name');
+
+  // Distribution list state
+  const isDistListView = selectedGroup === DIST_LIST_GROUP_ID;
+  const [selectedDistListId, setSelectedDistListId] = useState<string | null>(null);
+  const [showDLForm, setShowDLForm] = useState(false);
+  const [editingDL, setEditingDL] = useState<any>(null);
+  const [showShareDialog, setShowShareDialog] = useState<any>(null);
 
   // Resizable sidebar
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -228,6 +239,45 @@ export default function ContactsPage() {
     onError: (e: any) => toast.error(e.message || 'Erreur d\'import'),
   });
 
+  // Distribution list queries & mutations
+  const { data: distributionLists = [] } = useQuery({
+    queryKey: ['distributionLists'],
+    queryFn: api.getDistributionLists,
+    staleTime: 30000,
+  });
+  const selectedDistList = (distributionLists as any[]).find((dl: any) => dl.id === selectedDistListId) || null;
+
+  const dlSaveMutation = useMutation({
+    mutationFn: (data: any) => editingDL
+      ? api.updateDistributionList(editingDL.id, data)
+      : api.createDistributionList(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['distributionLists'] });
+      setShowDLForm(false);
+      setEditingDL(null);
+      toast.success(editingDL ? 'Liste mise à jour' : 'Liste créée');
+    },
+    onError: (e: any) => toast.error(e.message || 'Erreur'),
+  });
+  const dlDeleteMutation = useMutation({
+    mutationFn: api.deleteDistributionList,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['distributionLists'] });
+      setSelectedDistListId(null);
+      toast.success('Liste supprimée');
+    },
+    onError: (e: any) => toast.error(e.message || 'Erreur'),
+  });
+  const dlShareMutation = useMutation({
+    mutationFn: ({ id, sharedWith }: { id: string; sharedWith: any[] }) =>
+      api.shareDistributionList(id, sharedWith),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['distributionLists'] });
+      toast.success('Partage mis à jour');
+    },
+    onError: (e: any) => toast.error(e.message || 'Erreur'),
+  });
+
   const rawContacts = contactsData?.contacts || [];
   const selectedContact = useMemo<Contact | null>(
     () => rawContacts.find((c: Contact) => c.id === selectedContactId) || null,
@@ -316,12 +366,21 @@ export default function ContactsPage() {
         className={`${selectedContactId ? 'hidden md:flex' : 'flex'} w-full md:w-auto border-r border-outlook-border flex-col flex-shrink-0 bg-outlook-bg-primary`}
       >
         <div className="p-3 border-b border-outlook-border space-y-2">
-          <button
-            onClick={() => { setEditingContact(null); setShowForm(true); }}
-            className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md py-2 px-4 text-sm font-medium flex items-center justify-center gap-2 shadow-sm"
-          >
-            <Plus size={14} /> Nouveau contact
-          </button>
+          {isDistListView ? (
+            <button
+              onClick={() => { setEditingDL(null); setShowDLForm(true); }}
+              className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md py-2 px-4 text-sm font-medium flex items-center justify-center gap-2 shadow-sm"
+            >
+              <Plus size={14} /> Nouvelle liste
+            </button>
+          ) : (
+            <button
+              onClick={() => { setEditingContact(null); setShowForm(true); }}
+              className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md py-2 px-4 text-sm font-medium flex items-center justify-center gap-2 shadow-sm"
+            >
+              <Plus size={14} /> Nouveau contact
+            </button>
+          )}
           <div className="flex gap-1.5">
             <button
               onClick={() => setShowImport(true)}
@@ -417,6 +476,14 @@ export default function ContactsPage() {
               color="blue"
             />
           )}
+          <NavItem
+            label="Listes de distribution"
+            icon={<BookOpen size={14} />}
+            count={(distributionLists as any[]).length}
+            active={isDistListView}
+            onClick={() => { setSelectedGroup(DIST_LIST_GROUP_ID); setSelectedContactId(null); setSelectedDistListId(null); }}
+            color="purple"
+          />
           {groups.length > 0 && (
             <div className="mt-2 pt-2 border-t border-outlook-border">
               <div className="px-2 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wider mb-1">Groupes</div>
@@ -436,24 +503,53 @@ export default function ContactsPage() {
 
         {/* List header with sort */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-outlook-border text-xs text-outlook-text-secondary">
-          <span>{contacts.length} {contacts.length > 1 ? 'contacts' : 'contact'}</span>
-          <div className="flex items-center gap-1">
-            <SortAsc size={12} />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortBy)}
-              className="bg-transparent border-0 text-xs focus:outline-none cursor-pointer"
-            >
-              <option value="name">Nom</option>
-              <option value="recent">Récent</option>
-              <option value="company">Entreprise</option>
-            </select>
-          </div>
+          {isDistListView ? (
+            <span>{(distributionLists as any[]).length} liste{(distributionLists as any[]).length !== 1 ? 's' : ''}</span>
+          ) : (
+            <>
+              <span>{contacts.length} {contacts.length > 1 ? 'contacts' : 'contact'}</span>
+              <div className="flex items-center gap-1">
+                <SortAsc size={12} />
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortBy)}
+                  className="bg-transparent border-0 text-xs focus:outline-none cursor-pointer"
+                >
+                  <option value="name">Nom</option>
+                  <option value="recent">Récent</option>
+                  <option value="company">Entreprise</option>
+                </select>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Contact list */}
+        {/* Contact / Distribution list list */}
         <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
+          {isDistListView ? (
+            (distributionLists as any[]).length === 0 ? (
+              <div className="text-center py-12 text-outlook-text-disabled text-sm">
+                <BookOpen size={32} className="mx-auto mb-2 opacity-30" />
+                <p>Aucune liste de distribution</p>
+                <button
+                  onClick={() => { setEditingDL(null); setShowDLForm(true); }}
+                  className="mt-3 text-outlook-blue hover:underline text-xs"
+                >
+                  Créer une liste
+                </button>
+              </div>
+            ) : (
+              (distributionLists as any[]).map((dl: any) => (
+                <DistListRow
+                  key={dl.id}
+                  list={dl}
+                  selected={selectedDistListId === dl.id}
+                  isOwner={dl.user_id === currentUser?.id}
+                  onClick={() => setSelectedDistListId(dl.id)}
+                />
+              ))
+            )
+          ) : isLoading ? (
             Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3 px-3 py-2.5 border-b border-outlook-border">
                 <div className="skeleton w-10 h-10 rounded-full" />
@@ -518,11 +614,11 @@ export default function ContactsPage() {
       </div>
 
       {/* Right panel: detail */}
-      <div className={`${selectedContactId ? 'flex' : 'hidden md:flex'} flex-1 flex-col overflow-hidden`}>
-        {selectedContact && (
+      <div className={`${(selectedContactId || (isDistListView && selectedDistListId)) ? 'flex' : 'hidden md:flex'} flex-1 flex-col overflow-hidden`}>
+        {(selectedContact || (isDistListView && selectedDistList)) && (
           <div className="md:hidden flex items-center px-2 py-1.5 border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0">
             <button
-              onClick={() => setSelectedContactId(null)}
+              onClick={() => { setSelectedContactId(null); setSelectedDistListId(null); }}
               className="flex items-center gap-1 px-2 py-1.5 text-sm text-outlook-text-primary hover:bg-outlook-bg-hover rounded"
               aria-label="Retour à la liste"
             >
@@ -531,7 +627,29 @@ export default function ContactsPage() {
           </div>
         )}
         <div className="flex-1 overflow-y-auto">
-          {selectedContact ? (
+          {isDistListView ? (
+            selectedDistList ? (
+              <DistListDetail
+                list={selectedDistList}
+                isOwner={selectedDistList.user_id === currentUser?.id}
+                onEdit={() => { setEditingDL(selectedDistList); setShowDLForm(true); }}
+                onDelete={() => {
+                  if (confirm('Supprimer cette liste ? Elle sera archivée et restera visible par les administrateurs.')) {
+                    dlDeleteMutation.mutate(selectedDistList.id);
+                  }
+                }}
+                onShare={() => setShowShareDialog(selectedDistList)}
+                isDeleting={dlDeleteMutation.isPending}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-outlook-text-disabled">
+                <div className="text-center">
+                  <BookOpen size={64} className="mx-auto mb-3 opacity-20" />
+                  <p className="text-sm">Sélectionnez une liste pour afficher ses détails</p>
+                </div>
+              </div>
+            )
+          ) : selectedContact ? (
             <ContactDetail
               contact={selectedContact}
               onEdit={() => { setEditingContact(selectedContact); setShowForm(true); }}
@@ -572,6 +690,27 @@ export default function ContactsPage() {
           isImporting={importMutation.isPending}
         />
       )}
+
+      {showDLForm && (
+        <DistListForm
+          list={editingDL}
+          onSubmit={(data) => dlSaveMutation.mutate(data)}
+          onClose={() => { setShowDLForm(false); setEditingDL(null); }}
+          isSubmitting={dlSaveMutation.isPending}
+        />
+      )}
+
+      {showShareDialog && (
+        <ShareDistListDialog
+          list={showShareDialog}
+          onSave={(sharedWith) => {
+            dlShareMutation.mutate({ id: showShareDialog.id, sharedWith });
+            setShowShareDialog(null);
+          }}
+          onClose={() => setShowShareDialog(null)}
+          isSaving={dlShareMutation.isPending}
+        />
+      )}
     </div>
   );
 }
@@ -582,7 +721,7 @@ function NavItem({
   label, icon, count, active, onClick, color,
 }: {
   label: string; icon: React.ReactNode; count?: number; active: boolean; onClick: () => void;
-  color?: 'orange' | 'amber' | 'green' | 'blue';
+  color?: 'orange' | 'amber' | 'green' | 'blue' | 'purple';
 }) {
   const activeColor = color === 'orange'
     ? 'bg-orange-50 text-orange-700 font-medium'
@@ -592,7 +731,9 @@ function NavItem({
         ? 'bg-green-50 text-green-700 font-medium'
         : color === 'blue'
           ? 'bg-blue-50 text-blue-700 font-medium'
-          : 'bg-outlook-bg-selected font-medium text-outlook-blue';
+          : color === 'purple'
+            ? 'bg-purple-50 text-purple-700 font-medium'
+            : 'bg-outlook-bg-selected font-medium text-outlook-blue';
   const badgeColor = color === 'orange'
     ? 'bg-orange-100 text-orange-600'
     : color === 'amber'
@@ -601,7 +742,9 @@ function NavItem({
         ? 'bg-green-100 text-green-700'
         : color === 'blue'
           ? 'bg-blue-100 text-blue-700'
-          : 'bg-gray-100 text-outlook-text-secondary';
+          : color === 'purple'
+            ? 'bg-purple-100 text-purple-700'
+            : 'bg-gray-100 text-outlook-text-secondary';
   return (
     <button
       onClick={onClick}
@@ -1520,6 +1663,472 @@ function ImportModal({
               Annuler
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Distribution List Components
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DistListRow({ list, selected, isOwner, onClick }: {
+  list: any; selected: boolean; isOwner: boolean; onClick: () => void;
+}) {
+  const memberCount = Array.isArray(list.members) ? list.members.length : 0;
+  const sharedCount = Array.isArray(list.shared_with) ? list.shared_with.length : 0;
+  return (
+    <div
+      onClick={onClick}
+      className={`group flex items-center gap-3 px-3 py-2.5 border-b border-outlook-border cursor-pointer transition-colors
+        ${selected
+          ? 'bg-outlook-bg-selected border-l-2 border-l-outlook-blue'
+          : 'hover:bg-outlook-bg-hover'}`}
+    >
+      <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+        <BookOpen size={18} className="text-purple-600" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <div className="text-sm font-medium truncate text-outlook-text-primary">{list.name}</div>
+          {!isOwner && (
+            <span className="text-[9px] bg-blue-100 text-blue-600 px-1 rounded flex-shrink-0">Partagée</span>
+          )}
+        </div>
+        <div className="text-xs text-outlook-text-secondary truncate">
+          {memberCount} membre{memberCount !== 1 ? 's' : ''}
+          {sharedCount > 0 && ` · partagée avec ${sharedCount}`}
+        </div>
+        {list.description && (
+          <div className="text-[11px] text-outlook-text-disabled truncate">{list.description}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting }: {
+  list: any; isOwner: boolean;
+  onEdit: () => void; onDelete: () => void; onShare: () => void; isDeleting: boolean;
+}) {
+  const members: { email: string; name?: string }[] = Array.isArray(list.members) ? list.members : [];
+  const sharedWith: { type: string; id: string; display?: string }[] = Array.isArray(list.shared_with) ? list.shared_with : [];
+
+  return (
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex items-start gap-4 mb-6">
+        <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+          <BookOpen size={28} className="text-purple-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-xl font-semibold text-outlook-text-primary">{list.name}</h2>
+          {list.description && <p className="text-sm text-outlook-text-secondary mt-1">{list.description}</p>}
+          {!isOwner && list.owner_name && (
+            <p className="text-xs text-outlook-text-disabled mt-1">Partagée par {list.owner_name || list.owner_email}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {isOwner && (
+          <button
+            onClick={onEdit}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover"
+          >
+            <Edit2 size={13} /> Modifier
+          </button>
+        )}
+        {isOwner && (
+          <button
+            onClick={onShare}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover text-outlook-blue"
+          >
+            <Share2 size={13} /> Partager
+          </button>
+        )}
+        {isOwner && (
+          <button
+            onClick={onDelete}
+            disabled={isDeleting}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-red-200 rounded hover:bg-red-50 text-red-600 disabled:opacity-50"
+          >
+            <Trash2 size={13} /> Supprimer
+          </button>
+        )}
+      </div>
+
+      {/* Members */}
+      <div className="mb-6">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-outlook-text-disabled mb-3">
+          Membres ({members.length})
+        </h3>
+        {members.length === 0 ? (
+          <p className="text-sm text-outlook-text-disabled">Aucun membre. Modifier la liste pour en ajouter.</p>
+        ) : (
+          <div className="space-y-1">
+            {members.map((m, i) => (
+              <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-outlook-bg-hover">
+                <div className="w-7 h-7 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
+                  {(m.name || m.email || '?')[0].toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  {m.name && <div className="text-sm text-outlook-text-primary truncate">{m.name}</div>}
+                  <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Shared with */}
+      {isOwner && (
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-outlook-text-disabled mb-3">
+            Partagée avec ({sharedWith.length})
+          </h3>
+          {sharedWith.length === 0 ? (
+            <p className="text-sm text-outlook-text-disabled">Non partagée. Cliquez sur "Partager" pour la partager.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {sharedWith.map((sw, i) => (
+                <span key={i} className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-full">
+                  {sw.type === 'group' ? <Shield size={10} /> : <User size={10} />}
+                  {sw.display || sw.id}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DistListForm({ list, onSubmit, onClose, isSubmitting }: {
+  list: any | null; onSubmit: (data: any) => void; onClose: () => void; isSubmitting: boolean;
+}) {
+  const [name, setName] = useState(list?.name || '');
+  const [description, setDescription] = useState(list?.description || '');
+  const [members, setMembers] = useState<{ email: string; name?: string }[]>(
+    Array.isArray(list?.members) ? list.members : []
+  );
+  const [memberInput, setMemberInput] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const searchContacts = useCallback((q: string) => {
+    if (searchRef.current) clearTimeout(searchRef.current);
+    if (q.length < 1) { setSuggestions([]); return; }
+    searchRef.current = setTimeout(async () => {
+      try {
+        const res = await api.searchContacts(q);
+        setSuggestions(res.contacts.filter((c: any) => c.email));
+      } catch { setSuggestions([]); }
+    }, 200);
+  }, []);
+
+  const addMember = (email: string, memberName?: string) => {
+    const e = email.trim().toLowerCase();
+    if (!e || !e.includes('@')) return;
+    if (members.some(m => m.email === e)) return;
+    setMembers(prev => [...prev, { email: e, name: memberName }]);
+    setMemberInput('');
+    setSuggestions([]);
+  };
+
+  const handleMemberKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addMember(memberInput);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSubmit({ name: name.trim(), description: description.trim() || null, members });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outlook-border flex-shrink-0">
+          <h2 className="text-lg font-semibold text-outlook-text-primary">
+            {list ? 'Modifier la liste' : 'Nouvelle liste de distribution'}
+          </h2>
+          <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+            {/* Name */}
+            <div>
+              <label className="block text-sm font-medium text-outlook-text-primary mb-1">Nom <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Ex: Restauration Responsable"
+                className="w-full px-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
+                required
+                autoFocus
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-sm font-medium text-outlook-text-primary mb-1">Description</label>
+              <input
+                type="text"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="Optionnel"
+                className="w-full px-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
+              />
+            </div>
+
+            {/* Members */}
+            <div>
+              <label className="block text-sm font-medium text-outlook-text-primary mb-1">
+                Membres ({members.length})
+              </label>
+              <p className="text-xs text-outlook-text-disabled mb-2">
+                Recherchez des contacts existants ou tapez un email directement puis Entrée.
+              </p>
+              {/* Member input with autocomplete */}
+              <div className="relative mb-2">
+                <AtSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+                <input
+                  type="text"
+                  value={memberInput}
+                  onChange={e => { setMemberInput(e.target.value); searchContacts(e.target.value); setShowSuggestions(true); }}
+                  onKeyDown={handleMemberKeyDown}
+                  onFocus={() => { if (memberInput.length > 0) setShowSuggestions(true); }}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  placeholder="Rechercher ou email@domaine.fr"
+                  className="w-full pl-9 pr-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
+                />
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-xl z-40 w-full max-h-40 overflow-y-auto">
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onMouseDown={() => addMember(s.email, s.display_name || s.name)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
+                          {(s.display_name || s.email || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{s.display_name || s.name || s.email}</div>
+                          <div className="text-xs text-outlook-text-disabled truncate">{s.email}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Members list */}
+              {members.length > 0 ? (
+                <div className="space-y-1 max-h-48 overflow-y-auto border border-outlook-border rounded p-2">
+                  {members.map((m, i) => (
+                    <div key={i} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-outlook-bg-hover group">
+                      <div className="w-6 h-6 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
+                        {(m.name || m.email || '?')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {m.name && <div className="text-sm truncate">{m.name}</div>}
+                        <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMembers(prev => prev.filter((_, j) => j !== i))}
+                        className="opacity-0 group-hover:opacity-100 text-outlook-text-disabled hover:text-red-500 p-0.5 rounded"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-outlook-text-disabled text-center py-4 border border-dashed border-outlook-border rounded">
+                  Aucun membre — ajoutez des contacts ci-dessus
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="px-6 py-3 border-t border-outlook-border flex justify-end gap-2 flex-shrink-0">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded hover:bg-outlook-bg-hover">
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || !name.trim()}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 text-sm rounded font-medium disabled:opacity-50 flex items-center gap-2"
+            >
+              {isSubmitting && <Loader2 size={13} className="animate-spin" />}
+              {list ? 'Enregistrer' : 'Créer la liste'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ShareDistListDialog({ list, onSave, onClose, isSaving }: {
+  list: any; onSave: (sharedWith: any[]) => void; onClose: () => void; isSaving: boolean;
+}) {
+  const [sharedWith, setSharedWith] = useState<any[]>(Array.isArray(list.shared_with) ? list.shared_with : []);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [userResults, setUserResults] = useState<any[]>([]);
+  const [groupResults, setGroupResults] = useState<any[]>([]);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const search = useCallback((q: string) => {
+    if (searchRef.current) clearTimeout(searchRef.current);
+    if (q.length < 1) { setUserResults([]); setGroupResults([]); return; }
+    searchRef.current = setTimeout(async () => {
+      try {
+        const [users, groups] = await Promise.all([
+          api.listDirectoryUsers(q),
+          api.getAdminGroups().catch(() => [] as any[]),
+        ]);
+        setUserResults((users as any[]).filter((u: any) => !sharedWith.some(s => s.id === u.id)));
+        setGroupResults((groups as any[]).filter((g: any) =>
+          g.name?.toLowerCase().includes(q.toLowerCase()) && !sharedWith.some(s => s.id === g.id)
+        ));
+      } catch { setUserResults([]); setGroupResults([]); }
+    }, 200);
+  }, [sharedWith]);
+
+  const add = (item: any, type: 'user' | 'group') => {
+    if (sharedWith.some(s => s.id === item.id)) return;
+    setSharedWith(prev => [...prev, {
+      type,
+      id: item.id,
+      display: type === 'user' ? (item.display_name || item.email) : item.name,
+    }]);
+    setSearchQuery('');
+    setUserResults([]);
+    setGroupResults([]);
+  };
+
+  const remove = (id: string) => setSharedWith(prev => prev.filter(s => s.id !== id));
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outlook-border flex-shrink-0">
+          <h2 className="text-lg font-semibold text-outlook-text-primary">Partager « {list.name} »</h2>
+          <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-6 flex-1 overflow-y-auto space-y-4">
+          <p className="text-sm text-outlook-text-secondary">
+            Recherchez des utilisateurs ou des groupes pour leur donner accès à cette liste.
+          </p>
+
+          {/* Search */}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); search(e.target.value); }}
+              placeholder="Rechercher utilisateur ou groupe..."
+              className="w-full pl-9 pr-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
+              autoFocus
+            />
+            {(userResults.length > 0 || groupResults.length > 0) && (
+              <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-xl z-40 w-full max-h-48 overflow-y-auto">
+                {userResults.length > 0 && (
+                  <>
+                    <div className="px-3 py-1 text-[10px] font-semibold uppercase text-outlook-text-disabled bg-gray-50">Utilisateurs</div>
+                    {userResults.map((u: any) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onMouseDown={() => add(u, 'user')}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                      >
+                        <User size={14} className="text-outlook-text-disabled flex-shrink-0" />
+                        <span className="truncate">{u.display_name || u.email}</span>
+                        <span className="text-xs text-outlook-text-disabled truncate ml-auto">{u.email}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+                {groupResults.length > 0 && (
+                  <>
+                    <div className="px-3 py-1 text-[10px] font-semibold uppercase text-outlook-text-disabled bg-gray-50">Groupes</div>
+                    {groupResults.map((g: any) => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onMouseDown={() => add(g, 'group')}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+                      >
+                        <Shield size={14} className="text-outlook-text-disabled flex-shrink-0" />
+                        <span className="truncate">{g.name}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Current shares */}
+          <div>
+            <div className="text-xs font-semibold text-outlook-text-disabled mb-2">
+              Partagée avec ({sharedWith.length})
+            </div>
+            {sharedWith.length === 0 ? (
+              <p className="text-sm text-outlook-text-disabled">Aucun partage — recherchez ci-dessus.</p>
+            ) : (
+              <div className="space-y-1">
+                {sharedWith.map((sw, i) => (
+                  <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded bg-gray-50 border border-outlook-border">
+                    {sw.type === 'group' ? <Shield size={14} className="text-purple-500 flex-shrink-0" /> : <User size={14} className="text-outlook-blue flex-shrink-0" />}
+                    <span className="flex-1 text-sm truncate">{sw.display || sw.id}</span>
+                    <button
+                      type="button"
+                      onClick={() => remove(sw.id)}
+                      className="text-outlook-text-disabled hover:text-red-500 p-0.5 rounded"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-3 border-t border-outlook-border flex justify-end gap-2 flex-shrink-0">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded hover:bg-outlook-bg-hover">
+            Annuler
+          </button>
+          <button
+            onClick={() => onSave(sharedWith)}
+            disabled={isSaving}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 text-sm rounded font-medium disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSaving && <Loader2 size={13} className="animate-spin" />}
+            Enregistrer le partage
+          </button>
         </div>
       </div>
     </div>

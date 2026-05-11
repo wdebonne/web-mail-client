@@ -46,7 +46,7 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
     let paramIdx = 2;
 
     if (source === 'nextcloud') {
-      query += ` AND c.nc_managed = true`;
+      query += ` AND (c.nc_managed = true OR c.source = 'nextcloud')`;
     } else if (source) {
       query += ` AND c.source = $${paramIdx}`;
       params.push(source);
@@ -82,13 +82,29 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
 
     const result = await pool.query(query, params);
 
-    // Get total count
+    // Get total count (mirrors same filters as main query)
     let countQuery = 'SELECT COUNT(DISTINCT c.id) FROM contacts c LEFT JOIN contact_group_members cgm ON cgm.contact_id = c.id WHERE c.user_id = $1';
     const countParams: any[] = [req.userId];
-    
+    let countParamIdx = 2;
+
+    if (source === 'nextcloud') {
+      countQuery += ` AND (c.nc_managed = true OR c.source = 'nextcloud')`;
+    } else if (source) {
+      countQuery += ` AND c.source = $${countParamIdx}`;
+      countParams.push(source);
+      countParamIdx++;
+    }
+
     if (search) {
-      countQuery += ` AND (c.email ILIKE $2 OR c.first_name ILIKE $2 OR c.last_name ILIKE $2 OR c.display_name ILIKE $2)`;
+      countQuery += ` AND (c.email ILIKE $${countParamIdx} OR c.first_name ILIKE $${countParamIdx} OR c.last_name ILIKE $${countParamIdx} OR c.display_name ILIKE $${countParamIdx})`;
       countParams.push(`%${search}%`);
+      countParamIdx++;
+    }
+
+    if (groupId) {
+      countQuery += ` AND cgm.group_id = $${countParamIdx}`;
+      countParams.push(groupId);
+      countParamIdx++;
     }
 
     const countResult = await pool.query(countQuery, countParams);
@@ -391,10 +407,21 @@ contactRouter.get('/search/autocomplete', async (req: AuthRequest, res) => {
       [req.userId, `%${query}%`]
     );
 
-    // Also search distribution lists
+    // Also search distribution lists (owned + shared, non-deleted)
     const lists = await pool.query(
-      `SELECT id, name, description, members FROM distribution_lists
-       WHERE user_id = $1 AND name ILIKE $2
+      `SELECT dl.id, dl.name, dl.description, dl.members FROM distribution_lists dl
+       WHERE dl.is_deleted = false AND dl.name ILIKE $2 AND (
+         dl.user_id = $1
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(dl.shared_with) sw
+           WHERE sw->>'type' = 'user' AND sw->>'id' = $1
+         )
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(dl.shared_with) sw
+           JOIN user_groups ug ON ug.group_id::text = sw->>'id' AND ug.user_id = $1
+           WHERE sw->>'type' = 'group'
+         )
+       )
        LIMIT 5`,
       [req.userId, `%${query}%`]
     );
@@ -550,10 +577,45 @@ contactRouter.delete('/groups/:id', async (req: AuthRequest, res) => {
 });
 
 // ---- Distribution Lists ----
+
+// Auto-add unknown emails from a member list to the user's contacts
+async function autoAddMemberContacts(userId: string, members: { email: string; name?: string }[]) {
+  for (const m of members) {
+    if (!m.email) continue;
+    const existing = await pool.query(
+      'SELECT id FROM contacts WHERE user_id = $1 AND LOWER(email) = $2 LIMIT 1',
+      [userId, m.email.toLowerCase()]
+    );
+    if (existing.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO contacts (user_id, email, display_name, source, is_favorite)
+         VALUES ($1, $2, $3, 'local', false)
+         ON CONFLICT DO NOTHING`,
+        [userId, m.email.toLowerCase(), m.name || m.email]
+      );
+    }
+  }
+}
+
 contactRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM distribution_lists WHERE user_id = $1 ORDER BY name ASC',
+      `SELECT dl.*, u.email as owner_email, u.display_name as owner_name
+       FROM distribution_lists dl
+       LEFT JOIN users u ON u.id = dl.user_id
+       WHERE dl.is_deleted = false AND (
+         dl.user_id = $1
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(dl.shared_with) sw
+           WHERE sw->>'type' = 'user' AND sw->>'id' = $1
+         )
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(dl.shared_with) sw
+           JOIN user_groups ug ON ug.group_id::text = sw->>'id' AND ug.user_id = $1
+           WHERE sw->>'type' = 'group'
+         )
+       )
+       ORDER BY dl.name ASC`,
       [req.userId]
     );
     res.json(result.rows);
@@ -565,10 +627,14 @@ contactRouter.get('/distribution-lists', async (req: AuthRequest, res) => {
 contactRouter.post('/distribution-lists', async (req: AuthRequest, res) => {
   try {
     const { name, description, members } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Le nom est requis' });
+    const memberList: { email: string; name?: string }[] = Array.isArray(members) ? members : [];
     const result = await pool.query(
-      'INSERT INTO distribution_lists (user_id, name, description, members) VALUES ($1, $2, $3, $4) RETURNING *',
-      [req.userId, name, description, JSON.stringify(members || [])]
+      `INSERT INTO distribution_lists (user_id, created_by, name, description, members)
+       VALUES ($1, $1, $2, $3, $4) RETURNING *`,
+      [req.userId, name.trim(), description || null, JSON.stringify(memberList)]
     );
+    autoAddMemberContacts(req.userId!, memberList).catch(() => {});
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -577,22 +643,73 @@ contactRouter.post('/distribution-lists', async (req: AuthRequest, res) => {
 
 contactRouter.put('/distribution-lists/:id', async (req: AuthRequest, res) => {
   try {
-    const { name, description, members } = req.body;
-    const result = await pool.query(
-      `UPDATE distribution_lists SET name = $1, description = $2, members = $3, updated_at = NOW()
-       WHERE id = $4 AND user_id = $5 RETURNING *`,
-      [name, description, JSON.stringify(members), req.params.id, req.userId]
+    const { name, description, members, sharedWith } = req.body;
+    // Allow update if owner OR if list is shared with user (but only owner can change sharedWith)
+    const check = await pool.query(
+      `SELECT id, user_id FROM distribution_lists
+       WHERE id = $1 AND is_deleted = false AND (
+         user_id = $2
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(shared_with) sw
+           WHERE sw->>'type' = 'user' AND sw->>'id' = $2
+         )
+       )`,
+      [req.params.id, req.userId]
     );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
+    const isOwner = check.rows[0].user_id === req.userId;
+    const memberList: { email: string; name?: string }[] = Array.isArray(members) ? members : [];
+
+    const result = await pool.query(
+      `UPDATE distribution_lists SET
+         name = COALESCE($1, name),
+         description = COALESCE($2, description),
+         members = COALESCE($3::jsonb, members),
+         shared_with = CASE WHEN $5 THEN COALESCE($4::jsonb, shared_with) ELSE shared_with END,
+         updated_at = NOW()
+       WHERE id = $6 RETURNING *`,
+      [
+        name?.trim() || null,
+        description !== undefined ? description : null,
+        members !== undefined ? JSON.stringify(memberList) : null,
+        sharedWith !== undefined ? JSON.stringify(sharedWith) : null,
+        isOwner,
+        req.params.id,
+      ]
+    );
+    if (members !== undefined) autoAddMemberContacts(req.userId!, memberList).catch(() => {});
     res.json(result.rows[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
+// Soft delete — admin can still see and restore/re-share the list
 contactRouter.delete('/distribution-lists/:id', async (req: AuthRequest, res) => {
   try {
-    await pool.query('DELETE FROM distribution_lists WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+    const result = await pool.query(
+      `UPDATE distribution_lists SET is_deleted = true, updated_at = NOW()
+       WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [req.params.id, req.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
     res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Share a distribution list with users/groups (owner only)
+contactRouter.post('/distribution-lists/:id/share', async (req: AuthRequest, res) => {
+  try {
+    const { sharedWith } = req.body;
+    const result = await pool.query(
+      `UPDATE distribution_lists SET shared_with = $1, updated_at = NOW()
+       WHERE id = $2 AND user_id = $3 RETURNING *`,
+      [JSON.stringify(sharedWith || []), req.params.id, req.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
+    res.json(result.rows[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

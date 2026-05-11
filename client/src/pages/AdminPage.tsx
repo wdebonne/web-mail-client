@@ -8,6 +8,7 @@ import {
   LayoutDashboard, ScrollText, Server, HardDrive, Database, Calendar,
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
+  BookOpen, Share2, RotateCcw, AtSign, User,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -24,7 +25,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -46,10 +47,11 @@ export default function AdminPage() {
     { id: 'users' as const,          icon: Users,           label: t('admin.tab.users'),          group: t('admin.group.users') },
     { id: 'groups' as const,         icon: Shield,          label: t('admin.tab.groups'),         group: t('admin.group.users') },
     // Messagerie
-    { id: 'mailaccounts' as const,   icon: Mail,            label: t('admin.tab.mailaccounts'),   group: t('admin.group.mail') },
-    { id: 'autoresponders' as const, icon: Coffee,          label: t('admin.tab.autoresponders'), group: t('admin.group.mail') },
-    { id: 'mailtemplates' as const,  icon: FileText,        label: t('admin.tab.mailtemplates'),  group: t('admin.group.mail') },
-    { id: 'rules' as const,          icon: Filter,          label: t('admin.tab.rules'),          group: t('admin.group.mail') },
+    { id: 'mailaccounts' as const,      icon: Mail,       label: t('admin.tab.mailaccounts'),        group: t('admin.group.mail') },
+    { id: 'autoresponders' as const,    icon: Coffee,     label: t('admin.tab.autoresponders'),      group: t('admin.group.mail') },
+    { id: 'mailtemplates' as const,     icon: FileText,   label: t('admin.tab.mailtemplates'),       group: t('admin.group.mail') },
+    { id: 'rules' as const,             icon: Filter,     label: t('admin.tab.rules'),               group: t('admin.group.mail') },
+    { id: 'distributionlists' as const, icon: BookOpen,   label: 'Listes de distribution',           group: t('admin.group.mail') },
     // Calendrier
     { id: 'calendars' as const,      icon: Calendar,        label: t('admin.tab.calendars'),      group: t('admin.group.calendar') },
     // Intégrations
@@ -146,6 +148,7 @@ export default function AdminPage() {
             {tab === 'devices' && <DeviceSessionsManagement />}
             {tab === 'notifications' && <AdminNotificationDefaults />}
             {tab === 'system' && <SystemSettings />}
+            {tab === 'distributionlists' && <AdminDistributionLists />}
           </div>
         </div>
       </div>
@@ -3308,6 +3311,418 @@ function DeviceSessionsManagement() {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// Admin — Distribution Lists
+// ========================================
+
+function AdminDistributionLists() {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [includeDeleted, setIncludeDeleted] = useState(false);
+  const [editingList, setEditingList] = useState<any>(null);
+  const [sharingList, setSharingList] = useState<any>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data: lists = [], isLoading, refetch } = useQuery({
+    queryKey: ['admin-distribution-lists', debouncedSearch, includeDeleted],
+    queryFn: () => api.getAdminDistributionLists({ search: debouncedSearch || undefined, includeDeleted }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => api.adminUpdateDistributionList(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-distribution-lists'] }); setEditingList(null); toast.success('Liste mise à jour'); },
+    onError: (e: any) => toast.error(e.message || 'Erreur'),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: api.adminDeleteDistributionList,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-distribution-lists'] }); toast.success('Liste supprimée définitivement'); },
+    onError: (e: any) => toast.error(e.message || 'Erreur'),
+  });
+  const restoreMutation = useMutation({
+    mutationFn: api.adminRestoreDistributionList,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-distribution-lists'] }); toast.success('Liste restaurée'); },
+    onError: (e: any) => toast.error(e.message || 'Erreur'),
+  });
+  const shareMutation = useMutation({
+    mutationFn: ({ id, sharedWith }: { id: string; sharedWith: any[] }) => api.adminShareDistributionList(id, sharedWith),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-distribution-lists'] }); setSharingList(null); toast.success('Partage mis à jour'); },
+    onError: (e: any) => toast.error(e.message || 'Erreur'),
+  });
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-semibold text-outlook-text-primary">Listes de distribution</h2>
+          <p className="text-sm text-outlook-text-secondary mt-1">Gérez toutes les listes de distribution des utilisateurs.</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher par nom ou utilisateur..."
+            className="w-full pl-9 pr-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-outlook-text-secondary cursor-pointer">
+          <input
+            type="checkbox"
+            checked={includeDeleted}
+            onChange={e => setIncludeDeleted(e.target.checked)}
+            className="rounded"
+          />
+          Afficher les supprimées
+        </label>
+        <span className="text-xs text-outlook-text-disabled">{(lists as any[]).length} liste{(lists as any[]).length !== 1 ? 's' : ''}</span>
+      </div>
+
+      {/* List */}
+      {isLoading ? (
+        <div className="text-sm text-outlook-text-secondary">Chargement...</div>
+      ) : (lists as any[]).length === 0 ? (
+        <div className="text-center py-12 text-outlook-text-disabled text-sm">
+          <BookOpen size={32} className="mx-auto mb-2 opacity-30" />
+          Aucune liste trouvée
+        </div>
+      ) : (
+        <div className="bg-white border border-outlook-border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-outlook-bg-primary border-b border-outlook-border">
+              <tr>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-outlook-text-secondary uppercase">Nom</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-outlook-text-secondary uppercase">Propriétaire</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-outlook-text-secondary uppercase">Membres</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-outlook-text-secondary uppercase">Statut</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-outlook-text-secondary uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(lists as any[]).map((dl: any) => {
+                const memberCount = Array.isArray(dl.members) ? dl.members.length : (dl.member_count ?? 0);
+                const sharedCount = Array.isArray(dl.shared_with) ? dl.shared_with.length : 0;
+                return (
+                  <tr key={dl.id} className={`border-t border-outlook-border hover:bg-outlook-bg-hover ${dl.is_deleted ? 'opacity-60' : ''}`}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-outlook-text-primary">{dl.name}</div>
+                      {dl.description && <div className="text-xs text-outlook-text-disabled truncate max-w-xs">{dl.description}</div>}
+                      {sharedCount > 0 && <div className="text-xs text-blue-600 mt-0.5">Partagée avec {sharedCount}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-outlook-text-secondary">
+                      <div>{dl.owner_name || '—'}</div>
+                      <div className="text-xs text-outlook-text-disabled">{dl.owner_email}</div>
+                    </td>
+                    <td className="px-4 py-3 text-outlook-text-secondary">{memberCount}</td>
+                    <td className="px-4 py-3">
+                      {dl.is_deleted ? (
+                        <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Supprimée</span>
+                      ) : (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Active</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        {!dl.is_deleted && (
+                          <>
+                            <button
+                              onClick={() => setEditingList(dl)}
+                              className="p-1.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary hover:text-outlook-text-primary"
+                              title="Modifier"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => setSharingList(dl)}
+                              className="p-1.5 rounded hover:bg-outlook-bg-hover text-outlook-blue"
+                              title="Partager"
+                            >
+                              <Share2 size={14} />
+                            </button>
+                          </>
+                        )}
+                        {dl.is_deleted ? (
+                          <button
+                            onClick={() => restoreMutation.mutate(dl.id)}
+                            disabled={restoreMutation.isPending}
+                            className="p-1.5 rounded hover:bg-green-50 text-green-600"
+                            title="Restaurer"
+                          >
+                            <RotateCcw size={14} />
+                          </button>
+                        ) : null}
+                        <button
+                          onClick={() => {
+                            if (confirm(`Supprimer définitivement "${dl.name}" ? Cette action est irréversible.`)) {
+                              deleteMutation.mutate(dl.id);
+                            }
+                          }}
+                          disabled={deleteMutation.isPending}
+                          className="p-1.5 rounded hover:bg-red-50 text-red-500"
+                          title="Supprimer définitivement"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editingList && (
+        <AdminDLEditModal
+          list={editingList}
+          onSave={(data) => updateMutation.mutate({ id: editingList.id, data })}
+          onClose={() => setEditingList(null)}
+          isSaving={updateMutation.isPending}
+        />
+      )}
+
+      {/* Share modal */}
+      {sharingList && (
+        <AdminDLShareModal
+          list={sharingList}
+          onSave={(sharedWith) => shareMutation.mutate({ id: sharingList.id, sharedWith })}
+          onClose={() => setSharingList(null)}
+          isSaving={shareMutation.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
+function AdminDLEditModal({ list, onSave, onClose, isSaving }: {
+  list: any; onSave: (data: any) => void; onClose: () => void; isSaving: boolean;
+}) {
+  const [name, setName] = useState(list.name || '');
+  const [description, setDescription] = useState(list.description || '');
+  const [members, setMembers] = useState<{ email: string; name?: string }[]>(
+    Array.isArray(list.members) ? list.members : []
+  );
+  const [memberInput, setMemberInput] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSugg, setShowSugg] = useState(false);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const searchContacts = (q: string) => {
+    if (searchRef.current) clearTimeout(searchRef.current);
+    if (!q) { setSuggestions([]); return; }
+    searchRef.current = setTimeout(async () => {
+      try {
+        const res = await api.searchContacts(q);
+        setSuggestions(res.contacts.filter((c: any) => c.email));
+      } catch { setSuggestions([]); }
+    }, 200);
+  };
+
+  const addMember = (email: string, memberName?: string) => {
+    const e = email.trim().toLowerCase();
+    if (!e || !e.includes('@') || members.some(m => m.email === e)) return;
+    setMembers(prev => [...prev, { email: e, name: memberName }]);
+    setMemberInput('');
+    setSuggestions([]);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outlook-border flex-shrink-0">
+          <h2 className="text-lg font-semibold">Modifier « {list.name} »</h2>
+          <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-6 flex-1 overflow-y-auto space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Nom</label>
+            <input value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Description</label>
+            <input value={description} onChange={e => setDescription(e.target.value)} className="w-full px-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Membres ({members.length})</label>
+            <div className="relative mb-2">
+              <AtSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+              <input
+                value={memberInput}
+                onChange={e => { setMemberInput(e.target.value); searchContacts(e.target.value); setShowSugg(true); }}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addMember(memberInput); } }}
+                onBlur={() => setTimeout(() => setShowSugg(false), 150)}
+                placeholder="Email ou rechercher..."
+                className="w-full pl-9 pr-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
+              />
+              {showSugg && suggestions.length > 0 && (
+                <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-xl z-40 w-full max-h-40 overflow-y-auto">
+                  {suggestions.map((s: any, i: number) => (
+                    <button key={i} type="button" onMouseDown={() => addMember(s.email, s.display_name)}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                      <User size={12} className="text-outlook-text-disabled" />
+                      <span className="truncate">{s.display_name || s.email}</span>
+                      <span className="text-xs text-outlook-text-disabled">{s.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="space-y-1 max-h-48 overflow-y-auto border border-outlook-border rounded p-2">
+              {members.length === 0 ? (
+                <p className="text-sm text-outlook-text-disabled text-center py-2">Aucun membre</p>
+              ) : members.map((m, i) => (
+                <div key={i} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-outlook-bg-hover group">
+                  <User size={12} className="text-outlook-text-disabled flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    {m.name && <div className="text-xs truncate font-medium">{m.name}</div>}
+                    <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
+                  </div>
+                  <button type="button" onClick={() => setMembers(prev => prev.filter((_, j) => j !== i))}
+                    className="opacity-0 group-hover:opacity-100 text-outlook-text-disabled hover:text-red-500 p-0.5">
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-3 border-t border-outlook-border flex justify-end gap-2 flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded hover:bg-outlook-bg-hover">Annuler</button>
+          <button
+            onClick={() => onSave({ name: name.trim(), description: description.trim() || null, members })}
+            disabled={isSaving || !name.trim()}
+            className="bg-outlook-blue text-white px-5 py-2 text-sm rounded font-medium disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSaving && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+            Enregistrer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminDLShareModal({ list, onSave, onClose, isSaving }: {
+  list: any; onSave: (sharedWith: any[]) => void; onClose: () => void; isSaving: boolean;
+}) {
+  const [sharedWith, setSharedWith] = useState<any[]>(Array.isArray(list.shared_with) ? list.shared_with : []);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [userResults, setUserResults] = useState<any[]>([]);
+  const [groupResults, setGroupResults] = useState<any[]>([]);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const search = (q: string) => {
+    if (searchRef.current) clearTimeout(searchRef.current);
+    if (!q) { setUserResults([]); setGroupResults([]); return; }
+    searchRef.current = setTimeout(async () => {
+      try {
+        const [users, groups] = await Promise.all([
+          api.listDirectoryUsers(q),
+          api.getAdminGroups().catch(() => [] as any[]),
+        ]);
+        setUserResults((users as any[]).filter((u: any) => !sharedWith.some(s => s.id === u.id)));
+        setGroupResults((groups as any[]).filter((g: any) =>
+          g.name?.toLowerCase().includes(q.toLowerCase()) && !sharedWith.some(s => s.id === g.id)
+        ));
+      } catch { setUserResults([]); setGroupResults([]); }
+    }, 200);
+  };
+
+  const add = (item: any, type: 'user' | 'group') => {
+    if (sharedWith.some(s => s.id === item.id)) return;
+    setSharedWith(prev => [...prev, {
+      type, id: item.id,
+      display: type === 'user' ? (item.display_name || item.email) : item.name,
+    }]);
+    setSearchQuery(''); setUserResults([]); setGroupResults([]);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outlook-border flex-shrink-0">
+          <h2 className="text-lg font-semibold">Partager « {list.name} »</h2>
+          <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-1"><X size={18} /></button>
+        </div>
+        <div className="p-6 flex-1 overflow-y-auto space-y-4">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+            <input
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); search(e.target.value); }}
+              placeholder="Utilisateur ou groupe..."
+              className="w-full pl-9 pr-3 py-2 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
+              autoFocus
+            />
+            {(userResults.length > 0 || groupResults.length > 0) && (
+              <div className="absolute left-0 top-full mt-1 bg-white border border-outlook-border rounded shadow-xl z-40 w-full max-h-48 overflow-y-auto">
+                {userResults.length > 0 && (
+                  <>
+                    <div className="px-3 py-1 text-[10px] font-semibold uppercase text-outlook-text-disabled bg-gray-50">Utilisateurs</div>
+                    {userResults.map((u: any) => (
+                      <button key={u.id} type="button" onMouseDown={() => add(u, 'user')}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                        <User size={13} className="text-outlook-text-disabled" />
+                        <span className="truncate">{u.display_name || u.email}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+                {groupResults.length > 0 && (
+                  <>
+                    <div className="px-3 py-1 text-[10px] font-semibold uppercase text-outlook-text-disabled bg-gray-50">Groupes</div>
+                    {groupResults.map((g: any) => (
+                      <button key={g.id} type="button" onMouseDown={() => add(g, 'group')}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                        <Shield size={13} className="text-outlook-text-disabled" />
+                        <span className="truncate">{g.name}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-outlook-text-disabled mb-2">Partagée avec ({sharedWith.length})</div>
+            {sharedWith.length === 0 ? (
+              <p className="text-sm text-outlook-text-disabled">Aucun partage</p>
+            ) : sharedWith.map((sw, i) => (
+              <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded bg-gray-50 border border-outlook-border mb-1">
+                {sw.type === 'group' ? <Shield size={13} className="text-purple-500" /> : <User size={13} className="text-outlook-blue" />}
+                <span className="flex-1 text-sm truncate">{sw.display || sw.id}</span>
+                <button onClick={() => setSharedWith(prev => prev.filter(s => s.id !== sw.id))} className="text-outlook-text-disabled hover:text-red-500"><X size={12} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="px-6 py-3 border-t border-outlook-border flex justify-end gap-2 flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded hover:bg-outlook-bg-hover">Annuler</button>
+          <button
+            onClick={() => onSave(sharedWith)}
+            disabled={isSaving}
+            className="bg-outlook-blue text-white px-5 py-2 text-sm rounded font-medium disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSaving && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+            Enregistrer
+          </button>
+        </div>
       </div>
     </div>
   );
