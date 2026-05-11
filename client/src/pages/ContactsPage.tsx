@@ -256,6 +256,21 @@ export default function ContactsPage() {
     queryFn: api.getDistributionLists,
     staleTime: 30000,
   });
+
+  // Filter DLs by searchQuery (name, description, member emails/names)
+  const filteredDLs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return distributionLists as any[];
+    return (distributionLists as any[]).filter((dl: any) => {
+      if (dl.name?.toLowerCase().includes(q)) return true;
+      if (dl.description?.toLowerCase().includes(q)) return true;
+      if (Array.isArray(dl.members) && dl.members.some((m: any) =>
+        m.email?.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q)
+      )) return true;
+      return false;
+    });
+  }, [distributionLists, searchQuery]);
+
   const selectedDistList = (distributionLists as any[]).find((dl: any) => dl.id === selectedDistListId) || null;
 
   const dlSaveMutation = useMutation({
@@ -438,7 +453,7 @@ export default function ContactsPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Rechercher des contacts..."
+              placeholder={isDistListView ? 'Rechercher des listes (nom, membre…)' : 'Rechercher des contacts…'}
               className="w-full pl-9 pr-3 py-1.5 border border-outlook-border rounded text-sm focus:outline-none focus:border-outlook-blue"
             />
           </div>
@@ -492,6 +507,7 @@ export default function ContactsPage() {
             icon={<BookOpen size={14} />}
             count={(distributionLists as any[]).length}
             active={isDistListView}
+
             onClick={() => { setSelectedGroup(DIST_LIST_GROUP_ID); setSelectedContactId(null); setSelectedDistListId(null); }}
             color="purple"
           />
@@ -515,7 +531,12 @@ export default function ContactsPage() {
         {/* List header with sort */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-outlook-border text-xs text-outlook-text-secondary">
           {isDistListView ? (
-            <span>{(distributionLists as any[]).length} liste{(distributionLists as any[]).length !== 1 ? 's' : ''}</span>
+            <span>
+              {filteredDLs.length} liste{filteredDLs.length !== 1 ? 's' : ''}
+              {searchQuery && filteredDLs.length !== (distributionLists as any[]).length && (
+                <span className="text-outlook-text-disabled"> sur {(distributionLists as any[]).length}</span>
+              )}
+            </span>
           ) : (
             <>
               <span>{contacts.length} {contacts.length > 1 ? 'contacts' : 'contact'}</span>
@@ -538,19 +559,26 @@ export default function ContactsPage() {
         {/* Contact / Distribution list list */}
         <div className="flex-1 overflow-y-auto">
           {isDistListView ? (
-            (distributionLists as any[]).length === 0 ? (
+            filteredDLs.length === 0 ? (
               <div className="text-center py-12 text-outlook-text-disabled text-sm">
                 <BookOpen size={32} className="mx-auto mb-2 opacity-30" />
-                <p>Aucune liste de distribution</p>
-                <button
-                  onClick={() => { setEditingDL(null); setShowDLForm(true); }}
-                  className="mt-3 text-outlook-blue hover:underline text-xs"
-                >
-                  Créer une liste
-                </button>
+                {searchQuery
+                  ? <p>Aucune liste ne correspond à « {searchQuery} »</p>
+                  : (
+                    <>
+                      <p>Aucune liste de distribution</p>
+                      <button
+                        onClick={() => { setEditingDL(null); setShowDLForm(true); }}
+                        className="mt-3 text-outlook-blue hover:underline text-xs"
+                      >
+                        Créer une liste
+                      </button>
+                    </>
+                  )
+                }
               </div>
             ) : (
-              (distributionLists as any[]).map((dl: any) => (
+              filteredDLs.map((dl: any) => (
                 <DistListRow
                   key={dl.id}
                   list={dl}
@@ -706,6 +734,7 @@ export default function ContactsPage() {
       {showDLForm && (
         <DistListForm
           list={editingDL}
+          contactsMap={new Map(allStats.map((c: Contact) => [c.email?.toLowerCase() ?? '', c]))}
           onSubmit={(data) => dlSaveMutation.mutate(data)}
           onClose={() => { setShowDLForm(false); setEditingDL(null); }}
           isSubmitting={dlSaveMutation.isPending}
@@ -1967,8 +1996,12 @@ function DistListDetail({ list, isOwner, onEdit, onDelete, onShare, isDeleting, 
   );
 }
 
-function DistListForm({ list, onSubmit, onClose, isSubmitting }: {
-  list: any | null; onSubmit: (data: any) => void; onClose: () => void; isSubmitting: boolean;
+function DistListForm({ list, contactsMap = new Map(), onSubmit, onClose, isSubmitting }: {
+  list: any | null;
+  contactsMap?: Map<string, Contact>;
+  onSubmit: (data: any) => void;
+  onClose: () => void;
+  isSubmitting: boolean;
 }) {
   const [name, setName] = useState(list?.name || '');
   const [description, setDescription] = useState(list?.description || '');
@@ -2153,9 +2186,7 @@ function DistListForm({ list, onSubmit, onClose, isSubmitting }: {
                           onMouseDown={() => addMember(s.email, s.display_name || s.name)}
                           className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2.5"
                         >
-                          <div className="w-7 h-7 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
-                            {(s.display_name || s.email || '?')[0].toUpperCase()}
-                          </div>
+                          <MemberAvatar contact={contactsMap.get(s.email?.toLowerCase())} name={s.display_name || s.name || s.email} size={7} />
                           <div className="min-w-0 flex-1">
                             <div className="font-medium truncate text-outlook-text-primary">
                               {s.display_name || s.name || s.email}
@@ -2175,24 +2206,25 @@ function DistListForm({ list, onSubmit, onClose, isSubmitting }: {
               {/* Members list */}
               {members.length > 0 ? (
                 <div className="space-y-1 max-h-48 overflow-y-auto border border-outlook-border rounded p-2">
-                  {members.map((m, i) => (
-                    <div key={i} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-outlook-bg-hover group">
-                      <div className="w-6 h-6 rounded-full bg-outlook-blue/10 flex items-center justify-center text-outlook-blue text-xs font-semibold flex-shrink-0">
-                        {(m.name || m.email || '?')[0].toUpperCase()}
+                  {members.map((m, i) => {
+                    const matchedContact = contactsMap.get(m.email.toLowerCase());
+                    return (
+                      <div key={i} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-outlook-bg-hover group">
+                        <MemberAvatar contact={matchedContact} name={m.name || m.email} size={7} />
+                        <div className="flex-1 min-w-0">
+                          {m.name && <div className="text-sm truncate font-medium">{m.name}</div>}
+                          <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setMembers(prev => prev.filter((_, j) => j !== i))}
+                          className="opacity-0 group-hover:opacity-100 text-outlook-text-disabled hover:text-red-500 p-0.5 rounded"
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        {m.name && <div className="text-sm truncate">{m.name}</div>}
-                        <div className="text-xs text-outlook-text-secondary truncate">{m.email}</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setMembers(prev => prev.filter((_, j) => j !== i))}
-                        className="opacity-0 group-hover:opacity-100 text-outlook-text-disabled hover:text-red-500 p-0.5 rounded"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-sm text-outlook-text-disabled text-center py-4 border border-dashed border-outlook-border rounded">
@@ -2367,6 +2399,44 @@ function ShareDistListDialog({ list, onSave, onClose, isSaving }: {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MemberAvatar — avatar enrichi depuis le carnet d'adresses
+// ─────────────────────────────────────────────────────────────────────────────
+function MemberAvatar({ contact, name, size = 7 }: {
+  contact?: Contact; name: string; size?: number;
+}) {
+  const avatarSrc = contact
+    ? ((contact as any).avatar_data
+        ? ((contact as any).avatar_data.startsWith('data:')
+            ? (contact as any).avatar_data
+            : `data:image/jpeg;base64,${(contact as any).avatar_data}`)
+        : contact.avatar_url || null)
+    : null;
+
+  const initial = (name || '?')[0].toUpperCase();
+  const hue = Math.abs(name.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % 360;
+  const sizeClass = `w-${size} h-${size}`;
+
+  if (avatarSrc) {
+    return (
+      <img
+        src={avatarSrc}
+        className={`${sizeClass} rounded-full object-cover flex-shrink-0`}
+        alt={name}
+        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${sizeClass} rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}
+      style={{ background: `hsl(${hue},50%,45%)` }}
+    >
+      {initial}
     </div>
   );
 }
