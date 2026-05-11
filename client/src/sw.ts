@@ -50,7 +50,8 @@ try {
 }
 
 self.addEventListener('install', () => {
-  self.skipWaiting();
+  // Do not call skipWaiting() — let vite-plugin-pwa's prompt flow control
+  // when the new SW takes over, so the page never reloads unexpectedly.
 });
 
 self.addEventListener('activate', (event) => {
