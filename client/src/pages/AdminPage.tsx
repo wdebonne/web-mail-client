@@ -3339,6 +3339,11 @@ function AdminDistributionLists() {
     queryFn: () => api.getAdminDistributionLists({ search: debouncedSearch || undefined, includeDeleted }),
   });
 
+  const createMutation = useMutation({
+    mutationFn: (data: any) => api.createDistributionList(data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-distribution-lists'] }); setEditingList(null); toast.success('Liste créée'); },
+    onError: (e: any) => toast.error(e.message || 'Erreur'),
+  });
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => api.adminUpdateDistributionList(id, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-distribution-lists'] }); setEditingList(null); toast.success('Liste mise à jour'); },
@@ -3367,6 +3372,12 @@ function AdminDistributionLists() {
           <h2 className="text-xl font-semibold text-outlook-text-primary">Listes de distribution</h2>
           <p className="text-sm text-outlook-text-secondary mt-1">Gérez toutes les listes de distribution des utilisateurs.</p>
         </div>
+        <button
+          onClick={() => setEditingList({ id: null, name: '', description: '', members: [], avatar_data: null })}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-outlook-blue text-white hover:bg-outlook-blue-hover"
+        >
+          <Plus size={14} /> Créer une liste
+        </button>
       </div>
 
       {/* Filters */}
@@ -3488,13 +3499,16 @@ function AdminDistributionLists() {
         </div>
       )}
 
-      {/* Edit modal */}
+      {/* Edit / Create modal */}
       {editingList && (
         <AdminDLEditModal
           list={editingList}
-          onSave={(data) => updateMutation.mutate({ id: editingList.id, data })}
+          onSave={(data) => editingList.id
+            ? updateMutation.mutate({ id: editingList.id, data })
+            : createMutation.mutate(data)
+          }
           onClose={() => setEditingList(null)}
-          isSaving={updateMutation.isPending}
+          isSaving={updateMutation.isPending || createMutation.isPending}
         />
       )}
 
@@ -3576,7 +3590,7 @@ function AdminDLEditModal({ list, onSave, onClose, isSaving }: {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-outlook-border flex-shrink-0">
-          <h2 className="text-lg font-semibold text-outlook-text-primary">Modifier la liste</h2>
+          <h2 className="text-lg font-semibold text-outlook-text-primary">{list.id ? 'Modifier la liste' : 'Créer une liste'}</h2>
           <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded"><X size={18} /></button>
         </div>
 

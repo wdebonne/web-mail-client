@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.8.5-blue)
+![Version](https://img.shields.io/badge/version-1.8.6-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -174,7 +174,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - ☁️ Configuration NextCloud
 - ☕ **Répondeurs automatiques (admin)** : page dédiée listant tous les répondeurs configurés par les utilisateurs, avec filtre texte, bascule *afficher uniquement les actifs*, édition / désactivation, et création pour n'importe quel compte (autocomplétion couvrant aussi les boîtes partagées via `mailbox_assignments`). Bouton **Paramètres** (engrenage) à côté de *Nouveau répondeur* : toggle global d'activation de la fonctionnalité (masque le ruban et l'onglet utilisateur quand désactivé) et durée par défaut entre vérifications (`1 / 5 / 15 / 30 / 60 min`).
 - 📋 **Modèles de mail (admin)** : page dédiée listant tous les modèles de la plateforme (personnels par utilisateur + globaux), avec filtre texte sur nom / objet / propriétaire, badge de type, et actions modifier / partager / supprimer pour chaque ligne. Création d'un modèle pour le compte de n'importe quel utilisateur, ou en tant que **modèle global** automatiquement visible par tous les utilisateurs.
-- 📋 **Listes de distribution (admin)** : tableau listant toutes les listes de la plateforme avec recherche/filtre par nom ou propriétaire, affichage des listes archivées (supprimées par l'utilisateur), actions modifier / partager / restaurer / supprimer définitivement.
+- 📋 **Listes de distribution (admin)** : tableau listant toutes les listes de la plateforme avec recherche/filtre par nom ou propriétaire, affichage des listes archivées (supprimées par l'utilisateur), actions modifier / partager / restaurer / supprimer définitivement. Bouton **+ Créer une liste** en haut à droite pour créer une liste directement depuis le panneau admin sans quitter la page.
+- ⚙️ **Règles — gestion centralisée (admin)** : page dédiée visualisant toutes les règles de filtrage de tous les utilisateurs et groupes, avec vue globale / par utilisateur / par groupe, recherche avec autocomplétion. Bouton **+ Nouvelle règle** en haut à droite pour créer une règle directement depuis l'admin via le wizard 3-étapes.
 - 📋 Logs d'audit avec filtrage par catégorie et recherche
 
 ### Intégration O2Switch (cPanel)

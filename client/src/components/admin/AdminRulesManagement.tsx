@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Search, ChevronDown, ChevronRight, Filter, Pencil, Power, Trash2,
+  Search, ChevronDown, ChevronRight, Filter, Pencil, Plus, Power, Trash2,
   User as UserIcon, Users as UsersIcon, ListChecks,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -27,6 +27,7 @@ export default function AdminRulesManagement() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showSuggest, setShowSuggest] = useState(false);
   const [editingRule, setEditingRule] = useState<MailRule | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 250);
@@ -102,6 +103,12 @@ export default function AdminRulesManagement() {
             Visualisez et administrez les règles de tous les utilisateurs et groupes.
           </p>
         </div>
+        <button
+          onClick={() => { setEditingRule(null); setShowCreate(true); }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-outlook-blue text-white hover:bg-outlook-blue-hover"
+        >
+          <Plus size={14} /> Nouvelle règle
+        </button>
       </div>
 
       {/* Toolbar */}
@@ -239,16 +246,17 @@ export default function AdminRulesManagement() {
         )}
       </div>
 
-      {editingRule && (
+      {(showCreate || editingRule) && (
         <RuleWizard
           rule={editingRule}
           accounts={accounts}
-          defaultAccountId={editingRule.accountId}
+          defaultAccountId={editingRule?.accountId}
           isAdmin
-          onClose={() => setEditingRule(null)}
+          onClose={() => { setEditingRule(null); setShowCreate(false); }}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['admin-mail-rules'] });
             setEditingRule(null);
+            setShowCreate(false);
           }}
         />
       )}
