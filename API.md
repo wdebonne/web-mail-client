@@ -93,13 +93,18 @@ Un cookie `wm_refresh` (httpOnly, SameSite=Strict, scope `/api/auth`, TTL 90 j g
 ```
 Aucun cookie n'est posé à ce stade. Le client doit poursuivre avec `/api/auth/webauthn/login/options` puis `/verify` en passant le `pendingToken` (validité 5 min).
 
-**Erreur 401 :** Identifiants invalides
+**Erreur 401 :** Identifiants invalides (ou compte verrouillé — `423`)
+**Erreur 403 :** IP blacklistée ou compte désactivé
+
+> Cet endpoint génère un log d'audit (catégorie `auth`) : `user.login` en cas de succès, `user.login_failed` en cas d'échec, `user.login_blocked` si l'IP est blacklistée ou le compte verrouillé.
 
 ### POST /api/auth/logout
 
 Déconnexion — révoque le refresh token du device courant, détruit la session legacy et efface les cookies.
 
 **Réponse 200 :** `{ "message": "Déconnecté" }`
+
+> Génère un log d'audit `user.logout` (catégorie `auth`).
 
 ### POST /api/auth/refresh
 
@@ -1845,7 +1850,7 @@ Liste les logs d'audit avec pagination et filtrage.
 |-----------|------|--------|-------------|
 | `page` | number | 1 | Numéro de page |
 | `limit` | number | 50 | Logs par page |
-| `category` | string | — | Filtrer par catégorie (auth, admin, mail, o2switch, system) |
+| `category` | string | — | Filtrer par catégorie (`auth`, `admin`, `mail`, `o2switch`, `calendars`, `security`, `system`) |
 | `search` | string | — | Recherche par mot-clé dans l'action et les détails |
 
 **Réponse 200 :**

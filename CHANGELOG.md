@@ -11,6 +11,24 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.11.1] - 2026-05-12
+
+### Ajouté
+
+- **Journaux d'activité — événements de connexion et déconnexion**
+  - Les connexions réussies (`user.login`), les déconnexions (`user.logout`), les échecs d'authentification (`user.login_failed`) et les blocages (`user.login_blocked`) sont désormais enregistrés dans les journaux d'activité admin (catégorie `auth`).
+  - Chaque événement inclut l'email, la méthode d'authentification et la raison du blocage le cas échéant.
+  - Couvre tous les modes de connexion : mot de passe, WebAuthn 2FA (passkey en step-2), et passkey découvrable (FIDO2 sans mot de passe).
+  - Les règles d'alerte email existantes s'appliquent désormais aussi à la catégorie `auth`.
+
+### Technique
+
+- **Serveur** : `services/auditLog.ts` — NOUVEAU fichier, extrait `addLog()` et `triggerLogAlerts()` en service partagé (anciennement définis localement dans `routes/admin.ts`).
+- **Serveur** : `routes/admin.ts` — suppression des fonctions locales `addLog()` / `triggerLogAlerts()`, remplacées par l'import depuis `services/auditLog.ts`.
+- **Serveur** : `routes/auth.ts` — import de `addLog` ; appels ajoutés sur : connexion réussie (password, webauthn_2fa, passkey), déconnexion, échec mauvais mot de passe, email inconnu, IP blacklistée, compte verrouillé (existant ou verrouillé à l'instant).
+
+---
+
 ## [1.10.0] - 2026-05-12
 
 ### Ajouté
