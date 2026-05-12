@@ -18,6 +18,19 @@ interface LayoutProps {
 
 const PTR_THRESHOLD = 80;
 
+function getScrollableScrollTop(target: EventTarget | null): number {
+  let el = target as Element | null;
+  while (el && el !== document.documentElement) {
+    const style = getComputedStyle(el);
+    const overflow = style.overflowY + style.overflow;
+    if (/(auto|scroll)/.test(overflow) && el.scrollHeight > el.clientHeight) {
+      return el.scrollTop;
+    }
+    el = el.parentElement;
+  }
+  return window.scrollY;
+}
+
 export default function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
   const { user, logout } = useAuthStore();
@@ -48,15 +61,14 @@ export default function Layout({ children }: LayoutProps) {
   }, [queryClient]);
 
   const onTouchStart = useCallback((e: TouchEvent) => {
-    const el = mainRef.current;
-    if (!el) return;
-    if (el.scrollTop > 0) return;
+    if (getScrollableScrollTop(e.target) > 0) return;
     ptrStartY.current = e.touches[0].clientY;
     ptrActive.current = true;
   }, []);
 
   const onTouchMove = useCallback((e: TouchEvent) => {
     if (!ptrActive.current) return;
+    if (getScrollableScrollTop(e.target) > 0) { ptrActive.current = false; return; }
     const dy = e.touches[0].clientY - ptrStartY.current;
     if (dy <= 0) { ptrActive.current = false; return; }
     e.preventDefault();
