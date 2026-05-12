@@ -9,6 +9,7 @@ import {
   applyRetentionPolicy,
   BACKUPS_DIR,
   BACKUP_TABLES,
+  type UrlReplacement,
 } from '../services/backupService';
 import path from 'path';
 import fs from 'fs';
@@ -100,10 +101,15 @@ backupRouter.delete('/:id', async (req: AuthRequest, res) => {
 backupRouter.post('/restore', upload.single('backup'), async (req: AuthRequest, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Fichier de sauvegarde requis (champ "backup")' });
-    await restoreFromBackup(req.file.buffer);
+    const urlReplacement: UrlReplacement | undefined =
+      req.body.oldUrl && req.body.newUrl
+        ? { oldUrl: String(req.body.oldUrl), newUrl: String(req.body.newUrl) }
+        : undefined;
+    await restoreFromBackup(req.file.buffer, urlReplacement);
     await addLog(req.userId, 'backup.restored', 'backup', req, {
       filename: req.file.originalname,
       size: req.file.size,
+      urlReplacement,
     });
     res.json({ success: true });
   } catch (err: any) {
