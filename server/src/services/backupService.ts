@@ -176,7 +176,12 @@ export async function createBackupFile(
   return { id: result.rows[0].id, filename, sizeBytes };
 }
 
-export async function restoreFromBackup(data: Buffer): Promise<void> {
+export interface UrlReplacement {
+  oldUrl: string; // e.g. "https://ml.kiriyama.ovh"
+  newUrl: string; // e.g. "https://ml.dev.kiriyama.ovh"
+}
+
+export async function restoreFromBackup(data: Buffer, urlReplacement?: UrlReplacement): Promise<void> {
   let json: string;
   try {
     json = gunzipSync(data).toString('utf8');
@@ -226,20 +231,22 @@ export async function restoreFromBackup(data: Buffer): Promise<void> {
           const offset = ri * columns.length;
           columns.forEach((col) => {
             const val = chunk[ri][col];
-            if (val === null || val === undefined) {
-              // SQL NULL — works for any column type
-              values.push(null);
-            } else if (info?.jsonb.has(col)) {
-              // JSONB column: pg expects a JSON-serialised string.
-              // pg auto-stringifies objects/arrays, but for scalar primitives
-              // (strings, numbers, booleans) that came from a JSONB column we
-              // must wrap them in JSON.stringify so PostgreSQL receives valid JSON.
-              values.push(JSON.stringify(val));
+            if (info?.jsonb.has(col)) {
+              // JSONB column — must be checked BEFORE the null guard.
+              // admin_settings.value is JSONB NOT NULL: pushing SQL NULL would
+              // violate the constraint. JSON.stringify(null) = 'null' which
+              // PostgreSQL stores as the JSONB null literal, satisfying NOT NULL.
+              // For nullable JSONB columns the tradeoff (SQL NULL → JSONB null)
+              // is acceptable and rare in practice.
+              values.push(val !== undefined ? JSON.stringify(val) : null);
             } else if (info?.bytea.has(col)) {
               // BYTEA column: was exported as base64, restore as Buffer
-              values.push(Buffer.from(String(val), 'base64'));
+              values.push(val !== null && val !== undefined
+                ? Buffer.from(String(val), 'base64')
+                : null);
             } else {
-              values.push(val);
+              // All other column types: pass value as-is; undefined → SQL NULL
+              values.push(val ?? null);
             }
           });
           return `(${columns.map((_c, ci) => `$${offset + ci + 1}`).join(', ')})`;
@@ -258,6 +265,39 @@ export async function restoreFromBackup(data: Buffer): Promise<void> {
     throw err;
   } finally {
     client.release();
+  }
+
+  // Post-restore URL replacement in admin_settings
+  if (urlReplacement?.oldUrl && urlReplacement?.newUrl) {
+    const clean = (u: string) => u.replace(/\/+$/, ''); // strip trailing slash
+    const oldUrl = clean(urlReplacement.oldUrl);
+    const newUrl = clean(urlReplacement.newUrl);
+
+    // Replace inside JSONB text representations (covers public_url, oauth redirect URIs, etc.)
+    await pool.query(
+      `UPDATE admin_settings
+       SET value = replace(value::text, $1, $2)::jsonb, updated_at = NOW()
+       WHERE value::text LIKE '%' || $1 || '%'`,
+      [oldUrl, newUrl]
+    );
+
+    // Also replace hostname-only (for webauthn_rp_id which stores just the domain)
+    try {
+      const oldHost = new URL(oldUrl.startsWith('http') ? oldUrl : `https://${oldUrl}`).hostname;
+      const newHost = new URL(newUrl.startsWith('http') ? newUrl : `https://${newUrl}`).hostname;
+      if (oldHost !== newHost) {
+        await pool.query(
+          `UPDATE admin_settings
+           SET value = replace(value::text, $1, $2)::jsonb, updated_at = NOW()
+           WHERE value::text LIKE '%' || $1 || '%'`,
+          [`"${oldHost}"`, `"${newHost}"`]
+        );
+      }
+    } catch {
+      // URL parsing failed — skip hostname-only replacement
+    }
+
+    logger.info(`Post-restore URL replacement: ${oldUrl} → ${newUrl}`);
   }
 }
 

@@ -89,9 +89,13 @@ async function downloadBackup(id: string, filename: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-async function restoreBackup(file: File): Promise<void> {
+async function restoreBackup(file: File, oldUrl?: string, newUrl?: string): Promise<void> {
   const form = new FormData();
   form.append('backup', file);
+  if (oldUrl && newUrl) {
+    form.append('oldUrl', oldUrl);
+    form.append('newUrl', newUrl);
+  }
   const res = await fetch(`${BASE}/restore`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${localStorage.getItem('auth_token') ?? ''}` },
@@ -209,10 +213,13 @@ function DeleteModal({ backup, onConfirm, onCancel, loading }: {
 
 function RestoreModal({ filename, onConfirm, onCancel, loading }: {
   filename: string;
-  onConfirm: () => void;
+  onConfirm: (oldUrl: string, newUrl: string) => void;
   onCancel: () => void;
   loading: boolean;
 }) {
+  const [oldUrl, setOldUrl] = useState('');
+  const [newUrl, setNewUrl] = useState('');
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full mx-4">
@@ -230,9 +237,46 @@ function RestoreModal({ filename, onConfirm, onCancel, loading }: {
             Cette opération est irréversible.
           </p>
         </div>
-        <p className="text-sm text-outlook-text-secondary mb-5">
+        <p className="text-sm text-outlook-text-secondary mb-4">
           Fichier : <strong className="text-outlook-text-primary">{filename}</strong>
         </p>
+
+        {/* URL replacement (optional) */}
+        <div className="border border-outlook-border rounded p-3 mb-5 space-y-3">
+          <p className="text-xs font-medium text-outlook-text-primary flex items-center gap-1.5">
+            <Info size={13} className="text-outlook-blue" />
+            Remplacement d'URL <span className="font-normal text-outlook-text-disabled">(optionnel — si vous changez de serveur)</span>
+          </p>
+          <p className="text-xs text-outlook-text-disabled">
+            Remplace automatiquement l'URL source dans tous les paramètres (public_url, WebAuthn RP ID, OAuth…).
+            Laissez vide si vous restaurez sur le même serveur.
+          </p>
+          <div className="space-y-2">
+            <div>
+              <label className="text-xs text-outlook-text-secondary block mb-1">URL source (sauvegarde)</label>
+              <input
+                type="text"
+                placeholder="https://ml.kiriyama.ovh"
+                value={oldUrl}
+                onChange={e => setOldUrl(e.target.value)}
+                className="w-full border border-outlook-border rounded px-2 py-1.5 text-sm
+                           focus:outline-none focus:border-outlook-blue font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-outlook-text-secondary block mb-1">URL cible (ce serveur)</label>
+              <input
+                type="text"
+                placeholder="https://ml.dev.kiriyama.ovh"
+                value={newUrl}
+                onChange={e => setNewUrl(e.target.value)}
+                className="w-full border border-outlook-border rounded px-2 py-1.5 text-sm
+                           focus:outline-none focus:border-outlook-blue font-mono"
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="flex gap-3 justify-end">
           <button
             onClick={onCancel}
@@ -241,7 +285,7 @@ function RestoreModal({ filename, onConfirm, onCancel, loading }: {
             Annuler
           </button>
           <button
-            onClick={onConfirm}
+            onClick={() => onConfirm(oldUrl, newUrl)}
             disabled={loading}
             className="px-4 py-2 text-sm bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
           >
@@ -330,7 +374,8 @@ export default function AdminBackup() {
   });
 
   const restoreMut = useMutation({
-    mutationFn: (file: File) => restoreBackup(file),
+    mutationFn: ({ file, oldUrl, newUrl }: { file: File; oldUrl: string; newUrl: string }) =>
+      restoreBackup(file, oldUrl || undefined, newUrl || undefined),
     onSuccess: () => {
       toast.success('Restauration réussie. Reconnectez-vous pour prendre en compte les nouveaux paramètres.', { duration: 8000 });
       setPendingRestoreFile(null);
@@ -726,7 +771,9 @@ export default function AdminBackup() {
       {pendingRestoreFile && (
         <RestoreModal
           filename={pendingRestoreFile.name}
-          onConfirm={() => restoreMut.mutate(pendingRestoreFile)}
+          onConfirm={(oldUrl, newUrl) =>
+            restoreMut.mutate({ file: pendingRestoreFile, oldUrl, newUrl })
+          }
           onCancel={() => setPendingRestoreFile(null)}
           loading={restoreMut.isPending}
         />
