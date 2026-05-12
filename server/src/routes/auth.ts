@@ -27,6 +27,7 @@ import {
   finishDiscoverableAuthentication,
 } from '../services/webauthn';
 import { z } from 'zod';
+import { addLog } from '../services/auditLog';
 
 const PENDING_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'change-me';
 
@@ -124,6 +125,7 @@ authRouter.post('/login', async (req, res) => {
          VALUES ($1, $2, $3, false, 'blacklist')`,
         [email, ip, ua]
       );
+      addLog(undefined, 'user.login_blocked', 'auth', req, { email, reason: 'blacklist' }).catch(() => {});
       return res.status(403).json({ error: 'Accès refusé depuis cette adresse IP' });
     }
 
@@ -147,6 +149,7 @@ authRouter.post('/login', async (req, res) => {
          VALUES ($1, $2, $3, false, 'unknown_email')`,
         [email, ip, ua]
       );
+      addLog(undefined, 'user.login_failed', 'auth', req, { email, reason: 'unknown_email' }).catch(() => {});
       return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
     }
 
@@ -160,6 +163,7 @@ authRouter.post('/login', async (req, res) => {
          VALUES ($1, $2, $3, $4, false, 'locked')`,
         [user.id, email, ip, ua]
       );
+      addLog(user.id, 'user.login_blocked', 'auth', req, { email, reason: 'locked' }).catch(() => {});
       return res.status(423).json({
         error: minutesLeft > 60 * 24
           ? 'Compte verrouillé. Contactez un administrateur.'
@@ -190,6 +194,11 @@ authRouter.post('/login', async (req, res) => {
          VALUES ($1, $2, $3, $4, false, $5)`,
         [user.id, email, ip, ua, lockedUntil ? 'locked' : null]
       );
+      addLog(user.id, lockedUntil ? 'user.login_blocked' : 'user.login_failed', 'auth', req, {
+        email,
+        reason: lockedUntil ? 'locked_now' : 'bad_password',
+        failedAttempts: newAttempts,
+      }).catch(() => {});
 
       const shouldAlert =
         (sec.alertEnabled && newAttempts >= sec.alertThreshold) ||
@@ -228,6 +237,7 @@ authRouter.post('/login', async (req, res) => {
        VALUES ($1, $2, $3, $4, true)`,
       [user.id, email, ip, ua]
     );
+    addLog(user.id, 'user.login', 'auth', req, { email, method: 'password' }).catch(() => {});
 
     // Step-up 2FA: if the user has registered at least one passkey, force
     // biometric proof before issuing a full session.
@@ -374,10 +384,12 @@ authRouter.post('/reset-password', async (req, res) => {
 
 // Logout — revoke the current device's refresh token + destroy legacy session.
 authRouter.post('/logout', async (req, res) => {
+  const logoutUserId: string | undefined = (req.session as any)?.userId;
   const presented = parseCookie(req.headers.cookie, REFRESH_COOKIE_NAME);
   if (presented) {
     try { await revokeByToken(presented); } catch { /* best effort */ }
   }
+  addLog(logoutUserId, 'user.logout', 'auth', req, {}).catch(() => {});
   res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
   req.session.destroy((err) => {
     if (err) {
@@ -582,6 +594,7 @@ authRouter.post('/webauthn/login/verify', async (req, res) => {
     req.session.isAdmin = user.is_admin;
 
     const { accessToken } = await issueSession(req, res, user.id, user.is_admin);
+    addLog(user.id, 'user.login', 'auth', req, { email: user.email, method: 'webauthn_2fa' }).catch(() => {});
     res.json({
       token: accessToken,
       user: {
@@ -664,6 +677,7 @@ authRouter.post('/webauthn/passkey/verify', async (req, res) => {
     req.session.isAdmin = user.is_admin;
 
     const { accessToken } = await issueSession(req, res, user.id, user.is_admin);
+    addLog(user.id, 'user.login', 'auth', req, { email: user.email, method: 'passkey' }).catch(() => {});
     res.json({
       token: accessToken,
       user: {

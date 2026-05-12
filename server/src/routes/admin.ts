@@ -17,6 +17,7 @@ import {
 } from '../services/deviceSessions';
 import { upsertAutoResponderForAccount } from './autoResponder';
 import { invalidateNotificationPrefsCache } from '../services/notificationPrefs';
+import { addLog } from '../services/auditLog';
 
 export const adminRouter = Router();
 
@@ -939,78 +940,6 @@ adminRouter.delete('/mail-accounts/:id/assignments/:assignmentId', async (req: A
 // ========================================
 // ---- Admin Audit Logs ----
 // ========================================
-
-async function addLog(userId: string | undefined, action: string, category: string, req: AuthRequest, details?: any, targetType?: string, targetId?: string) {
-  try {
-    const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
-    const ua = req.headers['user-agent'] || null;
-    await pool.query(
-      `INSERT INTO admin_logs (user_id, action, category, target_type, target_id, details, ip_address, user_agent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [userId, action, category, targetType || null, targetId || null, JSON.stringify(details || {}), ip, ua]
-    );
-    // Fire alert rules asynchronously — don't block the response
-    triggerLogAlerts({ userId, action, category, details, ip: String(ip || '') }).catch(() => {});
-  } catch (error) {
-    logger.error(error as Error, 'Failed to write audit log');
-  }
-}
-
-async function triggerLogAlerts(log: { userId?: string; action: string; category: string; details?: any; ip: string }) {
-  try {
-    const rulesResult = await pool.query(
-      `SELECT * FROM log_alert_rules WHERE enabled = true`
-    );
-    if (rulesResult.rows.length === 0) return;
-
-    for (const rule of rulesResult.rows) {
-      const catMatch = !rule.categories?.length || rule.categories.includes(log.category);
-      const actMatch = !rule.actions?.length || rule.actions.some((a: string) => log.action.includes(a));
-      if (!catMatch || !actMatch) continue;
-
-      // Throttle check
-      if (rule.last_triggered_at) {
-        const elapsed = (Date.now() - new Date(rule.last_triggered_at).getTime()) / 60000;
-        if (elapsed < rule.throttle_minutes) continue;
-      }
-
-      // Get user info if available
-      let userLabel = '—';
-      if (log.userId) {
-        const u = await pool.query('SELECT email, display_name FROM users WHERE id=$1', [log.userId]);
-        if (u.rows.length) userLabel = u.rows[0].display_name || u.rows[0].email;
-      }
-
-      const vars: Record<string, string> = {
-        date: new Date().toLocaleString('fr-FR'),
-        category: log.category,
-        action: log.action,
-        user: userLabel,
-        ip: log.ip || '—',
-        details: JSON.stringify(log.details || {}),
-      };
-
-      // Try to get log_alert system template
-      const tplResult = await pool.query(`SELECT * FROM system_email_templates WHERE slug='log_alert' AND enabled=true`);
-      let html = '', text = '', subject = '';
-      if (tplResult.rows.length) {
-        const tpl = tplResult.rows[0];
-        subject = renderTemplate(tpl.subject, vars);
-        html = renderTemplate(tpl.body_html, vars);
-        text = renderTemplate(tpl.body_text, vars);
-      } else {
-        subject = renderTemplate(rule.subject_template, vars);
-        html = `<p>Date: ${vars.date}<br>Catégorie: ${vars.category}<br>Action: ${vars.action}<br>Utilisateur: ${vars.user}<br>IP: ${vars.ip}<br>Détails: ${vars.details}</p>`;
-        text = `Date: ${vars.date}\nCatégorie: ${vars.category}\nAction: ${vars.action}\nUtilisateur: ${vars.user}\nIP: ${vars.ip}\nDétails: ${vars.details}`;
-      }
-
-      await sendSystemEmail(rule.recipient_email, subject, html, text);
-      await pool.query('UPDATE log_alert_rules SET last_triggered_at=NOW() WHERE id=$1', [rule.id]);
-    }
-  } catch {
-    // Alert failures must never propagate
-  }
-}
 
 adminRouter.get('/logs', async (req: AuthRequest, res) => {
   try {
