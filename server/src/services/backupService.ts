@@ -45,6 +45,37 @@ function ensureBackupDir() {
   }
 }
 
+// ── Column type introspection ─────────────────────────────────────────────────
+
+interface ColTypeInfo {
+  jsonb: Set<string>; // json / jsonb columns
+  bytea: Set<string>; // bytea columns
+}
+
+async function getColTypeInfo(
+  client: { query: Function },
+  tables: string[]
+): Promise<Record<string, ColTypeInfo>> {
+  const result = await client.query(
+    `SELECT table_name, column_name, data_type
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND data_type IN ('jsonb', 'json', 'bytea')
+       AND table_name = ANY($1::text[])`,
+    [tables]
+  );
+  const map: Record<string, ColTypeInfo> = {};
+  for (const row of result.rows) {
+    if (!map[row.table_name]) map[row.table_name] = { jsonb: new Set(), bytea: new Set() };
+    if (row.data_type === 'jsonb' || row.data_type === 'json') {
+      map[row.table_name].jsonb.add(row.column_name);
+    } else if (row.data_type === 'bytea') {
+      map[row.table_name].bytea.add(row.column_name);
+    }
+  }
+  return map;
+}
+
 export interface BackupSettings {
   backup_auto_enabled: boolean;
   backup_frequency: 'daily' | 'weekly' | 'monthly';
@@ -89,11 +120,25 @@ export async function createBackupFile(
 ): Promise<{ id: string; filename: string; sizeBytes: number }> {
   ensureBackupDir();
 
+  // Get special column types so we can serialise them correctly in the JSON file
+  const colInfo = await getColTypeInfo(pool, BACKUP_TABLES);
+
   const tables: Record<string, any[]> = {};
   for (const table of BACKUP_TABLES) {
     try {
       const result = await pool.query(`SELECT * FROM "${table}"`);
-      tables[table] = result.rows;
+      const info = colInfo[table];
+      // Normalise BYTEA → base64 so JSON.stringify can handle it
+      tables[table] = result.rows.map(row => {
+        if (!info?.bytea.size) return row;
+        const newRow: Record<string, any> = { ...row };
+        for (const col of info.bytea) {
+          if (Buffer.isBuffer(newRow[col])) {
+            newRow[col] = (newRow[col] as Buffer).toString('base64');
+          }
+        }
+        return newRow;
+      });
     } catch (err) {
       logger.warn(`Backup: skipping table "${table}": ${(err as Error).message}`);
       tables[table] = [];
@@ -157,6 +202,9 @@ export async function restoreFromBackup(data: Buffer): Promise<void> {
   try {
     await client.query('BEGIN');
 
+    // Introspect column types so we can re-encode values correctly on INSERT
+    const colInfo = await getColTypeInfo(client, BACKUP_TABLES);
+
     // Truncate all tables at once — PostgreSQL resolves FK deps with CASCADE
     const tableList = BACKUP_TABLES.map(t => `"${t}"`).join(', ');
     await client.query(`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`);
@@ -168,6 +216,7 @@ export async function restoreFromBackup(data: Buffer): Promise<void> {
 
       const columns = Object.keys(rows[0]);
       if (columns.length === 0) continue;
+      const info = colInfo[table];
 
       const CHUNK = 100;
       for (let i = 0; i < rows.length; i += CHUNK) {
@@ -175,7 +224,24 @@ export async function restoreFromBackup(data: Buffer): Promise<void> {
         const values: any[] = [];
         const rowPlaceholders = chunk.map((_row: any, ri: number) => {
           const offset = ri * columns.length;
-          columns.forEach((col) => values.push(chunk[ri][col] ?? null));
+          columns.forEach((col) => {
+            const val = chunk[ri][col];
+            if (val === null || val === undefined) {
+              // SQL NULL — works for any column type
+              values.push(null);
+            } else if (info?.jsonb.has(col)) {
+              // JSONB column: pg expects a JSON-serialised string.
+              // pg auto-stringifies objects/arrays, but for scalar primitives
+              // (strings, numbers, booleans) that came from a JSONB column we
+              // must wrap them in JSON.stringify so PostgreSQL receives valid JSON.
+              values.push(JSON.stringify(val));
+            } else if (info?.bytea.has(col)) {
+              // BYTEA column: was exported as base64, restore as Buffer
+              values.push(Buffer.from(String(val), 'base64'));
+            } else {
+              values.push(val);
+            }
+          });
           return `(${columns.map((_c, ci) => `$${offset + ci + 1}`).join(', ')})`;
         });
         await client.query(
