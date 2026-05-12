@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.12.0-blue)
+![Version](https://img.shields.io/badge/version-1.12.1-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -182,6 +182,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - 📧 **SMTP & Emails système** : configuration SMTP centralisée (hôte, port, chiffrement STARTTLS/SSL, identifiant, mot de passe chiffré, expéditeur), test de connexion avec envoi optionnel. **Gestionnaire de templates d'emails système** (Bienvenue, Réinitialisation de mot de passe, Alerte log…) avec éditeur plein écran : onglets HTML / Texte brut / **Aperçu live** (iframe sandboxée, substitution en temps réel), système de **variables** cliquables (`{{user_name}}`, `{{reset_link}}`…), panel de valeurs de test et bouton **Envoyer un test**.
 - 🔑 **Apparence page de connexion — mot de passe oublié** : option activable/désactivable depuis l'admin (*Apparence connexion → Options affichées*). Lorsqu'activé, un lien « Mot de passe oublié ? » apparaît sur la page de connexion ; l'utilisateur saisit son email et reçoit un lien de réinitialisation valable 24 h via le template SMTP `password_reset`. La réponse est toujours identique que l'email existe ou non (protection contre l'énumération d'adresses).
 - 🌐 **Restriction de domaine pour l'inscription** : champ *Domaines autorisés* dans l'admin (*Apparence connexion*) acceptant une liste de domaines séparés par des virgules (ex. `domaine.fr,domaine.com`). Toute tentative d'inscription depuis un domaine non autorisé est rejetée. Vide = tous les domaines acceptés. Ignoré pour le premier utilisateur (admin).
+- 💾 **Sauvegarde & restauration serveur** (*Admin → Système → Sauvegarde*) : sauvegarde complète de la base de données (utilisateurs, comptes mail, paramètres, calendriers, contacts, règles, listes de distribution, plugins, sécurité…) dans un fichier `.json.gz` chiffré. **Sauvegarde manuelle** à la demande avec label personnalisable. **Sauvegarde automatique planifiée** (quotidienne, hebdomadaire, mensuelle) avec heure configurable. **Rétention intelligente** entièrement paramétrable : conserver les N dernières, 1 par semaine sur M semaines, 1 par mois sur P mois, 1 par an sur Q ans. **Téléchargement et suppression** individuels avec confirmation. **Restauration** depuis un fichier uploadé avec option de **remplacement d'URL** automatique (migration vers un autre serveur) — les passkeys WebAuthn liées à l'ancien domaine sont supprimées automatiquement si le hostname change pour éviter tout blocage de connexion. Voir [docs/BACKUP.md](docs/BACKUP.md).
 
 ### Intégration O2Switch (cPanel)
 - 🖥️ Gestion des comptes cPanel via UAPI v3
@@ -487,6 +488,19 @@ webmail/
 | POST | `/api/admin/o2switch/accounts` | Ajouter un compte O2Switch |
 | POST | `/api/admin/o2switch/accounts/:id/sync` | Synchroniser emails |
 | POST | `/api/admin/o2switch/accounts/:id/link` | Lier un email |
+
+### Sauvegarde & restauration (admin)
+
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/admin/backup/list` | Lister les sauvegardes |
+| POST | `/api/admin/backup/create` | Créer une sauvegarde manuelle |
+| GET | `/api/admin/backup/download/:id` | Télécharger un fichier de sauvegarde |
+| DELETE | `/api/admin/backup/:id` | Supprimer une sauvegarde |
+| POST | `/api/admin/backup/restore` | Restaurer depuis un fichier (multipart) |
+| GET | `/api/admin/backup/settings` | Paramètres de sauvegarde automatique |
+| PUT | `/api/admin/backup/settings` | Mettre à jour les paramètres |
+| GET | `/api/admin/backup/stats` | Statistiques (nb lignes par table, espace disque) |
 
 ### Applications & builds natifs
 
