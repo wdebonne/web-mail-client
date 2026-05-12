@@ -4,10 +4,10 @@
 
 | Version | Supportée |
 |---------|-----------|
-| 1.3.x   | ✅ Oui    |
-| 1.2.x   | ✅ Oui    |
-| 1.1.x   | ⚠️ Correctifs critiques uniquement |
-| 1.0.x   | ❌ Non    |
+| 1.10.x  | ✅ Oui    |
+| 1.9.x   | ✅ Oui    |
+| 1.8.x   | ⚠️ Correctifs critiques uniquement |
+| < 1.8   | ❌ Non    |
 
 ## Signaler une vulnérabilité
 
@@ -56,6 +56,12 @@ Si vous découvrez une faille de sécurité, **ne créez pas d'Issue publique**.
 | Login sans mot de passe | Passkey FIDO2 découvrable (`residentKey: required`) — le navigateur affiche un sélecteur de comptes, aucun email/mot de passe n'est transmis |
 | Verrouillage local PWA | Déverrouillage biométrique après 7 j d'inactivité |
 | Premier utilisateur | Automatiquement administrateur |
+| Verrouillage après N échecs | Compte bloqué après N tentatives échouées (configurable, défaut 3). Durée réglable ou permanent. Réinitialisation automatique sur connexion réussie. |
+| Liste noire d'IPs | IPs blacklistées bloquées immédiatement, avant toute vérification du mot de passe. Toutes les tentatives sont tracées dans `login_attempts`. |
+| Liste blanche d'IPs | IPs whitelistées jamais verrouillées, toutes les tentatives tracées, alerte email configurable. |
+| Alertes email de sécurité | Email envoyé à un destinataire configurable après N tentatives échouées (fonctionne aussi pour les IPs en liste blanche). |
+| Historique des connexions | Table `login_attempts` : email, IP, user-agent, succès/échec, raison du blocage, horodatage. Consultable dans Admin → Sécurité. |
+| Déblocage admin | Bouton 🔓 dans Admin → Utilisateurs : remet à zéro `failed_attempts`, efface `locked_until`, réactive le compte. |
 
 ### Chiffrement
 
@@ -127,7 +133,7 @@ Si vous découvrez une faille de sécurité, **ne créez pas d'Issue publique**.
 - [ ] Configurer un pare-feu (ufw, iptables)
 - [ ] Mettre en place des sauvegardes automatiques
 - [ ] Activer les mises à jour automatiques de l'OS
-- [ ] Limiter le nombre de tentatives de connexion (fail2ban)
+- [ ] Configurer le verrouillage de compte (Admin → Sécurité) — natif depuis v1.10.0 ; fail2ban/nginx reste utile en complément pour le rate-limiting HTTP
 - [ ] Surveiller les logs applicatifs
 
 ### Génération des secrets

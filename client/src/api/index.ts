@@ -520,6 +520,21 @@ export const api = {
     request(`/admin/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
   adminGenerateResetLink: (id: string) =>
     request<{ resetUrl: string; expiresAt: string; email: string }>(`/admin/users/${id}/reset-link`, { method: 'POST' }),
+  adminUnlockUser: (id: string) =>
+    request<{ success: boolean }>(`/admin/users/${id}/unlock`, { method: 'POST' }),
+
+  // Security settings & IP lists
+  getSecuritySettings: () => request<any>('/admin/security/settings'),
+  updateSecuritySettings: (data: any) =>
+    request('/admin/security/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  getSecurityIpList: () => request<any[]>('/admin/security/ip-list'),
+  addSecurityIp: (data: { ipAddress: string; listType: 'whitelist' | 'blacklist'; description?: string }) =>
+    request<any>('/admin/security/ip-list', { method: 'POST', body: JSON.stringify(data) }),
+  deleteSecurityIp: (id: string) =>
+    request<{ success: boolean }>(`/admin/security/ip-list/${id}`, { method: 'DELETE' }),
+  getLoginAttempts: (limit = 100) =>
+    request<any[]>(`/admin/security/login-attempts?limit=${limit}`),
+
   getAdminGroups: () => request<any[]>('/admin/groups'),
   createAdminGroup: (data: any) =>
     request('/admin/groups', { method: 'POST', body: JSON.stringify(data) }),

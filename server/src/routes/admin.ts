@@ -73,6 +73,7 @@ adminRouter.get('/users', async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
       `SELECT u.id, u.email, u.display_name, u.role, u.is_admin, u.is_active, u.language, u.created_at,
+              u.failed_attempts, u.locked_until,
               ARRAY_AGG(DISTINCT g.name) FILTER (WHERE g.name IS NOT NULL) as groups,
               COUNT(DISTINCT ma.id) as account_count
        FROM users u
@@ -208,6 +209,22 @@ adminRouter.put('/users/:id/password', async (req: AuthRequest, res) => {
     }
     const hash = await bcrypt.hash(password, 12);
     await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, req.params.id]);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unlock a user locked by too many failed login attempts
+adminRouter.post('/users/:id/unlock', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE users SET failed_attempts = 0, locked_until = NULL, is_active = true
+       WHERE id = $1 RETURNING id, email, display_name`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    await addLog(req.userId, 'user.unlocked', 'security', req, { targetId: req.params.id, email: result.rows[0].email });
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -2929,4 +2946,99 @@ adminRouter.delete('/log-alerts/:id', async (req: AuthRequest, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// ========================================
+// Security Settings & IP Lists
+// ========================================
+
+adminRouter.get('/security/settings', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT key, value FROM admin_settings WHERE key LIKE 'security_%'`
+    );
+    const settings: Record<string, any> = {};
+    for (const row of result.rows) settings[row.key] = row.value;
+    res.json(settings);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.put('/security/settings', async (req: AuthRequest, res) => {
+  try {
+    const allowed = [
+      'security_max_failed_attempts',
+      'security_lockout_duration_minutes',
+      'security_email_alert_enabled',
+      'security_email_alert_threshold',
+      'security_email_alert_recipient',
+      'security_whitelist_alert_enabled',
+    ];
+    for (const key of allowed) {
+      if (key in req.body) {
+        await pool.query(
+          `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+          [key, JSON.stringify(req.body[key])]
+        );
+      }
+    }
+    await addLog(req.userId, 'security.settings_updated', 'security', req, {});
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.get('/security/ip-list', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT isl.*, u.email as created_by_email
+       FROM ip_security_list isl
+       LEFT JOIN users u ON u.id = isl.created_by
+       ORDER BY isl.list_type, isl.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.post('/security/ip-list', async (req: AuthRequest, res) => {
+  try {
+    const { ipAddress, listType, description } = req.body;
+    if (!ipAddress || !['whitelist', 'blacklist'].includes(listType)) {
+      return res.status(400).json({ error: 'ipAddress et listType (whitelist|blacklist) requis' });
+    }
+    const result = await pool.query(
+      `INSERT INTO ip_security_list (ip_address, list_type, description, created_by)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (ip_address, list_type) DO UPDATE SET description = EXCLUDED.description
+       RETURNING *`,
+      [ipAddress, listType, description || null, req.userId]
+    );
+    await addLog(req.userId, 'security.ip_added', 'security', req, { ipAddress, listType });
+    res.status(201).json(result.rows[0]);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.delete('/security/ip-list/:id', async (req: AuthRequest, res) => {
+  try {
+    const entry = await pool.query('SELECT ip_address, list_type FROM ip_security_list WHERE id = $1', [req.params.id]);
+    const result = await pool.query('DELETE FROM ip_security_list WHERE id = $1 RETURNING id', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Entrée introuvable' });
+    await addLog(req.userId, 'security.ip_removed', 'security', req, entry.rows[0] || {});
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.get('/security/login-attempts', async (req: AuthRequest, res) => {
+  try {
+    const limit = Math.min(parseInt(String(req.query.limit || '100')), 500);
+    const result = await pool.query(
+      `SELECT la.id, la.email, la.ip_address, la.user_agent, la.success, la.block_reason,
+              la.attempted_at, u.display_name
+       FROM login_attempts la
+       LEFT JOIN users u ON u.id = la.user_id
+       ORDER BY la.attempted_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json(result.rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
 });

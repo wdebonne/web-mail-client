@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
   Download, Send, AlertTriangle, Eye, EyeOff,
+  Lock, LockOpen, ShieldAlert, ListX, ListChecks,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -28,7 +29,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -63,6 +64,7 @@ export default function AdminPage() {
     { id: 'nextcloud' as const,      icon: Cloud,           label: t('admin.tab.nextcloud'),      group: t('admin.group.integrations') },
     { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
     // Système
+    { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
     { id: 'loginAppearance' as const,icon: Palette,         label: t('admin.tab.loginAppearance'),group: t('admin.group.system') },
     { id: 'notifications' as const,  icon: Bell,            label: t('admin.tab.notifications'),  group: t('admin.group.system') },
     { id: 'devices' as const,        icon: Monitor,         label: t('admin.tab.devices'),        group: t('admin.group.system') },
@@ -154,6 +156,7 @@ export default function AdminPage() {
             {tab === 'notifications' && <AdminNotificationDefaults />}
             {tab === 'system' && <SystemSettings />}
             {tab === 'distributionlists' && <AdminDistributionLists />}
+            {tab === 'security' && <SecurityPanel />}
           </div>
         </div>
       </div>
@@ -1064,6 +1067,15 @@ function UserManagement() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const unlockMutation = useMutation({
+    mutationFn: (id: string) => api.adminUnlockUser(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast.success('Utilisateur déverrouillé');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -1135,7 +1147,11 @@ function UserManagement() {
                 </span>
               </td>
               <td className="py-2 px-3">
-                {user.is_active ? (
+                {user.locked_until && new Date(user.locked_until) > new Date() ? (
+                  <span className="text-orange-600 flex items-center gap-1 text-xs">
+                    <Lock size={12} /> Verrouillé
+                  </span>
+                ) : user.is_active ? (
                   <span className="text-outlook-success flex items-center gap-1 text-xs"><CheckCircle size={12} /> Actif</span>
                 ) : (
                   <span className="text-outlook-danger flex items-center gap-1 text-xs"><XCircle size={12} /> Inactif</span>
@@ -1150,13 +1166,23 @@ function UserManagement() {
                   >
                     <Edit2 size={14} />
                   </button>
-                  <button
-                    title={user.is_active ? 'Désactiver' : 'Activer'}
-                    onClick={() => toggleActiveMutation.mutate({ id: user.id, isActive: !user.is_active })}
-                    className={`p-1 rounded ${user.is_active ? 'hover:bg-orange-50 text-outlook-text-disabled hover:text-orange-500' : 'hover:bg-green-50 text-outlook-text-disabled hover:text-green-600'}`}
-                  >
-                    {user.is_active ? <XCircle size={14} /> : <CheckCircle size={14} />}
-                  </button>
+                  {user.locked_until && new Date(user.locked_until) > new Date() ? (
+                    <button
+                      title="Déverrouiller le compte"
+                      onClick={() => unlockMutation.mutate(user.id)}
+                      className="p-1 hover:bg-green-50 rounded text-orange-500 hover:text-green-600"
+                    >
+                      <LockOpen size={14} />
+                    </button>
+                  ) : (
+                    <button
+                      title={user.is_active ? 'Désactiver' : 'Activer'}
+                      onClick={() => toggleActiveMutation.mutate({ id: user.id, isActive: !user.is_active })}
+                      className={`p-1 rounded ${user.is_active ? 'hover:bg-orange-50 text-outlook-text-disabled hover:text-orange-500' : 'hover:bg-green-50 text-outlook-text-disabled hover:text-green-600'}`}
+                    >
+                      {user.is_active ? <XCircle size={14} /> : <CheckCircle size={14} />}
+                    </button>
+                  )}
                   <button
                     title="Changer le mot de passe"
                     onClick={() => setPasswordUser(user)}
@@ -3692,6 +3718,361 @@ function DeviceSessionsManagement() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ========================================
+// Security Panel
+// ========================================
+
+function SecurityPanel() {
+  const queryClient = useQueryClient();
+
+  // Settings state
+  const [maxAttempts, setMaxAttempts] = useState(3);
+  const [lockoutMinutes, setLockoutMinutes] = useState(30);
+  const [alertEnabled, setAlertEnabled] = useState(false);
+  const [alertThreshold, setAlertThreshold] = useState(3);
+  const [alertRecipient, setAlertRecipient] = useState('');
+  const [whitelistAlertEnabled, setWhitelistAlertEnabled] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // IP list state
+  const [activeList, setActiveList] = useState<'whitelist' | 'blacklist'>('blacklist');
+  const [newIp, setNewIp] = useState('');
+  const [newIpDesc, setNewIpDesc] = useState('');
+
+  // Login attempts
+  const [showAttempts, setShowAttempts] = useState(false);
+
+  const { data: settings } = useQuery({
+    queryKey: ['security-settings'],
+    queryFn: api.getSecuritySettings,
+  });
+
+  useEffect(() => {
+    if (!settings || settingsLoaded) return;
+    setMaxAttempts(Number(settings['security_max_failed_attempts'] ?? 3));
+    setLockoutMinutes(Number(settings['security_lockout_duration_minutes'] ?? 30));
+    setAlertEnabled(!!settings['security_email_alert_enabled']);
+    setAlertThreshold(Number(settings['security_email_alert_threshold'] ?? 3));
+    setAlertRecipient(settings['security_email_alert_recipient'] ?? '');
+    setWhitelistAlertEnabled(!!settings['security_whitelist_alert_enabled']);
+    setSettingsLoaded(true);
+  }, [settings, settingsLoaded]);
+
+  const { data: ipList = [] } = useQuery({
+    queryKey: ['security-ip-list'],
+    queryFn: api.getSecurityIpList,
+  });
+
+  const { data: attempts = [], refetch: refetchAttempts } = useQuery({
+    queryKey: ['login-attempts'],
+    queryFn: () => api.getLoginAttempts(100),
+    enabled: showAttempts,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (data: any) => api.updateSecuritySettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['security-settings'] });
+      toast.success('Paramètres de sécurité enregistrés');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const addIpMutation = useMutation({
+    mutationFn: (data: any) => api.addSecurityIp(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['security-ip-list'] });
+      setNewIp(''); setNewIpDesc('');
+      toast.success('IP ajoutée');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteIpMutation = useMutation({
+    mutationFn: (id: string) => api.deleteSecurityIp(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['security-ip-list'] });
+      toast.success('IP supprimée');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleSaveSettings = () => {
+    saveMutation.mutate({
+      security_max_failed_attempts: maxAttempts,
+      security_lockout_duration_minutes: lockoutMinutes,
+      security_email_alert_enabled: alertEnabled,
+      security_email_alert_threshold: alertThreshold,
+      security_email_alert_recipient: alertRecipient,
+      security_whitelist_alert_enabled: whitelistAlertEnabled,
+    });
+  };
+
+  const filteredIps = (ipList as any[]).filter((e: any) => e.list_type === activeList);
+
+  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <div className="bg-white border border-outlook-border rounded-lg p-4 mb-4">
+      <h4 className="text-sm font-semibold text-outlook-text-primary mb-3">{title}</h4>
+      {children}
+    </div>
+  );
+
+  return (
+    <div>
+      <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+        <ShieldAlert size={18} className="text-outlook-blue" />
+        Sécurité — Protection des connexions
+      </h3>
+
+      {/* Info box: unblocking users */}
+      <div className="mb-4 flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+        <Lock size={16} className="mt-0.5 shrink-0 text-blue-600" />
+        <div>
+          <strong>Déblocage d'un utilisateur&nbsp;:</strong> un utilisateur verrouillé par trop de tentatives apparaît avec un cadenas
+          dans l'onglet <strong>Utilisateurs</strong>. Cliquez sur <LockOpen size={13} className="inline mx-0.5" /> pour le déverrouiller directement.
+          Le déverrouillage remet à zéro les tentatives, efface le verrou et réactive le compte si nécessaire.
+        </div>
+      </div>
+
+      {/* Lock settings */}
+      <Section title="Verrouillage des comptes">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-medium text-outlook-text-secondary mb-1">
+              Tentatives échouées avant verrouillage
+            </label>
+            <input
+              type="number" min={1} max={20} value={maxAttempts}
+              onChange={e => setMaxAttempts(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-full border border-outlook-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+            />
+            <p className="text-xs text-outlook-text-disabled mt-1">Défaut : 3. Les IPs en liste blanche ne sont jamais bloquées.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-outlook-text-secondary mb-1">
+              Durée de verrouillage (minutes)
+            </label>
+            <input
+              type="number" min={0} max={99999} value={lockoutMinutes}
+              onChange={e => setLockoutMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-full border border-outlook-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+            />
+            <p className="text-xs text-outlook-text-disabled mt-1">0 = verrouillage permanent jusqu'au déblocage par un admin.</p>
+          </div>
+        </div>
+        <button
+          onClick={handleSaveSettings}
+          disabled={saveMutation.isPending}
+          className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded text-sm disabled:opacity-50 flex items-center gap-2"
+        >
+          {saveMutation.isPending && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+          Enregistrer
+        </button>
+      </Section>
+
+      {/* Email alerts */}
+      <Section title="Alertes email">
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox" checked={alertEnabled}
+              onChange={e => setAlertEnabled(e.target.checked)}
+              className="rounded border-outlook-border text-outlook-blue"
+            />
+            <span className="text-sm">Envoyer une alerte email après plusieurs tentatives échouées</span>
+          </label>
+          {alertEnabled && (
+            <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-outlook-text-secondary mb-1">Seuil de tentatives pour l'alerte</label>
+                <input
+                  type="number" min={1} max={20} value={alertThreshold}
+                  onChange={e => setAlertThreshold(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full border border-outlook-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-outlook-text-secondary mb-1">Email destinataire</label>
+                <input
+                  type="email" value={alertRecipient}
+                  onChange={e => setAlertRecipient(e.target.value)}
+                  placeholder="admin@exemple.fr"
+                  className="w-full border border-outlook-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+                />
+              </div>
+            </div>
+          )}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox" checked={whitelistAlertEnabled}
+              onChange={e => setWhitelistAlertEnabled(e.target.checked)}
+              className="rounded border-outlook-border text-outlook-blue"
+            />
+            <span className="text-sm">Alertes aussi pour les IPs en liste blanche (compte non verrouillé, mais alerté)</span>
+          </label>
+        </div>
+        <div className="mt-3">
+          <button
+            onClick={handleSaveSettings}
+            disabled={saveMutation.isPending}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded text-sm disabled:opacity-50 flex items-center gap-2"
+          >
+            {saveMutation.isPending && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+            Enregistrer
+          </button>
+        </div>
+      </Section>
+
+      {/* IP Security Lists */}
+      <Section title="Listes IP de sécurité">
+        {/* Tab switch */}
+        <div className="flex gap-1 mb-4">
+          <button
+            onClick={() => setActiveList('blacklist')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${activeList === 'blacklist' ? 'bg-red-100 text-red-700 border border-red-300' : 'bg-gray-100 text-outlook-text-secondary hover:bg-gray-200'}`}
+          >
+            <ListX size={14} /> Liste noire ({(ipList as any[]).filter((e: any) => e.list_type === 'blacklist').length})
+          </button>
+          <button
+            onClick={() => setActiveList('whitelist')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${activeList === 'whitelist' ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-gray-100 text-outlook-text-secondary hover:bg-gray-200'}`}
+          >
+            <ListChecks size={14} /> Liste blanche ({(ipList as any[]).filter((e: any) => e.list_type === 'whitelist').length})
+          </button>
+        </div>
+
+        {/* Description */}
+        <p className="text-xs text-outlook-text-secondary mb-3">
+          {activeList === 'blacklist'
+            ? 'Les IPs en liste noire sont bloquées immédiatement à la tentative de connexion, sans vérification du mot de passe.'
+            : 'Les IPs en liste blanche ne sont jamais verrouillées, mais toutes les tentatives sont enregistrées. Une alerte email peut être envoyée si l\'option est activée ci-dessus.'}
+        </p>
+
+        {/* Add IP form */}
+        <div className="flex gap-2 mb-3">
+          <input
+            type="text" value={newIp} onChange={e => setNewIp(e.target.value)}
+            placeholder="192.168.1.1 ou 10.0.0.0/24"
+            className="flex-1 border border-outlook-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+          />
+          <input
+            type="text" value={newIpDesc} onChange={e => setNewIpDesc(e.target.value)}
+            placeholder="Description (optionnel)"
+            className="flex-1 border border-outlook-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+          />
+          <button
+            disabled={!newIp.trim() || addIpMutation.isPending}
+            onClick={() => addIpMutation.mutate({ ipAddress: newIp.trim(), listType: activeList, description: newIpDesc.trim() || undefined })}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 flex items-center gap-1"
+          >
+            <Plus size={14} /> Ajouter
+          </button>
+        </div>
+
+        {/* IP list */}
+        {filteredIps.length === 0 ? (
+          <p className="text-sm text-outlook-text-disabled py-4 text-center">
+            Aucune IP dans cette liste
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-outlook-border text-left">
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Adresse IP</th>
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Description</th>
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Ajouté par</th>
+                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Date</th>
+                <th className="py-2 px-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredIps.map((entry: any) => (
+                <tr key={entry.id} className="border-b border-outlook-border hover:bg-outlook-bg-hover">
+                  <td className="py-2 px-3 font-mono text-sm">{entry.ip_address}</td>
+                  <td className="py-2 px-3 text-outlook-text-secondary">{entry.description || '—'}</td>
+                  <td className="py-2 px-3 text-outlook-text-secondary text-xs">{entry.created_by_email || '—'}</td>
+                  <td className="py-2 px-3 text-outlook-text-secondary text-xs">
+                    {new Date(entry.created_at).toLocaleDateString('fr-FR')}
+                  </td>
+                  <td className="py-2 px-3">
+                    <button
+                      onClick={() => deleteIpMutation.mutate(entry.id)}
+                      className="p-1 rounded hover:bg-red-50 text-outlook-text-disabled hover:text-outlook-danger"
+                      title="Supprimer"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Section>
+
+      {/* Login attempts history */}
+      <Section title="Historique des tentatives de connexion">
+        {!showAttempts ? (
+          <button
+            onClick={() => { setShowAttempts(true); refetchAttempts(); }}
+            className="flex items-center gap-2 text-sm text-outlook-blue hover:underline"
+          >
+            <ScrollText size={14} /> Afficher les 100 dernières tentatives
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => refetchAttempts()}
+              className="flex items-center gap-1.5 text-xs text-outlook-text-secondary hover:text-outlook-text-primary mb-3"
+            >
+              <RefreshCw size={12} /> Actualiser
+            </button>
+            {(attempts as any[]).length === 0 ? (
+              <p className="text-sm text-outlook-text-disabled">Aucune tentative enregistrée.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-outlook-border text-left">
+                      <th className="py-1.5 px-2 font-medium text-outlook-text-secondary">Date</th>
+                      <th className="py-1.5 px-2 font-medium text-outlook-text-secondary">Email</th>
+                      <th className="py-1.5 px-2 font-medium text-outlook-text-secondary">IP</th>
+                      <th className="py-1.5 px-2 font-medium text-outlook-text-secondary">Résultat</th>
+                      <th className="py-1.5 px-2 font-medium text-outlook-text-secondary">Raison du blocage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(attempts as any[]).map((a: any) => (
+                      <tr key={a.id} className={`border-b border-outlook-border ${a.success ? '' : 'bg-red-50/40'}`}>
+                        <td className="py-1.5 px-2 text-outlook-text-secondary whitespace-nowrap">
+                          {new Date(a.attempted_at).toLocaleString('fr-FR')}
+                        </td>
+                        <td className="py-1.5 px-2 truncate max-w-[160px]">{a.email}</td>
+                        <td className="py-1.5 px-2 font-mono">{a.ip_address}</td>
+                        <td className="py-1.5 px-2">
+                          {a.success
+                            ? <span className="text-green-600 flex items-center gap-1"><CheckCircle size={11} /> Succès</span>
+                            : <span className="text-red-600 flex items-center gap-1"><XCircle size={11} /> Échec</span>}
+                        </td>
+                        <td className="py-1.5 px-2 text-outlook-text-disabled">
+                          {a.block_reason === 'blacklist' && 'IP liste noire'}
+                          {a.block_reason === 'locked' && 'Compte verrouillé'}
+                          {a.block_reason === 'unknown_email' && 'Email inconnu'}
+                          {!a.block_reason && '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </Section>
     </div>
   );
 }
