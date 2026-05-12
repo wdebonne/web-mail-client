@@ -2250,6 +2250,83 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
   );
 }
 
+function UserAutocomplete({ userId, setUserId, users }: {
+  userId: string;
+  setUserId: (v: string) => void;
+  users: any[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = users.find((u: any) => u.id === userId) ?? null;
+  const selectedLabel = selected ? `${selected.display_name} (${selected.email})` : '';
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return users;
+    const q = query.toLowerCase();
+    return users.filter((u: any) =>
+      (u.display_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q),
+    );
+  }, [users, query]);
+
+  const handleSelect = (id: string) => {
+    setUserId(id);
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((v) => !v); setTimeout(() => inputRef.current?.focus(), 50); }}
+        className="w-full border border-outlook-border rounded-md px-2 py-1.5 text-sm flex items-center justify-between
+                   bg-white dark:bg-slate-800 hover:border-outlook-blue focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+      >
+        <span className={userId ? 'truncate' : 'text-outlook-text-secondary'}>
+          {userId ? selectedLabel : 'Sélectionner…'}
+        </span>
+        <ChevronDown size={13} className={`text-outlook-text-secondary flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => { setOpen(false); setQuery(''); }} />
+          <div className="absolute z-[70] mt-1 w-full bg-white dark:bg-slate-800 border border-outlook-border rounded shadow-lg">
+            <div className="p-2 border-b border-outlook-border">
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher un utilisateur…"
+                className="w-full px-2 py-1 text-sm border border-outlook-border rounded
+                           focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+              />
+            </div>
+            <div className="max-h-48 overflow-y-auto py-1">
+              {filtered.length === 0 && (
+                <div className="px-3 py-2 text-xs text-outlook-text-disabled italic">Aucun résultat</div>
+              )}
+              {filtered.map((u: any) => (
+                <button
+                  key={u.id}
+                  onClick={() => handleSelect(u.id)}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover
+                    ${userId === u.id ? 'bg-outlook-blue/10 font-medium text-outlook-blue' : ''}`}
+                >
+                  <div>{u.display_name || u.email}</div>
+                  {u.display_name && <div className="text-xs text-outlook-text-secondary">{u.email}</div>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AssignmentManager({ account, onClose }: { account: any; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [userId, setUserId] = useState('');
@@ -2326,12 +2403,7 @@ function AssignmentManager({ account, onClose }: { account: any; onClose: () => 
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs text-outlook-text-secondary">Utilisateur</label>
-              <select value={userId} onChange={(e) => setUserId(e.target.value)} className="w-full border border-outlook-border rounded-md px-2 py-1.5 text-sm">
-                <option value="">Sélectionner...</option>
-                {availableUsers.map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.display_name} ({u.email})</option>
-                ))}
-              </select>
+              <UserAutocomplete userId={userId} setUserId={setUserId} users={availableUsers} />
             </div>
             <div>
               <label className="text-xs text-outlook-text-secondary">Nom affiché (navigation)</label>
