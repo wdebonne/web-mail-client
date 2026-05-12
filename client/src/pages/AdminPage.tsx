@@ -1444,11 +1444,23 @@ function MailAccountManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [assigningAccount, setAssigningAccount] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data: accounts = [] } = useQuery({
     queryKey: ['admin-mail-accounts'],
     queryFn: api.getAdminMailAccounts,
   });
+
+  const filteredAccounts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return accounts;
+    return accounts.filter((a: any) =>
+      (a.name || '').toLowerCase().includes(q) ||
+      (a.email || '').toLowerCase().includes(q) ||
+      (a.imap_host || '').toLowerCase().includes(q) ||
+      (a.smtp_host || '').toLowerCase().includes(q)
+    );
+  }, [accounts, searchQuery]);
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteAdminMailAccount,
@@ -1472,14 +1484,37 @@ function MailAccountManagement() {
       <MicrosoftOAuthSettings />
 
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold">Comptes mail ({accounts.length})</h3>
+        <h3 className="text-base font-semibold">
+          Comptes mail ({searchQuery ? `${filteredAccounts.length}/${accounts.length}` : accounts.length})
+        </h3>
         <button onClick={() => { setEditing(null); setShowForm(true); }} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5">
           <Plus size={14} /> Nouveau compte
         </button>
       </div>
 
+      {accounts.length > 3 && (
+        <div className="relative mb-4">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Rechercher par nom, email, serveur…"
+            className="w-full pl-8 pr-8 py-2 text-sm border border-outlook-border rounded-md bg-outlook-bg focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-outlook-text-disabled hover:text-outlook-text rounded"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="space-y-3">
-        {accounts.map((account: any) => (
+        {filteredAccounts.map((account: any) => (
           <div key={account.id} className="border border-outlook-border rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1511,8 +1546,10 @@ function MailAccountManagement() {
             </div>
           </div>
         ))}
-        {accounts.length === 0 && (
-          <div className="text-center py-8 text-outlook-text-disabled text-sm">Aucun compte mail configuré</div>
+        {filteredAccounts.length === 0 && (
+          <div className="text-center py-8 text-outlook-text-disabled text-sm">
+            {searchQuery ? `Aucun compte ne correspond à "${searchQuery}"` : 'Aucun compte mail configuré'}
+          </div>
         )}
       </div>
 
