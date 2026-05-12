@@ -11,6 +11,21 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.8.6] - 2026-05-12
+
+### Ajouté
+
+- **Bouton « + Nouvelle règle » dans la page Admin → Règles** : les administrateurs peuvent désormais créer une règle de filtrage directement depuis la page de gestion centralisée des règles, sans avoir à passer par les paramètres utilisateur. Le bouton ouvre le wizard 3-étapes (`RuleWizard`) en mode création.
+
+- **Bouton « + Créer une liste » dans la page Admin → Listes de distribution** : les administrateurs peuvent créer une liste de distribution directement depuis le panneau admin. La modal existante (`AdminDLEditModal`) s'adapte au contexte (titre « Créer une liste » vs « Modifier la liste ») et appelle le bon endpoint selon qu'il s'agit d'une création ou d'une modification.
+
+### Technique
+
+- **Client** : `AdminRulesManagement.tsx` — import `Plus` ajouté, état `showCreate` (boolean), condition d'affichage du wizard étendue à `showCreate || editingRule`, `defaultAccountId` passé en optional chaining.
+- **Client** : `AdminPage.tsx` (`AdminDistributionLists`) — mutation `createMutation` via `api.createDistributionList`, bouton dans l'en-tête, `onSave` conditionnel (`editingList.id ? update : create`), titre de modal dynamique.
+
+---
+
 ## [1.8.5] - 2026-05-11
 
 ### Corrigé / Amélioré
