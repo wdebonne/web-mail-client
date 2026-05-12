@@ -11,6 +11,29 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.10.0] - 2026-05-12
+
+### Ajouté
+
+- **Sécurité — Protection des connexions (Admin → Sécurité)**
+  - **Verrouillage de compte après N tentatives échouées** : seuil configurable (défaut 3), durée de verrouillage en minutes (0 = verrouillage permanent jusqu'à intervention admin). Le message d'erreur indique le nombre de tentatives restantes ou la durée du verrou.
+  - **Liste noire d'IPs** : les adresses IP listées sont bloquées immédiatement à la tentative de connexion (avant toute vérification du mot de passe). Toutes les tentatives depuis une IP bloquée sont enregistrées.
+  - **Liste blanche d'IPs** : les IPs de confiance ne sont jamais verrouillées quelle que soit le nombre d'erreurs. Toutes leurs tentatives restent tracées et peuvent déclencher une alerte email si l'option est activée.
+  - **Alertes email de sécurité** : envoi automatique d'un email d'alerte quand le seuil de tentatives est atteint (y compris pour les IPs en liste blanche si l'option est cochée). Destinataire et seuil configurables.
+  - **Historique des tentatives de connexion** : tableau des 100 dernières tentatives (email, IP, résultat, raison du blocage, date).
+  - **Déblocage d'un utilisateur depuis la page Utilisateurs** : un compte verrouillé affiche une icône cadenas orange ; le bouton 🔓 remet à zéro les tentatives, efface le verrou et réactive le compte.
+
+### Technique
+
+- **Base de données** : `connection.ts` — nouvelles colonnes `failed_attempts` (INTEGER) et `locked_until` (TIMESTAMPTZ) sur `users` ; nouvelle table `login_attempts` (historique complet : user_id, email, ip, ua, success, block_reason, attempted_at) ; nouvelle table `ip_security_list` (ip_address, list_type whitelist/blacklist, description, created_by) ; 6 nouvelles clés dans `admin_settings` (`security_max_failed_attempts`, `security_lockout_duration_minutes`, `security_email_alert_enabled`, `security_email_alert_threshold`, `security_email_alert_recipient`, `security_whitelist_alert_enabled`).
+- **Serveur** : `services/systemEmail.ts` — NOUVEAU fichier, extrait les fonctions SMTP partagées (`getSmtpSettings`, `buildSmtpTransport`, `sendSystemEmail`) pour être utilisées par plusieurs modules.
+- **Serveur** : `routes/auth.ts` — endpoint `POST /login` entièrement revu : vérification liste noire/blanche avant toute authentification, incrémentation de `failed_attempts`, verrouillage automatique, fonction `sendSecurityAlert()`, réinitialisation sur succès, enregistrement de chaque tentative dans `login_attempts`.
+- **Serveur** : `routes/admin.ts` — `GET /admin/users` inclut désormais `failed_attempts` et `locked_until` ; nouveaux endpoints : `POST /admin/users/:id/unlock`, `GET|PUT /admin/security/settings`, `GET|POST|DELETE /admin/security/ip-list`, `GET /admin/security/login-attempts`.
+- **Client** : `api/index.ts` — ajout de `adminUnlockUser`, `getSecuritySettings`, `updateSecuritySettings`, `getSecurityIpList`, `addSecurityIp`, `deleteSecurityIp`, `getLoginAttempts`.
+- **Client** : `AdminPage.tsx` — nouveau type `'security'`, nouvel onglet *Sécurité* dans le groupe Système, composant `SecurityPanel` (4 sections : verrouillage, alertes, listes IP, historique), icônes `Lock`, `LockOpen`, `ShieldAlert`, `ListX`, `ListChecks` ajoutées. `UserManagement` : indicateur cadenas orange sur les comptes verrouillés, mutation `unlockMutation`, bouton 🔓 conditionnel.
+
+---
+
 ## [1.9.0] - 2026-05-12
 
 ### Ajouté

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from '../database/connection';
 import { AuthRequest, authMiddleware } from '../middleware/auth';
+import { sendSystemEmail } from '../services/systemEmail';
 import {
   generateAccessToken,
   createDeviceSession,
@@ -67,30 +68,166 @@ const registerSchema = z.object({
   displayName: z.string().min(2),
 });
 
+async function getSecuritySettings() {
+  const result = await pool.query(
+    `SELECT key, value FROM admin_settings WHERE key LIKE 'security_%'`
+  );
+  const s: Record<string, any> = {};
+  for (const row of result.rows) s[row.key] = row.value;
+  return {
+    maxAttempts: Number(s['security_max_failed_attempts'] ?? 3),
+    lockoutMinutes: Number(s['security_lockout_duration_minutes'] ?? 30),
+    alertEnabled: s['security_email_alert_enabled'] === true || s['security_email_alert_enabled'] === 'true',
+    alertThreshold: Number(s['security_email_alert_threshold'] ?? 3),
+    alertRecipient: typeof s['security_email_alert_recipient'] === 'string'
+      ? s['security_email_alert_recipient']
+      : String(s['security_email_alert_recipient'] ?? ''),
+    whitelistAlertEnabled: s['security_whitelist_alert_enabled'] === true || s['security_whitelist_alert_enabled'] === 'true',
+  };
+}
+
+async function sendSecurityAlert(recipient: string, email: string, ip: string, attempts: number, whitelisted: boolean) {
+  const subject = `[Sécurité] Tentatives de connexion échouées — ${email}`;
+  const html = `<div style="font-family:sans-serif;max-width:600px">
+    <h2 style="color:#e53935">Alerte de sécurité</h2>
+    <p><strong>${attempts}</strong> tentative(s) de connexion échouée(s) pour le compte <strong>${email}</strong>.</p>
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="padding:6px;font-weight:bold">Email</td><td style="padding:6px">${email}</td></tr>
+      <tr style="background:#f5f5f5"><td style="padding:6px;font-weight:bold">IP</td><td style="padding:6px">${ip}</td></tr>
+      <tr><td style="padding:6px;font-weight:bold">Tentatives</td><td style="padding:6px">${attempts}</td></tr>
+      <tr style="background:#f5f5f5"><td style="padding:6px;font-weight:bold">IP en liste blanche</td><td style="padding:6px">${whitelisted ? 'Oui (compte non verrouillé)' : 'Non'}</td></tr>
+      <tr><td style="padding:6px;font-weight:bold">Date</td><td style="padding:6px">${new Date().toLocaleString('fr-FR')}</td></tr>
+    </table>
+  </div>`;
+  const text = `Alerte sécurité\n${attempts} tentative(s) échouée(s) pour ${email} depuis ${ip}.\nIP liste blanche : ${whitelisted ? 'Oui' : 'Non'}\nDate : ${new Date().toLocaleString('fr-FR')}`;
+  await sendSystemEmail(recipient, subject, html, text);
+}
+
 // Login
 authRouter.post('/login', async (req, res) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
-    
+    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+    const ua = req.headers['user-agent'] || '';
+
+    // Load security settings
+    const sec = await getSecuritySettings();
+
+    // Check IP blacklist before any user lookup
+    const blacklisted = await pool.query(
+      `SELECT id FROM ip_security_list WHERE ip_address = $1 AND list_type = 'blacklist'`,
+      [ip]
+    );
+    if (blacklisted.rows.length > 0) {
+      await pool.query(
+        `INSERT INTO login_attempts (email, ip_address, user_agent, success, block_reason)
+         VALUES ($1, $2, $3, false, 'blacklist')`,
+        [email, ip, ua]
+      );
+      return res.status(403).json({ error: 'Accès refusé depuis cette adresse IP' });
+    }
+
+    // Check whitelist
+    const whitelisted = await pool.query(
+      `SELECT id FROM ip_security_list WHERE ip_address = $1 AND list_type = 'whitelist'`,
+      [ip]
+    );
+    const isWhitelisted = whitelisted.rows.length > 0;
+
     const result = await pool.query(
-      'SELECT id, email, password_hash, display_name, avatar_url, role, is_admin, is_active, language, timezone, theme FROM users WHERE email = $1',
+      `SELECT id, email, password_hash, display_name, avatar_url, role, is_admin, is_active,
+              language, timezone, theme, failed_attempts, locked_until
+       FROM users WHERE email = $1`,
       [email]
     );
 
     if (result.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO login_attempts (email, ip_address, user_agent, success, block_reason)
+         VALUES ($1, $2, $3, false, 'unknown_email')`,
+        [email, ip, ua]
+      );
       return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
     }
 
     const user = result.rows[0];
+
+    // Check account lockout (whitelisted IPs bypass lockout)
+    if (!isWhitelisted && user.locked_until && new Date(user.locked_until) > new Date()) {
+      const minutesLeft = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000);
+      await pool.query(
+        `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success, block_reason)
+         VALUES ($1, $2, $3, $4, false, 'locked')`,
+        [user.id, email, ip, ua]
+      );
+      return res.status(423).json({
+        error: minutesLeft > 60 * 24
+          ? 'Compte verrouillé. Contactez un administrateur.'
+          : `Compte verrouillé. Réessayez dans ${minutesLeft} minute(s) ou contactez un administrateur.`,
+      });
+    }
+
     const validPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!validPassword) {
-      return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+      const newAttempts = (user.failed_attempts || 0) + 1;
+      let lockedUntil: Date | null = null;
+
+      if (!isWhitelisted && newAttempts >= sec.maxAttempts) {
+        lockedUntil = sec.lockoutMinutes > 0
+          ? new Date(Date.now() + sec.lockoutMinutes * 60 * 1000)
+          : new Date('9999-12-31T23:59:59Z');
+        await pool.query(
+          'UPDATE users SET failed_attempts = $1, locked_until = $2 WHERE id = $3',
+          [newAttempts, lockedUntil, user.id]
+        );
+      } else {
+        await pool.query('UPDATE users SET failed_attempts = $1 WHERE id = $2', [newAttempts, user.id]);
+      }
+
+      await pool.query(
+        `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success, block_reason)
+         VALUES ($1, $2, $3, $4, false, $5)`,
+        [user.id, email, ip, ua, lockedUntil ? 'locked' : null]
+      );
+
+      const shouldAlert =
+        (sec.alertEnabled && newAttempts >= sec.alertThreshold) ||
+        (isWhitelisted && sec.whitelistAlertEnabled && newAttempts >= sec.alertThreshold);
+      if (shouldAlert && sec.alertRecipient) {
+        sendSecurityAlert(sec.alertRecipient, email, ip, newAttempts, isWhitelisted).catch(() => {});
+      }
+
+      const remaining = !isWhitelisted ? Math.max(0, sec.maxAttempts - newAttempts) : null;
+      if (lockedUntil) {
+        const minutesLeft = sec.lockoutMinutes > 0 ? sec.lockoutMinutes : null;
+        return res.status(401).json({
+          error: minutesLeft
+            ? `Compte verrouillé pour ${minutesLeft} minute(s). Contactez un administrateur si nécessaire.`
+            : 'Compte verrouillé. Contactez un administrateur.',
+        });
+      }
+      return res.status(401).json({
+        error: remaining !== null && remaining > 0
+          ? `Email ou mot de passe incorrect (${remaining} tentative(s) restante(s))`
+          : 'Email ou mot de passe incorrect',
+      });
     }
 
     if (user.is_active === false) {
       return res.status(403).json({ error: 'Ce compte est désactivé' });
     }
+
+    // Reset failed attempts on successful login
+    if (user.failed_attempts > 0 || user.locked_until) {
+      await pool.query('UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1', [user.id]);
+    }
+
+    await pool.query(
+      `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success)
+       VALUES ($1, $2, $3, $4, true)`,
+      [user.id, email, ip, ua]
+    );
 
     // Step-up 2FA: if the user has registered at least one passkey, force
     // biometric proof before issuing a full session.

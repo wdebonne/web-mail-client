@@ -828,6 +828,45 @@ export async function initDatabase() {
       logger.info(`Synced is_admin=true for ${syncRes.rowCount} user(s) with role='admin'`);
     }
 
+    // Security: failed login tracking & IP access lists
+    await client.query(`
+      ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS failed_attempts INTEGER DEFAULT 0;
+      ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+
+      CREATE TABLE IF NOT EXISTS login_attempts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        email VARCHAR(255),
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        success BOOLEAN NOT NULL DEFAULT false,
+        block_reason VARCHAR(50),
+        attempted_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_login_attempts_user ON login_attempts(user_id);
+      CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip_address);
+      CREATE INDEX IF NOT EXISTS idx_login_attempts_date ON login_attempts(attempted_at DESC);
+
+      CREATE TABLE IF NOT EXISTS ip_security_list (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ip_address VARCHAR(45) NOT NULL,
+        list_type VARCHAR(10) NOT NULL CHECK (list_type IN ('whitelist', 'blacklist')),
+        description TEXT,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_ip_security_list ON ip_security_list(ip_address, list_type);
+
+      INSERT INTO admin_settings (key, value, description) VALUES
+        ('security_max_failed_attempts',      '3',     'Nombre max de tentatives avant verrouillage'),
+        ('security_lockout_duration_minutes', '30',    'Durée de verrouillage en minutes (0 = permanent)'),
+        ('security_email_alert_enabled',      'false', 'Alertes email pour les tentatives échouées'),
+        ('security_email_alert_threshold',    '3',     'Seuil de tentatives pour déclencher l''alerte'),
+        ('security_email_alert_recipient',    '""',    'Destinataire des alertes de sécurité'),
+        ('security_whitelist_alert_enabled',  'false', 'Alertes même pour les IPs en liste blanche')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

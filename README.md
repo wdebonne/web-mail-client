@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.9.0-blue)
+![Version](https://img.shields.io/badge/version-1.10.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -164,7 +164,8 @@ La langue affichée est choisie selon l’ordre suivant :
 ### Administration
 - 📦 **Applications natives** : panneau dédié pour générer/distribuer les apps Desktop (Tauri) et installer la PWA, avec build Docker (Linux) et GitHub Actions (tous OS).
 - 📊 Dashboard temps réel (stats utilisateurs, mails, infra)
-- 👤 **Gestion avancée des utilisateurs** : modifier le profil, activer/désactiver un compte, changer le mot de passe, générer un lien de réinitialisation (valable 24 h) — en plus de la suppression
+- 👤 **Gestion avancée des utilisateurs** : modifier le profil, activer/désactiver un compte, changer le mot de passe, générer un lien de réinitialisation (valable 24 h) — en plus de la suppression. Les comptes verrouillés par trop de tentatives de connexion affichent une icône cadenas avec un bouton de déblocage direct.
+- 🔒 **Sécurité — protection des connexions** : verrouillage automatique après N tentatives échouées (seuil configurable, défaut 3), durée de verrou réglable (0 = permanent). **Liste noire** d'IPs bloquées immédiatement. **Liste blanche** d'IPs jamais verrouillées mais tracées. **Alertes email** configurables (destinataire + seuil). **Historique complet** des tentatives (email, IP, résultat, date). Déblocage d'un utilisateur directement depuis la page Utilisateurs.
 - ⚙️ Paramètres globaux
 - 🎨 **Branding personnalisable** : téléversement à chaud du favicon et des icônes PWA (192×192, 512×512, Apple Touch) depuis l'onglet *Système*, sans rebuild ni redéploiement. Aperçu, réinitialisation et application immédiate au rafraîchissement.
 - 🪟 **Titre d'onglet dynamique** (style messagerie professionnelle) : l'onglet du navigateur affiche `<Nom du dossier> — <Nom de l'app>` (ex. *Boîte de réception — WebMail*).

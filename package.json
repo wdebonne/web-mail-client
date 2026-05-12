@@ -1,6 +1,6 @@
 {
   "name": "web-mail-client",
-  "version": "1.7.3",
+  "version": "1.10.0",
   "description": "Client mail web type Outlook avec support NextCloud, PWA offline, et système de plugins",
   "private": true,
   "scripts": {

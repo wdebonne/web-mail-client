@@ -133,6 +133,16 @@ Combiné avec `password.min(6)` côté login ([server/src/routes/auth.ts](server
 
 **Correctif :** `express-rate-limit` sur `/api/auth/*` (ex. 5/min/IP), sur endpoints coûteux, verrouillage progressif par compte après N échecs.
 
+> **✅ Partiellement résolu (mai 2026)** — verrouillage progressif par compte implémenté (v1.10.0) :
+> - Compteur `failed_attempts` et `locked_until` sur la table `users`.
+> - Verrouillage automatique après N tentatives (configurable, défaut 3), durée configurable (défaut 30 min, 0 = permanent).
+> - Liste noire d'IPs bloquant immédiatement toute tentative de connexion.
+> - Liste blanche d'IPs jamais verrouillées (trace conservée + alerte email optionnelle).
+> - Historique complet dans `login_attempts`.
+> - Déblocage admin depuis Admin → Utilisateurs.
+>
+> **Reste à faire** : `express-rate-limit` au niveau HTTP (contre les attaques par IP sur `/api/auth/register`, les endpoints coûteux et le DoS mémoire via `express.json({ limit: '25mb' })`). Le verrouillage applicatif par compte est en place, mais sans throttle HTTP un attaquant peut toujours saturer l'infrastructure avec de nombreux comptes différents.
+
 ### H4. Politique de mot de passe trop faible
 
 **Fichier :** [server/src/routes/auth.ts](server/src/routes/auth.ts#L9-L17)
