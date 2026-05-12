@@ -783,6 +783,38 @@ export const api = {
     return request<{ logs: any[]; total: number; page: number; totalPages: number }>(`/admin/logs?${query}`);
   },
   getAdminLogCategories: () => request<string[]>('/admin/logs/categories'),
+  exportAdminLogs: (params?: { format?: string; category?: string; action?: string; userId?: string; from?: string; to?: string; search?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.format) q.set('format', params.format);
+    if (params?.category) q.set('category', params.category);
+    if (params?.action) q.set('action', params.action);
+    if (params?.userId) q.set('userId', params.userId);
+    if (params?.from) q.set('from', params.from);
+    if (params?.to) q.set('to', params.to);
+    if (params?.search) q.set('search', params.search);
+    return `/admin/logs/export?${q}`;
+  },
+  emailAdminLogs: (data: { to: string; category?: string; action?: string; userId?: string; from?: string; dateTo?: string; search?: string; limit?: number }) =>
+    request<{ success: boolean; count: number }>('/admin/logs/email', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Log Alert Rules
+  getLogAlerts: () => request<any[]>('/admin/log-alerts'),
+  createLogAlert: (data: any) => request<any>('/admin/log-alerts', { method: 'POST', body: JSON.stringify(data) }),
+  updateLogAlert: (id: string, data: any) => request<any>(`/admin/log-alerts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteLogAlert: (id: string) => request(`/admin/log-alerts/${id}`, { method: 'DELETE' }),
+
+  // SMTP Configuration
+  getSmtpConfig: () => request<any>('/admin/smtp'),
+  updateSmtpConfig: (data: any) => request<{ success: boolean }>('/admin/smtp', { method: 'PUT', body: JSON.stringify(data) }),
+  testSmtpConfig: (data: any) => request<{ success: boolean; message: string }>('/admin/smtp/test', { method: 'POST', body: JSON.stringify(data) }),
+
+  // System Email Templates
+  getSystemTemplates: () => request<any[]>('/admin/system-templates'),
+  createSystemTemplate: (data: any) => request<any>('/admin/system-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateSystemTemplate: (id: string, data: any) => request<any>(`/admin/system-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSystemTemplate: (id: string) => request(`/admin/system-templates/${id}`, { method: 'DELETE' }),
+  testSystemTemplate: (id: string, data: { testTo: string; variables?: Record<string, string> }) =>
+    request<{ success: boolean; message: string }>(`/admin/system-templates/${id}/test`, { method: 'POST', body: JSON.stringify(data) }),
 
   // O2Switch
   getO2SwitchAccounts: () => request<any[]>('/admin/o2switch/accounts'),

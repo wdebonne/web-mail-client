@@ -9,6 +9,7 @@ import {
   Contact, Search, Link, Palette, Monitor, Smartphone, Tablet,
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
+  Download, Send, AlertTriangle, Eye, EyeOff,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -19,6 +20,7 @@ import AdminAutoResponders from '../components/admin/AdminAutoResponders';
 import AdminMailTemplates from '../components/admin/AdminMailTemplates';
 import AdminRulesManagement from '../components/admin/AdminRulesManagement';
 import AdminApplications from '../components/admin/AdminApplications';
+import AdminSmtpSettings from '../components/admin/AdminSmtpSettings';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
@@ -26,7 +28,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -65,6 +67,7 @@ export default function AdminPage() {
     { id: 'notifications' as const,  icon: Bell,            label: t('admin.tab.notifications'),  group: t('admin.group.system') },
     { id: 'devices' as const,        icon: Monitor,         label: t('admin.tab.devices'),        group: t('admin.group.system') },
     { id: 'logs' as const,           icon: ScrollText,      label: t('admin.tab.logs'),           group: t('admin.group.system') },
+    { id: 'smtp' as const,           icon: Send,            label: 'SMTP & Emails',               group: t('admin.group.system') },
     { id: 'system' as const,         icon: Settings,        label: t('admin.tab.system'),         group: t('admin.group.system') },
   ];
 
@@ -145,6 +148,7 @@ export default function AdminPage() {
             {tab === 'nextcloud' && <NextCloudSettings />}
             {tab === 'applications' && <AdminApplications />}
             {tab === 'logs' && <LogsPanel />}
+            {tab === 'smtp' && <AdminSmtpSettings />}
             {tab === 'loginAppearance' && <LoginAppearanceSettings />}
             {tab === 'devices' && <DeviceSessionsManagement />}
             {tab === 'notifications' && <AdminNotificationDefaults />}
@@ -236,92 +240,467 @@ function DashboardPanel() {
 // Logs
 // ========================================
 
-function LogsPanel() {
-  const [filters, setFilters] = useState({ category: '', search: '', page: 1 });
+const LOG_CATEGORY_COLORS: Record<string, string> = {
+  o2switch: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  auth: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  mail: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  admin: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  system: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  security: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  calendars: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+};
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ['admin-log-categories'],
-    queryFn: api.getAdminLogCategories,
+function LogsPanel() {
+  const queryClient = useQueryClient();
+  const [logsTab, setLogsTab] = useState<'logs' | 'alerts'>('logs');
+  const [filters, setFilters] = useState({
+    category: '', search: '', page: 1,
+    from: '', to: '', userId: '', action: '',
   });
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [emailModal, setEmailModal] = useState(false);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailLimit, setEmailLimit] = useState(100);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  // Alert rules state
+  const [alertModal, setAlertModal] = useState(false);
+  const [editingAlert, setEditingAlert] = useState<any>(null);
+  const [alertForm, setAlertForm] = useState({ name: '', recipientEmail: '', categories: '', actions: '', throttleMinutes: 60, subjectTemplate: 'Alerte log : {{action}}', enabled: true });
+
+  const { data: categories = [] } = useQuery({ queryKey: ['admin-log-categories'], queryFn: api.getAdminLogCategories });
+  const { data: users = [] } = useQuery({ queryKey: ['admin-users'], queryFn: api.getAdminUsers });
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-logs', filters],
     queryFn: () => api.getAdminLogs({
       category: filters.category || undefined,
       search: filters.search || undefined,
+      userId: filters.userId || undefined,
+      action: filters.action || undefined,
+      from: filters.from || undefined,
+      to: filters.to || undefined,
       page: filters.page,
       limit: 50,
     }),
   });
 
-  const categoryColors: Record<string, string> = {
-    o2switch: 'bg-red-100 text-red-700',
-    auth: 'bg-blue-100 text-blue-700',
-    mail: 'bg-green-100 text-green-700',
-    admin: 'bg-purple-100 text-purple-700',
-    system: 'bg-gray-100 text-gray-700',
+  const { data: alertRules = [], refetch: refetchAlerts } = useQuery({ queryKey: ['log-alerts'], queryFn: api.getLogAlerts });
+
+  const emailMutation = useMutation({
+    mutationFn: (d: any) => api.emailAdminLogs(d),
+    onSuccess: (r: any) => { toast.success(`${r.count} log(s) envoyé(s) par email`); setEmailModal(false); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const createAlertMutation = useMutation({
+    mutationFn: (d: any) => api.createLogAlert(d),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['log-alerts'] }); setAlertModal(false); toast.success('Règle créée'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const updateAlertMutation = useMutation({
+    mutationFn: ({ id, ...d }: any) => api.updateLogAlert(id, d),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['log-alerts'] }); setAlertModal(false); toast.success('Règle mise à jour'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteAlertMutation = useMutation({
+    mutationFn: api.deleteLogAlert,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['log-alerts'] }); toast.success('Règle supprimée'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  function openNewAlert() {
+    setEditingAlert(null);
+    setAlertForm({ name: '', recipientEmail: '', categories: '', actions: '', throttleMinutes: 60, subjectTemplate: 'Alerte log : {{action}}', enabled: true });
+    setAlertModal(true);
+  }
+
+  function openEditAlert(rule: any) {
+    setEditingAlert(rule);
+    setAlertForm({
+      name: rule.name,
+      recipientEmail: rule.recipient_email,
+      categories: (rule.categories || []).join(', '),
+      actions: (rule.actions || []).join(', '),
+      throttleMinutes: rule.throttle_minutes,
+      subjectTemplate: rule.subject_template,
+      enabled: rule.enabled,
+    });
+    setAlertModal(true);
+  }
+
+  function saveAlert() {
+    const payload = {
+      name: alertForm.name,
+      recipientEmail: alertForm.recipientEmail,
+      categories: alertForm.categories ? alertForm.categories.split(',').map(s => s.trim()).filter(Boolean) : [],
+      actions: alertForm.actions ? alertForm.actions.split(',').map(s => s.trim()).filter(Boolean) : [],
+      throttleMinutes: alertForm.throttleMinutes,
+      subjectTemplate: alertForm.subjectTemplate,
+      enabled: alertForm.enabled,
+    };
+    if (editingAlert) updateAlertMutation.mutate({ id: editingAlert.id, ...payload });
+    else createAlertMutation.mutate(payload);
+  }
+
+  const exportUrl = (fmt: 'csv' | 'json') => {
+    const base = api.exportAdminLogs({
+      format: fmt,
+      category: filters.category || undefined,
+      search: filters.search || undefined,
+      userId: filters.userId || undefined,
+      action: filters.action || undefined,
+      from: filters.from || undefined,
+      to: filters.to || undefined,
+    });
+    return `/api${base}`;
   };
+
+  function handleEmailLogs() {
+    emailMutation.mutate({
+      to: emailTo,
+      category: filters.category || undefined,
+      search: filters.search || undefined,
+      userId: filters.userId || undefined,
+      action: filters.action || undefined,
+      from: filters.from || undefined,
+      dateTo: filters.to || undefined,
+      limit: emailLimit,
+    });
+  }
 
   return (
     <div>
-      <h3 className="text-base font-semibold mb-4">Logs d'activité</h3>
-      <div className="flex items-center gap-2 mb-4">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
-          <input type="text" placeholder="Rechercher dans les logs..." value={filters.search}
-            onChange={e => setFilters({ ...filters, search: e.target.value, page: 1 })}
-            className="w-full pl-7 pr-3 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue" />
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-semibold">Journaux d'activité</h3>
+        <div className="flex gap-1">
+          <button onClick={() => setLogsTab('logs')}
+            className={`px-3 py-1.5 text-xs rounded ${logsTab === 'logs' ? 'bg-outlook-blue text-white' : 'border border-outlook-border hover:bg-outlook-bg-hover'}`}>
+            Logs
+          </button>
+          <button onClick={() => setLogsTab('alerts')}
+            className={`px-3 py-1.5 text-xs rounded flex items-center gap-1 ${logsTab === 'alerts' ? 'bg-outlook-blue text-white' : 'border border-outlook-border hover:bg-outlook-bg-hover'}`}>
+            <AlertTriangle size={12} /> Alertes
+            {(alertRules as any[]).length > 0 && <span className="bg-white/30 text-[10px] px-1 rounded-full">{(alertRules as any[]).length}</span>}
+          </button>
         </div>
-        <select value={filters.category} onChange={e => setFilters({ ...filters, category: e.target.value, page: 1 })}
-          className="text-sm border border-outlook-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-outlook-blue">
-          <option value="">Toutes catégories</option>
-          {categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
-        </select>
       </div>
 
-      {isLoading ? <div className="text-sm text-outlook-text-secondary">Chargement...</div> : (
+      {logsTab === 'logs' && (
         <>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-outlook-border text-left">
-                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Date</th>
-                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Catégorie</th>
-                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Action</th>
-                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Utilisateur</th>
-                <th className="py-2 px-3 font-medium text-outlook-text-secondary">Détails</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data?.logs.map((log: any) => (
-                <tr key={log.id} className="border-b border-outlook-border hover:bg-outlook-bg-hover">
-                  <td className="py-2 px-3 text-xs text-outlook-text-secondary whitespace-nowrap">
-                    {new Date(log.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                  </td>
-                  <td className="py-2 px-3">
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${categoryColors[log.category] || 'bg-gray-100 text-gray-700'}`}>{log.category}</span>
-                  </td>
-                  <td className="py-2 px-3 text-xs font-mono">{log.action}</td>
-                  <td className="py-2 px-3 text-xs">{log.user_display_name || log.user_email || '—'}</td>
-                  <td className="py-2 px-3 text-xs text-outlook-text-secondary max-w-[200px] truncate" title={JSON.stringify(log.details)}>
-                    {Object.entries(log.details || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '—'}
-                  </td>
-                </tr>
-              ))}
-              {data?.logs.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-sm text-outlook-text-disabled">Aucun log trouvé</td></tr>
+          {/* Filters */}
+          <div className="space-y-2 mb-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px] max-w-xs">
+                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+                <input type="text" placeholder="Rechercher dans les logs..." value={filters.search}
+                  onChange={e => setFilters(f => ({ ...f, search: e.target.value, page: 1 }))}
+                  className="w-full pl-7 pr-3 py-1.5 text-sm border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+              </div>
+              <select value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value, page: 1 }))}
+                className="text-sm border border-outlook-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary">
+                <option value="">Toutes catégories</option>
+                {(categories as string[]).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button onClick={() => setShowAdvanced(v => !v)}
+                className="flex items-center gap-1 text-xs text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded px-2 py-1.5">
+                <Filter size={12} /> Avancé {showAdvanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              </button>
+              <div className="flex gap-1 ml-auto">
+                <a href={exportUrl('csv')} download className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-1.5 hover:bg-outlook-bg-hover">
+                  <Download size={12} /> CSV
+                </a>
+                <a href={exportUrl('json')} download className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-1.5 hover:bg-outlook-bg-hover">
+                  <Download size={12} /> JSON
+                </a>
+                <button onClick={() => setEmailModal(true)}
+                  className="flex items-center gap-1 text-xs border border-outlook-border rounded px-2 py-1.5 hover:bg-outlook-bg-hover">
+                  <Send size={12} /> Envoyer par email
+                </button>
+              </div>
+            </div>
+
+            {showAdvanced && (
+              <div className="flex flex-wrap gap-2 p-3 bg-outlook-bg-hover rounded border border-outlook-border">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-outlook-text-disabled uppercase tracking-wide">Action</label>
+                  <input type="text" placeholder="Filtrer l'action..." value={filters.action}
+                    onChange={e => setFilters(f => ({ ...f, action: e.target.value, page: 1 }))}
+                    className="text-sm border border-outlook-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary w-48" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-outlook-text-disabled uppercase tracking-wide">Utilisateur</label>
+                  <select value={filters.userId} onChange={e => setFilters(f => ({ ...f, userId: e.target.value, page: 1 }))}
+                    className="text-sm border border-outlook-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary w-48">
+                    <option value="">Tous</option>
+                    {(users as any[]).map(u => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-outlook-text-disabled uppercase tracking-wide">Du</label>
+                  <input type="datetime-local" value={filters.from}
+                    onChange={e => setFilters(f => ({ ...f, from: e.target.value, page: 1 }))}
+                    className="text-sm border border-outlook-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-outlook-text-disabled uppercase tracking-wide">Au</label>
+                  <input type="datetime-local" value={filters.to}
+                    onChange={e => setFilters(f => ({ ...f, to: e.target.value, page: 1 }))}
+                    className="text-sm border border-outlook-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                </div>
+                <div className="flex items-end">
+                  <button onClick={() => setFilters({ category: '', search: '', page: 1, from: '', to: '', userId: '', action: '' })}
+                    className="text-xs text-outlook-text-secondary hover:text-red-600 flex items-center gap-1 py-1">
+                    <RotateCcw size={12} /> Réinitialiser
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Stats summary */}
+          {data && (
+            <div className="flex items-center gap-2 mb-3 text-xs text-outlook-text-secondary">
+              <span className="font-medium text-outlook-text-primary">{data.total}</span> résultat(s)
+              {filters.category && <span>· catégorie <strong>{filters.category}</strong></span>}
+              {filters.from && <span>· depuis {new Date(filters.from).toLocaleDateString('fr-FR')}</span>}
+              {filters.to && <span>· jusqu'au {new Date(filters.to).toLocaleDateString('fr-FR')}</span>}
+            </div>
+          )}
+
+          {isLoading ? <div className="text-sm text-outlook-text-secondary">Chargement...</div> : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[700px]">
+                  <thead>
+                    <tr className="border-b border-outlook-border text-left">
+                      <th className="py-2 px-3 font-medium text-outlook-text-secondary">Date</th>
+                      <th className="py-2 px-3 font-medium text-outlook-text-secondary">Catégorie</th>
+                      <th className="py-2 px-3 font-medium text-outlook-text-secondary">Action</th>
+                      <th className="py-2 px-3 font-medium text-outlook-text-secondary">Utilisateur</th>
+                      <th className="py-2 px-3 font-medium text-outlook-text-secondary">IP</th>
+                      <th className="py-2 px-3 font-medium text-outlook-text-secondary">Détails</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data?.logs.map((log: any) => (
+                      <>
+                        <tr key={log.id}
+                          className="border-b border-outlook-border hover:bg-outlook-bg-hover cursor-pointer"
+                          onClick={() => setExpandedRow(expandedRow === log.id ? null : log.id)}>
+                          <td className="py-2 px-3 text-xs text-outlook-text-secondary whitespace-nowrap">
+                            {new Date(log.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="py-2 px-3">
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${LOG_CATEGORY_COLORS[log.category] || 'bg-gray-100 text-gray-700'}`}>
+                              {log.category}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-xs font-mono">{log.action}</td>
+                          <td className="py-2 px-3 text-xs">{log.user_display_name || log.user_email || '—'}</td>
+                          <td className="py-2 px-3 text-xs text-outlook-text-disabled font-mono">{log.ip_address || '—'}</td>
+                          <td className="py-2 px-3 text-xs text-outlook-text-secondary max-w-[200px] truncate">
+                            {Object.entries(log.details || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '—'}
+                          </td>
+                        </tr>
+                        {expandedRow === log.id && (
+                          <tr key={`${log.id}-detail`} className="border-b border-outlook-border bg-outlook-bg-hover">
+                            <td colSpan={6} className="px-4 py-3">
+                              <div className="grid grid-cols-2 gap-4 text-xs">
+                                <div>
+                                  <div className="text-outlook-text-disabled mb-1 font-medium">Informations complètes</div>
+                                  <div className="space-y-1">
+                                    <div><span className="text-outlook-text-disabled">ID:</span> <span className="font-mono">{log.id}</span></div>
+                                    <div><span className="text-outlook-text-disabled">Date:</span> {new Date(log.created_at).toLocaleString('fr-FR')}</div>
+                                    {log.target_type && <div><span className="text-outlook-text-disabled">Cible:</span> {log.target_type} {log.target_id ? `(${log.target_id})` : ''}</div>}
+                                    {log.user_agent && <div className="truncate max-w-xs"><span className="text-outlook-text-disabled">User-Agent:</span> {log.user_agent}</div>}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-outlook-text-disabled mb-1 font-medium">Détails JSON</div>
+                                  <pre className="bg-outlook-bg-primary p-2 rounded border border-outlook-border overflow-auto max-h-32 text-[11px]">
+                                    {JSON.stringify(log.details, null, 2)}
+                                  </pre>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    ))}
+                    {data?.logs.length === 0 && (
+                      <tr><td colSpan={6} className="py-8 text-center text-sm text-outlook-text-disabled">Aucun log trouvé</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {data && data.totalPages > 1 && (
+                <div className="flex items-center justify-between mt-3">
+                  <span className="text-xs text-outlook-text-secondary">Page {data.page} / {data.totalPages} ({data.total} résultats)</span>
+                  <div className="flex gap-1">
+                    <button disabled={data.page <= 1} onClick={() => setFilters(f => ({ ...f, page: f.page - 1 }))}
+                      className="px-2 py-1 text-xs border border-outlook-border rounded disabled:opacity-40 hover:bg-outlook-bg-hover">Précédent</button>
+                    {Array.from({ length: Math.min(data.totalPages, 7) }, (_, i) => {
+                      const p = data.page <= 4 ? i + 1 : data.page + i - 3;
+                      if (p < 1 || p > data.totalPages) return null;
+                      return <button key={p} onClick={() => setFilters(f => ({ ...f, page: p }))}
+                        className={`px-2 py-1 text-xs border rounded ${p === data.page ? 'bg-outlook-blue text-white border-outlook-blue' : 'border-outlook-border hover:bg-outlook-bg-hover'}`}>{p}</button>;
+                    })}
+                    <button disabled={data.page >= data.totalPages} onClick={() => setFilters(f => ({ ...f, page: f.page + 1 }))}
+                      className="px-2 py-1 text-xs border border-outlook-border rounded disabled:opacity-40 hover:bg-outlook-bg-hover">Suivant</button>
+                  </div>
+                </div>
               )}
-            </tbody>
-          </table>
-          {data && data.totalPages > 1 && (
-            <div className="flex items-center justify-between mt-3">
-              <span className="text-xs text-outlook-text-secondary">Page {data.page} / {data.totalPages} ({data.total} résultats)</span>
-              <div className="flex gap-1">
-                <button disabled={data.page <= 1} onClick={() => setFilters({ ...filters, page: filters.page - 1 })} className="px-2 py-1 text-xs border border-outlook-border rounded disabled:opacity-40 hover:bg-outlook-bg-hover">Précédent</button>
-                <button disabled={data.page >= data.totalPages} onClick={() => setFilters({ ...filters, page: filters.page + 1 })} className="px-2 py-1 text-xs border border-outlook-border rounded disabled:opacity-40 hover:bg-outlook-bg-hover">Suivant</button>
+            </>
+          )}
+
+          {/* Email modal */}
+          {emailModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+              <div className="bg-outlook-bg-primary border border-outlook-border rounded-lg p-6 w-full max-w-md shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-semibold">Envoyer les logs par email</h4>
+                  <button onClick={() => setEmailModal(false)}><X size={16} /></button>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-outlook-text-secondary mb-1 block">Adresse email destinataire</label>
+                    <input type="email" value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="admin@example.com"
+                      className="w-full text-sm border border-outlook-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-outlook-text-secondary mb-1 block">Nombre maximum de logs</label>
+                    <select value={emailLimit} onChange={e => setEmailLimit(Number(e.target.value))}
+                      className="w-full text-sm border border-outlook-border rounded px-3 py-2 bg-outlook-bg-primary">
+                      {[50, 100, 250, 500, 1000].map(n => <option key={n} value={n}>{n} derniers logs</option>)}
+                    </select>
+                  </div>
+                  <div className="text-xs text-outlook-text-secondary bg-outlook-bg-hover p-2 rounded">
+                    Les filtres actifs (catégorie, recherche, dates, utilisateur) seront appliqués.
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-4 justify-end">
+                  <button onClick={() => setEmailModal(false)} className="px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover">Annuler</button>
+                  <button onClick={handleEmailLogs} disabled={!emailTo || emailMutation.isPending}
+                    className="px-3 py-1.5 text-sm bg-outlook-blue text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1">
+                    <Send size={12} /> {emailMutation.isPending ? 'Envoi...' : 'Envoyer'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
         </>
+      )}
+
+      {logsTab === 'alerts' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm text-outlook-text-secondary">Recevez un email automatique lorsqu'un log correspond à vos critères.</p>
+            </div>
+            <button onClick={openNewAlert}
+              className="flex items-center gap-1 text-sm bg-outlook-blue text-white px-3 py-1.5 rounded hover:bg-blue-700">
+              <Plus size={14} /> Nouvelle règle
+            </button>
+          </div>
+
+          {(alertRules as any[]).length === 0 ? (
+            <div className="py-12 text-center text-sm text-outlook-text-disabled">
+              <AlertTriangle size={32} className="mx-auto mb-2 opacity-30" />
+              Aucune règle d'alerte configurée
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(alertRules as any[]).map((rule: any) => (
+                <div key={rule.id} className="border border-outlook-border rounded-lg p-4 flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`w-2 h-2 rounded-full ${rule.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                      <span className="font-medium text-sm">{rule.name}</span>
+                    </div>
+                    <div className="text-xs text-outlook-text-secondary space-y-0.5">
+                      <div>Destinataire : <strong>{rule.recipient_email}</strong></div>
+                      {rule.categories?.length > 0 && <div>Catégories : {rule.categories.join(', ')}</div>}
+                      {rule.actions?.length > 0 && <div>Actions : {rule.actions.join(', ')}</div>}
+                      <div>Délai anti-spam : {rule.throttle_minutes} min · {rule.last_triggered_at ? `Dernier déclenchement : ${new Date(rule.last_triggered_at).toLocaleString('fr-FR')}` : 'Jamais déclenché'}</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => openEditAlert(rule)} className="p-1.5 text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded">
+                      <Edit2 size={13} />
+                    </button>
+                    <button onClick={() => { if (confirm('Supprimer cette règle ?')) deleteAlertMutation.mutate(rule.id); }}
+                      className="p-1.5 text-outlook-text-secondary hover:text-red-600 border border-outlook-border rounded">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {alertModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+              <div className="bg-outlook-bg-primary border border-outlook-border rounded-lg p-6 w-full max-w-lg shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-semibold">{editingAlert ? 'Modifier' : 'Nouvelle'} règle d'alerte</h4>
+                  <button onClick={() => setAlertModal(false)}><X size={16} /></button>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-outlook-text-secondary mb-1 block">Nom de la règle</label>
+                    <input type="text" value={alertForm.name} onChange={e => setAlertForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Alerte connexions échouées"
+                      className="w-full text-sm border border-outlook-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-outlook-text-secondary mb-1 block">Email destinataire</label>
+                    <input type="email" value={alertForm.recipientEmail} onChange={e => setAlertForm(f => ({ ...f, recipientEmail: e.target.value }))} placeholder="admin@example.com"
+                      className="w-full text-sm border border-outlook-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-outlook-text-secondary mb-1 block">Catégories (séparées par ,)</label>
+                      <input type="text" value={alertForm.categories} onChange={e => setAlertForm(f => ({ ...f, categories: e.target.value }))} placeholder="auth, admin, system"
+                        className="w-full text-sm border border-outlook-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                      <p className="text-[10px] text-outlook-text-disabled mt-0.5">Vide = toutes les catégories</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-outlook-text-secondary mb-1 block">Actions contenant (séparées par ,)</label>
+                      <input type="text" value={alertForm.actions} onChange={e => setAlertForm(f => ({ ...f, actions: e.target.value }))} placeholder="login_failed, delete"
+                        className="w-full text-sm border border-outlook-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-outlook-text-secondary mb-1 block">Sujet de l'email</label>
+                      <input type="text" value={alertForm.subjectTemplate} onChange={e => setAlertForm(f => ({ ...f, subjectTemplate: e.target.value }))}
+                        className="w-full text-sm border border-outlook-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                      <p className="text-[10px] text-outlook-text-disabled mt-0.5">Variables: {'{{action}}'}, {'{{category}}'}, {'{{user}}'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-outlook-text-secondary mb-1 block">Anti-spam (minutes)</label>
+                      <input type="number" min={1} value={alertForm.throttleMinutes} onChange={e => setAlertForm(f => ({ ...f, throttleMinutes: Number(e.target.value) }))}
+                        className="w-full text-sm border border-outlook-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-outlook-bg-primary" />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={alertForm.enabled} onChange={e => setAlertForm(f => ({ ...f, enabled: e.target.checked }))} />
+                    Règle active
+                  </label>
+                </div>
+                <div className="flex gap-2 mt-4 justify-end">
+                  <button onClick={() => setAlertModal(false)} className="px-3 py-1.5 text-sm border border-outlook-border rounded hover:bg-outlook-bg-hover">Annuler</button>
+                  <button onClick={saveAlert} disabled={createAlertMutation.isPending || updateAlertMutation.isPending}
+                    className="px-3 py-1.5 text-sm bg-outlook-blue text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                    {editingAlert ? 'Mettre à jour' : 'Créer'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

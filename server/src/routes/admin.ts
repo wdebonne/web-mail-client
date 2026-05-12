@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { execSync } from 'child_process';
 import { buildIcs } from '../utils/ical';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import {
   listAllActiveDeviceSessions,
   revokeAllUserDeviceSessions,
@@ -924,14 +925,73 @@ adminRouter.delete('/mail-accounts/:id/assignments/:assignmentId', async (req: A
 
 async function addLog(userId: string | undefined, action: string, category: string, req: AuthRequest, details?: any, targetType?: string, targetId?: string) {
   try {
+    const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+    const ua = req.headers['user-agent'] || null;
     await pool.query(
       `INSERT INTO admin_logs (user_id, action, category, target_type, target_id, details, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [userId, action, category, targetType || null, targetId || null, JSON.stringify(details || {}),
-       req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null, req.headers['user-agent'] || null]
+      [userId, action, category, targetType || null, targetId || null, JSON.stringify(details || {}), ip, ua]
     );
+    // Fire alert rules asynchronously — don't block the response
+    triggerLogAlerts({ userId, action, category, details, ip: String(ip || '') }).catch(() => {});
   } catch (error) {
     logger.error(error as Error, 'Failed to write audit log');
+  }
+}
+
+async function triggerLogAlerts(log: { userId?: string; action: string; category: string; details?: any; ip: string }) {
+  try {
+    const rulesResult = await pool.query(
+      `SELECT * FROM log_alert_rules WHERE enabled = true`
+    );
+    if (rulesResult.rows.length === 0) return;
+
+    for (const rule of rulesResult.rows) {
+      const catMatch = !rule.categories?.length || rule.categories.includes(log.category);
+      const actMatch = !rule.actions?.length || rule.actions.some((a: string) => log.action.includes(a));
+      if (!catMatch || !actMatch) continue;
+
+      // Throttle check
+      if (rule.last_triggered_at) {
+        const elapsed = (Date.now() - new Date(rule.last_triggered_at).getTime()) / 60000;
+        if (elapsed < rule.throttle_minutes) continue;
+      }
+
+      // Get user info if available
+      let userLabel = '—';
+      if (log.userId) {
+        const u = await pool.query('SELECT email, display_name FROM users WHERE id=$1', [log.userId]);
+        if (u.rows.length) userLabel = u.rows[0].display_name || u.rows[0].email;
+      }
+
+      const vars: Record<string, string> = {
+        date: new Date().toLocaleString('fr-FR'),
+        category: log.category,
+        action: log.action,
+        user: userLabel,
+        ip: log.ip || '—',
+        details: JSON.stringify(log.details || {}),
+      };
+
+      // Try to get log_alert system template
+      const tplResult = await pool.query(`SELECT * FROM system_email_templates WHERE slug='log_alert' AND enabled=true`);
+      let html = '', text = '', subject = '';
+      if (tplResult.rows.length) {
+        const tpl = tplResult.rows[0];
+        subject = renderTemplate(tpl.subject, vars);
+        html = renderTemplate(tpl.body_html, vars);
+        text = renderTemplate(tpl.body_text, vars);
+      } else {
+        subject = renderTemplate(rule.subject_template, vars);
+        html = `<p>Date: ${vars.date}<br>Catégorie: ${vars.category}<br>Action: ${vars.action}<br>Utilisateur: ${vars.user}<br>IP: ${vars.ip}<br>Détails: ${vars.details}</p>`;
+        text = `Date: ${vars.date}\nCatégorie: ${vars.category}\nAction: ${vars.action}\nUtilisateur: ${vars.user}\nIP: ${vars.ip}\nDétails: ${vars.details}`;
+      }
+
+      await sendSystemEmail(rule.recipient_email, subject, html, text);
+      await pool.query('UPDATE log_alert_rules SET last_triggered_at=NOW() WHERE id=$1', [rule.id]);
+    }
+  } catch {
+    // Alert failures must never propagate
   }
 }
 
@@ -2473,6 +2533,399 @@ adminRouter.post('/distribution-lists/:id/restore', async (req: AuthRequest, res
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Liste introuvable' });
     res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// SMTP System Configuration
+// ========================================
+
+async function getSmtpSettings(): Promise<Record<string, any>> {
+  const result = await pool.query(
+    `SELECT key, value FROM admin_settings WHERE key LIKE 'smtp_%'`
+  );
+  const s: Record<string, any> = {};
+  for (const row of result.rows) s[row.key] = row.value;
+  return s;
+}
+
+function buildSmtpTransport(s: Record<string, any>) {
+  const host = s['smtp_host'] || '';
+  const port = Number(s['smtp_port']) || 587;
+  const mode = s['smtp_secure'] || 'starttls';
+  const user = s['smtp_username'] || '';
+  const rawPass = s['smtp_password_encrypted'] || '';
+  const pass = rawPass ? (() => { try { return decrypt(rawPass); } catch { return ''; } })() : '';
+
+  const secure = mode === 'ssl';
+  const requireTLS = mode === 'starttls';
+  return nodemailer.createTransport({
+    host, port, secure, requireTLS,
+    auth: (user && pass) ? { user, pass } : undefined,
+  } as any);
+}
+
+function renderTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
+}
+
+async function sendSystemEmail(to: string, subject: string, html: string, text: string): Promise<void> {
+  const s = await getSmtpSettings();
+  if (!s['smtp_host']) throw new Error('SMTP non configuré');
+  const transport = buildSmtpTransport(s);
+  const fromName = s['smtp_from_name'] || 'Mail Client';
+  const fromEmail = s['smtp_from_email'] || s['smtp_username'] || '';
+  await transport.sendMail({
+    from: `"${fromName}" <${fromEmail}>`,
+    to,
+    subject,
+    html,
+    text,
+  });
+}
+
+adminRouter.get('/smtp', async (_req: AuthRequest, res) => {
+  try {
+    const s = await getSmtpSettings();
+    res.json({
+      host: s['smtp_host'] || '',
+      port: s['smtp_port'] ?? 587,
+      secure: s['smtp_secure'] || 'starttls',
+      username: s['smtp_username'] || '',
+      hasPassword: !!(s['smtp_password_encrypted']),
+      fromName: s['smtp_from_name'] || '',
+      fromEmail: s['smtp_from_email'] || '',
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.put('/smtp', async (req: AuthRequest, res) => {
+  try {
+    const { host, port, secure, username, password, fromName, fromEmail } = req.body;
+    const updates: Record<string, any> = {
+      smtp_host: host ?? '',
+      smtp_port: port ?? 587,
+      smtp_secure: secure ?? 'starttls',
+      smtp_username: username ?? '',
+      smtp_from_name: fromName ?? '',
+      smtp_from_email: fromEmail ?? '',
+    };
+    if (typeof password === 'string' && password !== '') {
+      updates['smtp_password_encrypted'] = encrypt(password);
+    }
+    for (const [key, value] of Object.entries(updates)) {
+      await pool.query(
+        `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+        [key, JSON.stringify(value)]
+      );
+    }
+    await addLog(req.userId, 'smtp.config_updated', 'admin', req, { host, port, secure, fromEmail });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.post('/smtp/test', async (req: AuthRequest, res) => {
+  try {
+    const { host, port, secure, username, password, fromName, fromEmail, testTo } = req.body;
+    if (!host) return res.status(400).json({ error: 'Hôte SMTP requis' });
+
+    const portNum = Number(port) || 587;
+    const mode = secure || 'starttls';
+    const isSecure = mode === 'ssl';
+    const requireTLS = mode === 'starttls';
+
+    const transport = nodemailer.createTransport({
+      host,
+      port: portNum,
+      secure: isSecure,
+      requireTLS,
+      auth: (username && password) ? { user: username, pass: password } : undefined,
+    } as any);
+
+    await transport.verify();
+
+    if (testTo) {
+      await transport.sendMail({
+        from: `"${fromName || 'Mail Client'}" <${fromEmail || username}>`,
+        to: testTo,
+        subject: 'Test SMTP — Mail Client Admin',
+        html: '<p>Ce message confirme que votre configuration SMTP fonctionne correctement.</p>',
+        text: 'Ce message confirme que votre configuration SMTP fonctionne correctement.',
+      });
+    }
+
+    res.json({ success: true, message: testTo ? `Email de test envoyé à ${testTo}` : 'Connexion SMTP validée' });
+  } catch (error: any) {
+    res.status(400).json({ error: `Échec SMTP : ${error.message}` });
+  }
+});
+
+// ========================================
+// System Email Templates
+// ========================================
+
+adminRouter.get('/system-templates', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM system_email_templates ORDER BY name');
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.post('/system-templates', async (req: AuthRequest, res) => {
+  try {
+    const { slug, name, description, subject, bodyHtml, bodyText, variables, enabled } = req.body;
+    const result = await pool.query(
+      `INSERT INTO system_email_templates (slug, name, description, subject, body_html, body_text, variables, enabled)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [slug, name, description || '', subject, bodyHtml || '', bodyText || '',
+       JSON.stringify(variables || []), enabled !== false]
+    );
+    await addLog(req.userId, 'system_template.created', 'admin', req, { slug, name });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+adminRouter.put('/system-templates/:id', async (req: AuthRequest, res) => {
+  try {
+    const { name, description, subject, bodyHtml, bodyText, variables, enabled } = req.body;
+    const result = await pool.query(
+      `UPDATE system_email_templates
+       SET name=$1, description=$2, subject=$3, body_html=$4, body_text=$5,
+           variables=$6, enabled=$7, updated_at=NOW()
+       WHERE id=$8 RETURNING *`,
+      [name, description || '', subject, bodyHtml || '', bodyText || '',
+       JSON.stringify(variables || []), enabled !== false, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Template introuvable' });
+    await addLog(req.userId, 'system_template.updated', 'admin', req, { id: req.params.id, name });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.delete('/system-templates/:id', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM system_email_templates WHERE id=$1 RETURNING id, slug',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Template introuvable' });
+    await addLog(req.userId, 'system_template.deleted', 'admin', req, { id: req.params.id, slug: result.rows[0].slug });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.post('/system-templates/:id/test', async (req: AuthRequest, res) => {
+  try {
+    const { testTo, variables: testVars } = req.body;
+    if (!testTo) return res.status(400).json({ error: 'Adresse de destination requise' });
+
+    const result = await pool.query('SELECT * FROM system_email_templates WHERE id=$1', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Template introuvable' });
+
+    const tpl = result.rows[0];
+    const vars = testVars || {};
+    const subject = renderTemplate(tpl.subject, vars);
+    const html = renderTemplate(tpl.body_html, vars);
+    const text = renderTemplate(tpl.body_text, vars);
+
+    await sendSystemEmail(testTo, `[TEST] ${subject}`, html, text);
+    await addLog(req.userId, 'system_template.test_sent', 'admin', req, { slug: tpl.slug, testTo });
+    res.json({ success: true, message: `Email de test envoyé à ${testTo}` });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ========================================
+// Logs Export & Email
+// ========================================
+
+adminRouter.get('/logs/export', async (req: AuthRequest, res) => {
+  try {
+    const { format = 'csv', category, action, userId, from, to, search } = req.query;
+
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (category) { conditions.push(`l.category = $${idx++}`); values.push(category); }
+    if (action) { conditions.push(`l.action ILIKE $${idx++}`); values.push(`%${action}%`); }
+    if (userId) { conditions.push(`l.user_id = $${idx++}`); values.push(userId); }
+    if (from) { conditions.push(`l.created_at >= $${idx++}`); values.push(from); }
+    if (to) { conditions.push(`l.created_at <= $${idx++}`); values.push(to); }
+    if (search) { conditions.push(`(l.action ILIKE $${idx} OR l.details::text ILIKE $${idx})`); values.push(`%${search}%`); idx++; }
+
+    const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+    const result = await pool.query(
+      `SELECT l.created_at, l.category, l.action, u.email as user_email, u.display_name as user_display_name,
+              l.ip_address, l.details, l.target_type, l.target_id
+       FROM admin_logs l
+       LEFT JOIN users u ON u.id = l.user_id
+       ${where}
+       ORDER BY l.created_at DESC
+       LIMIT 10000`,
+      values
+    );
+
+    await addLog(req.userId, 'logs.exported', 'admin', req, { format, count: result.rows.length });
+
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="logs-${new Date().toISOString().slice(0,10)}.json"`);
+      return res.send(JSON.stringify(result.rows, null, 2));
+    }
+
+    // CSV
+    const headers = ['Date', 'Catégorie', 'Action', 'Utilisateur', 'Email', 'IP', 'Détails'];
+    const rows = result.rows.map(r => [
+      new Date(r.created_at).toLocaleString('fr-FR'),
+      r.category,
+      r.action,
+      r.user_display_name || '',
+      r.user_email || '',
+      r.ip_address || '',
+      JSON.stringify(r.details || {}),
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="logs-${new Date().toISOString().slice(0,10)}.csv"`);
+    res.send('﻿' + [headers.join(','), ...rows].join('\r\n'));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.post('/logs/email', async (req: AuthRequest, res) => {
+  try {
+    const { to, category, action, userId, from: fromDate, to: toDate, search, limit = 100 } = req.body;
+    if (!to) return res.status(400).json({ error: 'Adresse email requise' });
+
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (category) { conditions.push(`l.category = $${idx++}`); values.push(category); }
+    if (action) { conditions.push(`l.action ILIKE $${idx++}`); values.push(`%${action}%`); }
+    if (userId) { conditions.push(`l.user_id = $${idx++}`); values.push(userId); }
+    if (fromDate) { conditions.push(`l.created_at >= $${idx++}`); values.push(fromDate); }
+    if (toDate) { conditions.push(`l.created_at <= $${idx++}`); values.push(toDate); }
+    if (search) { conditions.push(`(l.action ILIKE $${idx} OR l.details::text ILIKE $${idx})`); values.push(`%${search}%`); idx++; }
+    const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    values.push(Math.min(Number(limit), 1000));
+    const result = await pool.query(
+      `SELECT l.created_at, l.category, l.action, u.email as user_email, u.display_name as user_name,
+              l.ip_address, l.details
+       FROM admin_logs l LEFT JOIN users u ON u.id = l.user_id
+       ${where} ORDER BY l.created_at DESC LIMIT $${idx}`,
+      values
+    );
+
+    const rows = result.rows.map(r =>
+      `<tr style="border-bottom:1px solid #eee">
+        <td style="padding:6px 8px;white-space:nowrap">${new Date(r.created_at).toLocaleString('fr-FR')}</td>
+        <td style="padding:6px 8px"><span style="background:#e8f0fe;color:#1a73e8;padding:2px 6px;border-radius:3px;font-size:11px">${r.category}</span></td>
+        <td style="padding:6px 8px;font-family:monospace;font-size:12px">${r.action}</td>
+        <td style="padding:6px 8px">${r.user_name || r.user_email || '—'}</td>
+        <td style="padding:6px 8px;color:#666">${r.ip_address || '—'}</td>
+        <td style="padding:6px 8px;color:#666;max-width:200px;overflow:hidden;text-overflow:ellipsis">${JSON.stringify(r.details || {})}</td>
+      </tr>`
+    ).join('');
+
+    const html = `<div style="font-family:sans-serif">
+      <h2>Rapport de logs — ${new Date().toLocaleDateString('fr-FR')}</h2>
+      <p>${result.rows.length} enregistrement(s) exporté(s)</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#f5f5f5">
+          <th style="padding:8px;text-align:left">Date</th>
+          <th style="padding:8px;text-align:left">Catégorie</th>
+          <th style="padding:8px;text-align:left">Action</th>
+          <th style="padding:8px;text-align:left">Utilisateur</th>
+          <th style="padding:8px;text-align:left">IP</th>
+          <th style="padding:8px;text-align:left">Détails</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+    const text = result.rows.map(r =>
+      `${new Date(r.created_at).toLocaleString('fr-FR')} | ${r.category} | ${r.action} | ${r.user_email || '—'} | ${r.ip_address || '—'}`
+    ).join('\n');
+
+    await sendSystemEmail(to, `Rapport de logs — ${new Date().toLocaleDateString('fr-FR')}`, html, text);
+    await addLog(req.userId, 'logs.emailed', 'admin', req, { to, count: result.rows.length });
+    res.json({ success: true, count: result.rows.length });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ========================================
+// Log Alert Rules
+// ========================================
+
+adminRouter.get('/log-alerts', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM log_alert_rules ORDER BY name');
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.post('/log-alerts', async (req: AuthRequest, res) => {
+  try {
+    const { name, enabled, categories, actions, recipientEmail, subjectTemplate, throttleMinutes } = req.body;
+    const result = await pool.query(
+      `INSERT INTO log_alert_rules (name, enabled, categories, actions, recipient_email, subject_template, throttle_minutes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [name, enabled !== false, categories || [], actions || [], recipientEmail,
+       subjectTemplate || 'Alerte log : {{action}}', throttleMinutes ?? 60]
+    );
+    await addLog(req.userId, 'log_alert.created', 'admin', req, { name, recipientEmail });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+adminRouter.put('/log-alerts/:id', async (req: AuthRequest, res) => {
+  try {
+    const { name, enabled, categories, actions, recipientEmail, subjectTemplate, throttleMinutes } = req.body;
+    const result = await pool.query(
+      `UPDATE log_alert_rules
+       SET name=$1, enabled=$2, categories=$3, actions=$4, recipient_email=$5,
+           subject_template=$6, throttle_minutes=$7, updated_at=NOW()
+       WHERE id=$8 RETURNING *`,
+      [name, enabled !== false, categories || [], actions || [], recipientEmail,
+       subjectTemplate || 'Alerte log : {{action}}', throttleMinutes ?? 60, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Règle introuvable' });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.delete('/log-alerts/:id', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query('DELETE FROM log_alert_rules WHERE id=$1 RETURNING id', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Règle introuvable' });
+    await addLog(req.userId, 'log_alert.deleted', 'admin', req, { id: req.params.id });
+    res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
