@@ -1444,11 +1444,23 @@ function MailAccountManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [assigningAccount, setAssigningAccount] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data: accounts = [] } = useQuery({
     queryKey: ['admin-mail-accounts'],
     queryFn: api.getAdminMailAccounts,
   });
+
+  const filteredAccounts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return accounts;
+    return accounts.filter((a: any) =>
+      (a.name || '').toLowerCase().includes(q) ||
+      (a.email || '').toLowerCase().includes(q) ||
+      (a.imap_host || '').toLowerCase().includes(q) ||
+      (a.smtp_host || '').toLowerCase().includes(q)
+    );
+  }, [accounts, searchQuery]);
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteAdminMailAccount,
@@ -1472,14 +1484,37 @@ function MailAccountManagement() {
       <MicrosoftOAuthSettings />
 
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold">Comptes mail ({accounts.length})</h3>
+        <h3 className="text-base font-semibold">
+          Comptes mail ({searchQuery ? `${filteredAccounts.length}/${accounts.length}` : accounts.length})
+        </h3>
         <button onClick={() => { setEditing(null); setShowForm(true); }} className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5">
           <Plus size={14} /> Nouveau compte
         </button>
       </div>
 
+      {accounts.length > 3 && (
+        <div className="relative mb-4">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Rechercher par nom, email, serveur…"
+            className="w-full pl-8 pr-8 py-2 text-sm border border-outlook-border rounded-md bg-outlook-bg focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-outlook-text-disabled hover:text-outlook-text rounded"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="space-y-3">
-        {accounts.map((account: any) => (
+        {filteredAccounts.map((account: any) => (
           <div key={account.id} className="border border-outlook-border rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1511,8 +1546,10 @@ function MailAccountManagement() {
             </div>
           </div>
         ))}
-        {accounts.length === 0 && (
-          <div className="text-center py-8 text-outlook-text-disabled text-sm">Aucun compte mail configuré</div>
+        {filteredAccounts.length === 0 && (
+          <div className="text-center py-8 text-outlook-text-disabled text-sm">
+            {searchQuery ? `Aucun compte ne correspond à "${searchQuery}"` : 'Aucun compte mail configuré'}
+          </div>
         )}
       </div>
 
@@ -2213,6 +2250,83 @@ function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () 
   );
 }
 
+function UserAutocomplete({ userId, setUserId, users }: {
+  userId: string;
+  setUserId: (v: string) => void;
+  users: any[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = users.find((u: any) => u.id === userId) ?? null;
+  const selectedLabel = selected ? `${selected.display_name} (${selected.email})` : '';
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return users;
+    const q = query.toLowerCase();
+    return users.filter((u: any) =>
+      (u.display_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q),
+    );
+  }, [users, query]);
+
+  const handleSelect = (id: string) => {
+    setUserId(id);
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((v) => !v); setTimeout(() => inputRef.current?.focus(), 50); }}
+        className="w-full border border-outlook-border rounded-md px-2 py-1.5 text-sm flex items-center justify-between
+                   bg-white dark:bg-slate-800 hover:border-outlook-blue focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+      >
+        <span className={userId ? 'truncate' : 'text-outlook-text-secondary'}>
+          {userId ? selectedLabel : 'Sélectionner…'}
+        </span>
+        <ChevronDown size={13} className={`text-outlook-text-secondary flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => { setOpen(false); setQuery(''); }} />
+          <div className="absolute z-[70] mt-1 w-full bg-white dark:bg-slate-800 border border-outlook-border rounded shadow-lg">
+            <div className="p-2 border-b border-outlook-border">
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher un utilisateur…"
+                className="w-full px-2 py-1 text-sm border border-outlook-border rounded
+                           focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+              />
+            </div>
+            <div className="max-h-48 overflow-y-auto py-1">
+              {filtered.length === 0 && (
+                <div className="px-3 py-2 text-xs text-outlook-text-disabled italic">Aucun résultat</div>
+              )}
+              {filtered.map((u: any) => (
+                <button
+                  key={u.id}
+                  onClick={() => handleSelect(u.id)}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover
+                    ${userId === u.id ? 'bg-outlook-blue/10 font-medium text-outlook-blue' : ''}`}
+                >
+                  <div>{u.display_name || u.email}</div>
+                  {u.display_name && <div className="text-xs text-outlook-text-secondary">{u.email}</div>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AssignmentManager({ account, onClose }: { account: any; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [userId, setUserId] = useState('');
@@ -2289,12 +2403,7 @@ function AssignmentManager({ account, onClose }: { account: any; onClose: () => 
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs text-outlook-text-secondary">Utilisateur</label>
-              <select value={userId} onChange={(e) => setUserId(e.target.value)} className="w-full border border-outlook-border rounded-md px-2 py-1.5 text-sm">
-                <option value="">Sélectionner...</option>
-                {availableUsers.map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.display_name} ({u.email})</option>
-                ))}
-              </select>
+              <UserAutocomplete userId={userId} setUserId={setUserId} users={availableUsers} />
             </div>
             <div>
               <label className="text-xs text-outlook-text-secondary">Nom affiché (navigation)</label>

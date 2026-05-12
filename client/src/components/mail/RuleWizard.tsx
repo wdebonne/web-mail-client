@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowLeft, ArrowRight, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { X, ArrowLeft, ArrowRight, Plus, Trash2, AlertCircle, ChevronDown } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
@@ -218,6 +218,98 @@ export default function RuleWizard({ rule, accounts, defaultAccountId, isAdmin, 
   );
 }
 
+// ─── Account autocomplete ──────────────────────────────────────────
+function AccountAutocomplete({ accountId, setAccountId, accounts }: {
+  accountId: string | null;
+  setAccountId: (v: string | null) => void;
+  accounts: any[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedAccount = accountId ? accounts.find((a: any) => a.id === accountId) : null;
+  const selectedLabel = selectedAccount
+    ? `${selectedAccount.name || selectedAccount.email} (${selectedAccount.email})`
+    : 'Tous mes comptes';
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return accounts;
+    const q = query.toLowerCase();
+    return accounts.filter((a: any) =>
+      (a.name || '').toLowerCase().includes(q) || (a.email || '').toLowerCase().includes(q),
+    );
+  }, [accounts, query]);
+
+  const handleSelect = (id: string | null) => {
+    setAccountId(id);
+    setOpen(false);
+    setQuery('');
+  };
+
+  const handleOpen = () => {
+    setOpen((v) => !v);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={handleOpen}
+        className="w-full px-3 py-2 text-sm border border-outlook-border rounded flex items-center justify-between
+                   bg-white dark:bg-slate-800 hover:border-outlook-blue focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+      >
+        <span className={selectedAccount ? '' : 'text-outlook-text-secondary'}>{selectedLabel}</span>
+        <ChevronDown size={14} className={`text-outlook-text-secondary transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[30]" onClick={() => { setOpen(false); setQuery(''); }} />
+          <div className="absolute z-[40] mt-1 w-full bg-white dark:bg-slate-800 border border-outlook-border rounded shadow-lg">
+            <div className="p-2 border-b border-outlook-border">
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher un compte…"
+                className="w-full px-2 py-1 text-sm border border-outlook-border rounded
+                           focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+              />
+            </div>
+            <div className="max-h-52 overflow-y-auto py-1">
+              {!query.trim() && (
+                <button
+                  onClick={() => handleSelect(null)}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover
+                    ${!accountId ? 'bg-outlook-blue/10 font-medium text-outlook-blue' : ''}`}
+                >
+                  Tous mes comptes
+                </button>
+              )}
+              {filtered.length === 0 && (
+                <div className="px-3 py-2 text-xs text-outlook-text-disabled italic">Aucun résultat</div>
+              )}
+              {filtered.map((a: any) => (
+                <button
+                  key={a.id}
+                  onClick={() => handleSelect(a.id)}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover
+                    ${accountId === a.id ? 'bg-outlook-blue/10 font-medium text-outlook-blue' : ''}`}
+                >
+                  <div>{a.name || a.email}</div>
+                  {a.name && <div className="text-xs text-outlook-text-secondary">{a.email}</div>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Step 1: Name + scope ──────────────────────────────────────────
 function Step1(props: {
   name: string; setName: (v: string) => void;
@@ -247,16 +339,11 @@ function Step1(props: {
         <label className="block text-xs font-semibold text-outlook-text-secondary mb-1 uppercase tracking-wide">
           Compte concerné
         </label>
-        <select
-          value={props.accountId || ''}
-          onChange={(e) => props.setAccountId(e.target.value || null)}
-          className="w-full px-3 py-2 text-sm border border-outlook-border rounded"
-        >
-          <option value="">Tous mes comptes</option>
-          {props.accounts.map((a: any) => (
-            <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
-          ))}
-        </select>
+        <AccountAutocomplete
+          accountId={props.accountId}
+          setAccountId={props.setAccountId}
+          accounts={props.accounts}
+        />
       </div>
 
       <div className="flex items-center gap-4 text-sm">
