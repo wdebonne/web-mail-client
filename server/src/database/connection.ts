@@ -740,6 +740,83 @@ export async function initDatabase() {
       ALTER TABLE distribution_lists ADD COLUMN IF NOT EXISTS avatar_data TEXT;
     `);
 
+    await client.query(`
+      -- System email templates (welcome, password reset, alerts, etc.)
+      CREATE TABLE IF NOT EXISTS system_email_templates (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        slug VARCHAR(100) NOT NULL UNIQUE,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        subject TEXT NOT NULL DEFAULT '',
+        body_html TEXT NOT NULL DEFAULT '',
+        body_text TEXT NOT NULL DEFAULT '',
+        variables JSONB NOT NULL DEFAULT '[]',
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Log alert rules: send an email when matching log events are recorded
+      CREATE TABLE IF NOT EXISTS log_alert_rules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        categories TEXT[] DEFAULT '{}',
+        actions TEXT[] DEFAULT '{}',
+        recipient_email VARCHAR(255) NOT NULL,
+        subject_template TEXT NOT NULL DEFAULT 'Alerte log : {{action}}',
+        throttle_minutes INTEGER NOT NULL DEFAULT 60,
+        last_triggered_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_log_alert_rules_enabled ON log_alert_rules(enabled) WHERE enabled = true;
+    `);
+
+    await client.query(`
+      INSERT INTO admin_settings (key, value, description) VALUES
+        ('smtp_host', '""', 'Serveur SMTP pour les emails système'),
+        ('smtp_port', '587', 'Port SMTP'),
+        ('smtp_secure', '"starttls"', 'Chiffrement SMTP : starttls, ssl, none'),
+        ('smtp_username', '""', 'Identifiant SMTP'),
+        ('smtp_password_encrypted', '""', 'Mot de passe SMTP chiffré'),
+        ('smtp_from_name', '"Mail Client"', 'Nom expéditeur des emails système'),
+        ('smtp_from_email', '""', 'Email expéditeur des emails système')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
+    await client.query(`
+      INSERT INTO system_email_templates (slug, name, description, subject, body_html, body_text, variables) VALUES
+        (
+          'welcome',
+          'Bienvenue',
+          'Envoyé lors de la création d''un compte utilisateur',
+          'Bienvenue {{user_name}} !',
+          '<div style="font-family:sans-serif;max-width:600px;margin:0 auto"><h2 style="color:#1a73e8">Bienvenue {{user_name}} !</h2><p>Votre compte a été créé avec succès.</p><p>Votre adresse email&nbsp;: <strong>{{user_email}}</strong></p>{{#if temp_password}}<p>Mot de passe temporaire&nbsp;: <code>{{temp_password}}</code></p>{{/if}}<p><a href="{{app_url}}" style="background:#1a73e8;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none">Accéder à la messagerie</a></p></div>',
+          'Bienvenue {{user_name}} !\n\nVotre compte a été créé avec succès.\nEmail : {{user_email}}\n{{#if temp_password}}Mot de passe temporaire : {{temp_password}}\n{{/if}}\nConnectez-vous sur : {{app_url}}',
+          '[{"key":"user_name","label":"Nom utilisateur","example":"Jean Dupont"},{"key":"user_email","label":"Email utilisateur","example":"jean@example.com"},{"key":"temp_password","label":"Mot de passe temporaire","example":"Abc123!"},{"key":"app_url","label":"URL application","example":"https://mail.example.com"}]'
+        ),
+        (
+          'password_reset',
+          'Réinitialisation du mot de passe',
+          'Envoyé lorsqu''un utilisateur demande une réinitialisation',
+          'Réinitialisation de votre mot de passe',
+          '<div style="font-family:sans-serif;max-width:600px;margin:0 auto"><h2 style="color:#1a73e8">Réinitialisation du mot de passe</h2><p>Bonjour {{user_name}},</p><p>Cliquez sur le bouton ci-dessous pour réinitialiser votre mot de passe. Ce lien est valable <strong>{{expiry_hours}} heure(s)</strong>.</p><p><a href="{{reset_link}}" style="background:#1a73e8;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none">Réinitialiser mon mot de passe</a></p><p style="color:#666;font-size:12px">Si vous n''avez pas fait cette demande, ignorez cet email.</p></div>',
+          'Bonjour {{user_name}},\n\nCliquez sur le lien ci-dessous pour réinitialiser votre mot de passe (valable {{expiry_hours}} h) :\n{{reset_link}}\n\nSi vous n''avez pas fait cette demande, ignorez cet email.',
+          '[{"key":"user_name","label":"Nom utilisateur","example":"Jean Dupont"},{"key":"user_email","label":"Email utilisateur","example":"jean@example.com"},{"key":"reset_link","label":"Lien de réinitialisation","example":"https://mail.example.com/reset?token=abc"},{"key":"expiry_hours","label":"Durée validité (h)","example":"24"}]'
+        ),
+        (
+          'log_alert',
+          'Alerte de log',
+          'Envoyé lors du déclenchement d''une règle d''alerte',
+          'Alerte : {{action}} ({{category}})',
+          '<div style="font-family:sans-serif;max-width:600px;margin:0 auto"><h2 style="color:#e53935">Alerte de sécurité / activité</h2><table style="width:100%;border-collapse:collapse"><tr><td style="padding:6px;font-weight:bold">Date</td><td style="padding:6px">{{date}}</td></tr><tr style="background:#f5f5f5"><td style="padding:6px;font-weight:bold">Catégorie</td><td style="padding:6px">{{category}}</td></tr><tr><td style="padding:6px;font-weight:bold">Action</td><td style="padding:6px">{{action}}</td></tr><tr style="background:#f5f5f5"><td style="padding:6px;font-weight:bold">Utilisateur</td><td style="padding:6px">{{user}}</td></tr><tr><td style="padding:6px;font-weight:bold">IP</td><td style="padding:6px">{{ip}}</td></tr><tr style="background:#f5f5f5"><td style="padding:6px;font-weight:bold">Détails</td><td style="padding:6px">{{details}}</td></tr></table></div>',
+          'Alerte log\n\nDate : {{date}}\nCatégorie : {{category}}\nAction : {{action}}\nUtilisateur : {{user}}\nIP : {{ip}}\nDétails : {{details}}',
+          '[{"key":"date","label":"Date","example":"2026-01-15 08:30"},{"key":"category","label":"Catégorie","example":"auth"},{"key":"action","label":"Action","example":"user.login_failed"},{"key":"user","label":"Utilisateur","example":"jean@example.com"},{"key":"ip","label":"Adresse IP","example":"192.168.1.1"},{"key":"details","label":"Détails","example":"Tentative #3"}]'
+        )
+      ON CONFLICT (slug) DO NOTHING;
+    `);
+
     // One-shot data fix: keep `is_admin` aligned with `role`. Older builds
     // of the admin UI submitted `role='admin'` without setting `is_admin`,
     // which left users with admin role but `is_admin=false`, hiding the

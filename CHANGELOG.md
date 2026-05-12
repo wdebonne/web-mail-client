@@ -11,6 +11,38 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.9.0] - 2026-05-12
+
+### Ajouté
+
+- **Journaux d'activité — refonte complète (Admin → Logs)**
+  - Filtrage avancé par catégorie, action (texte libre), utilisateur (dropdown), plage de dates (Du / Au), recherche textuelle globale, avec bouton « Réinitialiser ».
+  - Résumé des filtres actifs affiché au-dessus du tableau.
+  - Lignes détaillables au clic : ID complet, User-Agent, cible (type + ID), JSON brut des détails.
+  - Export des logs en **CSV** (UTF-8 BOM, compatible Excel) et **JSON** via téléchargement direct.
+  - **Envoi des logs par email** : modale permettant de choisir le destinataire, le nombre maximum d'entrées et les filtres actifs ; génère un tableau HTML stylisé.
+  - **Règles d'alerte email** (onglet « Alertes ») : CRUD complet pour déclencher automatiquement un email lorsqu'un log correspond à des catégories ou actions définies. Anti-spam par throttle en minutes. Déclenchement asynchrone intégré à `addLog()` — aucun impact sur les performances.
+
+- **SMTP & Emails système — nouvel onglet Admin (Admin → SMTP & Emails)**
+  - **Configuration SMTP centralisée** : hôte, port, chiffrement (STARTTLS / SSL / Aucun), identifiant, mot de passe (chiffré AES en base, masqué à l'écran), nom et email expéditeur.
+  - Bouton **Tester la connexion** : vérifie la connexion SMTP (`verify()`) et peut envoyer un email de test à une adresse arbitraire.
+  - **Gestionnaire de templates d'emails système** : templates pré-installés *Bienvenue*, *Réinitialisation du mot de passe* et *Alerte log*. Activation / désactivation individuelle par toggle.
+  - **Éditeur de template plein écran** avec :
+    - Trois onglets : **HTML** (corps email), **Texte brut** (fallback), **Aperçu** (rendu live dans iframe sandboxée).
+    - Système de **variables** (`{{clé}}`) : ajout/suppression de variables avec clé, label et valeur d'exemple. Chips cliquables pour insérer la variable dans le corps actif.
+    - Panel de **valeurs de prévisualisation** : saisir des valeurs remplaçant les `{{variables}}` dans l'aperçu en temps réel.
+    - Bouton **Envoyer un test** : envoie le template avec les valeurs saisies vers une adresse de destination.
+
+### Technique
+
+- **Serveur** : `database/connection.ts` — ajout des tables `system_email_templates` (slug unique, sujet, corps HTML + texte, variables JSONB, enabled) et `log_alert_rules` (catégories[], actions[], destinataire, throttle). Nouvelles clés SMTP dans `admin_settings`. Insertion des 3 templates par défaut (`welcome`, `password_reset`, `log_alert`) via `ON CONFLICT DO NOTHING`.
+- **Serveur** : `routes/admin.ts` — import `nodemailer` ajouté. Fonctions utilitaires `getSmtpSettings()`, `buildSmtpTransport()`, `renderTemplate()`, `sendSystemEmail()`. Fonction `triggerLogAlerts()` appelée de façon asynchrone à chaque `addLog()`. Nouveaux endpoints : `GET/PUT /admin/smtp`, `POST /admin/smtp/test`, `GET/POST/PUT/DELETE /admin/system-templates`, `POST /admin/system-templates/:id/test`, `GET /admin/logs/export` (CSV/JSON), `POST /admin/logs/email`, `GET/POST/PUT/DELETE /admin/log-alerts`.
+- **Client** : `api/index.ts` — ajout de `exportAdminLogs()`, `emailAdminLogs()`, `getLogAlerts()`, `createLogAlert()`, `updateLogAlert()`, `deleteLogAlert()`, `getSmtpConfig()`, `updateSmtpConfig()`, `testSmtpConfig()`, `getSystemTemplates()`, `createSystemTemplate()`, `updateSystemTemplate()`, `deleteSystemTemplate()`, `testSystemTemplate()`.
+- **Client** : `AdminPage.tsx` — `LogsPanel` entièrement réécrite. Ajout de l'onglet `smtp` dans la barre de navigation admin. Import `AdminSmtpSettings`. Icônes `Download`, `Send`, `AlertTriangle`, `Eye`, `EyeOff` ajoutées.
+- **Client** : `components/admin/AdminSmtpSettings.tsx` — nouveau composant (config SMTP + gestionnaire de templates avec éditeur live).
+
+---
+
 ## [1.8.6] - 2026-05-12
 
 ### Ajouté
