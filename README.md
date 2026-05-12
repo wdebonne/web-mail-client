@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.8.6-blue)
+![Version](https://img.shields.io/badge/version-1.9.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -176,7 +176,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 📋 **Modèles de mail (admin)** : page dédiée listant tous les modèles de la plateforme (personnels par utilisateur + globaux), avec filtre texte sur nom / objet / propriétaire, badge de type, et actions modifier / partager / supprimer pour chaque ligne. Création d'un modèle pour le compte de n'importe quel utilisateur, ou en tant que **modèle global** automatiquement visible par tous les utilisateurs.
 - 📋 **Listes de distribution (admin)** : tableau listant toutes les listes de la plateforme avec recherche/filtre par nom ou propriétaire, affichage des listes archivées (supprimées par l'utilisateur), actions modifier / partager / restaurer / supprimer définitivement. Bouton **+ Créer une liste** en haut à droite pour créer une liste directement depuis le panneau admin sans quitter la page.
 - ⚙️ **Règles — gestion centralisée (admin)** : page dédiée visualisant toutes les règles de filtrage de tous les utilisateurs et groupes, avec vue globale / par utilisateur / par groupe, recherche avec autocomplétion. Bouton **+ Nouvelle règle** en haut à droite pour créer une règle directement depuis l'admin via le wizard 3-étapes.
-- 📋 Logs d'audit avec filtrage par catégorie et recherche
+- 📋 **Journaux d'activité avancés** : filtrage multi-critères (catégorie, action, utilisateur, plage de dates, recherche texte), lignes détaillables au clic (ID, User-Agent, JSON détails), export **CSV** et **JSON** en un clic, **envoi par email** d'un rapport filtré. Onglet **Alertes** : règles d'alerte email automatiques déclenchées sur des catégories/actions définies, avec anti-spam (throttle en minutes) et déclenchement asynchrone sans impact sur les performances.
+- 📧 **SMTP & Emails système** : configuration SMTP centralisée (hôte, port, chiffrement STARTTLS/SSL, identifiant, mot de passe chiffré, expéditeur), test de connexion avec envoi optionnel. **Gestionnaire de templates d'emails système** (Bienvenue, Réinitialisation de mot de passe, Alerte log…) avec éditeur plein écran : onglets HTML / Texte brut / **Aperçu live** (iframe sandboxée, substitution en temps réel), système de **variables** cliquables (`{{user_name}}`, `{{reset_link}}`…), panel de valeurs de test et bouton **Envoyer un test**.
 
 ### Intégration O2Switch (cPanel)
 - 🖥️ Gestion des comptes cPanel via UAPI v3
@@ -452,7 +453,22 @@ webmail/
 | Méthode | Route | Description |
 |---------|-------|-------------|
 | GET | `/api/admin/dashboard` | Statistiques système |
-| GET | `/api/admin/logs` | Logs d'audit |
+| GET | `/api/admin/logs` | Logs d'audit (filtres : category, action, userId, from, to, search, page, limit) |
+| GET | `/api/admin/logs/categories` | Liste des catégories de logs distinctes |
+| GET | `/api/admin/logs/export` | Export des logs en CSV ou JSON (`?format=csv\|json`) |
+| POST | `/api/admin/logs/email` | Envoyer un rapport de logs par email |
+| GET | `/api/admin/log-alerts` | Règles d'alerte email pour les logs |
+| POST | `/api/admin/log-alerts` | Créer une règle d'alerte |
+| PUT | `/api/admin/log-alerts/:id` | Modifier une règle d'alerte |
+| DELETE | `/api/admin/log-alerts/:id` | Supprimer une règle d'alerte |
+| GET | `/api/admin/smtp` | Configuration SMTP système |
+| PUT | `/api/admin/smtp` | Mettre à jour la configuration SMTP |
+| POST | `/api/admin/smtp/test` | Tester la connexion SMTP (+ envoi optionnel) |
+| GET | `/api/admin/system-templates` | Templates d'emails système |
+| POST | `/api/admin/system-templates` | Créer un template |
+| PUT | `/api/admin/system-templates/:id` | Modifier un template |
+| DELETE | `/api/admin/system-templates/:id` | Supprimer un template |
+| POST | `/api/admin/system-templates/:id/test` | Envoyer un email de test avec le template |
 | GET | `/api/admin/users` | Liste des utilisateurs |
 | POST | `/api/admin/users` | Créer un utilisateur |
 | PUT | `/api/admin/users/:id` | Modifier un utilisateur (nom, email, rôle, actif/inactif) |
