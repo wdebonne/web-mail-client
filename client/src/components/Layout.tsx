@@ -1,19 +1,22 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
 import { useUIStore } from '../stores/uiStore';
-import { motion } from 'motion/react';
+import { useQueryClient } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Mail, Calendar, Users, Settings, Shield, Search, KeyRound,
-  LogOut, Menu, Sun, Moon, Monitor, Check
+  LogOut, Menu, Sun, Moon, Monitor, Check, RefreshCw
 } from 'lucide-react';
 import CacheIndicator from './CacheIndicator';
 
 interface LayoutProps {
   children: ReactNode;
 }
+
+const PTR_THRESHOLD = 80;
 
 export default function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
@@ -22,11 +25,69 @@ export default function Layout({ children }: LayoutProps) {
   const themeResolved = useThemeStore((s) => s.resolved);
   const setThemeMode = useThemeStore((s) => s.setMode);
   const toggleMobileSidebar = useUIStore((s) => s.toggleMobileSidebar);
+  const queryClient = useQueryClient();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [ptrState, setPtrState] = useState<'idle' | 'pulling' | 'releasing' | 'refreshing'>('idle');
+  const [ptrY, setPtrY] = useState(0);
+  const ptrStartY = useRef(0);
+  const ptrActive = useRef(false);
+  const mainRef = useRef<HTMLElement | null>(null);
+
+  const triggerRefresh = useCallback(async () => {
+    setPtrState('refreshing');
+    await queryClient.invalidateQueries();
+    setTimeout(() => {
+      setPtrState('idle');
+      setPtrY(0);
+    }, 600);
+  }, [queryClient]);
+
+  const onTouchStart = useCallback((e: TouchEvent) => {
+    const el = mainRef.current;
+    if (!el) return;
+    if (el.scrollTop > 0) return;
+    ptrStartY.current = e.touches[0].clientY;
+    ptrActive.current = true;
+  }, []);
+
+  const onTouchMove = useCallback((e: TouchEvent) => {
+    if (!ptrActive.current) return;
+    const dy = e.touches[0].clientY - ptrStartY.current;
+    if (dy <= 0) { ptrActive.current = false; return; }
+    e.preventDefault();
+    const clamped = Math.min(dy * 0.5, PTR_THRESHOLD + 20);
+    setPtrY(clamped);
+    setPtrState(clamped >= PTR_THRESHOLD * 0.5 ? 'releasing' : 'pulling');
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    if (!ptrActive.current) return;
+    ptrActive.current = false;
+    if (ptrY >= PTR_THRESHOLD * 0.5) {
+      triggerRefresh();
+    } else {
+      setPtrState('idle');
+      setPtrY(0);
+    }
+  }, [ptrY, triggerRefresh]);
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [onTouchStart, onTouchMove, onTouchEnd]);
 
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -222,7 +283,27 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </nav>
 
-        <main className="flex-1 overflow-hidden bg-outlook-bg-tertiary p-0.5">
+        <main ref={mainRef} className="flex-1 overflow-hidden bg-outlook-bg-tertiary p-0.5 relative">
+          <AnimatePresence>
+            {ptrState !== 'idle' && (
+              <motion.div
+                key="ptr"
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: Math.max(0, ptrY - 32) }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                className="absolute top-0 left-0 right-0 flex justify-center z-50 pointer-events-none"
+              >
+                <div className="mt-2 w-9 h-9 rounded-full bg-outlook-blue shadow-lg flex items-center justify-center">
+                  <RefreshCw
+                    size={18}
+                    className={`text-white ${ptrState === 'refreshing' ? 'animate-spin' : ''}`}
+                    style={ptrState !== 'refreshing' ? { transform: `rotate(${Math.min(ptrY * 3, 360)}deg)` } : undefined}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           {children}
         </main>
       </div>
@@ -251,7 +332,7 @@ export default function Layout({ children }: LayoutProps) {
         })}
 
         <button
-          onClick={() => navigate(supportNavItems[0].path)}
+          onClick={() => navigate('/settings')}
           className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] min-h-[52px] transition-colors
             ${location.pathname.startsWith('/settings') ? 'text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
           `}
@@ -260,6 +341,19 @@ export default function Layout({ children }: LayoutProps) {
           <Settings size={20} />
           <span className="leading-tight truncate max-w-full px-1">{t('nav.settings')}</span>
         </button>
+
+        {user?.isAdmin && (
+          <button
+            onClick={() => navigate('/admin')}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] min-h-[52px] transition-colors
+              ${location.pathname.startsWith('/admin') ? 'text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
+            `}
+            aria-label={t('nav.admin')}
+          >
+            <Shield size={20} />
+            <span className="leading-tight truncate max-w-full px-1">{t('nav.admin')}</span>
+          </button>
+        )}
       </nav>
     </div>
   );
