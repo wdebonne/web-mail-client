@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { pool } from '../database/connection';
 import { AuthRequest, authMiddleware } from '../middleware/auth';
 import { sendSystemEmail } from '../services/systemEmail';
@@ -27,6 +28,7 @@ import {
   finishDiscoverableAuthentication,
 } from '../services/webauthn';
 import { z } from 'zod';
+import { addLog } from '../services/auditLog';
 
 const PENDING_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'change-me';
 
@@ -124,6 +126,7 @@ authRouter.post('/login', async (req, res) => {
          VALUES ($1, $2, $3, false, 'blacklist')`,
         [email, ip, ua]
       );
+      addLog(undefined, 'user.login_blocked', 'auth', req, { email, reason: 'blacklist' }).catch(() => {});
       return res.status(403).json({ error: 'Accès refusé depuis cette adresse IP' });
     }
 
@@ -147,6 +150,7 @@ authRouter.post('/login', async (req, res) => {
          VALUES ($1, $2, $3, false, 'unknown_email')`,
         [email, ip, ua]
       );
+      addLog(undefined, 'user.login_failed', 'auth', req, { email, reason: 'unknown_email' }).catch(() => {});
       return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
     }
 
@@ -160,6 +164,7 @@ authRouter.post('/login', async (req, res) => {
          VALUES ($1, $2, $3, $4, false, 'locked')`,
         [user.id, email, ip, ua]
       );
+      addLog(user.id, 'user.login_blocked', 'auth', req, { email, reason: 'locked' }).catch(() => {});
       return res.status(423).json({
         error: minutesLeft > 60 * 24
           ? 'Compte verrouillé. Contactez un administrateur.'
@@ -190,6 +195,11 @@ authRouter.post('/login', async (req, res) => {
          VALUES ($1, $2, $3, $4, false, $5)`,
         [user.id, email, ip, ua, lockedUntil ? 'locked' : null]
       );
+      addLog(user.id, lockedUntil ? 'user.login_blocked' : 'user.login_failed', 'auth', req, {
+        email,
+        reason: lockedUntil ? 'locked_now' : 'bad_password',
+        failedAttempts: newAttempts,
+      }).catch(() => {});
 
       const shouldAlert =
         (sec.alertEnabled && newAttempts >= sec.alertThreshold) ||
@@ -228,6 +238,7 @@ authRouter.post('/login', async (req, res) => {
        VALUES ($1, $2, $3, $4, true)`,
       [user.id, email, ip, ua]
     );
+    addLog(user.id, 'user.login', 'auth', req, { email, method: 'password' }).catch(() => {});
 
     // Step-up 2FA: if the user has registered at least one passkey, force
     // biometric proof before issuing a full session.
@@ -289,6 +300,23 @@ authRouter.post('/register', async (req, res) => {
 
     const { email, password, displayName } = registerSchema.parse(req.body);
 
+    // Domain restriction check (skipped for first user / admin creation)
+    if (!isFirstUser) {
+      const domainSetting = await pool.query(
+        "SELECT value FROM admin_settings WHERE key = 'registration_allowed_domains'"
+      );
+      const rawDomains = domainSetting.rows[0]?.value;
+      if (rawDomains && typeof rawDomains === 'string' && rawDomains.trim()) {
+        const allowed = rawDomains.split(',').map((d: string) => d.trim().toLowerCase()).filter(Boolean);
+        if (allowed.length > 0) {
+          const domain = email.split('@')[1]?.toLowerCase() || '';
+          if (!allowed.includes(domain)) {
+            return res.status(403).json({ error: 'Ce domaine email n\'est pas autorisé pour la création de compte' });
+          }
+        }
+      }
+    }
+
     // Check if email already exists
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
@@ -339,6 +367,61 @@ authRouter.post('/register', async (req, res) => {
   }
 });
 
+// Self-service forgot password — always returns the same generic message to prevent email enumeration
+authRouter.post('/forgot-password', async (req, res) => {
+  const GENERIC = { message: 'Si un compte existe avec cet email, un lien de réinitialisation vous a été envoyé. Vérifiez également vos courriers indésirables.' };
+  try {
+    const settingResult = await pool.query(
+      "SELECT value FROM admin_settings WHERE key = 'login_forgot_password'"
+    );
+    const enabled = settingResult.rows[0]?.value === true || settingResult.rows[0]?.value === 'true';
+    if (!enabled) return res.json(GENERIC);
+
+    const { email } = req.body;
+    if (!email || typeof email !== 'string') return res.json(GENERIC);
+
+    const userResult = await pool.query(
+      'SELECT id, email, display_name FROM users WHERE LOWER(email) = LOWER($1) AND is_active = true',
+      [email.trim()]
+    );
+    if (userResult.rows.length === 0) return res.json(GENERIC);
+
+    const user = userResult.rows[0];
+    const token = crypto.randomBytes(48).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await pool.query('DELETE FROM password_resets WHERE user_id = $1 AND used_at IS NULL', [user.id]);
+    await pool.query('INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)', [user.id, token, expiresAt]);
+
+    const origin = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+    const resetUrl = `${origin}/reset-password?token=${token}`;
+
+    try {
+      const tplResult = await pool.query(
+        "SELECT * FROM system_email_templates WHERE slug = 'password_reset' AND enabled = true"
+      );
+      if (tplResult.rows.length > 0) {
+        const tpl = tplResult.rows[0];
+        const vars: Record<string, string> = {
+          user_name: user.display_name || user.email,
+          user_email: user.email,
+          reset_link: resetUrl,
+          expiry_hours: '24',
+        };
+        const render = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+        await sendSystemEmail(user.email, render(tpl.subject), render(tpl.body_html), render(tpl.body_text));
+      }
+    } catch (emailErr) {
+      console.error('Forgot password email error:', emailErr);
+    }
+
+    res.json(GENERIC);
+  } catch (error: any) {
+    console.error('Forgot password error:', error);
+    res.json(GENERIC);
+  }
+});
+
 // Consume a password reset token (generated by admin)
 authRouter.post('/reset-password', async (req, res) => {
   try {
@@ -374,10 +457,12 @@ authRouter.post('/reset-password', async (req, res) => {
 
 // Logout — revoke the current device's refresh token + destroy legacy session.
 authRouter.post('/logout', async (req, res) => {
+  const logoutUserId: string | undefined = (req.session as any)?.userId;
   const presented = parseCookie(req.headers.cookie, REFRESH_COOKIE_NAME);
   if (presented) {
     try { await revokeByToken(presented); } catch { /* best effort */ }
   }
+  addLog(logoutUserId, 'user.logout', 'auth', req, {}).catch(() => {});
   res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
   req.session.destroy((err) => {
     if (err) {
@@ -582,6 +667,7 @@ authRouter.post('/webauthn/login/verify', async (req, res) => {
     req.session.isAdmin = user.is_admin;
 
     const { accessToken } = await issueSession(req, res, user.id, user.is_admin);
+    addLog(user.id, 'user.login', 'auth', req, { email: user.email, method: 'webauthn_2fa' }).catch(() => {});
     res.json({
       token: accessToken,
       user: {
@@ -664,6 +750,7 @@ authRouter.post('/webauthn/passkey/verify', async (req, res) => {
     req.session.isAdmin = user.is_admin;
 
     const { accessToken } = await issueSession(req, res, user.id, user.is_admin);
+    addLog(user.id, 'user.login', 'auth', req, { email: user.email, method: 'passkey' }).catch(() => {});
     res.json({
       token: accessToken,
       user: {

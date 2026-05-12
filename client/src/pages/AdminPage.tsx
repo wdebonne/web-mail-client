@@ -3151,6 +3151,8 @@ function LoginAppearanceSettings() {
   const [accentHover, setAccentHover] = useState('');
   const [showRegister, setShowRegister] = useState(true);
   const [showPasskey, setShowPasskey] = useState(true);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [allowedDomains, setAllowedDomains] = useState('');
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
@@ -3169,6 +3171,8 @@ function LoginAppearanceSettings() {
     setAccentHover(str(settings.login_accent_hover_color));
     setShowRegister(bool(settings.login_show_register, true));
     setShowPasskey(bool(settings.login_show_passkey_button, true));
+    setShowForgotPassword(bool(settings.login_forgot_password, false));
+    setAllowedDomains(str(settings.registration_allowed_domains));
   }, [settings]);
 
   const save = () => {
@@ -3184,6 +3188,8 @@ function LoginAppearanceSettings() {
       login_accent_hover_color: accentHover.trim() || null,
       login_show_register: showRegister,
       login_show_passkey_button: showPasskey,
+      login_forgot_password: showForgotPassword,
+      registration_allowed_domains: allowedDomains.trim() || null,
     });
   };
 
@@ -3416,6 +3422,29 @@ function LoginAppearanceSettings() {
               />
               Afficher le lien « Créer un compte »
             </label>
+            <label className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showForgotPassword}
+                onChange={(e) => setShowForgotPassword(e.target.checked)}
+              />
+              Afficher le lien « Mot de passe oublié ? »
+            </label>
+          </div>
+
+          {/* Restriction de domaine pour l'inscription */}
+          <div>
+            <h4 className="text-sm font-semibold mb-2">Restriction de domaine (inscription)</h4>
+            <input
+              type="text"
+              value={allowedDomains}
+              onChange={(e) => setAllowedDomains(e.target.value)}
+              placeholder="domaine.fr,domaine.com"
+              className="w-full border border-outlook-border rounded-md px-3 py-2 text-sm font-mono mt-1"
+            />
+            <p className="text-xs text-outlook-text-disabled mt-1">
+              Domaines autorisés à créer un compte, séparés par des virgules. Laisser vide pour autoriser tous les domaines.
+            </p>
           </div>
 
           <div className="pt-2 flex gap-2">
@@ -3433,6 +3462,7 @@ function LoginAppearanceSettings() {
                 setCardBg(''); setCardText('');
                 setAccent(''); setAccentHover('');
                 setShowRegister(true); setShowPasskey(true);
+                setShowForgotPassword(false); setAllowedDomains('');
               }}
               className="border border-outlook-border px-4 py-2 rounded-md text-sm hover:bg-outlook-bg-hover"
             >

@@ -11,6 +11,48 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.12.0] - 2026-05-12
+
+### Ajouté
+
+- **Mot de passe oublié (auto-service)**
+  - Lien « Mot de passe oublié ? » activable depuis *Admin → Apparence connexion → Options affichées*. Lorsqu'activé, il apparaît sous le champ mot de passe sur la page de connexion et ouvre un mini-formulaire email dans la même carte.
+  - Le serveur génère un token de réinitialisation (48 octets, durée 24 h), invalide l'éventuel token précédent non consommé, puis envoie le template SMTP `password_reset` via le service email système.
+  - **Réponse toujours identique** (succès ou email inconnu) pour éviter l'énumération d'adresses : *« Si un compte existe avec cet email, un lien vous a été envoyé. Vérifiez vos courriers indésirables. »*
+
+- **Restriction de domaine pour l'inscription**
+  - Nouveau champ *Domaines autorisés* dans *Admin → Apparence connexion*. Accepte une liste de domaines séparés par des virgules (ex. `domaine.fr,domaine.com`).
+  - Toute tentative d'inscription depuis un domaine non listé retourne une erreur 403 : *« Ce domaine email n'est pas autorisé »*.
+  - Laissé vide = tous les domaines acceptés. Ignoré pour le tout premier compte créé (admin).
+
+### Technique
+
+- **Serveur** : `routes/auth.ts` — import `crypto` ajouté. Nouvel endpoint `POST /auth/forgot-password` : vérifie le paramètre `login_forgot_password`, cherche l'utilisateur (insensible à la casse), génère un token via `crypto.randomBytes(48)`, appelle `sendSystemEmail` avec le template `password_reset`, retourne toujours le même message générique. Endpoint `POST /auth/register` : vérification du domaine de l'email contre `registration_allowed_domains` (lecture base, split par virgule), ignorée pour le premier utilisateur.
+- **Serveur** : `routes/branding.ts` — `GET /api/branding` inclut désormais `login_forgot_password` et `registration_allowed_domains` dans la requête SQL ; `showForgotPassword` ajouté à l'objet `login_appearance` de la réponse.
+- **Client** : `api/index.ts` — nouvel appel `authForgotPassword(email)` (`POST /auth/forgot-password`) ; type de retour de `getBranding` étendu avec `showForgotPassword: boolean`.
+- **Client** : `LoginPage.tsx` — états `isForgot`, `forgotEmail`, `forgotSent`, `forgotLoading` ; lien « Mot de passe oublié ? » conditionnel sous le champ mot de passe ; vue dédiée dans la carte (formulaire email → confirmation générique → retour).
+- **Client** : `AdminPage.tsx` (`LoginAppearanceSettings`) — état `showForgotPassword` (checkbox) et `allowedDomains` (champ texte) ; chargés depuis `admin_settings`, inclus dans `save()` et dans le bouton *Réinitialiser*.
+
+---
+
+## [1.11.1] - 2026-05-12
+
+### Ajouté
+
+- **Journaux d'activité — événements de connexion et déconnexion**
+  - Les connexions réussies (`user.login`), les déconnexions (`user.logout`), les échecs d'authentification (`user.login_failed`) et les blocages (`user.login_blocked`) sont désormais enregistrés dans les journaux d'activité admin (catégorie `auth`).
+  - Chaque événement inclut l'email, la méthode d'authentification et la raison du blocage le cas échéant.
+  - Couvre tous les modes de connexion : mot de passe, WebAuthn 2FA (passkey en step-2), et passkey découvrable (FIDO2 sans mot de passe).
+  - Les règles d'alerte email existantes s'appliquent désormais aussi à la catégorie `auth`.
+
+### Technique
+
+- **Serveur** : `services/auditLog.ts` — NOUVEAU fichier, extrait `addLog()` et `triggerLogAlerts()` en service partagé (anciennement définis localement dans `routes/admin.ts`).
+- **Serveur** : `routes/admin.ts` — suppression des fonctions locales `addLog()` / `triggerLogAlerts()`, remplacées par l'import depuis `services/auditLog.ts`.
+- **Serveur** : `routes/auth.ts` — import de `addLog` ; appels ajoutés sur : connexion réussie (password, webauthn_2fa, passkey), déconnexion, échec mauvais mot de passe, email inconnu, IP blacklistée, compte verrouillé (existant ou verrouillé à l'instant).
+
+---
+
 ## [1.10.0] - 2026-05-12
 
 ### Ajouté
