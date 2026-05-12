@@ -907,8 +907,8 @@ export default function MessageList({
                         onDragStart: () => setActiveSwipeUid(message.uid),
                         onDrag: (_e: any, info: { offset: { x: number; y: number } }) => {
                           const dx = info.offset.x;
-                          if (dx < -48) setActiveSwipeDir('left');
-                          else if (dx > 48) setActiveSwipeDir('right');
+                          if (dx < -100) setActiveSwipeDir('left');
+                          else if (dx > 100) setActiveSwipeDir('right');
                           else setActiveSwipeDir(null);
                         },
                         onDragEnd: (_e: any, info: { offset: { x: number; y: number }; velocity: { x: number; y: number } }) => {
