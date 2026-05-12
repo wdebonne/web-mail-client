@@ -29,6 +29,7 @@ L'API utilise deux méthodes d'authentification :
 - [O2Switch cPanel](#o2switch-cpanel)
 - [Plugins](#plugins)
 - [Recherche](#recherche)
+- [Sauvegarde & restauration](#sauvegarde--restauration-admin)
 - [Notifications push](#notifications-push)
 - [Codes d'erreur](#codes-derreur)
 
@@ -2270,6 +2271,136 @@ Liste les appareils actuellement enregistrés pour l'utilisateur (pour affichage
     "last_used_at": "2026-04-22T09:30:00Z"
   }
 ]
+```
+
+---
+
+---
+
+## Sauvegarde & restauration *(admin)*
+
+Toutes les routes sont sous `/api/admin/backup` et nécessitent le rôle **admin**.
+Les sauvegardes sont des fichiers `.json.gz` stockés dans `server/backups/` sur le serveur.
+
+### GET /api/admin/backup/list
+
+Liste toutes les sauvegardes enregistrées.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "filename": "backup_2026-05-12T02-00-00_auto.json.gz",
+    "size_bytes": 204800,
+    "type": "auto",
+    "label": "Sauvegarde automatique",
+    "created_at": "2026-05-12T02:00:00Z",
+    "file_exists": true
+  }
+]
+```
+
+### POST /api/admin/backup/create
+
+Crée une sauvegarde manuelle immédiate.
+
+**Body :**
+```json
+{ "label": "Avant migration" }
+```
+
+**Réponse 200 :**
+```json
+{
+  "id": "uuid",
+  "filename": "backup_2026-05-12T15-30-00_manual.json.gz",
+  "sizeBytes": 204800
+}
+```
+
+### GET /api/admin/backup/download/:id
+
+Télécharge le fichier de sauvegarde correspondant à l'identifiant.
+
+**Réponse 200 :** Fichier binaire `.json.gz` (Content-Disposition: attachment).
+
+**Erreurs :**
+- `404` — Sauvegarde introuvable ou fichier absent du disque.
+
+### DELETE /api/admin/backup/:id
+
+Supprime une sauvegarde (fichier + entrée base de données).
+
+**Réponse 200 :** `{ "success": true }`
+
+### POST /api/admin/backup/restore
+
+Restaure la base de données depuis un fichier de sauvegarde uploadé.
+Toutes les données actuelles sont remplacées dans une transaction atomique.
+
+**Body :** `multipart/form-data`
+
+| Champ | Type | Requis | Description |
+|---|---|---|---|
+| `backup` | File | ✅ | Fichier `.json.gz` créé par cette application |
+| `oldUrl` | string | — | URL du serveur source (ex. `https://mail.ancien.fr`) |
+| `newUrl` | string | — | URL de ce serveur (ex. `https://mail.nouveau.fr`) |
+
+Quand `oldUrl` et `newUrl` sont fournis :
+- Toutes les valeurs de `admin_settings` contenant l'ancienne URL sont remplacées.
+- Si le **hostname change**, les credentials WebAuthn (`webauthn_credentials`) sont
+  supprimés car ils sont liés au domaine d'origine et bloqueraient la connexion.
+
+**Réponse 200 :** `{ "success": true }`
+
+**Erreurs :**
+- `400` — Fichier manquant.
+- `500` — Format invalide, fichier corrompu ou erreur de base de données (la transaction est annulée).
+
+### GET /api/admin/backup/settings
+
+Retourne la configuration de la sauvegarde automatique.
+
+**Réponse 200 :**
+```json
+{
+  "backup_auto_enabled": false,
+  "backup_frequency": "daily",
+  "backup_time": "02:00",
+  "backup_day_of_week": 1,
+  "backup_day_of_month": 1,
+  "backup_retention_daily": 7,
+  "backup_retention_weekly": 4,
+  "backup_retention_monthly": 12,
+  "backup_retention_yearly": 3,
+  "backup_last_auto_run": "2026-05-12T02:00:00Z"
+}
+```
+
+### PUT /api/admin/backup/settings
+
+Met à jour la configuration de la sauvegarde automatique.
+
+**Body :** Un ou plusieurs des champs ci-dessus (seuls les champs autorisés sont acceptés).
+
+**Réponse 200 :** `{ "success": true }`
+
+### GET /api/admin/backup/stats
+
+Retourne le nombre de lignes par table et l'utilisation disque des sauvegardes.
+
+**Réponse 200 :**
+```json
+{
+  "table_counts": {
+    "users": 12,
+    "mail_accounts": 34,
+    "contacts": 156
+  },
+  "disk_usage_bytes": 1048576,
+  "backup_file_count": 8
+}
 ```
 
 ---

@@ -1,4 +1,128 @@
-# Sauvegarde & restauration de la configuration locale
+# Sauvegarde & restauration
+
+WebMail propose **deux systèmes de sauvegarde complémentaires** :
+
+| | Sauvegarde serveur (base de données) | Sauvegarde locale (navigateur) |
+|---|---|---|
+| **Accès** | Admin → Système → Sauvegarde | Paramètres → Sauvegarde |
+| **Contenu** | Toute la base de données (utilisateurs, comptes, paramètres…) | Configuration locale du navigateur (signatures, thème, préférences…) |
+| **Format** | `.json.gz` (JSON compressé) | `.json` |
+| **Usage** | Migration serveur, reprise après incident | Changement de navigateur ou de PC |
+
+---
+
+## Sauvegarde serveur (Admin → Système → Sauvegarde)
+
+Cette fonctionnalité permet de **sauvegarder et restaurer l'intégralité de l'application** :
+utilisateurs, mots de passe, comptes mail IMAP/SMTP, paramètres administrateur, contacts,
+calendriers, règles, modèles, plugins, listes de distribution, sécurité IP, passkeys WebAuthn.
+
+> **Important :** Pour que les mots de passe de comptes mail chiffrés soient déchiffrables
+> après restauration, la variable `ENCRYPTION_KEY` du fichier `.env` doit être identique sur
+> les deux serveurs.
+
+### Contenu de la sauvegarde
+
+Les tables suivantes sont incluses dans le fichier `.json.gz` :
+
+| Catégorie | Tables |
+|---|---|
+| Utilisateurs | `users`, `groups`, `user_groups`, `user_preferences`, `webauthn_credentials` |
+| Comptes mail | `mail_accounts`, `mailbox_assignments`, `shared_mailbox_access` |
+| Contacts | `contacts`, `contact_groups`, `contact_group_members`, `distribution_lists` |
+| Calendriers | `calendars`, `calendar_events`, `shared_calendar_access`, `external_calendar_shares` |
+| Messagerie | `auto_responders`, `mail_templates`, `mail_template_shares`, `mail_rules` |
+| Intégrations | `nextcloud_users`, `o2switch_accounts`, `o2switch_email_links` |
+| Plugins | `plugins`, `plugin_assignments` |
+| Système | `admin_settings`, `ip_security_list`, `log_alert_rules`, `system_email_templates` |
+
+**Non inclus** (données transitoires ou resynchronisables) :
+- `cached_emails` — resynchronisé depuis les serveurs IMAP
+- `sessions`, `device_sessions` — les utilisateurs se reconnecteront après restauration
+- `login_attempts`, `password_resets` — données éphémères de sécurité
+- `outbox` — mails en attente d'envoi
+
+### Sauvegarde manuelle
+
+1. Aller dans **Admin → Système → Sauvegarde**.
+2. Renseigner un label (optionnel).
+3. Cliquer sur **Créer la sauvegarde**.
+4. Le fichier `.json.gz` apparaît dans la liste avec sa date, sa taille et son type.
+
+### Sauvegarde automatique planifiée
+
+Configurable dans la section **Sauvegarde automatique** :
+
+| Paramètre | Description |
+|---|---|
+| Activer | Toggle on/off |
+| Fréquence | Quotidienne, hebdomadaire, mensuelle |
+| Heure (UTC) | Heure d'exécution (ex. `02:00`) |
+| Jour | Jour de la semaine (hebdo) ou du mois (mensuel) |
+
+Le planificateur démarre avec le serveur et vérifie chaque minute si une sauvegarde est due.
+Un mécanisme anti-doublon empêche deux exécutions dans la même fenêtre de temps.
+
+### Rétention intelligente
+
+La politique de rétention s'applique aux **sauvegardes automatiques** uniquement
+(les sauvegardes manuelles ne sont jamais supprimées automatiquement).
+
+| Règle | Description par défaut |
+|---|---|
+| Dernières N | Garder les 7 dernières sauvegardes |
+| 1 par semaine | Sur les 4 dernières semaines |
+| 1 par mois | Sur les 12 derniers mois |
+| 1 par an | Sur les 3 dernières années |
+
+Les règles sont **cumulatives** : une sauvegarde peut satisfaire plusieurs critères
+(ex. la première sauvegarde du mois compte aussi pour le quota mensuel et annuel).
+
+### Télécharger une sauvegarde
+
+Cliquer sur l'icône **↓** dans la liste. Le fichier `.json.gz` est téléchargé directement
+depuis le serveur (authentification requise).
+
+### Supprimer une sauvegarde
+
+Cliquer sur l'icône **🗑** — une confirmation est demandée avant suppression définitive
+du fichier sur le disque et de l'entrée en base de données.
+
+### Restauration
+
+> ⚠️ **Action destructive** : toutes les données actuelles de la base sont remplacées.
+> Effectuez une sauvegarde préalable si nécessaire.
+
+1. Aller dans **Admin → Système → Sauvegarde → section Restaurer depuis un fichier**.
+2. Cliquer sur **Choisir un fichier .json.gz…** et sélectionner votre sauvegarde.
+3. La modale de confirmation s'affiche.
+4. **(Migration vers un autre serveur)** Renseigner les champs **URL source** et **URL cible** :
+   - **URL source** — l'URL du serveur d'origine (ex. `https://mail.mondomaine.fr`)
+   - **URL cible** — l'URL de ce serveur (ex. `https://mail.autre-serveur.fr`)
+   - Tous les paramètres admin contenant l'ancienne URL sont remplacés automatiquement
+     (`public_url`, WebAuthn RP ID, redirections OAuth…).
+   - Si le **hostname change**, les passkeys (WebAuthn) sont **supprimées automatiquement**
+     car elles sont liées au domaine d'origine et bloqueraient la connexion. Les utilisateurs
+     peuvent se reconnecter avec leur mot de passe et enregistrer une nouvelle passkey.
+5. Cliquer sur **Restaurer quand même**.
+6. La restauration s'effectue dans une transaction — en cas d'erreur, aucune donnée n'est
+   partiellement écrite.
+7. Tous les utilisateurs sont déconnectés ; reconnectez-vous pour vérifier le résultat.
+
+### Emplacement des fichiers sur le serveur
+
+Les sauvegardes sont stockées dans le répertoire `server/backups/` du conteneur.
+Pour les persister entre les redémarrements Docker, montez ce dossier en volume :
+
+```yaml
+# docker-compose.yml
+volumes:
+  - ./backups:/app/backups
+```
+
+---
+
+## Sauvegarde locale (Paramètres → Sauvegarde)
 
 WebMail stocke une partie de la configuration utilisateur **directement dans le
 navigateur** (`localStorage`), indépendamment du serveur : signatures, catégories,
@@ -12,15 +136,24 @@ Accès : **Paramètres → Sauvegarde** (icône disque dur dans la barre latéra
 
 ## Table des matières
 
+### Sauvegarde serveur (base de données)
+- [Contenu de la sauvegarde](#contenu-de-la-sauvegarde)
+- [Sauvegarde manuelle](#sauvegarde-manuelle)
+- [Sauvegarde automatique planifiée](#sauvegarde-automatique-planifiée)
+- [Rétention intelligente](#rétention-intelligente)
+- [Restauration](#restauration)
+- [Emplacement des fichiers sur le serveur](#emplacement-des-fichiers-sur-le-serveur)
+
+### Sauvegarde locale (navigateur)
 - [Ce qui est sauvegardé](#ce-qui-est-sauvegardé)
 - [Ce qui n'est PAS sauvegardé](#ce-qui-nest-pas-sauvegardé)
-- [Sauvegarde manuelle](#sauvegarde-manuelle)
-- [Sauvegarde automatique](#sauvegarde-automatique)
+- [Sauvegarde manuelle (locale)](#sauvegarde-manuelle-1)
+- [Sauvegarde automatique (locale)](#sauvegarde-automatique)
   - [Navigateurs compatibles](#navigateurs-compatibles)
   - [Choix du dossier](#choix-du-dossier)
   - [Nom de fichier personnalisé](#nom-de-fichier-personnalisé)
   - [Déclencheurs](#déclencheurs)
-- [Restauration](#restauration)
+- [Restauration (locale)](#restauration-1)
 - [Format du fichier](#format-du-fichier)
 - [Intégration avec Duplicati / autres outils de backup](#intégration-avec-duplicati--autres-outils-de-backup)
 - [Dépannage](#dépannage)

@@ -275,6 +275,36 @@ function RestoreModal({ filename, onConfirm, onCancel, loading }: {
               />
             </div>
           </div>
+          {/* Dynamic passkey warning */}
+          {(() => {
+            try {
+              const oh = new URL(oldUrl.startsWith('http') ? oldUrl : `https://${oldUrl}`).hostname;
+              const nh = new URL(newUrl.startsWith('http') ? newUrl : `https://${newUrl}`).hostname;
+              if (oldUrl && newUrl && oh !== nh) {
+                return (
+                  <div className="flex gap-2 bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-700">
+                    <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+                    <span>
+                      Le domaine change (<strong>{oh}</strong> → <strong>{nh}</strong>).
+                      Les <strong>passkeys (clés d'accès)</strong> seront automatiquement supprimées
+                      car elles sont liées à l'ancien domaine et bloqueraient la connexion.
+                      Les utilisateurs pourront se reconnecter avec leur mot de passe et enregistrer
+                      une nouvelle passkey.
+                    </span>
+                  </div>
+                );
+              }
+              if (oldUrl && newUrl && oh === nh) {
+                return (
+                  <div className="flex gap-2 bg-green-50 border border-green-200 rounded p-2 text-xs text-green-700">
+                    <CheckCircle2 size={13} className="flex-shrink-0 mt-0.5" />
+                    <span>Même domaine — les passkeys seront conservées et resteront fonctionnelles.</span>
+                  </div>
+                );
+              }
+            } catch { /* URL pas encore complète */ }
+            return null;
+          })()}
         </div>
 
         <div className="flex gap-3 justify-end">

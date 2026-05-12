@@ -298,6 +298,20 @@ export async function restoreFromBackup(data: Buffer, urlReplacement?: UrlReplac
     }
 
     logger.info(`Post-restore URL replacement: ${oldUrl} → ${newUrl}`);
+
+    // If the hostname changed, WebAuthn credentials are cryptographically bound
+    // to the old RP ID and will never validate on the new domain.
+    // Delete them so users can still log in with password and re-register a passkey.
+    try {
+      const oldHost = new URL(oldUrl.startsWith('http') ? oldUrl : `https://${oldUrl}`).hostname;
+      const newHost = new URL(newUrl.startsWith('http') ? newUrl : `https://${newUrl}`).hostname;
+      if (oldHost !== newHost) {
+        const del = await pool.query('DELETE FROM webauthn_credentials');
+        logger.info(`Deleted ${del.rowCount} WebAuthn credential(s) — RP ID changed (${oldHost} → ${newHost})`);
+      }
+    } catch {
+      // URL parsing failed — skip; credentials were already restored
+    }
   }
 }
 
