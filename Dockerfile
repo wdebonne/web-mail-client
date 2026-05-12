@@ -37,7 +37,7 @@ COPY --from=builder /app/server/dist ./server/dist
 COPY --from=builder /app/client/dist ./server/dist/public
 
 # Create directories
-RUN mkdir -p /app/plugins /app/uploads /app/data
+RUN mkdir -p /app/plugins /app/server/uploads/branding /app/server/backups /app/data
 
 EXPOSE 3000
 

@@ -29,7 +29,8 @@ services:
       - TAURI_BUILDER_URL=${TAURI_BUILDER_URL:-http://tauri-builder:4000}
     volumes:
       - ./plugins:/app/plugins
-      - ./uploads:/app/uploads
+      - ./uploads:/app/server/uploads
+      - ./backups:/app/server/backups
       - app_data:/app/data
       - tauri_downloads:/app/server/downloads
     depends_on:
