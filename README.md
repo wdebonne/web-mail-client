@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.11.1-blue)
+![Version](https://img.shields.io/badge/version-1.12.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -180,6 +180,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - ⚙️ **Règles — gestion centralisée (admin)** : page dédiée visualisant toutes les règles de filtrage de tous les utilisateurs et groupes, avec vue globale / par utilisateur / par groupe, recherche avec autocomplétion. Bouton **+ Nouvelle règle** en haut à droite pour créer une règle directement depuis l'admin via le wizard 3-étapes.
 - 📋 **Journaux d'activité avancés** : filtrage multi-critères (catégorie, action, utilisateur, plage de dates, recherche texte), lignes détaillables au clic (ID, User-Agent, JSON détails), export **CSV** et **JSON** en un clic, **envoi par email** d'un rapport filtré. Onglet **Alertes** : règles d'alerte email automatiques déclenchées sur des catégories/actions définies, avec anti-spam (throttle en minutes) et déclenchement asynchrone sans impact sur les performances.
 - 📧 **SMTP & Emails système** : configuration SMTP centralisée (hôte, port, chiffrement STARTTLS/SSL, identifiant, mot de passe chiffré, expéditeur), test de connexion avec envoi optionnel. **Gestionnaire de templates d'emails système** (Bienvenue, Réinitialisation de mot de passe, Alerte log…) avec éditeur plein écran : onglets HTML / Texte brut / **Aperçu live** (iframe sandboxée, substitution en temps réel), système de **variables** cliquables (`{{user_name}}`, `{{reset_link}}`…), panel de valeurs de test et bouton **Envoyer un test**.
+- 🔑 **Apparence page de connexion — mot de passe oublié** : option activable/désactivable depuis l'admin (*Apparence connexion → Options affichées*). Lorsqu'activé, un lien « Mot de passe oublié ? » apparaît sur la page de connexion ; l'utilisateur saisit son email et reçoit un lien de réinitialisation valable 24 h via le template SMTP `password_reset`. La réponse est toujours identique que l'email existe ou non (protection contre l'énumération d'adresses).
+- 🌐 **Restriction de domaine pour l'inscription** : champ *Domaines autorisés* dans l'admin (*Apparence connexion*) acceptant une liste de domaines séparés par des virgules (ex. `domaine.fr,domaine.com`). Toute tentative d'inscription depuis un domaine non autorisé est rejetée. Vide = tous les domaines acceptés. Ignoré pour le premier utilisateur (admin).
 
 ### Intégration O2Switch (cPanel)
 - 🖥️ Gestion des comptes cPanel via UAPI v3

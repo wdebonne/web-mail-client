@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { pool } from '../database/connection';
 import { AuthRequest, authMiddleware } from '../middleware/auth';
 import { sendSystemEmail } from '../services/systemEmail';
@@ -299,6 +300,23 @@ authRouter.post('/register', async (req, res) => {
 
     const { email, password, displayName } = registerSchema.parse(req.body);
 
+    // Domain restriction check (skipped for first user / admin creation)
+    if (!isFirstUser) {
+      const domainSetting = await pool.query(
+        "SELECT value FROM admin_settings WHERE key = 'registration_allowed_domains'"
+      );
+      const rawDomains = domainSetting.rows[0]?.value;
+      if (rawDomains && typeof rawDomains === 'string' && rawDomains.trim()) {
+        const allowed = rawDomains.split(',').map((d: string) => d.trim().toLowerCase()).filter(Boolean);
+        if (allowed.length > 0) {
+          const domain = email.split('@')[1]?.toLowerCase() || '';
+          if (!allowed.includes(domain)) {
+            return res.status(403).json({ error: 'Ce domaine email n\'est pas autorisé pour la création de compte' });
+          }
+        }
+      }
+    }
+
     // Check if email already exists
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
@@ -346,6 +364,61 @@ authRouter.post('/register', async (req, res) => {
     }
     console.error('Register error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Self-service forgot password — always returns the same generic message to prevent email enumeration
+authRouter.post('/forgot-password', async (req, res) => {
+  const GENERIC = { message: 'Si un compte existe avec cet email, un lien de réinitialisation vous a été envoyé. Vérifiez également vos courriers indésirables.' };
+  try {
+    const settingResult = await pool.query(
+      "SELECT value FROM admin_settings WHERE key = 'login_forgot_password'"
+    );
+    const enabled = settingResult.rows[0]?.value === true || settingResult.rows[0]?.value === 'true';
+    if (!enabled) return res.json(GENERIC);
+
+    const { email } = req.body;
+    if (!email || typeof email !== 'string') return res.json(GENERIC);
+
+    const userResult = await pool.query(
+      'SELECT id, email, display_name FROM users WHERE LOWER(email) = LOWER($1) AND is_active = true',
+      [email.trim()]
+    );
+    if (userResult.rows.length === 0) return res.json(GENERIC);
+
+    const user = userResult.rows[0];
+    const token = crypto.randomBytes(48).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await pool.query('DELETE FROM password_resets WHERE user_id = $1 AND used_at IS NULL', [user.id]);
+    await pool.query('INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)', [user.id, token, expiresAt]);
+
+    const origin = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+    const resetUrl = `${origin}/reset-password?token=${token}`;
+
+    try {
+      const tplResult = await pool.query(
+        "SELECT * FROM system_email_templates WHERE slug = 'password_reset' AND enabled = true"
+      );
+      if (tplResult.rows.length > 0) {
+        const tpl = tplResult.rows[0];
+        const vars: Record<string, string> = {
+          user_name: user.display_name || user.email,
+          user_email: user.email,
+          reset_link: resetUrl,
+          expiry_hours: '24',
+        };
+        const render = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+        await sendSystemEmail(user.email, render(tpl.subject), render(tpl.body_html), render(tpl.body_text));
+      }
+    } catch (emailErr) {
+      console.error('Forgot password email error:', emailErr);
+    }
+
+    res.json(GENERIC);
+  } catch (error: any) {
+    console.error('Forgot password error:', error);
+    res.json(GENERIC);
   }
 });
 

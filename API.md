@@ -49,6 +49,10 @@ Création d'un compte utilisateur. Le premier utilisateur créé obtient le rôl
 }
 ```
 
+**Erreurs :**
+- `403` — Inscription désactivée (`allow_registration = false`) ou domaine non autorisé (voir paramètre admin `registration_allowed_domains`).
+- `409` — Email déjà utilisé.
+
 **Réponse 201 :**
 ```json
 {
@@ -61,6 +65,22 @@ Création d'un compte utilisateur. Le premier utilisateur créé obtient le rôl
   "token": "eyJhbGciOi..."
 }
 ```
+
+### POST /api/auth/forgot-password
+
+Demande de réinitialisation du mot de passe par l'utilisateur (auto-service). Nécessite que le paramètre admin `login_forgot_password` soit activé.
+
+**Body :**
+```json
+{ "email": "user@example.com" }
+```
+
+**Réponse 200 :**
+```json
+{ "message": "Si un compte existe avec cet email, un lien de réinitialisation vous a été envoyé. Vérifiez également vos courriers indésirables." }
+```
+
+> La réponse est **toujours identique** que l'adresse email existe ou non, afin d'éviter l'énumération d'adresses. Si le compte existe et que le SMTP est configuré, un email est envoyé via le template `password_reset` avec un lien valable 24 h. Tout token précédent non consommé pour cet utilisateur est invalidé.
 
 ### POST /api/auth/login
 
@@ -1287,11 +1307,28 @@ Utilisé par le client pour initialiser `document.title` et `<link rel="icon">` 
     "icon192": true,
     "icon512": true,
     "apple": false
+  },
+  "login_appearance": {
+    "title": "WebMail",
+    "subtitle": "Connectez-vous à votre messagerie",
+    "backgroundColor": "#0078d4",
+    "backgroundImage": null,
+    "backgroundBlur": 0,
+    "backgroundOverlay": null,
+    "cardBgColor": "#ffffff",
+    "cardTextColor": "#323130",
+    "accentColor": "#0078d4",
+    "accentHoverColor": null,
+    "showRegister": true,
+    "showPasskeyButton": true,
+    "showForgotPassword": false
   }
 }
 ```
 
 Le champ `custom.<type>` indique si un fichier personnalisé a été téléversé (`true`) ou si l'icône par défaut du bundle est servie (`false`). Le suffixe `?v=...` dans les URLs est un hash du `mtime` du fichier côté serveur pour forcer le rafraîchissement lorsqu'un admin remplace l'image.
+
+`login_appearance.showForgotPassword` — contrôle l'affichage du lien « Mot de passe oublié ? » sur la page de connexion. Configurable dans *Admin → Apparence connexion*.
 
 ### POST /api/admin/branding/:type
 

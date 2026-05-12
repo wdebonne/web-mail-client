@@ -97,6 +97,12 @@ export const api = {
 
   logout: () => request('/auth/logout', { method: 'POST' }),
 
+  authForgotPassword: (email: string) =>
+    request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
   authResetPassword: (token: string, password: string) =>
     request<{ success: boolean }>('/auth/reset-password', {
       method: 'POST',
@@ -674,6 +680,7 @@ export const api = {
       accentHoverColor: string | null;
       showRegister: boolean;
       showPasskeyButton: boolean;
+      showForgotPassword: boolean;
     };
   }>('/branding'),
   uploadBrandingIcon: async (type: 'favicon' | 'icon192' | 'icon512' | 'apple', file: File) => {

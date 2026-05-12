@@ -29,6 +29,10 @@ export default function LoginPage() {
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [isForgot, setIsForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const { data: branding } = useQuery({
     queryKey: ['branding-public'],
@@ -114,6 +118,20 @@ export default function LoginPage() {
 
   const showPasskey = webauthnSupported && (appearance?.showPasskeyButton ?? true);
   const showRegister = appearance?.showRegister ?? true;
+  const showForgotPassword = appearance?.showForgotPassword ?? false;
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotLoading(true);
+    try {
+      await api.authForgotPassword(forgotEmail);
+      setForgotSent(true);
+    } catch {
+      setForgotSent(true); // Always show generic message
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   return (
     <div
@@ -142,6 +160,81 @@ export default function LoginPage() {
         className="relative bg-white rounded-lg shadow-2xl w-full max-w-md p-8"
         style={cardStyle}
       >
+        {/* ── Forgot password view ── */}
+        {isForgot && (
+          <div>
+            <div className="text-center mb-6">
+              <div
+                className="w-16 h-16 bg-outlook-blue rounded-xl flex items-center justify-center mx-auto mb-4"
+                style={primaryBtnStyle}
+              >
+                <Mail size={32} className="text-white" />
+              </div>
+              <h1 className="text-2xl font-semibold text-outlook-text-primary" style={cardStyle.color ? { color: cardStyle.color } : undefined}>
+                Mot de passe oublié
+              </h1>
+              <p className="text-outlook-text-secondary text-sm mt-1">
+                Entrez votre email pour recevoir un lien de réinitialisation.
+              </p>
+            </div>
+
+            {forgotSent ? (
+              <div className="space-y-4">
+                <div className="bg-green-50 border border-green-200 rounded-md p-3 text-sm text-green-700">
+                  Si un compte existe avec cet email, un lien de réinitialisation vous a été envoyé. Vérifiez également vos courriers indésirables.
+                </div>
+                <button
+                  onClick={() => { setIsForgot(false); setForgotSent(false); }}
+                  className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white py-2.5 rounded-md text-sm font-medium transition-colors"
+                  style={primaryBtnStyle}
+                >
+                  Retour à la connexion
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-outlook-text-primary mb-1">
+                    {t('login.email_label')}
+                  </label>
+                  <div className="relative">
+                    <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder={t('login.email_placeholder')}
+                      required
+                      autoComplete="email"
+                      className="w-full pl-10 pr-4 py-2.5 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white py-2.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+                  style={primaryBtnStyle}
+                >
+                  {forgotLoading ? 'Envoi…' : 'Envoyer le lien'}
+                </button>
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => { setIsForgot(false); setError(''); }}
+                    className="text-sm hover:underline"
+                    style={appearance?.accentColor ? { color: appearance.accentColor } : { color: '#0078d4' }}
+                  >
+                    Retour à la connexion
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+
+        {!isForgot && (
+        <>
         <div className="text-center mb-8">
           <div
             className="w-16 h-16 bg-outlook-blue rounded-xl flex items-center justify-center mx-auto mb-4"
@@ -269,6 +362,19 @@ export default function LoginPage() {
             </div>
           </div>
 
+          {showForgotPassword && !isRegister && (
+            <div className="text-right -mt-2">
+              <button
+                type="button"
+                onClick={() => { setIsForgot(true); setForgotEmail(email); setForgotSent(false); setError(''); }}
+                className="text-xs hover:underline"
+                style={appearance?.accentColor ? { color: appearance.accentColor } : { color: '#0078d4' }}
+              >
+                Mot de passe oublié ?
+              </button>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isLoading}
@@ -289,6 +395,8 @@ export default function LoginPage() {
               {isRegister ? t('login.switch_to_login') : t('login.switch_to_register')}
             </button>
           </div>
+        )}
+        </>
         )}
       </motion.div>
     </div>

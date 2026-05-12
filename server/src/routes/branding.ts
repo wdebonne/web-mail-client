@@ -54,7 +54,8 @@ brandingPublicRouter.get('/', async (_req, res) => {
         'login_background_blur', 'login_background_overlay',
         'login_card_bg_color', 'login_card_text_color',
         'login_accent_color', 'login_accent_hover_color',
-        'login_show_register', 'login_show_passkey_button'
+        'login_show_register', 'login_show_passkey_button',
+        'login_forgot_password', 'registration_allowed_domains'
       )`
     );
     const settings: Record<string, any> = {};
@@ -119,6 +120,7 @@ brandingPublicRouter.get('/', async (_req, res) => {
         accentHoverColor: str(settings.login_accent_hover_color, null),
         showRegister: bool(settings.login_show_register, true),
         showPasskeyButton: bool(settings.login_show_passkey_button, true),
+        showForgotPassword: bool(settings.login_forgot_password, false),
       },
     });
   } catch (error: any) {
