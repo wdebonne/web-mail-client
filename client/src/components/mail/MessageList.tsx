@@ -907,14 +907,15 @@ export default function MessageList({
                         onDragStart: () => setActiveSwipeUid(message.uid),
                         onDrag: (_e: any, info: { offset: { x: number; y: number } }) => {
                           const dx = info.offset.x;
-                          if (dx < -4) setActiveSwipeDir('left');
-                          else if (dx > 4) setActiveSwipeDir('right');
+                          if (dx < -24) setActiveSwipeDir('left');
+                          else if (dx > 24) setActiveSwipeDir('right');
+                          else setActiveSwipeDir(null);
                         },
                         onDragEnd: (_e: any, info: { offset: { x: number; y: number }; velocity: { x: number; y: number } }) => {
                           const dx = info.offset.x;
                           const vx = info.velocity.x;
-                          const threshold = 90; // px
-                          const fastFlick = Math.abs(vx) > 500 && Math.abs(dx) > 35;
+                          const threshold = 130; // px
+                          const fastFlick = Math.abs(vx) > 600 && Math.abs(dx) > 70;
                           // dx < 0 => swipe left => leftAction, dx > 0 => swipe right => rightAction
                           if ((dx <= -threshold || (fastFlick && dx < 0)) && leftMeta) {
                             setCommittingSwipe({ uid: message.uid, dir: 'left' });
