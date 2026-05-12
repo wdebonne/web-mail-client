@@ -11,6 +11,32 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.12.1] - 2026-05-12
+
+### Ajouté
+
+- **Sauvegarde & Restauration** (Admin → Système → Sauvegarde)
+  - **Sauvegarde manuelle** : crée à la demande un fichier `.json.gz` compressé contenant toutes les tables critiques de la base de données (utilisateurs, comptes mail, paramètres, calendriers, contacts, listes de distribution, règles, modèles, plugins, sécurité…). Les emails mis en cache (resynchronisables depuis IMAP) sont exclus pour limiter la taille.
+  - **Sauvegarde automatique planifiée** : activation/désactivation via toggle, choix de la fréquence (quotidienne, hebdomadaire, mensuelle), heure d'exécution (UTC), jour de la semaine ou du mois selon la fréquence choisie. Le planificateur démarre avec le serveur et vérifie chaque minute si une sauvegarde est due.
+  - **Rétention intelligente** : politique entièrement configurable — conserver les N dernières sauvegardes, 1 par semaine sur M semaines, 1 par mois sur P mois, 1 par an sur Q ans. Les règles sont cumulatives (une sauvegarde peut satisfaire plusieurs critères). Les fichiers obsolètes sont supprimés automatiquement du disque après chaque backup automatique.
+  - **Gestion des sauvegardes** : liste avec type (auto/manuel), label, date, taille, badge "Fichier manquant" si le fichier a été supprimé manuellement. Actions : téléchargement direct (fichier `.json.gz`), suppression avec confirmation obligatoire.
+  - **Restauration** : import d'un fichier `.json.gz` précédemment téléchargé. Confirmation double avec avertissement destructif clair avant écrasement des données. Toutes les tables sont tronquées puis réimportées dans l'ordre correct des dépendances de clés étrangères.
+  - **Portabilité serveur** : en restaurant une sauvegarde sur un nouveau serveur (avec les mêmes clés `ENCRYPTION_KEY` et `SESSION_SECRET` dans le `.env`), tous les utilisateurs, mots de passe, comptes mail, paramètres et personnalisations sont retrouvés opérationnels.
+
+### Technique
+
+- **Serveur** :
+  - `services/backupService.ts` — `createBackupFile()` (dump JSON gzip de 29 tables), `restoreFromBackup()` (TRUNCATE + ré-insertion par chunks de 100 lignes dans une transaction), `applyRetentionPolicy()` (algorithme de rétention multi-critères), `getBackupSettings()`.
+  - `services/backupScheduler.ts` — vérificateur minute par `setInterval`, anti-doublon via `backup_last_auto_run` dans `admin_settings`.
+  - `routes/backup.ts` — `GET /list`, `POST /create`, `GET /download/:id`, `DELETE /:id`, `POST /restore` (multer memoryStorage 500 MB), `GET /settings`, `PUT /settings`, `GET /stats`.
+  - `database/connection.ts` — nouvelle table `backup_records` (id, filename, size_bytes, type, label, created_at).
+  - `index.ts` — enregistrement de `/api/admin/backup` et démarrage du planificateur au boot.
+- **Client** :
+  - `components/admin/AdminBackup.tsx` — composant complet avec sections Créer, Liste, Restaurer, Paramètres auto, Rétention, modales de confirmation.
+  - `pages/AdminPage.tsx` — nouvel onglet `backup` dans le groupe Système avec icône `HardDrive`.
+
+---
+
 ## [1.12.0] - 2026-05-12
 
 ### Ajouté

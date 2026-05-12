@@ -22,6 +22,7 @@ import AdminMailTemplates from '../components/admin/AdminMailTemplates';
 import AdminRulesManagement from '../components/admin/AdminRulesManagement';
 import AdminApplications from '../components/admin/AdminApplications';
 import AdminSmtpSettings from '../components/admin/AdminSmtpSettings';
+import AdminBackup from '../components/admin/AdminBackup';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
@@ -29,7 +30,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -65,6 +66,7 @@ export default function AdminPage() {
     { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
     // Système
     { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
+    { id: 'backup' as const,          icon: HardDrive,      label: 'Sauvegarde',                  group: t('admin.group.system') },
     { id: 'loginAppearance' as const,icon: Palette,         label: t('admin.tab.loginAppearance'),group: t('admin.group.system') },
     { id: 'notifications' as const,  icon: Bell,            label: t('admin.tab.notifications'),  group: t('admin.group.system') },
     { id: 'devices' as const,        icon: Monitor,         label: t('admin.tab.devices'),        group: t('admin.group.system') },
@@ -157,6 +159,7 @@ export default function AdminPage() {
             {tab === 'system' && <SystemSettings />}
             {tab === 'distributionlists' && <AdminDistributionLists />}
             {tab === 'security' && <SecurityPanel />}
+            {tab === 'backup' && <AdminBackup />}
           </div>
         </div>
       </div>

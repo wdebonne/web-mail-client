@@ -867,6 +867,20 @@ export async function initDatabase() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
+    // Backup records — metadata for each created backup file
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS backup_records (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        filename VARCHAR(512) NOT NULL UNIQUE,
+        size_bytes BIGINT NOT NULL DEFAULT 0,
+        type VARCHAR(20) NOT NULL DEFAULT 'manual' CHECK (type IN ('manual', 'auto')),
+        label VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_backup_records_type ON backup_records(type);
+      CREATE INDEX IF NOT EXISTS idx_backup_records_created ON backup_records(created_at DESC);
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

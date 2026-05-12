@@ -27,6 +27,8 @@ import { rulesRouter, adminRulesRouter } from './routes/rules';
 import { nextcloudFilesRouter } from './routes/nextcloudFiles';
 import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES } from './routes/branding';
 import { applicationsRouter } from './routes/applications';
+import { backupRouter } from './routes/backup';
+import { startBackupScheduler } from './services/backupScheduler';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { setupWebSocket } from './services/websocket';
@@ -125,6 +127,7 @@ app.use('/api/rules', authMiddleware, rulesRouter);
 app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
 app.use('/api/admin/applications', authMiddleware, applicationsRouter);
+app.use('/api/admin/backup', authMiddleware, backupRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -179,6 +182,9 @@ async function start() {
 
     // Start periodic NextCloud sync (pulls calendars + contacts for provisioned users)
     startNextCloudSyncPoller().catch((err) => logger.error(err, 'Failed to start NextCloud sync poller'));
+
+    // Start automatic backup scheduler
+    startBackupScheduler();
 
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
