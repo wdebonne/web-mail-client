@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search, X, FileText, Plus, Edit2, Trash2, Share2, Globe, User as UserIcon,
-  Users as UsersIcon, Loader2, Save,
+  Users as UsersIcon, Loader2, Save, ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api, type MailTemplate, type MailTemplateShare } from '../../api';
@@ -392,6 +392,91 @@ export function MailTemplatesManagerModal({ onClose }: { onClose: () => void }) 
   );
 }
 
+function TemplateOwnerAutocomplete({ userId, setUserId, users }: {
+  userId: string | null;
+  setUserId: (v: string | null) => void;
+  users: any[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = userId ? users.find((u: any) => u.id === userId) ?? null : null;
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return users;
+    const q = query.toLowerCase();
+    return users.filter((u: any) =>
+      (u.display_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q),
+    );
+  }, [users, query]);
+
+  const handleSelect = (id: string | null) => {
+    setUserId(id);
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((v) => !v); setTimeout(() => inputRef.current?.focus(), 50); }}
+        className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded flex items-center justify-between gap-1
+                   bg-white hover:border-outlook-blue focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+      >
+        <span className={`truncate ${selected ? '' : 'text-outlook-text-secondary'}`}>
+          {selected
+            ? `${selected.display_name || selected.email} (${selected.email})`
+            : '— Sélectionner un utilisateur —'}
+        </span>
+        <ChevronDown size={13} className={`flex-shrink-0 text-outlook-text-secondary transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[10002]" onClick={() => { setOpen(false); setQuery(''); }} />
+          <div className="absolute z-[10003] mt-1 w-full bg-white border border-outlook-border rounded shadow-lg">
+            <div className="p-2 border-b border-outlook-border">
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher un utilisateur…"
+                className="w-full px-2 py-1 text-sm border border-outlook-border rounded
+                           focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+              />
+            </div>
+            <div className="max-h-48 overflow-y-auto py-1">
+              <button
+                onClick={() => handleSelect(null)}
+                className={`w-full text-left px-3 py-2 text-sm text-outlook-text-secondary hover:bg-outlook-bg-hover italic
+                  ${!userId ? 'bg-outlook-blue/10' : ''}`}
+              >
+                — Sélectionner un utilisateur —
+              </button>
+              {filtered.length === 0 && (
+                <div className="px-3 py-2 text-xs text-outlook-text-disabled italic">Aucun résultat</div>
+              )}
+              {filtered.map((u: any) => (
+                <button
+                  key={u.id}
+                  onClick={() => handleSelect(u.id)}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover
+                    ${userId === u.id ? 'bg-outlook-blue/10 font-medium text-outlook-blue' : ''}`}
+                >
+                  <div>{u.display_name || u.email}</div>
+                  {u.display_name && <div className="text-xs text-outlook-text-secondary">{u.email}</div>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Editor — create / edit a template (used by user manager and admin panel).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -508,18 +593,7 @@ export function MailTemplateEditor({
                   <label className="block text-xs font-medium text-outlook-text-secondary mb-1">
                     Propriétaire
                   </label>
-                  <select
-                    value={ownerUserId || ''}
-                    onChange={(e) => setOwnerUserId(e.target.value || null)}
-                    className="w-full px-2 py-1.5 text-sm border border-outlook-border rounded bg-white"
-                  >
-                    <option value="">— Sélectionner un utilisateur —</option>
-                    {users.map((u: any) => (
-                      <option key={u.id} value={u.id}>
-                        {u.display_name || u.email} ({u.email})
-                      </option>
-                    ))}
-                  </select>
+                  <TemplateOwnerAutocomplete userId={ownerUserId} setUserId={setOwnerUserId} users={users} />
                 </div>
               )}
             </div>
