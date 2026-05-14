@@ -28,7 +28,7 @@ L'API utilise deux méthodes d'authentification :
 - [Logs d'audit](#logs-daudit)
 - [O2Switch cPanel](#o2switch-cpanel)
 - [Plugins](#plugins)
-- [Recherche](#recherche)
+- [Recherche unifiée](#recherche)
 - [Sauvegarde & restauration](#sauvegarde--restauration-admin)
 - [Notifications push](#notifications-push)
 - [Codes d'erreur](#codes-derreur)
@@ -2161,29 +2161,79 @@ Attribue un plugin à un utilisateur ou groupe.
 
 ### GET /api/search
 
-Recherche globale dans les emails, contacts et événements.
+Recherche globale dans les emails mis en cache, les contacts et les événements de calendrier. La recherche e-mail s'effectue sur la table `cached_emails` (ILIKE). Pour une recherche en temps réel sur les messages IMAP non cachés, préférez le filtrage client-side disponible dans la vue Mail (`/mail?search=`).
 
 **Query params :**
-| Paramètre | Type | Description |
-|-----------|------|-------------|
-| `q` | string | Terme de recherche |
-| `type` | string | `all` \| `emails` \| `contacts` \| `events` |
-| `limit` | number | Nombre max de résultats par type |
+| Paramètre | Type | Défaut | Description |
+|-----------|------|--------|-------------|
+| `q` | string | — | **Requis.** Terme de recherche (min. 2 caractères). Recherche dans objet, expéditeur, corps du mail ; titre, description, lieu pour les événements ; nom, prénom, email, entreprise pour les contacts. |
+| `type` | string | `all` | Portée : `all` \| `mail` \| `contacts` \| `events` |
+| `limit` | number | `20` | Nombre maximum de résultats par type (max `100`) |
+| `offset` | number | `0` | Décalage pour la pagination |
+| `folder` | string | — | **Mail uniquement.** Chemin IMAP exact du dossier (ex. `INBOX`). Limite la recherche à ce dossier dans `cached_emails`. |
+| `accountId` | UUID | — | **Mail uniquement.** Limite la recherche à ce compte mail. |
+| `dateFrom` | string | — | **Mail / Événements.** Date de début au format `YYYY-MM-DD`. Pour les e-mails, filtre sur `date` ; pour les événements, filtre sur `start_date`. |
+| `dateTo` | string | — | **Mail / Événements.** Date de fin au format `YYYY-MM-DD` (inclus jusqu'à 23:59:59). |
+| `from` | string | — | **Mail uniquement.** Filtre sur le nom ou l'adresse de l'expéditeur (ILIKE). |
+| `hasAttachment` | string | — | **Mail uniquement.** `true` = avec pièces jointes uniquement · `false` = sans pièces jointes uniquement. |
+| `isRead` | string | — | **Mail uniquement.** `true` = lus uniquement · `false` = non lus uniquement. |
+| `calendarId` | UUID | — | **Événements uniquement.** Limite la recherche à ce calendrier. |
 
 **Réponse 200 :**
 ```json
 {
   "emails": [
-    { "uid": 1234, "subject": "...", "from": "...", "snippet": "..." }
+    {
+      "id": "uuid",
+      "uid": 1234,
+      "subject": "Réunion de projet",
+      "from_name": "Marie Durand",
+      "from_address": "marie@example.com",
+      "snippet": "Bonjour, je vous rappelle...",
+      "date": "2026-05-14T10:30:00Z",
+      "folder": "INBOX",
+      "is_read": false,
+      "is_flagged": false,
+      "has_attachments": true,
+      "account_id": "uuid"
+    }
   ],
   "contacts": [
-    { "id": "uuid", "name": "Marie Durand", "email": "..." }
+    {
+      "id": "uuid",
+      "email": "marie@example.com",
+      "first_name": "Marie",
+      "last_name": "Durand",
+      "display_name": "Marie Durand",
+      "company": "ACME Corp",
+      "avatar_url": null
+    }
   ],
   "events": [
-    { "id": "uuid", "title": "Réunion", "start": "..." }
-  ]
+    {
+      "id": "uuid",
+      "title": "Réunion d'équipe",
+      "description": "Revue hebdomadaire",
+      "start_date": "2026-05-20T14:00:00Z",
+      "end_date": "2026-05-20T15:00:00Z",
+      "location": "Salle B12",
+      "calendar_name": "Personnel",
+      "calendar_color": "#0078d4"
+    }
+  ],
+  "totals": {
+    "emails": 42,
+    "contacts": 3,
+    "events": 7
+  }
 }
 ```
+
+> `totals` indique le nombre **total** de résultats pour chaque catégorie (avant application de `limit`/`offset`), utile pour l'affichage des compteurs et la pagination.
+
+**Erreurs :**
+- `200` avec tableaux vides — terme de recherche trop court (< 2 caractères).
+- `500` — erreur base de données.
 
 ---
 
