@@ -11,6 +11,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.13.1] - 2026-05-14
+
+### Corrigé
+
+- **Compteur de mails non lus — mise à jour instantanée**
+  - Lors de la **suppression** d'un ou plusieurs mails non lus, le badge de compteur dans la barre latérale disparaît immédiatement sans attendre un rafraîchissement de la page. En cas d'échec serveur, le compteur est restauré automatiquement.
+  - Lors du **marquage comme non lu** d'un mail, le badge apparaît immédiatement (mise à jour optimiste du cache local). Idem pour le marquage comme lu.
+  - Correction d'une régression où le compteur apparaissait une seconde puis disparaissait : un `invalidateQueries` déclenchait un refetch serveur qui renvoyait une valeur mise en cache (20 s côté IMAP), écrasant la valeur locale correcte.
+  - La query `['folder-status']` n'est plus invalidée après chaque action de lecture/suppression ; le `refetchInterval` de 60 secondes assure la synchronisation périodique en arrière-plan.
+
+---
+
 ## [1.13.0] - 2026-05-14
 
 ### Ajouté
