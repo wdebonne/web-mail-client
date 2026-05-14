@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.13.1-blue)
+![Version](https://img.shields.io/badge/version-1.14.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -65,6 +65,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - 📱 Interface responsive (navigation mobile adaptative) : sur mobile et tablette, cliquer sur un dossier referme automatiquement le panneau latéral et affiche la liste des messages en plein écran — plus besoin de masquer manuellement le panneau. Les pages **Contacts**, **Paramètres** et **Administration** s'adaptent aussi : barre d'onglets horizontale défilable en haut au lieu d'une sidebar verticale, et vue maître/détail plein écran avec bouton « Retour » pour les contacts.
 - 📨 **Lecture des e-mails optimisée mobile / tablette** : nom de l'expéditeur et adresse `<email>` qui passent à la ligne au lieu de se chevaucher, barre d'actions dédiée (Répondre / Répondre à tous / Transférer à gauche, Étoile / Corbeille / Plus à droite) sur sa propre ligne, corps du message qui ne déborde plus (tables des newsletters HTML contraintes à `100%`, longues URL coupées proprement) et **retour automatique à la liste après suppression** du message en cours de lecture.
 - 🔍 **Recherche unifiée et sélecteur de vue calendrier sur mobile / tablette** : icône loupe en haut à droite de la page **Calendrier** qui ouvre une recherche transverse à **tous les agendas et toutes les boîtes mail** (résultats regroupés en *Événements* + *E-mails* avec ouverture directe), et bouton de bascule **Jour / Semaine de travail / Semaine / Mois / Agenda** style messagerie professionnelle juste à côté.
+- 🔍 **Barre de recherche unifiée moderne (style Outlook/Gmail)** : voir [section dédiée](#recherche-unifiée) ci-dessous.
 - ➕ **Bouton flottant (FAB) sur mobile et tablette** : un bouton circulaire « Nouveau message » (page Messagerie) et « Nouvel événement » (page Calendrier) apparaît automatiquement sur petit écran pour une prise en main à une main. **9 positions configurables** (haut/milieu/bas × gauche/centre/droite) dans **Paramètres → Apparence → Position du bouton flottant** — synchronisée entre appareils.
 - 👉 **Gestes de balayage sur mobile et tablette** : glissez un e-mail vers la **gauche** (Archiver par défaut) ou vers la **droite** (Corbeille par défaut) pour une action rapide à une main. Chaque direction est configurable indépendamment (Archiver, Corbeille, Déplacer, Copier, Drapeau, Lu/Non lu). Pour *Déplacer* / *Copier*, un **dossier par défaut par compte** peut être défini (avec création possible d'un dossier « À trier » depuis le sélecteur). La confirmation avant mise en corbeille peut être désactivée pour un nettoyage éclair. Réglages dans **Paramètres → Messagerie → Balayage**.
 - 🕘 **Dossiers récents pour Déplacer / Copier** : les sous-menus *Déplacer vers…* et *Copier vers…* du menu contextuel d'un message affichent en tête les **derniers dossiers utilisés** (icône horloge) pour un re-rangement quasi-instantané. Le nombre de raccourcis est paramétrable indépendamment pour chaque action — *Off / 1 / 2 / 3* — depuis le bouton **Dossiers récents** du ruban (onglet **Afficher**) ou depuis **Paramètres → Messagerie**.
@@ -95,8 +96,27 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🗜️ **Rédaction plein-largeur** : bouton Agrandir/Réduire dans l'en-tête du compose pour masquer les volets et donner toute la largeur au brouillon
 - 📎 **Glisser-déposer de pièces jointes** directement sur la fenêtre de rédaction (overlay visuel pendant le survol)
 - 🎚️ Ruban auto-adaptatif (classique ↔ simplifié selon la largeur)
-- 🎛️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF)
+- 🎛️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF), **Recherche** (filtres de recherche avancée, affiché uniquement lors d'une recherche active)
 - 👥📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
+
+### Recherche unifiée
+
+- 🔍 **Barre de recherche contextuelle** toujours visible dans l'en-tête — placeholder dynamique selon la page active (*Rechercher des e-mails…* / *dans les agendas…* / *des contacts…*), raccourci clavier **Ctrl+K** / ⌘K pour focaliser sans la souris, bouton ✕ pour effacer en un clic.
+- 💡 **Suggestions en temps réel** : une dropdown animée apparaît dès 2 caractères saisis (debounce 300 ms) et affiche jusqu'à **4 e-mails + 3 contacts + 3 événements** correspondants. Chaque suggestion est cliquable et navigue directement vers l'élément.
+- 🌐 **Bouton « Chercher partout »** dans la dropdown → ouvre la **page de recherche globale** `/search` qui présente les résultats multi-contexte.
+- 📄 **Page de recherche globale** (`/search`) : résultats paginés par onglets (Tout / E-mails / Agendas / Contacts) avec compteurs, filtres par **période** (Aujourd'hui / Semaine / Mois / Année) et par **statut** (lu / non lu) et **pièces jointes** (avec / sans). Chaque résultat est cliquable et renvoie vers la page concernée.
+- 📧 **Mode recherche dans la vue Mail** : saisir un terme et valider depuis `/mail` conserve l'affichage normal de la messagerie — la liste des messages est **filtrée instantanément** (client-side) sur les messages IMAP déjà chargés. Un bandeau bleu indique le terme recherché et le nombre de résultats.
+- 🎛️ **Onglet Ruban « Recherche »** (dynamique) : s'active automatiquement dès qu'une recherche est en cours dans la vue Mail. Il propose des filtres visuels sans formulaire :
+  - **Portée** : Dossier actuel (filtrage client-side immédiat) / Toutes les boîtes / Boîte actuelle
+  - **Compte** : Tous les comptes / compte individuel (affiché si ≥ 2 comptes configurés)
+  - **Période** : Tout / Aujourd'hui / Cette semaine / Ce mois / Cette année
+  - **Pièces jointes** : Non filtré / Avec / Sans
+  - **Statut** : Non filtré / Non lu / Lu
+  - **Expéditeur** : champ libre pour filtrer par nom ou adresse
+  - Disponible en mode **Classique** (boutons radio compacts dans des groupes) et en mode **Simplifié** (chips cliquables avec dropdown)
+  - Bouton **Fermer** qui annule la recherche et restaure la liste complète du dossier
+- ⚡ **Architecture hybride** : la recherche dans le **dossier actuel** s'effectue toujours en **client-side** sur les messages IMAP déjà chargés (résultats immédiats, toujours à jour). La recherche **cross-boîtes** interroge la table `cached_emails` côté serveur.
+- 🔧 **API enrichie** : `GET /api/search` accepte désormais `folder`, `accountId`, `dateFrom`, `dateTo`, `from`, `hasAttachment`, `isRead`, `offset` et retourne les `totals` par catégorie.
 
 ### Contacts
 - 👥 Gestion complète des contacts (CRUD)
@@ -380,10 +400,10 @@ webmail/
 │   │   │   │   ├── FolderPane.tsx     # Panneau dossiers
 │   │   │   │   ├── MessageList.tsx    # Liste des messages
 │   │   │   │   ├── MessageView.tsx    # Lecture d'un message
-│   │   │   │   └── Ribbon.tsx         # Ruban classique/simplifié
+│   │   │   │   └── Ribbon.tsx         # Ruban classique/simplifié (+ onglet Recherche)
 │   │   │   └── ui/         # Composants UI génériques
 │   │   ├── hooks/          # Hooks (WebSocket, réseau)
-│   │   ├── pages/          # Pages (Mail, Calendar, Contacts, Settings, Admin)
+│   │   ├── pages/          # Pages (Mail, Calendar, Contacts, Settings, Admin, Search)
 │   │   ├── pwa/            # Service Worker & IndexedDB
 │   │   ├── stores/         # Zustand stores (auth, mail + onglets)
 │   │   └── types/          # TypeScript types
