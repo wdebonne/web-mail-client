@@ -11,6 +11,11 @@ export interface ContextMenuItem {
   submenu?: ContextMenuItem[];
   /** Show a search box at the top of the submenu */
   submenuSearchable?: boolean;
+  /** When set, renders the item as a <label htmlFor> instead of a button so that
+   *  clicking directly activates the linked input (e.g. input[type=color]).
+   *  onBeforeLabel fires synchronously before the label activation. */
+  labelHtmlFor?: string;
+  onBeforeLabel?: () => void;
 }
 
 interface ContextMenuProps {
@@ -209,6 +214,31 @@ function MenuItem({ item, onClose }: { item: ContextMenuItem; onClose: () => voi
                 if (sub.separator) {
                   return <div key={i} className="my-1 border-t border-gray-200" />;
                 }
+                const itemClass = `w-full flex items-center gap-3 px-3 py-1.5 text-sm text-left transition-colors
+                  ${sub.disabled
+                    ? 'text-gray-300 cursor-not-allowed'
+                    : sub.danger
+                      ? 'text-red-600 hover:bg-red-50'
+                      : 'text-gray-700 hover:bg-outlook-bg-hover'
+                  }`;
+                const itemContent = (
+                  <>
+                    {sub.icon && <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">{sub.icon}</span>}
+                    <span className="truncate">{sub.label}</span>
+                  </>
+                );
+                if (sub.labelHtmlFor) {
+                  return (
+                    <label
+                      key={i}
+                      htmlFor={sub.labelHtmlFor}
+                      onClick={() => { sub.onBeforeLabel?.(); onClose(); }}
+                      className={`${itemClass} cursor-pointer`}
+                    >
+                      {itemContent}
+                    </label>
+                  );
+                }
                 return (
                   <button
                     key={i}
@@ -219,16 +249,9 @@ function MenuItem({ item, onClose }: { item: ContextMenuItem; onClose: () => voi
                       }
                     }}
                     disabled={sub.disabled}
-                    className={`w-full flex items-center gap-3 px-3 py-1.5 text-sm text-left transition-colors
-                      ${sub.disabled
-                        ? 'text-gray-300 cursor-not-allowed'
-                        : sub.danger
-                          ? 'text-red-600 hover:bg-red-50'
-                          : 'text-gray-700 hover:bg-outlook-bg-hover'
-                      }`}
+                    className={itemClass}
                   >
-                    {sub.icon && <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">{sub.icon}</span>}
-                    <span className="truncate">{sub.label}</span>
+                    {itemContent}
                   </button>
                 );
               })
