@@ -3,7 +3,7 @@ import {
   ChevronDown, ChevronRight, Plus, FolderIcon, FolderPlus, Pencil,
   Trash, Copy, GripVertical, RotateCcw, Tag, Palette, MailCheck,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import { api } from '../../api';
 import { MailAccount, MailFolder } from '../../types';
@@ -180,6 +180,17 @@ export default function FolderPane({
   const [accountContextMenu, setAccountContextMenu] = useState<
     { x: number; y: number; account: MailAccount } | null
   >(null);
+
+  const mailCustomColorInputRef = useRef<HTMLInputElement>(null);
+  const mailCustomColorTargetRef = useRef<MailAccount | null>(null);
+
+  const openMailCustomColorPicker = (account: MailAccount) => {
+    const input = mailCustomColorInputRef.current;
+    if (!input) return;
+    mailCustomColorTargetRef.current = account;
+    input.value = getAccountColor(account) ?? '#0078D4';
+    setTimeout(() => input.click(), 0);
+  };
   const [folderContextMenu, setFolderContextMenu] = useState<
     { x: number; y: number; account: MailAccount; folder: MailFolder } | null
   >(null);
@@ -434,9 +445,25 @@ export default function FolderPane({
           items={buildAccountContextMenu(accountContextMenu.account, onCreateFolder, () => {
             triggerRerender();
             onPreferencesChanged?.();
-          })}
+          }, openMailCustomColorPicker)}
         />
       )}
+
+      <input
+        ref={mailCustomColorInputRef}
+        type="color"
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: -9999, top: -9999 }}
+        onChange={(e) => {
+          const target = mailCustomColorTargetRef.current;
+          if (target) {
+            setAccountColorOverride(target.id, e.target.value);
+            triggerRerender();
+            onPreferencesChanged?.();
+          }
+        }}
+      />
 
       {folderContextMenu && (
         <ContextMenu
@@ -808,6 +835,7 @@ function buildAccountContextMenu(
   account: MailAccount,
   onCreateFolder?: (accountId: string, parentPath?: string) => void,
   onChange?: () => void,
+  onCustomColor?: (account: MailAccount) => void,
 ): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
 
@@ -848,6 +876,11 @@ function buildAccountContextMenu(
         },
       })),
       { label: '', separator: true, onClick: () => {} },
+      ...(onCustomColor ? [{
+        label: 'Personnaliser…',
+        icon: <Palette size={14} />,
+        onClick: () => onCustomColor(account),
+      }] : []),
       {
         label: 'Réinitialiser la couleur',
         icon: <RotateCcw size={14} />,
