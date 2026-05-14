@@ -9,8 +9,9 @@ import { api } from '../../api';
 import { MailAccount, MailFolder } from '../../types';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
 import {
-  getCategories, subscribeCategories, MailCategory, CATEGORY_COLORS,
+  getCategories, subscribeCategories, MailCategory,
 } from '../../utils/categories';
+import { BASE_COLORS } from '../../utils/colorUtils';
 import {
   getAccountDisplayName,
   setAccountDisplayOverride,
@@ -189,7 +190,9 @@ export default function FolderPane({
     if (!input) return;
     mailCustomColorTargetRef.current = account;
     input.value = getAccountColor(account) ?? '#0078D4';
-    setTimeout(() => input.click(), 0);
+    // Synchronous click — setTimeout would break the user gesture chain
+    // and browsers would block the color dialog from opening.
+    input.click();
   };
   const [folderContextMenu, setFolderContextMenu] = useState<
     { x: number; y: number; account: MailAccount; folder: MailFolder } | null
@@ -867,11 +870,11 @@ function buildAccountContextMenu(
     icon: <Palette size={14} />,
     onClick: () => {},
     submenu: [
-      ...CATEGORY_COLORS.map((color) => ({
-        label: color,
-        icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />,
+      ...BASE_COLORS.map((col) => ({
+        label: col.label,
+        icon: <span className="inline-block w-3 h-3 rounded-sm border border-gray-300" style={{ backgroundColor: col.value }} />,
         onClick: () => {
-          setAccountColorOverride(account.id, color);
+          setAccountColorOverride(account.id, col.value);
           onChange?.();
         },
       })),
