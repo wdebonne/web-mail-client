@@ -591,10 +591,6 @@ export default function MailPage() {
     onError: (_err, _vars, context: any) => {
       if (context?.previous !== undefined) queryClient.setQueryData(context.queryKey, context.previous);
     },
-    onSuccess: (_, { accountId }) => {
-      const accId = accountId || selectedAccount?.id;
-      if (accId) queryClient.invalidateQueries({ queryKey: ['folder-status', accId] });
-    },
   });
 
   // Flag mutation
