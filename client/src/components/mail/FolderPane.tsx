@@ -185,14 +185,10 @@ export default function FolderPane({
   const mailCustomColorInputRef = useRef<HTMLInputElement>(null);
   const mailCustomColorTargetRef = useRef<MailAccount | null>(null);
 
-  const openMailCustomColorPicker = (account: MailAccount) => {
-    const input = mailCustomColorInputRef.current;
-    if (!input) return;
+  const prepareMailColorPicker = (account: MailAccount) => {
     mailCustomColorTargetRef.current = account;
-    input.value = getAccountColor(account) ?? '#0078D4';
-    // Synchronous click — setTimeout would break the user gesture chain
-    // and browsers would block the color dialog from opening.
-    input.click();
+    if (mailCustomColorInputRef.current)
+      mailCustomColorInputRef.current.value = getAccountColor(account) ?? '#0078D4';
   };
   const [folderContextMenu, setFolderContextMenu] = useState<
     { x: number; y: number; account: MailAccount; folder: MailFolder } | null
@@ -448,16 +444,17 @@ export default function FolderPane({
           items={buildAccountContextMenu(accountContextMenu.account, onCreateFolder, () => {
             triggerRerender();
             onPreferencesChanged?.();
-          }, openMailCustomColorPicker)}
+          }, prepareMailColorPicker)}
         />
       )}
 
       <input
+        id="mail-color-picker-input"
         ref={mailCustomColorInputRef}
         type="color"
         aria-hidden="true"
         tabIndex={-1}
-        style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: -9999, top: -9999 }}
+        className="sr-only"
         onChange={(e) => {
           const target = mailCustomColorTargetRef.current;
           if (target) {
@@ -838,7 +835,7 @@ function buildAccountContextMenu(
   account: MailAccount,
   onCreateFolder?: (accountId: string, parentPath?: string) => void,
   onChange?: () => void,
-  onCustomColor?: (account: MailAccount) => void,
+  onBeforeColorPicker?: (account: MailAccount) => void,
 ): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
 
@@ -879,10 +876,12 @@ function buildAccountContextMenu(
         },
       })),
       { label: '', separator: true, onClick: () => {} },
-      ...(onCustomColor ? [{
+      ...(onBeforeColorPicker ? [{
         label: 'Personnaliser…',
         icon: <Palette size={14} />,
-        onClick: () => onCustomColor(account),
+        onClick: () => {},
+        labelHtmlFor: 'mail-color-picker-input',
+        onBeforeLabel: () => onBeforeColorPicker(account),
       }] : []),
       {
         label: 'Réinitialiser la couleur',

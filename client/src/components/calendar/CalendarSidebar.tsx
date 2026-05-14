@@ -91,16 +91,10 @@ export default function CalendarSidebar({
   const colorisInputRef = useRef<HTMLInputElement>(null);
   const colorisTargetRef = useRef<Calendar | null>(null);
 
-  const openCustomColorPicker = (cal: Calendar, currentColor: string) => {
-    const input = colorisInputRef.current;
-    if (!input) return;
+  const prepareColorPicker = (cal: Calendar) => {
     colorisTargetRef.current = cal;
-    input.value = currentColor;
-    // Must call click() synchronously — browsers block dialog when called
-    // from setTimeout (user gesture chain is broken).
-    input.click();
-    setCalMenu(null);
-    setColorPicker(null);
+    if (colorisInputRef.current)
+      colorisInputRef.current.value = colorOverrides[cal.id] || cal.color || '#0078D4';
   };
 
   // ── Mini date picker ──────────────────────────────────────
@@ -232,7 +226,9 @@ export default function CalendarSidebar({
           {
             label: 'Personnaliser…',
             icon: <Palette size={14} />,
-            onClick: () => openCustomColorPicker(c, displayColor(c)),
+            onClick: () => {},
+            labelHtmlFor: 'cal-color-picker-input',
+            onBeforeLabel: () => prepareColorPicker(c),
           },
         ],
       },
@@ -604,33 +600,40 @@ export default function CalendarSidebar({
                 />
               ))}
               {!BASE_COLORS.some(c => c.value === displayColor(colorPicker.cal)) && (
-                <button
-                  onClick={() => openCustomColorPicker(colorPicker.cal, displayColor(colorPicker.cal))}
-                  className="w-6 h-6 rounded-full border-2 border-outlook-text-primary hover:scale-110 transition-transform"
+                <div
+                  className="w-6 h-6 rounded-full border-2 border-outlook-text-primary"
                   style={{ backgroundColor: displayColor(colorPicker.cal) }}
                   title="Couleur personnalisée"
                 />
               )}
-              <button
-                onClick={() => openCustomColorPicker(colorPicker.cal, displayColor(colorPicker.cal))}
-                className="w-6 h-6 rounded-full border-2 border-dashed border-outlook-border hover:border-outlook-text-secondary flex items-center justify-center text-outlook-text-secondary hover:text-outlook-text-primary transition-colors"
-                title="Couleur personnalisée"
-              >
-                <span className="text-sm leading-none select-none">+</span>
-              </button>
+              {/* "+" button: transparent color input overlaid directly on the button */}
+              <div className="relative w-6 h-6">
+                <div className="w-6 h-6 rounded-full border-2 border-dashed border-outlook-border hover:border-outlook-text-secondary flex items-center justify-center text-outlook-text-secondary hover:text-outlook-text-primary transition-colors pointer-events-none">
+                  <span className="text-sm leading-none select-none">+</span>
+                </div>
+                <input
+                  type="color"
+                  defaultValue={displayColor(colorPicker.cal)}
+                  onChange={(e) => handlePickColor(colorPicker.cal, e.target.value)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer rounded-full"
+                  style={{ border: 'none', padding: 0 }}
+                  title="Couleur personnalisée"
+                />
+              </div>
             </div>
           </div>
         </>,
         document.body,
       )}
 
-      {/* Hidden native color picker */}
+      {/* Hidden color input linked via labelHtmlFor in context menu items */}
       <input
+        id="cal-color-picker-input"
         ref={colorisInputRef}
         type="color"
         aria-hidden="true"
         tabIndex={-1}
-        style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: -9999, top: -9999 }}
+        className="sr-only"
         onChange={(e) => {
           const target = colorisTargetRef.current;
           if (target) handlePickColor(target, e.target.value);
