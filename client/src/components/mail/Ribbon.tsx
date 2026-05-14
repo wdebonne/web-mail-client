@@ -284,43 +284,43 @@ function SearchChip<T extends string>({ label, value, options, onChange }: {
   const current = options.find((o) => o.value === value);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
   const isActive = value !== options[0].value;
+
+  const handleOpen = () => {
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOpen((v) => !v);
+  };
+
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleOpen}
         className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-colors whitespace-nowrap
           ${isActive
             ? 'bg-outlook-blue text-white border-outlook-blue'
-            : 'bg-white text-outlook-text-primary border-outlook-border hover:border-outlook-blue/50 hover:bg-outlook-bg-hover'
+            : 'bg-outlook-bg-secondary text-outlook-text-primary border-outlook-border hover:border-outlook-blue/50 hover:bg-outlook-bg-hover'
           }`}
       >
-        <span className="font-medium text-[10px] text-current/70">{label} :</span>
+        <span className="font-medium text-[10px] opacity-70">{label} :</span>
         <span>{current?.label}</span>
         <ChevronDown size={10} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
       </button>
       {open && createPortal(
         <>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+          {/* Overlay closes on click outside — use onMouseDown so option buttons fire first */}
+          <div className="fixed inset-0 z-[9998]" onMouseDown={() => setOpen(false)} />
           <div
-            className="fixed z-[9999] bg-white border border-outlook-border rounded-lg shadow-lg py-1 min-w-[160px]"
-            style={{
-              top: (ref.current?.getBoundingClientRect().bottom ?? 0) + 4,
-              left: ref.current?.getBoundingClientRect().left ?? 0,
-            }}
+            className="fixed z-[9999] bg-outlook-bg-secondary border border-outlook-border rounded-lg shadow-xl py-1 min-w-[160px]"
+            style={{ top: pos.top, left: pos.left }}
           >
             {options.map((opt) => (
               <button
                 key={opt.value}
-                onClick={() => { onChange(opt.value); setOpen(false); }}
+                onMouseDown={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false); }}
                 className={`w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center justify-between
                   ${value === opt.value ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
               >
@@ -336,6 +336,29 @@ function SearchChip<T extends string>({ label, value, options, onChange }: {
   );
 }
 
+// Small radio-style toggle used inside RibbonGroup for the Search tab (classic mode)
+function SearchRadioGroup<T extends string>({ value, options, onChange }: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex flex-col justify-center gap-px py-0.5 h-full">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`flex items-center gap-1 px-1.5 py-px rounded text-[10px] leading-tight transition-colors whitespace-nowrap
+            ${value === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-semibold' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+        >
+          <div className={`w-1.5 h-1.5 rounded-full border flex-shrink-0 ${value === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SearchTabClassic(props: SearchTabProps) {
   const {
     searchScope, searchAccountId, searchDatePreset, searchHasAttachment, searchIsRead,
@@ -345,68 +368,42 @@ function SearchTabClassic(props: SearchTabProps) {
     currentFolder,
   } = props;
 
-  const scopeLabel = currentFolder ? `Dossier actuel (${currentFolder.split('/').pop() || currentFolder})` : 'Dossier actuel';
+  const folderShort = currentFolder ? (currentFolder.split('/').pop() || currentFolder) : 'actuel';
 
   return (
-    <div className="flex items-center gap-2 w-full overflow-x-auto">
-      {/* Fermer la recherche */}
+    <div className="flex items-stretch gap-1 w-full overflow-x-auto h-full">
+      {/* Fermer */}
       <RibbonGroup label="Recherche">
-        <RibbonButton
-          icon={XIcon}
-          label="Fermer"
-          onClick={() => onSearchClear?.()}
-          danger
-        />
+        <RibbonButton icon={XIcon} label="Fermer" onClick={() => onSearchClear?.()} danger />
       </RibbonGroup>
       <RibbonSeparator />
 
       {/* Portée */}
       <RibbonGroup label="Portée">
-        <div className="flex flex-col gap-0.5 py-0.5">
-          {([
-            { value: 'current-folder' as const, label: scopeLabel },
-            { value: 'all-folders' as const, label: 'Toutes les boîtes' },
-            { value: 'mailbox' as const, label: 'Boîte actuelle uniquement' },
-          ]).map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => onSearchScopeChange?.(opt.value)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
-                ${searchScope === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchScope === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <SearchRadioGroup<'current-folder' | 'all-folders' | 'mailbox'>
+          value={searchScope}
+          options={[
+            { value: 'current-folder', label: `Dossier : ${folderShort}` },
+            { value: 'all-folders', label: 'Toutes les boîtes' },
+            { value: 'mailbox', label: 'Boîte actuelle' },
+          ]}
+          onChange={(v) => onSearchScopeChange?.(v)}
+        />
       </RibbonGroup>
       <RibbonSeparator />
 
-      {/* Compte */}
+      {/* Compte (multi-account only) */}
       {accounts.length > 1 && (
         <>
           <RibbonGroup label="Compte">
-            <div className="flex flex-col gap-0.5 py-0.5">
-              <button
-                onClick={() => onSearchAccountChange?.('')}
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
-                  ${!searchAccountId ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-              >
-                <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${!searchAccountId ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
-                Tous les comptes
-              </button>
-              {accounts.slice(0, 3).map((acc) => (
-                <button
-                  key={acc.id}
-                  onClick={() => onSearchAccountChange?.(acc.id)}
-                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap max-w-[140px]
-                    ${searchAccountId === acc.id ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-                >
-                  <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchAccountId === acc.id ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
-                  <span className="truncate">{getAccountDisplayName(acc)}</span>
-                </button>
-              ))}
-            </div>
+            <SearchRadioGroup<string>
+              value={searchAccountId || '__all__'}
+              options={[
+                { value: '__all__', label: 'Tous les comptes' },
+                ...accounts.slice(0, 3).map((a) => ({ value: a.id, label: getAccountDisplayName(a) })),
+              ]}
+              onChange={(v) => onSearchAccountChange?.(v === '__all__' ? '' : v)}
+            />
           </RibbonGroup>
           <RibbonSeparator />
         </>
@@ -414,86 +411,62 @@ function SearchTabClassic(props: SearchTabProps) {
 
       {/* Période */}
       <RibbonGroup label="Période">
-        <div className="flex flex-col gap-0.5 py-0.5">
-          {([
-            { value: 'all' as const, label: 'Tout' },
-            { value: 'today' as const, label: 'Aujourd\'hui' },
-            { value: 'week' as const, label: 'Cette semaine' },
-            { value: 'month' as const, label: 'Ce mois' },
-            { value: 'year' as const, label: 'Cette année' },
-          ]).map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => onSearchDatePresetChange?.(opt.value)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
-                ${searchDatePreset === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchDatePreset === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <SearchRadioGroup<'all' | 'today' | 'week' | 'month' | 'year'>
+          value={searchDatePreset}
+          options={[
+            { value: 'all', label: 'Tout' },
+            { value: 'today', label: "Aujourd'hui" },
+            { value: 'week', label: 'Cette semaine' },
+            { value: 'month', label: 'Ce mois' },
+            { value: 'year', label: 'Cette année' },
+          ]}
+          onChange={(v) => onSearchDatePresetChange?.(v)}
+        />
       </RibbonGroup>
       <RibbonSeparator />
 
       {/* Pièces jointes */}
       <RibbonGroup label="Pièces jointes">
-        <div className="flex flex-col gap-0.5 py-0.5">
-          {([
-            { value: 'any' as const, label: 'Non filtré' },
-            { value: 'yes' as const, label: 'Avec pièces jointes' },
-            { value: 'no' as const, label: 'Sans pièces jointes' },
-          ]).map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => onSearchHasAttachmentChange?.(opt.value)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
-                ${searchHasAttachment === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchHasAttachment === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <SearchRadioGroup<'any' | 'yes' | 'no'>
+          value={searchHasAttachment}
+          options={[
+            { value: 'any', label: 'Non filtré' },
+            { value: 'yes', label: 'Avec PJ' },
+            { value: 'no', label: 'Sans PJ' },
+          ]}
+          onChange={(v) => onSearchHasAttachmentChange?.(v)}
+        />
       </RibbonGroup>
       <RibbonSeparator />
 
-      {/* Statut lu/non lu */}
+      {/* Statut */}
       <RibbonGroup label="Statut">
-        <div className="flex flex-col gap-0.5 py-0.5">
-          {([
-            { value: 'any' as const, label: 'Non filtré' },
-            { value: 'unread' as const, label: 'Non lu' },
-            { value: 'read' as const, label: 'Lu' },
-          ]).map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => onSearchIsReadChange?.(opt.value)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
-                ${searchIsRead === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-            >
-              <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchIsRead === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <SearchRadioGroup<'any' | 'read' | 'unread'>
+          value={searchIsRead}
+          options={[
+            { value: 'any', label: 'Non filtré' },
+            { value: 'unread', label: 'Non lu' },
+            { value: 'read', label: 'Lu' },
+          ]}
+          onChange={(v) => onSearchIsReadChange?.(v)}
+        />
       </RibbonGroup>
       <RibbonSeparator />
 
       {/* Expéditeur */}
       <RibbonGroup label="Expéditeur">
-        <div className="flex items-center gap-1 px-1 py-1 bg-white border border-outlook-border rounded">
-          <AtSign size={12} className="text-outlook-text-secondary flex-shrink-0" />
+        <div className="flex items-center gap-1 px-1.5 py-1 bg-outlook-bg-hover border border-outlook-border rounded">
+          <AtSign size={11} className="text-outlook-text-secondary flex-shrink-0" />
           <input
             type="text"
             value={searchFrom}
             onChange={(e) => onSearchFromChange?.(e.target.value)}
-            placeholder="Filtrer par expéditeur…"
-            className="w-36 text-xs outline-none bg-transparent text-outlook-text-primary placeholder-outlook-text-disabled"
+            placeholder="Expéditeur…"
+            className="w-28 text-[11px] outline-none bg-transparent text-outlook-text-primary placeholder-outlook-text-disabled"
           />
           {searchFrom && (
-            <button onClick={() => onSearchFromChange?.('')} className="text-outlook-text-disabled hover:text-outlook-text-secondary">
-              <XIcon size={10} />
+            <button onMouseDown={() => onSearchFromChange?.('')} className="text-outlook-text-disabled hover:text-outlook-text-secondary">
+              <XIcon size={9} />
             </button>
           )}
         </div>
@@ -1547,8 +1520,8 @@ export default function Ribbon({
     <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
       {renderTabBar(() => onChangeRibbonMode('simplified'), 'Réduire le ruban', true)}
 
-      {/* Ribbon content — fixed height so all tabs share the same size */}
-        <div className="flex items-center px-2 py-1 gap-1 overflow-x-auto overflow-y-hidden h-[80px]">
+      {/* Ribbon content — fixed height for standard tabs; auto for search tab */}
+        <div className={`flex items-center px-2 py-1 gap-1 overflow-x-auto overflow-y-hidden ${activeTab === 'recherche' ? 'min-h-[72px] h-auto' : 'h-[80px]'}`}>
           {activeTab === 'recherche' && (
             <SearchTabClassic
               searchScope={searchScope}
