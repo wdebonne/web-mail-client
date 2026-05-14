@@ -1556,17 +1556,11 @@ export default function MailPage() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  // Search results query (only active when in search mode)
+  // Search results — server API only for cross-folder scopes (not current-folder, which is filtered client-side)
   const searchOpts = useMemo(() => {
-    if (!isSearchMode) return null;
-    const opts: Parameters<typeof api.search>[1] = {
-      type: 'mail',
-      limit: 50,
-    };
-    if (searchScope === 'current-folder' && selectedFolder) opts.folder = selectedFolder;
-    if (searchScope === 'mailbox' && (searchAccountId || selectedAccount?.id)) {
-      opts.accountId = searchAccountId || selectedAccount?.id;
-    }
+    if (!isSearchMode || searchScope === 'current-folder') return null;
+    const opts: Parameters<typeof api.search>[1] = { type: 'mail', limit: 100 };
+    if (searchScope === 'mailbox') opts.accountId = searchAccountId || selectedAccount?.id;
     if (searchAccountId && searchScope === 'all-folders') opts.accountId = searchAccountId;
     if (dateRangeFromPreset.dateFrom) opts.dateFrom = dateRangeFromPreset.dateFrom;
     if (dateRangeFromPreset.dateTo) opts.dateTo = dateRangeFromPreset.dateTo;
@@ -1574,40 +1568,68 @@ export default function MailPage() {
     if (searchIsRead !== 'any') opts.isRead = searchIsRead === 'read' ? 'true' : 'false';
     if (searchFrom) opts.from = searchFrom;
     return opts;
-  }, [isSearchMode, searchScope, searchAccountId, selectedAccount?.id, selectedFolder, dateRangeFromPreset, searchHasAttachment, searchIsRead, searchFrom]);
+  }, [isSearchMode, searchScope, searchAccountId, selectedAccount?.id, dateRangeFromPreset, searchHasAttachment, searchIsRead, searchFrom]);
 
   const { data: searchResultsData, isLoading: searchLoading } = useQuery({
     queryKey: ['search-mail', rawSearchQuery, searchOpts],
     queryFn: () => api.search(rawSearchQuery, searchOpts!),
-    enabled: isSearchMode && !!rawSearchQuery,
+    enabled: isSearchMode && !!rawSearchQuery && searchScope !== 'current-folder',
     staleTime: 30_000,
   });
 
-  // Map search results to the message list when in search mode
-  useEffect(() => {
-    if (!isSearchMode) return;
-    if (searchResultsData?.emails) {
-      const mapped: any[] = searchResultsData.emails.map((e: any) => ({
-        uid: e.uid,
-        id: e.id,
-        subject: e.subject || '',
-        from: e.from_name ? { name: e.from_name, address: e.from_address } : { address: e.from_address },
-        to: [],
-        messageId: e.id,
-        flags: [],
-        size: 0,
-        date: e.date,
-        isRead: e.is_read,
-        isFlagged: e.is_flagged,
-        hasAttachments: e.has_attachments,
-        snippet: e.snippet || '',
-        folder: e.folder,
-        _accountId: e.account_id,
-        _folder: e.folder,
-      }));
-      setMessages(mapped, searchResultsData.totals?.emails || mapped.length, 1);
+  // Client-side filtered messages: for current-folder scope, filter the already-loaded IMAP messages.
+  // For other scopes, map server API results. Either way, visibleMessages below will use this.
+  const searchFilteredMessages = useMemo((): any[] | null => {
+    if (!isSearchMode) return null;
+    const q = rawSearchQuery.toLowerCase().trim();
+    if (!q) return null;
+
+    const applyFilters = (m: any) => {
+      const fromName = (m.from?.name || m.from_name || '').toLowerCase();
+      const fromAddr = (m.from?.address || m.from_address || '').toLowerCase();
+      if (searchHasAttachment === 'yes' && !m.hasAttachments && !m.has_attachments) return false;
+      if (searchHasAttachment === 'no' && (m.hasAttachments || m.has_attachments)) return false;
+      if (searchIsRead === 'read' && !(m.isRead ?? m.is_read)) return false;
+      if (searchIsRead === 'unread' && (m.isRead ?? m.is_read)) return false;
+      if (searchFrom) {
+        const sf = searchFrom.toLowerCase();
+        if (!fromName.includes(sf) && !fromAddr.includes(sf)) return false;
+      }
+      if (dateRangeFromPreset.dateFrom || dateRangeFromPreset.dateTo) {
+        const msgDate = new Date(m.date).getTime();
+        if (dateRangeFromPreset.dateFrom && msgDate < new Date(dateRangeFromPreset.dateFrom).getTime()) return false;
+        if (dateRangeFromPreset.dateTo) {
+          const end = new Date(dateRangeFromPreset.dateTo); end.setHours(23, 59, 59, 999);
+          if (msgDate > end.getTime()) return false;
+        }
+      }
+      return true;
+    };
+
+    if (searchScope === 'current-folder') {
+      // Filter already-loaded IMAP messages (always works, no cache dependency)
+      return messages.filter((m: any) => {
+        const fromName = (m.from?.name || '').toLowerCase();
+        const fromAddr = (m.from?.address || '').toLowerCase();
+        const subject = (m.subject || '').toLowerCase();
+        const snippet = (m.snippet || '').toLowerCase();
+        if (!subject.includes(q) && !fromName.includes(q) && !fromAddr.includes(q) && !snippet.includes(q)) return false;
+        return applyFilters(m);
+      });
     }
-  }, [searchResultsData, isSearchMode, setMessages]);
+
+    // all-folders / mailbox — use server cache results
+    if (!searchResultsData?.emails) return [];
+    return searchResultsData.emails.map((e: any) => ({
+      uid: e.uid, id: e.id,
+      subject: e.subject || '',
+      from: e.from_name ? { name: e.from_name, address: e.from_address } : { address: e.from_address },
+      to: [], messageId: e.id, flags: [], size: 0,
+      date: e.date, isRead: e.is_read, isFlagged: e.is_flagged,
+      hasAttachments: e.has_attachments, snippet: e.snippet || '',
+      folder: e.folder, _accountId: e.account_id, _folder: e.folder,
+    })).filter(applyFilters);
+  }, [isSearchMode, rawSearchQuery, searchScope, messages, searchResultsData, searchHasAttachment, searchIsRead, searchFrom, dateRangeFromPreset]);
 
   // Shared ref for the compose editor — allows the ribbon's Message tab to drive formatting
   const composeEditorRef = useRef<HTMLDivElement>(null);
@@ -2036,15 +2058,16 @@ export default function MailPage() {
     setCatsTick((n) => n + 1);
   }, [originOf]);
 
-  // Apply category filter on top of whatever messages are currently loaded.
+  // Apply category filter + search filter on top of whatever messages are currently loaded.
   const visibleMessages = useMemo(() => {
-    if (!categoryFilter) return messages;
-    return messages.filter((m) => {
+    const base = (isSearchMode && searchFilteredMessages !== null) ? searchFilteredMessages : messages;
+    if (!categoryFilter || isSearchMode) return base;
+    return base.filter((m) => {
       const o = originOf(m);
       const ids = getMessageCategories(m as any, o.accountId, o.folder);
       return ids.includes(categoryFilter);
     });
-  }, [messages, categoryFilter, originOf]);
+  }, [messages, categoryFilter, originOf, isSearchMode, searchFilteredMessages]);
 
   // Conversation thread of the currently selected message — computed only when the conversation
   // view is enabled. The matching key mirrors the one used by MessageList to decorate rows.
@@ -2433,10 +2456,10 @@ export default function MailPage() {
                       <Search size={13} className="text-outlook-blue flex-shrink-0" />
                       <span className="text-xs text-outlook-blue font-medium truncate">
                         Résultats pour « {rawSearchQuery} »
-                        {searchLoading ? ' — Recherche…' : searchResultsData?.totals?.emails != null ? ` — ${searchResultsData.totals.emails} e-mail${searchResultsData.totals.emails !== 1 ? 's' : ''}` : ''}
+                        {searchLoading && searchScope !== 'current-folder' ? ' — Recherche…' : searchFilteredMessages !== null ? ` — ${searchFilteredMessages.length} e-mail${searchFilteredMessages.length !== 1 ? 's' : ''}` : ''}
                       </span>
                       <div className="flex-1" />
-                      {searchLoading && <div className="w-3 h-3 border border-outlook-blue border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                      {searchLoading && searchScope !== 'current-folder' && <div className="w-3 h-3 border border-outlook-blue border-t-transparent rounded-full animate-spin flex-shrink-0" />}
                     </div>
                   )}
                 <MessageList
