@@ -568,8 +568,30 @@ export default function MailPage() {
       const fld = folder || selectedFolder;
       return accId ? api.markAsRead(accId, uid, isRead, fld) : Promise.resolve();
     },
-    onSuccess: (_, { uid, isRead, accountId }) => {
+    onMutate: ({ uid, isRead, accountId, folder }) => {
       updateMessageFlags(uid, { seen: isRead });
+      const accId = accountId || selectedAccount?.id;
+      const fld = folder || selectedFolder;
+      if (!accId || !fld) return;
+      const queryKey = ['folder-status', accId];
+      const previous = queryClient.getQueryData(queryKey);
+      queryClient.setQueryData(queryKey, (old: any) => {
+        if (!old?.folders?.[fld]) return old;
+        const delta = isRead ? -1 : 1;
+        return {
+          ...old,
+          folders: {
+            ...old.folders,
+            [fld]: { ...old.folders[fld], unseen: Math.max(0, (old.folders[fld].unseen ?? 0) + delta) },
+          },
+        };
+      });
+      return { previous, queryKey };
+    },
+    onError: (_err, _vars, context: any) => {
+      if (context?.previous !== undefined) queryClient.setQueryData(context.queryKey, context.previous);
+    },
+    onSuccess: (_, { accountId }) => {
       const accId = accountId || selectedAccount?.id;
       if (accId) queryClient.invalidateQueries({ queryKey: ['folder-status', accId] });
     },
