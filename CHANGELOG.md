@@ -11,6 +11,33 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.14.0] - 2026-05-14
+
+### Ajouté
+
+- **Recherche unifiée moderne (style Outlook/Gmail)**
+  - **Barre de recherche contextuelle** dans l'en-tête : placeholder dynamique selon la page active (e-mails / agendas / contacts), raccourci clavier **Ctrl+K** pour focaliser, bouton ✕ pour effacer.
+  - **Suggestions en temps réel** : dropdown animé affichant jusqu'à 4 e-mails, 3 contacts et 3 événements correspondants (debounce 300 ms, min. 2 caractères). Chaque suggestion est cliquable et navigue directement vers le résultat.
+  - **Bouton « Chercher partout »** dans la dropdown → ouvre la page de recherche globale `/search`.
+  - **Page de recherche globale** (`/search`) : résultats paginés multi-contexte (e-mails, contacts, événements) avec onglets de filtrage (Tout / E-mails / Agendas / Contacts), filtres par période (Aujourd'hui / Semaine / Mois / Année) et par statut/pièces jointes.
+  - **Mode recherche dans la vue Mail** : saisir dans la barre et valider depuis `/mail` conserve l'affichage de la liste de mails, les résultats remplaçant la liste courante. Un bandeau indique le terme recherché et le nombre de résultats trouvés.
+  - **Onglet Ruban « Recherche »** (dynamique) : s'active automatiquement lorsqu'une recherche est en cours dans la vue Mail. Propose des filtres visuels en un clic : **Portée** (dossier actuel / toutes les boîtes / boîte actuelle), **Compte** (si plusieurs comptes), **Période**, **Pièces jointes** et **Statut lu/non lu**. Disponible en mode Classique (gros boutons radio) et Simplifié (chips cliquables). Un champ **Expéditeur** permet de filtrer par nom ou adresse. Le bouton **Fermer** annule la recherche et restaure la liste normale.
+  - **API serveur enrichie** (`/api/search`) : nouveaux paramètres `folder`, `accountId`, `dateFrom`, `dateTo`, `from`, `hasAttachment`, `isRead`, `offset` ; retourne désormais les totaux par catégorie (`totals.emails / contacts / events`).
+
+---
+
+## [1.13.1] - 2026-05-14
+
+### Corrigé
+
+- **Compteur de mails non lus — mise à jour instantanée**
+  - Lors de la **suppression** d'un ou plusieurs mails non lus, le badge de compteur dans la barre latérale disparaît immédiatement sans attendre un rafraîchissement de la page. En cas d'échec serveur, le compteur est restauré automatiquement.
+  - Lors du **marquage comme non lu** d'un mail, le badge apparaît immédiatement (mise à jour optimiste du cache local). Idem pour le marquage comme lu.
+  - Correction d'une régression où le compteur apparaissait une seconde puis disparaissait : un `invalidateQueries` déclenchait un refetch serveur qui renvoyait une valeur mise en cache (20 s côté IMAP), écrasant la valeur locale correcte.
+  - La query `['folder-status']` n'est plus invalidée après chaque action de lecture/suppression ; le `refetchInterval` de 60 secondes assure la synchronisation périodique en arrière-plan.
+
+---
+
 ## [1.13.0] - 2026-05-14
 
 ### Ajouté

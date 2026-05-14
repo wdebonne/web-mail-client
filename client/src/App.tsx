@@ -17,6 +17,7 @@ import SettingsPage from './pages/SettingsPage';
 import SecurityPage from './pages/SecurityPage';
 import AdminPage from './pages/AdminPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import SearchPage from './pages/SearchPage';
 import { listenForNotificationClicks } from './pwa/push';
 import { syncAllCache, refreshCacheStats } from './services/cacheService';
 import { startPrefsSync } from './services/prefsSync';
@@ -192,6 +193,7 @@ function App() {
               <Route path="/mail" element={<MailPage />} />
               <Route path="/mail/:accountId" element={<MailPage />} />
               <Route path="/mail/:accountId/:folder" element={<MailPage />} />
+              <Route path="/search" element={<SearchPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

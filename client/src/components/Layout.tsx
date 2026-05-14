@@ -8,9 +8,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Mail, Calendar, Users, Settings, Shield, Search, KeyRound,
-  LogOut, Menu, Sun, Moon, Monitor, Check, RefreshCw
+  LogOut, Menu, Sun, Moon, Monitor, Check, RefreshCw,
+  X, ChevronRight,
 } from 'lucide-react';
 import CacheIndicator from './CacheIndicator';
+import { api } from '../api';
 
 interface LayoutProps {
   children: ReactNode;
@@ -44,6 +46,12 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState<{ emails: any[]; contacts: any[]; events: any[] }>({ emails: [], contacts: [], events: [] });
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement | null>(null);
+  const suggestionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [ptrState, setPtrState] = useState<'idle' | 'pulling' | 'releasing' | 'refreshing'>('idle');
   const [ptrY, setPtrY] = useState(0);
@@ -111,6 +119,73 @@ export default function Layout({ children }: LayoutProps) {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [userMenuOpen]);
 
+  // Ctrl+K / Cmd+K → focus search bar
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+      if (e.key === 'Escape' && showSuggestions) {
+        setShowSuggestions(false);
+        searchInputRef.current?.blur();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [showSuggestions]);
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    if (!showSuggestions) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!searchContainerRef.current?.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showSuggestions]);
+
+  // Debounced suggestions fetch
+  const fetchSuggestions = useCallback((q: string) => {
+    if (suggestionDebounceRef.current) clearTimeout(suggestionDebounceRef.current);
+    if (q.trim().length < 2) {
+      setSuggestions({ emails: [], contacts: [], events: [] });
+      return;
+    }
+    suggestionDebounceRef.current = setTimeout(async () => {
+      setSuggestionsLoading(true);
+      try {
+        const res = await api.search(q, { limit: 5 });
+        setSuggestions({
+          emails: res.emails?.slice(0, 4) || [],
+          contacts: res.contacts?.slice(0, 3) || [],
+          events: res.events?.slice(0, 3) || [],
+        });
+      } catch {
+        setSuggestions({ emails: [], contacts: [], events: [] });
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 300);
+  }, []);
+
+  // Detect search context from current route
+  const searchContext = location.pathname.startsWith('/calendar')
+    ? 'calendar'
+    : location.pathname.startsWith('/contacts')
+    ? 'contacts'
+    : 'mail';
+
+  const searchPlaceholder =
+    searchContext === 'calendar'
+      ? 'Rechercher dans les agendas… (Ctrl+K)'
+      : searchContext === 'contacts'
+      ? 'Rechercher des contacts… (Ctrl+K)'
+      : 'Rechercher des e-mails… (Ctrl+K)';
+
   const primaryNavItems = [
     { path: '/mail', icon: Mail, labelKey: 'nav.mailbox' },
     { path: '/calendar', icon: Calendar, labelKey: 'nav.calendar' },
@@ -131,10 +206,31 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/mail?search=${encodeURIComponent(searchQuery)}`);
+    const q = searchQuery.trim();
+    if (!q) return;
+    setShowSuggestions(false);
+    searchInputRef.current?.blur();
+    if (searchContext === 'calendar') {
+      navigate(`/calendar?search=${encodeURIComponent(q)}`);
+    } else if (searchContext === 'contacts') {
+      navigate(`/contacts?search=${encodeURIComponent(q)}`);
+    } else {
+      navigate(`/mail?search=${encodeURIComponent(q)}`);
     }
   };
+
+  const handleGlobalSearch = () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setShowSuggestions(false);
+    searchInputRef.current?.blur();
+    navigate(`/search?q=${encodeURIComponent(q)}`);
+  };
+
+  const hasSuggestions =
+    suggestions.emails.length > 0 ||
+    suggestions.contacts.length > 0 ||
+    suggestions.events.length > 0;
 
   const initials = (user?.displayName?.[0] || user?.email?.[0] || '?').toUpperCase();
 
@@ -154,18 +250,167 @@ export default function Layout({ children }: LayoutProps) {
 
         <span className="text-white font-semibold text-sm mr-4 hidden lg:inline">WebMail</span>
 
-        <form onSubmit={handleSearch} className="flex-1 max-w-xl">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60" />
-            <input
-              type="text"
-              placeholder={t('layout.search_placeholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white/10 text-white placeholder-white/60 rounded px-3 py-1.5 pl-9 text-sm border border-white/20 focus:bg-white/20 focus:outline-none focus:border-white/40 transition-colors"
-            />
-          </div>
-        </form>
+        <div ref={searchContainerRef} className="flex-1 max-w-2xl relative">
+          <form onSubmit={handleSearch}>
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder={searchPlaceholder}
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  fetchSuggestions(e.target.value);
+                  setShowSuggestions(e.target.value.trim().length >= 2);
+                }}
+                onFocus={() => {
+                  if (searchQuery.trim().length >= 2) setShowSuggestions(true);
+                }}
+                className="w-full bg-white/15 text-white placeholder-white/50 rounded-lg px-3 py-2 pl-9 pr-8 text-sm border border-white/20 focus:bg-white/25 focus:outline-none focus:border-white/50 transition-all shadow-sm"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQuery(''); setSuggestions({ emails: [], contacts: [], events: [] }); setShowSuggestions(false); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/90 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Suggestions dropdown */}
+          <AnimatePresence>
+            {showSuggestions && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                className="absolute top-full left-0 right-0 mt-1 bg-outlook-bg-secondary border border-outlook-border rounded-lg shadow-xl z-50 overflow-hidden"
+              >
+                {suggestionsLoading && (
+                  <div className="px-4 py-3 text-sm text-outlook-text-secondary flex items-center gap-2">
+                    <div className="w-3 h-3 border border-outlook-blue border-t-transparent rounded-full animate-spin" />
+                    Recherche en cours…
+                  </div>
+                )}
+
+                {!suggestionsLoading && !hasSuggestions && searchQuery.trim().length >= 2 && (
+                  <div className="px-4 py-3 text-sm text-outlook-text-secondary">
+                    Aucun résultat pour « {searchQuery} »
+                  </div>
+                )}
+
+                {/* Email suggestions */}
+                {suggestions.emails.length > 0 && (
+                  <div>
+                    <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide border-b border-outlook-border flex items-center gap-1.5">
+                      <Mail size={10} /> E-mails
+                    </div>
+                    {suggestions.emails.map((email) => (
+                      <button
+                        key={email.id}
+                        className="w-full text-left px-3 py-2 hover:bg-outlook-bg-hover flex items-start gap-2 group"
+                        onClick={() => {
+                          setShowSuggestions(false);
+                          navigate(`/mail?search=${encodeURIComponent(searchQuery)}&openUid=${email.uid}&accountId=${email.account_id}&folder=${encodeURIComponent(email.folder)}`);
+                        }}
+                      >
+                        <div className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${email.is_read ? 'bg-transparent' : 'bg-outlook-blue'}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate text-outlook-text-primary">{email.subject || '(sans objet)'}</div>
+                          <div className="text-xs text-outlook-text-secondary truncate">{email.from_name || email.from_address}</div>
+                        </div>
+                        <div className="text-[10px] text-outlook-text-disabled flex-shrink-0">
+                          {new Date(email.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Contact suggestions */}
+                {suggestions.contacts.length > 0 && (
+                  <div className={suggestions.emails.length > 0 ? 'border-t border-outlook-border' : ''}>
+                    <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide border-b border-outlook-border flex items-center gap-1.5">
+                      <Users size={10} /> Contacts
+                    </div>
+                    {suggestions.contacts.map((contact) => (
+                      <button
+                        key={contact.id}
+                        className="w-full text-left px-3 py-2 hover:bg-outlook-bg-hover flex items-center gap-2"
+                        onClick={() => {
+                          setShowSuggestions(false);
+                          navigate(`/contacts?search=${encodeURIComponent(searchQuery)}`);
+                        }}
+                      >
+                        <div className="w-6 h-6 rounded-full bg-outlook-blue/20 text-outlook-blue flex items-center justify-center text-[10px] font-semibold flex-shrink-0">
+                          {(contact.display_name?.[0] || contact.email?.[0] || '?').toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate text-outlook-text-primary">{contact.display_name || contact.email}</div>
+                          {contact.display_name && <div className="text-xs text-outlook-text-secondary truncate">{contact.email}</div>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Event suggestions */}
+                {suggestions.events.length > 0 && (
+                  <div className={(suggestions.emails.length > 0 || suggestions.contacts.length > 0) ? 'border-t border-outlook-border' : ''}>
+                    <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide border-b border-outlook-border flex items-center gap-1.5">
+                      <Calendar size={10} /> Événements
+                    </div>
+                    {suggestions.events.map((event) => (
+                      <button
+                        key={event.id}
+                        className="w-full text-left px-3 py-2 hover:bg-outlook-bg-hover flex items-center gap-2"
+                        onClick={() => {
+                          setShowSuggestions(false);
+                          navigate(`/calendar?search=${encodeURIComponent(searchQuery)}`);
+                        }}
+                      >
+                        <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ background: event.calendar_color || '#3b82f6' }} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate text-outlook-text-primary">{event.title}</div>
+                          <div className="text-xs text-outlook-text-secondary truncate">
+                            {new Date(event.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {event.calendar_name && ` · ${event.calendar_name}`}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Footer actions */}
+                <div className="border-t border-outlook-border px-3 py-2 flex gap-2">
+                  <button
+                    onClick={handleSearch}
+                    className="flex items-center gap-1.5 text-xs text-outlook-blue hover:text-outlook-blue/80 font-medium"
+                  >
+                    <Search size={12} />
+                    Rechercher « {searchQuery} »
+                    {searchContext === 'mail' && ' dans les e-mails'}
+                    {searchContext === 'calendar' && ' dans les agendas'}
+                    {searchContext === 'contacts' && ' dans les contacts'}
+                  </button>
+                  <div className="flex-1" />
+                  <button
+                    onClick={handleGlobalSearch}
+                    className="flex items-center gap-1 text-xs text-outlook-text-secondary hover:text-outlook-text-primary"
+                  >
+                    Chercher partout <ChevronRight size={11} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         <div className="ml-auto flex items-center gap-1">
           <CacheIndicator />

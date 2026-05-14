@@ -16,6 +16,7 @@ import {
   Maximize2, Minimize2,
   FileText, Settings as SettingsIcon, Filter,
   Clock, BellDot, Cloud,
+  Search, X as XIcon, AtSign, FolderSearch,
 } from 'lucide-react';
 import { api } from '../../api';
 import NextcloudFilePicker, { type NextcloudFileItem } from '../ui/NextcloudFilePicker';
@@ -48,7 +49,7 @@ import {
   UNREAD_INDICATORS_CHANGED_EVENT, UNREAD_SCOPE_LABELS,
 } from '../../utils/mailPreferences';
 
-type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer';
+type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer' | 'recherche';
 type RibbonMode = 'classic' | 'simplified';
 type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
@@ -175,6 +176,24 @@ interface RibbonProps {
   // Mail templates (Insérer tab > Modèles)
   onOpenTemplatesPicker?: () => void;
   onOpenTemplatesManager?: () => void;
+
+  // Search ribbon tab
+  isSearchMode?: boolean;
+  searchQuery?: string;
+  searchScope?: 'current-folder' | 'all-folders' | 'mailbox';
+  searchAccountId?: string;
+  searchDatePreset?: 'all' | 'today' | 'week' | 'month' | 'year';
+  searchHasAttachment?: 'any' | 'yes' | 'no';
+  searchIsRead?: 'any' | 'read' | 'unread';
+  searchFrom?: string;
+  onSearchScopeChange?: (s: 'current-folder' | 'all-folders' | 'mailbox') => void;
+  onSearchAccountChange?: (id: string) => void;
+  onSearchDatePresetChange?: (p: 'all' | 'today' | 'week' | 'month' | 'year') => void;
+  onSearchHasAttachmentChange?: (v: 'any' | 'yes' | 'no') => void;
+  onSearchIsReadChange?: (v: 'any' | 'read' | 'unread') => void;
+  onSearchFromChange?: (v: string) => void;
+  onSearchClear?: () => void;
+  currentFolder?: string;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled, active, danger, small }: {
@@ -237,6 +256,336 @@ function RibbonGroup({ label, children }: { label: string; children: React.React
   );
 }
 
+// ─── Search Tab shared props ──────────────────────────────────────────────────
+interface SearchTabProps {
+  searchScope: 'current-folder' | 'all-folders' | 'mailbox';
+  searchAccountId: string;
+  searchDatePreset: 'all' | 'today' | 'week' | 'month' | 'year';
+  searchHasAttachment: 'any' | 'yes' | 'no';
+  searchIsRead: 'any' | 'read' | 'unread';
+  searchFrom: string;
+  accounts: MailAccount[];
+  onSearchScopeChange?: (s: 'current-folder' | 'all-folders' | 'mailbox') => void;
+  onSearchAccountChange?: (id: string) => void;
+  onSearchDatePresetChange?: (p: 'all' | 'today' | 'week' | 'month' | 'year') => void;
+  onSearchHasAttachmentChange?: (v: 'any' | 'yes' | 'no') => void;
+  onSearchIsReadChange?: (v: 'any' | 'read' | 'unread') => void;
+  onSearchFromChange?: (v: string) => void;
+  onSearchClear?: () => void;
+  currentFolder?: string;
+}
+
+function SearchChip<T extends string>({ label, value, options, onChange }: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  const current = options.find((o) => o.value === value);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+  const isActive = value !== options[0].value;
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-colors whitespace-nowrap
+          ${isActive
+            ? 'bg-outlook-blue text-white border-outlook-blue'
+            : 'bg-white text-outlook-text-primary border-outlook-border hover:border-outlook-blue/50 hover:bg-outlook-bg-hover'
+          }`}
+      >
+        <span className="font-medium text-[10px] text-current/70">{label} :</span>
+        <span>{current?.label}</span>
+        <ChevronDown size={10} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
+      </button>
+      {open && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-[9999] bg-white border border-outlook-border rounded-lg shadow-lg py-1 min-w-[160px]"
+            style={{
+              top: (ref.current?.getBoundingClientRect().bottom ?? 0) + 4,
+              left: ref.current?.getBoundingClientRect().left ?? 0,
+            }}
+          >
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center justify-between
+                  ${value === opt.value ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
+              >
+                {opt.label}
+                {value === opt.value && <span className="text-outlook-blue">✓</span>}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+function SearchTabClassic(props: SearchTabProps) {
+  const {
+    searchScope, searchAccountId, searchDatePreset, searchHasAttachment, searchIsRead,
+    searchFrom, accounts,
+    onSearchScopeChange, onSearchAccountChange, onSearchDatePresetChange,
+    onSearchHasAttachmentChange, onSearchIsReadChange, onSearchFromChange, onSearchClear,
+    currentFolder,
+  } = props;
+
+  const scopeLabel = currentFolder ? `Dossier actuel (${currentFolder.split('/').pop() || currentFolder})` : 'Dossier actuel';
+
+  return (
+    <div className="flex items-center gap-2 w-full overflow-x-auto">
+      {/* Fermer la recherche */}
+      <RibbonGroup label="Recherche">
+        <RibbonButton
+          icon={XIcon}
+          label="Fermer"
+          onClick={() => onSearchClear?.()}
+          danger
+        />
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Portée */}
+      <RibbonGroup label="Portée">
+        <div className="flex flex-col gap-0.5 py-0.5">
+          {([
+            { value: 'current-folder' as const, label: scopeLabel },
+            { value: 'all-folders' as const, label: 'Toutes les boîtes' },
+            { value: 'mailbox' as const, label: 'Boîte actuelle uniquement' },
+          ]).map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onSearchScopeChange?.(opt.value)}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
+                ${searchScope === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+            >
+              <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchScope === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Compte */}
+      {accounts.length > 1 && (
+        <>
+          <RibbonGroup label="Compte">
+            <div className="flex flex-col gap-0.5 py-0.5">
+              <button
+                onClick={() => onSearchAccountChange?.('')}
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
+                  ${!searchAccountId ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+              >
+                <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${!searchAccountId ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
+                Tous les comptes
+              </button>
+              {accounts.slice(0, 3).map((acc) => (
+                <button
+                  key={acc.id}
+                  onClick={() => onSearchAccountChange?.(acc.id)}
+                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap max-w-[140px]
+                    ${searchAccountId === acc.id ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+                >
+                  <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchAccountId === acc.id ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
+                  <span className="truncate">{getAccountDisplayName(acc)}</span>
+                </button>
+              ))}
+            </div>
+          </RibbonGroup>
+          <RibbonSeparator />
+        </>
+      )}
+
+      {/* Période */}
+      <RibbonGroup label="Période">
+        <div className="flex flex-col gap-0.5 py-0.5">
+          {([
+            { value: 'all' as const, label: 'Tout' },
+            { value: 'today' as const, label: 'Aujourd\'hui' },
+            { value: 'week' as const, label: 'Cette semaine' },
+            { value: 'month' as const, label: 'Ce mois' },
+            { value: 'year' as const, label: 'Cette année' },
+          ]).map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onSearchDatePresetChange?.(opt.value)}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
+                ${searchDatePreset === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+            >
+              <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchDatePreset === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Pièces jointes */}
+      <RibbonGroup label="Pièces jointes">
+        <div className="flex flex-col gap-0.5 py-0.5">
+          {([
+            { value: 'any' as const, label: 'Non filtré' },
+            { value: 'yes' as const, label: 'Avec pièces jointes' },
+            { value: 'no' as const, label: 'Sans pièces jointes' },
+          ]).map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onSearchHasAttachmentChange?.(opt.value)}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
+                ${searchHasAttachment === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+            >
+              <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchHasAttachment === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Statut lu/non lu */}
+      <RibbonGroup label="Statut">
+        <div className="flex flex-col gap-0.5 py-0.5">
+          {([
+            { value: 'any' as const, label: 'Non filtré' },
+            { value: 'unread' as const, label: 'Non lu' },
+            { value: 'read' as const, label: 'Lu' },
+          ]).map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onSearchIsReadChange?.(opt.value)}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap
+                ${searchIsRead === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-medium' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
+            >
+              <div className={`w-2 h-2 rounded-full border flex-shrink-0 ${searchIsRead === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </RibbonGroup>
+      <RibbonSeparator />
+
+      {/* Expéditeur */}
+      <RibbonGroup label="Expéditeur">
+        <div className="flex items-center gap-1 px-1 py-1 bg-white border border-outlook-border rounded">
+          <AtSign size={12} className="text-outlook-text-secondary flex-shrink-0" />
+          <input
+            type="text"
+            value={searchFrom}
+            onChange={(e) => onSearchFromChange?.(e.target.value)}
+            placeholder="Filtrer par expéditeur…"
+            className="w-36 text-xs outline-none bg-transparent text-outlook-text-primary placeholder-outlook-text-disabled"
+          />
+          {searchFrom && (
+            <button onClick={() => onSearchFromChange?.('')} className="text-outlook-text-disabled hover:text-outlook-text-secondary">
+              <XIcon size={10} />
+            </button>
+          )}
+        </div>
+      </RibbonGroup>
+    </div>
+  );
+}
+
+function SearchTabSimplified(props: SearchTabProps) {
+  const {
+    searchScope, searchAccountId, searchDatePreset, searchHasAttachment, searchIsRead,
+    accounts,
+    onSearchScopeChange, onSearchAccountChange, onSearchDatePresetChange,
+    onSearchHasAttachmentChange, onSearchIsReadChange, onSearchClear,
+    currentFolder,
+  } = props;
+
+  const scopeLabel = currentFolder ? `Dossier : ${currentFolder.split('/').pop() || currentFolder}` : 'Dossier actuel';
+
+  return (
+    <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+      <button
+        onClick={() => onSearchClear?.()}
+        className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-outlook-danger hover:bg-red-50 transition-colors whitespace-nowrap"
+        title="Fermer la recherche"
+      >
+        <XIcon size={12} />
+        Fermer
+      </button>
+      <SimplifiedSep />
+
+      <SearchChip<'current-folder' | 'all-folders' | 'mailbox'>
+        label="Portée"
+        value={searchScope}
+        options={[
+          { value: 'current-folder', label: scopeLabel },
+          { value: 'all-folders', label: 'Toutes les boîtes' },
+          { value: 'mailbox', label: 'Boîte actuelle' },
+        ]}
+        onChange={(v) => onSearchScopeChange?.(v)}
+      />
+
+      {accounts.length > 1 && (
+        <SearchChip<string>
+          label="Compte"
+          value={searchAccountId || '__all__'}
+          options={[
+            { value: '__all__', label: 'Tous les comptes' },
+            ...accounts.map((a) => ({ value: a.id, label: getAccountDisplayName(a) })),
+          ]}
+          onChange={(v) => onSearchAccountChange?.(v === '__all__' ? '' : v)}
+        />
+      )}
+
+      <SearchChip<'all' | 'today' | 'week' | 'month' | 'year'>
+        label="Période"
+        value={searchDatePreset}
+        options={[
+          { value: 'all', label: 'Tout' },
+          { value: 'today', label: "Aujourd'hui" },
+          { value: 'week', label: 'Cette semaine' },
+          { value: 'month', label: 'Ce mois' },
+          { value: 'year', label: 'Cette année' },
+        ]}
+        onChange={(v) => onSearchDatePresetChange?.(v)}
+      />
+
+      <SearchChip<'any' | 'yes' | 'no'>
+        label="Pièces jointes"
+        value={searchHasAttachment}
+        options={[
+          { value: 'any', label: 'Non filtré' },
+          { value: 'yes', label: 'Avec' },
+          { value: 'no', label: 'Sans' },
+        ]}
+        onChange={(v) => onSearchHasAttachmentChange?.(v)}
+      />
+
+      <SearchChip<'any' | 'read' | 'unread'>
+        label="Statut"
+        value={searchIsRead}
+        options={[
+          { value: 'any', label: 'Non filtré' },
+          { value: 'unread', label: 'Non lu' },
+          { value: 'read', label: 'Lu' },
+        ]}
+        onChange={(v) => onSearchIsReadChange?.(v)}
+      />
+    </div>
+  );
+}
+
 export default function Ribbon({
   onNewMessage, onReply, onReplyAll, onForward, onDelete, onArchive,
   onToggleFlag, onMarkRead, onMarkUnread, onSync,
@@ -265,6 +614,22 @@ export default function Ribbon({
   onOpenAutoResponder, autoResponderEnabled = false,
   onOpenRules,
   onOpenTemplatesPicker, onOpenTemplatesManager,
+  isSearchMode = false,
+  searchQuery = '',
+  searchScope = 'current-folder',
+  searchAccountId = '',
+  searchDatePreset = 'all',
+  searchHasAttachment = 'any',
+  searchIsRead = 'any',
+  searchFrom = '',
+  onSearchScopeChange,
+  onSearchAccountChange,
+  onSearchDatePresetChange,
+  onSearchHasAttachmentChange,
+  onSearchIsReadChange,
+  onSearchFromChange,
+  onSearchClear,
+  currentFolder,
 }: RibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTab>('accueil');
   const [showTabMenu, setShowTabMenu] = useState(false);
@@ -380,14 +745,31 @@ export default function Ribbon({
     prevComposingRef.current = isComposing;
   }, [isComposing, activeTab]);
 
+  // Auto-switch to Recherche tab when search mode activates
+  const prevSearchModeRef = useRef(isSearchMode);
+  useEffect(() => {
+    if (isSearchMode && !prevSearchModeRef.current) {
+      setActiveTab('recherche');
+    } else if (!isSearchMode && prevSearchModeRef.current && activeTab === 'recherche') {
+      setActiveTab('accueil');
+    }
+    prevSearchModeRef.current = isSearchMode;
+  }, [isSearchMode, activeTab]);
+
   // Available tabs in display order
   const tabs: RibbonTab[] = [
+    ...(isSearchMode ? ['recherche'] as RibbonTab[] : []),
     'accueil',
     'afficher',
     ...((isComposing ? ['message', 'inserer'] : []) as RibbonTab[]),
   ];
-  const tabLabel = (t: RibbonTab) =>
-    t === 'accueil' ? 'Accueil' : t === 'afficher' ? 'Afficher' : t === 'message' ? 'Message' : 'Insérer';
+  const tabLabel = (t: RibbonTab) => {
+    if (t === 'recherche') return 'Recherche';
+    if (t === 'accueil') return 'Accueil';
+    if (t === 'afficher') return 'Afficher';
+    if (t === 'message') return 'Message';
+    return 'Insérer';
+  };
 
   const openTabMenu = () => {
     if (tabMenuBtnRef.current) {
@@ -937,6 +1319,25 @@ export default function Ribbon({
       <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
         {renderTabBar(() => onChangeRibbonMode('classic'), 'Développer le ruban', false)}
         <div className="flex items-center px-2 py-0.5 gap-0.5 overflow-x-auto h-9">
+          {activeTab === 'recherche' && (
+            <SearchTabSimplified
+              searchScope={searchScope}
+              searchAccountId={searchAccountId}
+              searchDatePreset={searchDatePreset}
+              searchHasAttachment={searchHasAttachment}
+              searchIsRead={searchIsRead}
+              searchFrom={searchFrom}
+              accounts={accounts}
+              onSearchScopeChange={onSearchScopeChange}
+              onSearchAccountChange={onSearchAccountChange}
+              onSearchDatePresetChange={onSearchDatePresetChange}
+              onSearchHasAttachmentChange={onSearchHasAttachmentChange}
+              onSearchIsReadChange={onSearchIsReadChange}
+              onSearchFromChange={onSearchFromChange}
+              onSearchClear={onSearchClear}
+              currentFolder={currentFolder}
+            />
+          )}
           {activeTab === 'accueil' && (
             <>
               <SimplifiedButton icon={MailPlus} label="Nouveau" onClick={onNewMessage} />
@@ -1148,6 +1549,25 @@ export default function Ribbon({
 
       {/* Ribbon content — fixed height so all tabs share the same size */}
         <div className="flex items-center px-2 py-1 gap-1 overflow-x-auto overflow-y-hidden h-[80px]">
+          {activeTab === 'recherche' && (
+            <SearchTabClassic
+              searchScope={searchScope}
+              searchAccountId={searchAccountId}
+              searchDatePreset={searchDatePreset}
+              searchHasAttachment={searchHasAttachment}
+              searchIsRead={searchIsRead}
+              searchFrom={searchFrom}
+              accounts={accounts}
+              onSearchScopeChange={onSearchScopeChange}
+              onSearchAccountChange={onSearchAccountChange}
+              onSearchDatePresetChange={onSearchDatePresetChange}
+              onSearchHasAttachmentChange={onSearchHasAttachmentChange}
+              onSearchIsReadChange={onSearchIsReadChange}
+              onSearchFromChange={onSearchFromChange}
+              onSearchClear={onSearchClear}
+              currentFolder={currentFolder}
+            />
+          )}
           {activeTab === 'accueil' && (
             <>
               {/* Nouveau */}

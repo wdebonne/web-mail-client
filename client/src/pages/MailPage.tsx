@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 // Assuming i18next and react-i18next are used for internationalization
-import { useTranslation } from 'react-i18next'; 
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api } from '../api';
 import { useMailStore, ComposeData } from '../stores/mailStore';
@@ -23,7 +24,7 @@ import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import FloatingActionButton from '../components/ui/FloatingActionButton';
 import toast from 'react-hot-toast';
-import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil, Columns2, Plus } from 'lucide-react';
+import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil, Columns2, Plus, Search } from 'lucide-react';
 import { getAccountDisplayName } from '../utils/mailPreferences';
 import {
   getUnifiedAccountIds, getUnifiedInboxEnabled, getUnifiedSentEnabled,
@@ -52,7 +53,10 @@ export default function MailPage() {
   const isOnline = useNetworkStatus();
   const queryClient = useQueryClient();
   // Initialize translation function 't' to fix the runtime error
-  const { t } = useTranslation(); 
+  const { t } = useTranslation();
+  // Read search params early so they can be used in query enabled conditions below
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isSearchMode = (searchParams.get('search') || '').trim().length > 0; 
   const {
     accounts, selectedAccount, selectedFolder, folders, messages, selectedMessage,
     isComposing, composeData,
@@ -287,8 +291,8 @@ export default function MailPage() {
         return { messages: cached, total: cached.length, page: 1 };
       }
     },
-    enabled: virtualFolder ? accounts.length > 0 : !!selectedAccount,
-    refetchInterval: isOnline ? 30000 : false,
+    enabled: !isSearchMode && (virtualFolder ? accounts.length > 0 : !!selectedAccount),
+    refetchInterval: isOnline && !isSearchMode ? 30000 : false,
     // Keep the previous folder's messages visible during refetch so navigation
     // feels instantaneous instead of flashing an empty list.
     placeholderData: keepPreviousData,
@@ -1495,6 +1499,116 @@ export default function MailPage() {
     return (localStorage.getItem('ribbonMode') as 'classic' | 'simplified') || 'classic';
   });
 
+  // ── Search mode ─────────────────────────────────────────────────────────────
+  const rawSearchQuery = searchParams.get('search') || '';
+
+  // Search filter state (mirrors URL params with defaults)
+  const [searchScope, setSearchScope] = useState<'current-folder' | 'all-folders' | 'mailbox'>(
+    () => (searchParams.get('scope') as any) || 'current-folder',
+  );
+  const [searchAccountId, setSearchAccountId] = useState(() => searchParams.get('sAccount') || '');
+  const [searchDatePreset, setSearchDatePreset] = useState<'all' | 'today' | 'week' | 'month' | 'year'>(
+    () => (searchParams.get('date') as any) || 'all',
+  );
+  const [searchHasAttachment, setSearchHasAttachment] = useState<'any' | 'yes' | 'no'>(
+    () => (searchParams.get('attach') as any) || 'any',
+  );
+  const [searchIsRead, setSearchIsRead] = useState<'any' | 'read' | 'unread'>(
+    () => (searchParams.get('read') as any) || 'any',
+  );
+  const [searchFrom, setSearchFrom] = useState(() => searchParams.get('from') || '');
+
+  // Re-sync local states when URL changes externally (e.g., navigating back)
+  useEffect(() => {
+    setSearchScope((searchParams.get('scope') as any) || 'current-folder');
+    setSearchAccountId(searchParams.get('sAccount') || '');
+    setSearchDatePreset((searchParams.get('date') as any) || 'all');
+    setSearchHasAttachment((searchParams.get('attach') as any) || 'any');
+    setSearchIsRead((searchParams.get('read') as any) || 'any');
+    setSearchFrom(searchParams.get('from') || '');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get('search')]);
+
+  // Compute date range from preset
+  const dateRangeFromPreset = useMemo(() => {
+    const now = new Date();
+    const pad = (d: Date) => d.toISOString().split('T')[0];
+    if (searchDatePreset === 'today') return { dateFrom: pad(now), dateTo: pad(now) };
+    if (searchDatePreset === 'week') {
+      const start = new Date(now); start.setDate(now.getDate() - now.getDay());
+      return { dateFrom: pad(start), dateTo: pad(now) };
+    }
+    if (searchDatePreset === 'month') {
+      return { dateFrom: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, dateTo: pad(now) };
+    }
+    if (searchDatePreset === 'year') {
+      return { dateFrom: `${now.getFullYear()}-01-01`, dateTo: pad(now) };
+    }
+    return {};
+  }, [searchDatePreset]);
+
+  // Helper: update a search param without losing others
+  const updateSearchParam = useCallback((key: string, value: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set(key, value); else next.delete(key);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  // Search results query (only active when in search mode)
+  const searchOpts = useMemo(() => {
+    if (!isSearchMode) return null;
+    const opts: Parameters<typeof api.search>[1] = {
+      type: 'mail',
+      limit: 50,
+    };
+    if (searchScope === 'current-folder' && selectedFolder) opts.folder = selectedFolder;
+    if (searchScope === 'mailbox' && (searchAccountId || selectedAccount?.id)) {
+      opts.accountId = searchAccountId || selectedAccount?.id;
+    }
+    if (searchAccountId && searchScope === 'all-folders') opts.accountId = searchAccountId;
+    if (dateRangeFromPreset.dateFrom) opts.dateFrom = dateRangeFromPreset.dateFrom;
+    if (dateRangeFromPreset.dateTo) opts.dateTo = dateRangeFromPreset.dateTo;
+    if (searchHasAttachment !== 'any') opts.hasAttachment = searchHasAttachment === 'yes' ? 'true' : 'false';
+    if (searchIsRead !== 'any') opts.isRead = searchIsRead === 'read' ? 'true' : 'false';
+    if (searchFrom) opts.from = searchFrom;
+    return opts;
+  }, [isSearchMode, searchScope, searchAccountId, selectedAccount?.id, selectedFolder, dateRangeFromPreset, searchHasAttachment, searchIsRead, searchFrom]);
+
+  const { data: searchResultsData, isLoading: searchLoading } = useQuery({
+    queryKey: ['search-mail', rawSearchQuery, searchOpts],
+    queryFn: () => api.search(rawSearchQuery, searchOpts!),
+    enabled: isSearchMode && !!rawSearchQuery,
+    staleTime: 30_000,
+  });
+
+  // Map search results to the message list when in search mode
+  useEffect(() => {
+    if (!isSearchMode) return;
+    if (searchResultsData?.emails) {
+      const mapped: any[] = searchResultsData.emails.map((e: any) => ({
+        uid: e.uid,
+        id: e.id,
+        subject: e.subject || '',
+        from: e.from_name ? { name: e.from_name, address: e.from_address } : { address: e.from_address },
+        to: [],
+        messageId: e.id,
+        flags: [],
+        size: 0,
+        date: e.date,
+        isRead: e.is_read,
+        isFlagged: e.is_flagged,
+        hasAttachments: e.has_attachments,
+        snippet: e.snippet || '',
+        folder: e.folder,
+        _accountId: e.account_id,
+        _folder: e.folder,
+      }));
+      setMessages(mapped, searchResultsData.totals?.emails || mapped.length, 1);
+    }
+  }, [searchResultsData, isSearchMode, setMessages]);
+
   // Shared ref for the compose editor — allows the ribbon's Message tab to drive formatting
   const composeEditorRef = useRef<HTMLDivElement>(null);
   // Shared API ref — allows the ribbon Insérer tab to drive compose actions (attach files, etc.)
@@ -2117,6 +2231,29 @@ export default function MailPage() {
           onOpenAutoResponder={autoResponderFeatureEnabled ? () => setAutoResponderOpen(true) : undefined}
           autoResponderEnabled={!!autoResponderStatus?.enabled}
           onOpenRules={() => setRulesOpen(true)}
+          isSearchMode={isSearchMode}
+          searchQuery={rawSearchQuery}
+          searchScope={searchScope}
+          searchAccountId={searchAccountId}
+          searchDatePreset={searchDatePreset}
+          searchHasAttachment={searchHasAttachment}
+          searchIsRead={searchIsRead}
+          searchFrom={searchFrom}
+          currentFolder={selectedFolder || undefined}
+          onSearchScopeChange={(s) => { setSearchScope(s); updateSearchParam('scope', s); }}
+          onSearchAccountChange={(id) => { setSearchAccountId(id); updateSearchParam('sAccount', id); }}
+          onSearchDatePresetChange={(p) => { setSearchDatePreset(p); updateSearchParam('date', p === 'all' ? '' : p); }}
+          onSearchHasAttachmentChange={(v) => { setSearchHasAttachment(v); updateSearchParam('attach', v === 'any' ? '' : v); }}
+          onSearchIsReadChange={(v) => { setSearchIsRead(v); updateSearchParam('read', v === 'any' ? '' : v); }}
+          onSearchFromChange={(v) => { setSearchFrom(v); updateSearchParam('from', v); }}
+          onSearchClear={() => {
+            setSearchParams((prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete('search'); next.delete('scope'); next.delete('sAccount');
+              next.delete('date'); next.delete('attach'); next.delete('read'); next.delete('from');
+              return next;
+            }, { replace: true });
+          }}
         />
       </div>
 
@@ -2290,10 +2427,22 @@ export default function MailPage() {
                   />
                 </>
               ) : (
+                <>
+                  {isSearchMode && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-outlook-blue/5 border-b border-outlook-blue/20 flex-shrink-0">
+                      <Search size={13} className="text-outlook-blue flex-shrink-0" />
+                      <span className="text-xs text-outlook-blue font-medium truncate">
+                        Résultats pour « {rawSearchQuery} »
+                        {searchLoading ? ' — Recherche…' : searchResultsData?.totals?.emails != null ? ` — ${searchResultsData.totals.emails} e-mail${searchResultsData.totals.emails !== 1 ? 's' : ''}` : ''}
+                      </span>
+                      <div className="flex-1" />
+                      {searchLoading && <div className="w-3 h-3 border border-outlook-blue border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                    </div>
+                  )}
                 <MessageList
                   messages={visibleMessages}
                   selectedMessage={selectedMessage}
-                  loading={loadingMessages}
+                  loading={loadingMessages || (isSearchMode && searchLoading)}
                   onSelectMessage={handleSelectMessageMobile}
                   onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
                   onToggleFlag={(uid, flagged, aId, fld) => { const o = resolveOrigin(uid, aId, fld); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
@@ -2332,6 +2481,7 @@ export default function MailPage() {
                     queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
                   }}
                 />
+                </>
               )}
             </div>
 

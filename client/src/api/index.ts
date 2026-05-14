@@ -785,8 +785,33 @@ export const api = {
     request(`/plugins/admin/${pluginId}/assign`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Search
-  search: (q: string, type?: string) =>
-    request<any>(`/search?q=${encodeURIComponent(q)}${type ? `&type=${type}` : ''}`),
+  search: (q: string, opts?: {
+    type?: string;
+    folder?: string;
+    accountId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    from?: string;
+    hasAttachment?: 'true' | 'false';
+    isRead?: 'true' | 'false';
+    calendarId?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const params = new URLSearchParams({ q });
+    if (opts?.type) params.set('type', opts.type);
+    if (opts?.folder) params.set('folder', opts.folder);
+    if (opts?.accountId) params.set('accountId', opts.accountId);
+    if (opts?.dateFrom) params.set('dateFrom', opts.dateFrom);
+    if (opts?.dateTo) params.set('dateTo', opts.dateTo);
+    if (opts?.from) params.set('from', opts.from);
+    if (opts?.hasAttachment) params.set('hasAttachment', opts.hasAttachment);
+    if (opts?.isRead) params.set('isRead', opts.isRead);
+    if (opts?.calendarId) params.set('calendarId', opts.calendarId);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.offset) params.set('offset', String(opts.offset));
+    return request<{ emails: any[]; contacts: any[]; events: any[]; totals: { emails: number; contacts: number; events: number } }>(`/search?${params.toString()}`);
+  },
 
   // Admin Dashboard
   getAdminDashboard: () => request<any>('/admin/dashboard'),
