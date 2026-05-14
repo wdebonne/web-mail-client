@@ -11,6 +11,26 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.13.0] - 2026-05-14
+
+### Ajouté
+
+- **Color Picker personnalisé — harmonisation dans toute l'application**
+  - **Création de calendrier** (`Nouveau calendrier`) : bouton `+` circulaire ajouté en fin de palette, de la même taille que les cercles de couleurs prédéfinis. Un clic ouvre le sélecteur de couleur natif du navigateur. Si une couleur personnalisée est choisie (hors palette), un cercle supplémentaire s'affiche avec la couleur active et la bordure de sélection.
+  - **Changement de couleur d'un calendrier** (bouton *Changer la couleur* ou clic droit → *Couleur*) : le popover affiche désormais les 10 couleurs nommées avec indicateur de sélection sur la couleur active, un cercle de la couleur actuelle si elle est hors palette, et un bouton `+` overlay pour ouvrir le sélecteur natif.
+  - **Changement de couleur d'une boîte mail** (clic droit → *Couleur de la boîte mail*) : le sous-menu remplace l'ancienne liste de codes hexadécimaux illisibles par les **10 mêmes couleurs nommées** (Rouge, Orange, Jaune, Vert, Turquoise, Bleu, Violet, Rose, Gris, Noir). L'option *Personnaliser…* ouvre un popover identique à celui des calendriers (grille + bouton `+`).
+  - **Cohérence visuelle totale** : même palette, même interaction `+`, même comportement partout dans l'application.
+
+### Technique
+
+- `client/src/utils/colorUtils.ts` — nouveau fichier partagé exportant `BASE_COLORS` (10 couleurs nommées), utilisé par `CalendarSidebar` et `FolderPane` pour éviter toute divergence de palette.
+- `CalendarSidebar.tsx` — suppression de la dépendance `@melloware/coloris` ; remplacement par `<input type="color">` natif en overlay (`absolute inset-0 opacity-0`) sur le bouton `+` du popover ; *Personnaliser…* du menu contextuel réutilise le popover existant au lieu d'ouvrir directement un dialog système (contournement des restrictions navigateur sur les dialogs ouverts par JS).
+- `FolderPane.tsx` — nouveau `mailColorPickerPopover` (state + `createPortal`) affichant la grille `BASE_COLORS` + bouton `+` overlay ; `buildAccountContextMenu` accepte un callback `onPersonnaliser` ; suppression de l'ancienne approche `ref` + `input.click()`.
+- `ContextMenu.tsx` — ajout des champs optionnels `labelHtmlFor` et `onBeforeLabel` sur `ContextMenuItem` (infrastructure pour activation directe d'un input depuis un label de menu).
+- `CalendarPage.tsx` — `NewCalendarForm` : bouton `+` avec `<input type="color">` en `sr-only` déclenché par clic direct ; état `customColor` pour distinguer couleur personnalisée des couleurs de palette.
+
+---
+
 ## [1.12.1] - 2026-05-12
 
 ### Ajouté
