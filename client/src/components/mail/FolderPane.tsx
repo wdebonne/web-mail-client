@@ -3,7 +3,8 @@ import {
   ChevronDown, ChevronRight, Plus, FolderIcon, FolderPlus, Pencil,
   Trash, Copy, GripVertical, RotateCcw, Tag, Palette, MailCheck,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import { api } from '../../api';
 import { MailAccount, MailFolder } from '../../types';
@@ -182,14 +183,9 @@ export default function FolderPane({
     { x: number; y: number; account: MailAccount } | null
   >(null);
 
-  const mailCustomColorInputRef = useRef<HTMLInputElement>(null);
-  const mailCustomColorTargetRef = useRef<MailAccount | null>(null);
-
-  const prepareMailColorPicker = (account: MailAccount) => {
-    mailCustomColorTargetRef.current = account;
-    if (mailCustomColorInputRef.current)
-      mailCustomColorInputRef.current.value = getAccountColor(account) ?? '#0078D4';
-  };
+  const [mailColorPickerPopover, setMailColorPickerPopover] = useState<{
+    x: number; y: number; account: MailAccount;
+  } | null>(null);
   const [folderContextMenu, setFolderContextMenu] = useState<
     { x: number; y: number; account: MailAccount; folder: MailFolder } | null
   >(null);
@@ -444,26 +440,61 @@ export default function FolderPane({
           items={buildAccountContextMenu(accountContextMenu.account, onCreateFolder, () => {
             triggerRerender();
             onPreferencesChanged?.();
-          }, prepareMailColorPicker)}
+          }, (account) => setMailColorPickerPopover({ account, x: accountContextMenu.x, y: accountContextMenu.y }))}
         />
       )}
 
-      <input
-        id="mail-color-picker-input"
-        ref={mailCustomColorInputRef}
-        type="color"
-        aria-hidden="true"
-        tabIndex={-1}
-        className="sr-only"
-        onChange={(e) => {
-          const target = mailCustomColorTargetRef.current;
-          if (target) {
-            setAccountColorOverride(target.id, e.target.value);
-            triggerRerender();
-            onPreferencesChanged?.();
-          }
-        }}
-      />
+      {mailColorPickerPopover && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setMailColorPickerPopover(null)} />
+          <div
+            className="fixed z-[9999] bg-white border border-outlook-border rounded-md shadow-lg p-2"
+            style={{ top: mailColorPickerPopover.y + 4, left: mailColorPickerPopover.x + 4 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-wrap gap-1">
+              {BASE_COLORS.map(col => (
+                <button
+                  key={col.value}
+                  onClick={() => {
+                    setAccountColorOverride(mailColorPickerPopover.account.id, col.value);
+                    triggerRerender();
+                    onPreferencesChanged?.();
+                    setMailColorPickerPopover(null);
+                  }}
+                  className={`w-6 h-6 rounded-full border-2 hover:scale-110 transition-transform ${getAccountColor(mailColorPickerPopover.account) === col.value ? 'border-outlook-text-primary' : 'border-transparent'}`}
+                  style={{ backgroundColor: col.value }}
+                  title={col.label}
+                />
+              ))}
+              {(() => {
+                const cur = getAccountColor(mailColorPickerPopover.account);
+                return cur && !BASE_COLORS.some(c => c.value === cur) ? (
+                  <div className="w-6 h-6 rounded-full border-2 border-outlook-text-primary" style={{ backgroundColor: cur }} />
+                ) : null;
+              })()}
+              <div className="relative w-6 h-6">
+                <div className="w-6 h-6 rounded-full border-2 border-dashed border-outlook-border flex items-center justify-center text-outlook-text-secondary pointer-events-none">
+                  <span className="text-sm leading-none select-none">+</span>
+                </div>
+                <input
+                  type="color"
+                  defaultValue={getAccountColor(mailColorPickerPopover.account) ?? '#0078D4'}
+                  onChange={(e) => {
+                    setAccountColorOverride(mailColorPickerPopover.account.id, e.target.value);
+                    triggerRerender();
+                    onPreferencesChanged?.();
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer rounded-full"
+                  style={{ border: 'none', padding: 0 }}
+                  title="Couleur personnalisée"
+                />
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body,
+      )}
 
       {folderContextMenu && (
         <ContextMenu
@@ -835,7 +866,7 @@ function buildAccountContextMenu(
   account: MailAccount,
   onCreateFolder?: (accountId: string, parentPath?: string) => void,
   onChange?: () => void,
-  onBeforeColorPicker?: (account: MailAccount) => void,
+  onPersonnaliser?: (account: MailAccount) => void,
 ): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
 
@@ -876,12 +907,10 @@ function buildAccountContextMenu(
         },
       })),
       { label: '', separator: true, onClick: () => {} },
-      ...(onBeforeColorPicker ? [{
+      ...(onPersonnaliser ? [{
         label: 'Personnaliser…',
         icon: <Palette size={14} />,
-        onClick: () => {},
-        labelHtmlFor: 'mail-color-picker-input',
-        onBeforeLabel: () => onBeforeColorPicker(account),
+        onClick: () => onPersonnaliser(account),
       }] : []),
       {
         label: 'Réinitialiser la couleur',

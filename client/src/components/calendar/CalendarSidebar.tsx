@@ -87,15 +87,6 @@ export default function CalendarSidebar({
 
   const bump = () => onChangeRefreshKey?.();
 
-  // ── Custom color picker (native input[type=color]) ────────
-  const colorisInputRef = useRef<HTMLInputElement>(null);
-  const colorisTargetRef = useRef<Calendar | null>(null);
-
-  const prepareColorPicker = (cal: Calendar) => {
-    colorisTargetRef.current = cal;
-    if (colorisInputRef.current)
-      colorisInputRef.current.value = colorOverrides[cal.id] || cal.color || '#0078D4';
-  };
 
   // ── Mini date picker ──────────────────────────────────────
   const monthStart = startOfMonth(miniDate);
@@ -226,9 +217,7 @@ export default function CalendarSidebar({
           {
             label: 'Personnaliser…',
             icon: <Palette size={14} />,
-            onClick: () => {},
-            labelHtmlFor: 'cal-color-picker-input',
-            onBeforeLabel: () => prepareColorPicker(c),
+            onClick: () => setColorPicker({ x: calMenu!.x, y: calMenu!.y, cal: c }),
           },
         ],
       },
@@ -626,19 +615,6 @@ export default function CalendarSidebar({
         document.body,
       )}
 
-      {/* Hidden color input linked via labelHtmlFor in context menu items */}
-      <input
-        id="cal-color-picker-input"
-        ref={colorisInputRef}
-        type="color"
-        aria-hidden="true"
-        tabIndex={-1}
-        className="sr-only"
-        onChange={(e) => {
-          const target = colorisTargetRef.current;
-          if (target) handlePickColor(target, e.target.value);
-        }}
-      />
     </div>
   );
 }
