@@ -568,8 +568,10 @@ export default function MailPage() {
       const fld = folder || selectedFolder;
       return accId ? api.markAsRead(accId, uid, isRead, fld) : Promise.resolve();
     },
-    onSuccess: (_, { uid, isRead }) => {
+    onSuccess: (_, { uid, isRead, accountId }) => {
       updateMessageFlags(uid, { seen: isRead });
+      const accId = accountId || selectedAccount?.id;
+      if (accId) queryClient.invalidateQueries({ queryKey: ['folder-status', accId] });
     },
   });
 
