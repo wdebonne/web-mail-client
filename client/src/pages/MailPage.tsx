@@ -645,6 +645,7 @@ export default function MailPage() {
       const { accountId, folder, toTrash, trashPath } = items[0];
       try {
         await api.deleteMessages(accountId, items.map(i => i.uid), folder, toTrash, trashPath);
+        queryClient.invalidateQueries({ queryKey: ['folder-status', accountId] });
         if (toTrash) queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
       } catch {
         failed.push(...items);
@@ -860,6 +861,7 @@ export default function MailPage() {
 
       try {
         await api.deleteMessages(accountId, uids, folder, !permanent, trashPath || undefined);
+        queryClient.invalidateQueries({ queryKey: ['folder-status', accountId] });
         if (!permanent) queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
       } catch {
         errorCount++;
