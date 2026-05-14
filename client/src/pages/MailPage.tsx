@@ -665,7 +665,6 @@ export default function MailPage() {
       const { accountId, folder, toTrash, trashPath } = items[0];
       try {
         await api.deleteMessages(accountId, items.map(i => i.uid), folder, toTrash, trashPath);
-        queryClient.invalidateQueries({ queryKey: ['folder-status', accountId] });
         if (toTrash) queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
       } catch {
         failed.push(...items);
@@ -683,6 +682,13 @@ export default function MailPage() {
         if (item.removedMessage) {
           // Each splice shifts subsequent indices by 1, hence +i.
           updated.splice(Math.min(item.removedIndex + i, updated.length), 0, item.removedMessage);
+        }
+        // Restore unseen counter for failed unread messages
+        if (item.removedMessage && !item.removedMessage.flags?.seen) {
+          queryClient.setQueryData(['folder-status', item.accountId], (old: any) => {
+            if (!old?.folders?.[item.folder]) return old;
+            return { ...old, folders: { ...old.folders, [item.folder]: { ...old.folders[item.folder], unseen: (old.folders[item.folder].unseen ?? 0) + 1 } } };
+          });
         }
       }
       useMailStore.setState({ messages: updated });
@@ -724,6 +730,14 @@ export default function MailPage() {
     removeMessageFromVirtualCaches(uid, accId, fld);
     if (wasViewingDeleted) setMobileView('list');
 
+    // Optimistic unseen counter decrement for unread messages
+    if (removedMessage && !removedMessage.flags?.seen) {
+      queryClient.setQueryData(['folder-status', accId], (old: any) => {
+        if (!old?.folders?.[fld]) return old;
+        return { ...old, folders: { ...old.folders, [fld]: { ...old.folders[fld], unseen: Math.max(0, (old.folders[fld].unseen ?? 0) - 1) } } };
+      });
+    }
+
     // Add to queue (duplicate uid in same folder just overwrites — only deleted once).
     const qKey = `${accId}\0${fld}\0${uid}`;
     pendingDeletesRef.current.set(qKey, { uid, accountId: accId, folder: fld, toTrash, trashPath, removedMessage, removedIndex });
@@ -731,7 +745,7 @@ export default function MailPage() {
     // Reset inactivity timer.
     if (deleteTimerRef.current !== null) clearTimeout(deleteTimerRef.current);
     deleteTimerRef.current = setTimeout(() => { void flushPendingDeletes(); }, FLUSH_DELAY_MS);
-  }, [removeMessage, removeMessageFromVirtualCaches, flushPendingDeletes]);
+  }, [queryClient, removeMessage, removeMessageFromVirtualCaches, flushPendingDeletes]);
 
   // Confirmation dialog state (delete) — decoupled from the mutation so the
   // user can cancel without triggering any IMAP call.
@@ -868,6 +882,19 @@ export default function MailPage() {
       removeMessageFromVirtualCaches(m.uid, accId, fld);
     }
 
+    // Optimistic unseen counter decrements per group
+    const unseenAdjustments: Array<{ accountId: string; folder: string; count: number }> = [];
+    for (const { accountId, folder, msgs } of groups.values()) {
+      const unreadCount = msgs.filter(m => !m.flags?.seen).length;
+      if (unreadCount > 0) {
+        unseenAdjustments.push({ accountId, folder, count: unreadCount });
+        queryClient.setQueryData(['folder-status', accountId], (old: any) => {
+          if (!old?.folders?.[folder]) return old;
+          return { ...old, folders: { ...old.folders, [folder]: { ...old.folders[folder], unseen: Math.max(0, (old.folders[folder].unseen ?? 0) - unreadCount) } } };
+        });
+      }
+    }
+
     let errorCount = 0;
     for (const { accountId, folder, uids } of groups.values()) {
       let accFolders = queryClient.getQueryData<MailFolder[]>(['folders', accountId]);
@@ -881,7 +908,6 @@ export default function MailPage() {
 
       try {
         await api.deleteMessages(accountId, uids, folder, !permanent, trashPath || undefined);
-        queryClient.invalidateQueries({ queryKey: ['folder-status', accountId] });
         if (!permanent) queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
       } catch {
         errorCount++;
@@ -890,6 +916,13 @@ export default function MailPage() {
 
     if (errorCount > 0) {
       useMailStore.setState({ messages: snapshot });
+      // Restore unseen counters for all groups on error
+      for (const { accountId, folder, count } of unseenAdjustments) {
+        queryClient.setQueryData(['folder-status', accountId], (old: any) => {
+          if (!old?.folders?.[folder]) return old;
+          return { ...old, folders: { ...old.folders, [folder]: { ...old.folders[folder], unseen: (old.folders[folder].unseen ?? 0) + count } } };
+        });
+      }
       toast.error('Certains messages n\'ont pas pu être supprimés');
     } else {
       const n = selectedMessages.length;
