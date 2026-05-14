@@ -1276,7 +1276,11 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
 }) {
   const [name, setName] = useState('');
   const [color, setColor] = useState('#0078D4');
+  const [customColor, setCustomColor] = useState<string | null>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
   const palette = ['#0078D4', '#107C10', '#B4009E', '#E3008C', '#E74856', '#CA5010', '#FFB900', '#5C2E91'];
+
+  const isCustomColor = customColor !== null && !palette.includes(color);
 
   const { data: ncStatus } = useQuery({
     queryKey: ['user-nextcloud-status'],
@@ -1342,16 +1346,41 @@ function NewCalendarForm({ onCreate, onClose, isSubmitting }: {
 
           <div>
             <label className="text-xs text-outlook-text-secondary mb-1 block">Couleur</label>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap items-center">
               {palette.map(c => (
                 <button
                   key={c}
                   type="button"
-                  onClick={() => setColor(c)}
-                  className={`w-7 h-7 rounded-full border-2 ${color === c ? 'border-outlook-text-primary' : 'border-transparent'}`}
+                  onClick={() => { setColor(c); setCustomColor(null); }}
+                  className={`w-7 h-7 rounded-full border-2 ${color === c && !isCustomColor ? 'border-outlook-text-primary' : 'border-transparent'}`}
                   style={{ backgroundColor: c }}
                 />
               ))}
+              {isCustomColor && (
+                <button
+                  type="button"
+                  onClick={() => colorInputRef.current?.click()}
+                  className="w-7 h-7 rounded-full border-2 border-outlook-text-primary"
+                  style={{ backgroundColor: color }}
+                  title={color}
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => colorInputRef.current?.click()}
+                className="w-7 h-7 rounded-full border-2 border-dashed border-outlook-border hover:border-outlook-text-secondary flex items-center justify-center text-outlook-text-secondary hover:text-outlook-text-primary transition-colors"
+                title="Couleur personnalisée"
+              >
+                <span className="text-base leading-none select-none">+</span>
+              </button>
+              <input
+                ref={colorInputRef}
+                type="color"
+                value={color}
+                onChange={(e) => { setColor(e.target.value); setCustomColor(e.target.value); }}
+                className="sr-only"
+                tabIndex={-1}
+              />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
