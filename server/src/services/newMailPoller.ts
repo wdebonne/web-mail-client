@@ -64,6 +64,7 @@ function stripHtml(s: string | null | undefined): string {
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&[a-z]{2,6};/gi, '')
+    .replace(/https?:\/\/\S+/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
