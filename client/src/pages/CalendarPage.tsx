@@ -26,6 +26,7 @@ import { AddCalendarUrlDialog } from '../components/calendar/AddCalendarUrlDialo
 import MigrateCalendarDialog from '../components/calendar/MigrateCalendarDialog';
 import EventModal from '../components/calendar/EventModal';
 import ShareCalendarDialog from '../components/calendar/ShareCalendarDialog';
+import PrintCalendarModal from '../components/calendar/PrintCalendarModal';
 import UnifiedSearchDialog from '../components/calendar/UnifiedSearchDialog';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import FloatingActionButton from '../components/ui/FloatingActionButton';
@@ -72,6 +73,7 @@ export default function CalendarPage() {
   const [newCalendarOpen, setNewCalendarOpen] = useState(false);
   const [mobileViewMenuOpen, setMobileViewMenuOpen] = useState(false);
   const mobileViewBtnRef = useRef<HTMLButtonElement>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [addCalendarUrlOpen, setAddCalendarUrlOpen] = useState(false);
@@ -437,7 +439,7 @@ export default function CalendarPage() {
         <CalendarRibbon
           onNewEvent={() => openCreateEvent(currentDate)}
           onShareCalendar={() => { if (calendars[0]) handleShareCalendar(calendars[0].id); }}
-          onPrint={() => window.print()}
+          onPrint={() => setPrintModalOpen(true)}
           onSync={() => syncAllMutation.mutate()}
           view={effView}
           onChangeView={(v) => setView(v)}
@@ -753,6 +755,18 @@ export default function CalendarPage() {
         <ShareCalendarDialog
           calendar={shareCalendarTarget}
           onClose={() => setShareCalendarTarget(null)}
+        />
+      )}
+
+      {printModalOpen && (
+        <PrintCalendarModal
+          calendars={calendars}
+          visibleCalendarIds={visibleCalendarIds}
+          events={events}
+          currentDate={currentDate}
+          currentView={effView}
+          colorOverrides={colorOverrides}
+          onClose={() => setPrintModalOpen(false)}
         />
       )}
 
