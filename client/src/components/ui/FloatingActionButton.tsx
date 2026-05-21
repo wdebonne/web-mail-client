@@ -89,12 +89,16 @@ export default function FloatingActionButton({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!longPressItems.length) return;
+    // Prevent browser from stealing the touch for scroll / pull-to-refresh
+    e.preventDefault();
     fabRef.current?.setPointerCapture(e.pointerId);
     timerRef.current = setTimeout(openMenu, LONG_PRESS_MS);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!menuOpen) return;
+    // Keep browser from triggering pull-to-refresh while the menu is open
+    e.preventDefault();
     const { clientX: x, clientY: y } = e;
     let found: string | null = null;
     itemRefs.current.forEach((el, id) => {
@@ -104,21 +108,27 @@ export default function FloatingActionButton({
     setActiveId(found);
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
     if (menuOpen) {
+      e.preventDefault();
       if (activeId) onLongPressAction?.(activeId);
       closeMenu();
     }
   };
 
   const handlePointerCancel = () => {
+    // Only cancel if the menu is NOT open — once the menu is visible we want
+    // the user to be able to slide to an option without the browser stealing
+    // the gesture. With touch-action:none on the button this should rarely
+    // fire during normal use.
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    suppressClickRef.current = false;
-    closeMenu();
+    if (!menuOpen) {
+      suppressClickRef.current = false;
+    }
   };
 
   const handleClick = () => {
@@ -158,6 +168,7 @@ export default function FloatingActionButton({
         onPointerCancel={handlePointerCancel}
         aria-label={label}
         title={label}
+        style={{ touchAction: longPressItems.length ? 'none' : undefined }}
         className={`fixed ${positionClass} ${visibility} z-40 w-14 h-14 rounded-full
           bg-outlook-blue hover:bg-outlook-blue-hover text-white shadow-lg
           items-center justify-center transition-all duration-150
