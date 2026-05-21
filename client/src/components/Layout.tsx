@@ -19,6 +19,10 @@ interface LayoutProps {
 }
 
 const PTR_THRESHOLD = 80;
+// Minimum downward displacement before we call e.preventDefault() and commit to PTR.
+// Keeps iOS from locking out scroll when the first touchmove has a tiny downward jitter
+// before the user actually swipes up to scroll the list.
+const DRAG_LOCK_PX = 12;
 
 function getScrollableScrollTop(target: EventTarget | null): number {
   let el = target as Element | null;
@@ -79,6 +83,9 @@ export default function Layout({ children }: LayoutProps) {
     if (getScrollableScrollTop(e.target) > 0) { ptrActive.current = false; return; }
     const dy = e.touches[0].clientY - ptrStartY.current;
     if (dy <= 0) { ptrActive.current = false; return; }
+    // Don't commit until the user has clearly pulled down — avoids locking iOS scroll
+    // when a touch starts with a tiny downward jitter before going up.
+    if (dy < DRAG_LOCK_PX) return;
     e.preventDefault();
     const clamped = Math.min(dy * 0.5, PTR_THRESHOLD + 20);
     setPtrY(clamped);
