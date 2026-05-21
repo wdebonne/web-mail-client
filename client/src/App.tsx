@@ -19,7 +19,7 @@ import AdminPage from './pages/AdminPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import SearchPage from './pages/SearchPage';
 import { listenForNotificationClicks } from './pwa/push';
-import { syncAllCache, refreshCacheStats } from './services/cacheService';
+import { syncAllCache, refreshCacheStats, isCacheFresh } from './services/cacheService';
 import { startPrefsSync } from './services/prefsSync';
 import { startAppBadgeService, requestAppBadgeRefresh } from './services/appBadgeService';
 import { isTauri, updateTrayBadge, useTauriCompose, useTauriDeepLink } from './hooks/useTauri';
@@ -74,10 +74,12 @@ function App() {
 
   // Kick off a background cache sync a few seconds after the user is logged in,
   // so the first mail interactions are already served from IndexedDB.
+  // Skip when the cache is already fresh (< 15 min) to avoid redundant API calls.
   useEffect(() => {
     if (!user || !isOnline) return;
     refreshCacheStats().catch(() => {});
-    const t = window.setTimeout(() => {
+    const t = window.setTimeout(async () => {
+      if (await isCacheFresh().catch(() => false)) return;
       syncAllCache().catch(() => {});
     }, 4000);
     return () => window.clearTimeout(t);
