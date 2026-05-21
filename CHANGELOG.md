@@ -11,6 +11,41 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.15.0] - 2026-05-21
+
+### Ajouté
+
+- **Impression calendrier — modal dédiée**
+  - Le bouton *Imprimer* du ruban calendrier ouvre désormais une **modal d'impression** complète au lieu du dialogue natif du navigateur.
+  - **Panneau de contrôle** : sélecteur multi-calendriers (cases à cocher + couleur de chaque agenda), vue (Jour / Semaine / Semaine de travail / Mois), disposition Standard, intervalle de temps de/à (sélecteurs d'heure), options *Afficher le mini-mois* et *Imprimer l'agenda détaillé*.
+  - **Prévisualisation live** à droite : grille horaire avec événements positionnés (vues Jour / Semaine / Semaine de travail) ou grille mensuelle avec aperçu des événements par case — se met à jour instantanément selon les contrôles.
+  - **Génération d'impression** : ouvre un document HTML optimisé A4 paysage dans un nouvel onglet (en-tête de période, noms des agendas en couleur, grille horaire, événements colorés) et déclenche automatiquement le dialogue d'impression du navigateur.
+
+- **Menu utilisateur mobile**
+  - Dans le header mobile, un menu déroulant regroupe l'accès aux *Paramètres* et à l'*Administration* en remplacement des icônes isolées, pour une navigation plus claire sur petit écran.
+
+- **Appui long sur le bouton flottant (FAB)**
+  - Maintenir le bouton flottant enfoncé déclenche l'ouverture de la **recherche unifiée** sans quitter la page en cours.
+  - Nouveau paramètre *Action appui long* dans *Paramètres → Apparence → Bouton flottant* : `Recherche unifiée` (défaut) ou `Aucune action`.
+  - Prévention renforcée des gestes de défilement lors de l'appui long pour éliminer les déclenchements accidentels lors d'un simple scroll.
+
+- **Sélecteur de catégories mobile (contacts)**
+  - Interface adaptée aux petits écrans dans la page Contacts : sélecteur déroulant pour filtrer les contacts par catégorie, remplaçant les onglets horizontaux trop étroits sur mobile.
+
+- **Import de contacts depuis le téléphone (mobile)**
+  - Nouveau bouton d'import dans la page Contacts sur mobile/tablette exploitant l'**API Contacts** du navigateur — permet de sélectionner des contacts natifs du téléphone et de les importer directement dans l'application.
+
+- **Navigation clavier dans les suggestions du composeur**
+  - Dans les champs destinataire (À / Cc / Cci) du composeur, les suggestions d'autocomplétion sont désormais navigables avec les touches ↑/↓ et sélectionnables avec **Entrée** ou **Tab**.
+
+### Corrigé
+
+- **Volet dossiers lors d'une recherche** — tous les comptes restent affichés dans le volet gauche même quand la recherche texte filtre les dossiers, évitant que des comptes disparaissent visuellement pendant la saisie.
+- **Notifications de nouveaux mails** — la fonction `stripHtml` supprime désormais les URLs embarquées dans le HTML avant d'en extraire le texte brut, évitant l'apparition d'adresses HTTP brutes dans les aperçus de notification.
+- **Défilement parasite sur mobile** — le conteneur racine de l'application ne génère plus de défilement excessif ; le bouton flottant ne provoque plus de scroll de page lors d'un appui long.
+
+---
+
 ## [1.14.0] - 2026-05-14
 
 ### Ajouté
