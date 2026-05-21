@@ -2296,7 +2296,7 @@ export default function MailPage() {
               data-pane="folders"
               className={`
                 ${mobileView === 'folders' ? 'flex' : 'hidden'} md:flex
-                flex-col flex-shrink-0 w-full bg-white rounded-md shadow-sm overflow-hidden
+                flex-col flex-shrink-0 w-full h-full bg-white rounded-md shadow-sm overflow-hidden
               `}
               style={{ width: window.innerWidth >= 768 ? folderWidth : undefined }}
             >
