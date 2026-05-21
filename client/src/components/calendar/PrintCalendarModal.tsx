@@ -11,6 +11,7 @@ import { CalendarEvent, Calendar } from '../../types';
 import { CalendarViewMode } from './CalendarRibbon';
 
 type PrintView = 'day' | 'week' | 'workweek' | 'month';
+type Orientation = 'portrait' | 'landscape';
 
 const VIEW_OPTIONS: { value: PrintView; label: string }[] = [
   { value: 'day', label: 'Jour' },
@@ -31,6 +32,16 @@ function timeToMins(t: string): number {
 
 function endMinsFromTime(t: string): number {
   return t === '00:00' ? 1440 : timeToMins(t);
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  if (h.length !== 6) return `rgba(0,120,212,${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +67,7 @@ export default function PrintCalendarModal({
   const [printView, setPrintView] = useState<PrintView>(initPrintView);
   const [viewDropOpen, setViewDropOpen] = useState(false);
 
+  const [orientation, setOrientation] = useState<Orientation>('landscape');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('00:00');
   const [showMiniMonth, setShowMiniMonth] = useState(false);
@@ -105,103 +117,25 @@ export default function PrintCalendarModal({
     : selectedIds.size === 1 ? (selectedCalendars[0]?.name || '1 calendrier')
     : `${selectedIds.size} calendriers`;
 
-  // ---- Print to new window ------------------------------------------------
+  // ---- Print ---------------------------------------------------------------
   const handlePrint = () => {
     const win = window.open('', '_blank');
     if (!win) return;
-
-    const sMins = timeToMins(startTime);
-    const eMins = endMinsFromTime(endTime);
-    const safeMins = eMins > sMins ? eMins : 1440;
-    const days = eachDayOfInterval({ start: printStart, end: printEnd });
-    const HOUR_H = 52;
-    const LABEL_W = 48;
-    const colW = Math.floor((740 - LABEL_W) / days.length);
-    const totalH = ((safeMins - sMins) / 60) * HOUR_H;
-
-    const calNamesHtml = selectedCalendars
-      .map(c => `<span style="color:${colorOverrides[c.id] || c.color || '#0078D4'};margin-right:8px">${c.name}</span>`)
-      .join('');
-
-    let body = '';
-
-    if (printView === 'month') {
-      const gridStart = startOfWeek(printStart, { weekStartsOn: 1 });
-      const gridEnd = endOfWeek(printEnd, { weekStartsOn: 1 });
-      const allDays = eachDayOfInterval({ start: gridStart, end: gridEnd });
-      const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-      const weeks: Date[][] = [];
-      for (let i = 0; i < allDays.length; i += 7) weeks.push(allDays.slice(i, i + 7));
-
-      const headers = dayNames.map(d =>
-        `<th style="border:1px solid #ddd;padding:4px;font-size:11px;background:#f3f4f6;text-align:center">${d}</th>`
-      ).join('');
-
-      const rows = weeks.map(week => {
-        const cells = week.map(day => {
-          const dayEvs = printEvents.filter(ev => isSameDay(parseISO(ev.start_date), day));
-          const inMonth = day >= printStart && day <= printEnd;
-          const evHtml = dayEvs.slice(0, 3).map(ev => {
-            const color = getEventColor(ev);
-            return `<div style="background:${color}22;border-left:2px solid ${color};padding:1px 3px;font-size:8px;margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${ev.title}</div>`;
-          }).join('') + (dayEvs.length > 3 ? `<div style="font-size:8px;color:#6b7280">+${dayEvs.length - 3} autres</div>` : '');
-          return `<td style="border:1px solid #ddd;padding:3px;vertical-align:top;height:70px;${!inMonth ? 'background:#f9fafb;color:#9ca3af' : ''}">
-            <div style="font-size:10px;font-weight:${isToday(day) ? 'bold' : 'normal'};color:${isToday(day) ? '#0078D4' : 'inherit'}">${format(day, 'd')}</div>
-            ${evHtml}
-          </td>`;
-        }).join('');
-        return `<tr>${cells}</tr>`;
-      }).join('');
-
-      body = `<table style="width:100%;border-collapse:collapse"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
-    } else {
-      const hourLines: string[] = [];
-      for (let m = sMins; m < safeMins; m += 60) {
-        const top = ((m - sMins) / 60) * HOUR_H;
-        const h = Math.floor(m / 60);
-        hourLines.push(`<div style="position:absolute;top:${top}px;left:0;width:${LABEL_W - 4}px;text-align:right;font-size:9px;color:#6b7280">${String(h).padStart(2, '0')}:00</div>`);
-        hourLines.push(`<div style="position:absolute;top:${top}px;left:${LABEL_W - 1}px;right:0;border-top:1px solid #e5e7eb"></div>`);
-      }
-
-      const dayHeaders = days.map((day, i) => {
-        const left = LABEL_W + i * colW;
-        const today = isToday(day) ? 'font-weight:bold;color:#0078D4' : '';
-        return `<div style="position:absolute;left:${left}px;width:${colW}px;text-align:center;font-size:10px;${today}">${format(day, 'EEE', { locale: fr })} <strong>${format(day, 'd')}</strong></div>`;
-      }).join('');
-
-      const dayEventsHtml = days.map((day, i) => {
-        const left = LABEL_W + i * colW;
-        const dayEvs = printEvents.filter(ev => !ev.all_day && isSameDay(parseISO(ev.start_date), day));
-        const evHtml = dayEvs.map(ev => {
-          const s = parseISO(ev.start_date);
-          const e = parseISO(ev.end_date);
-          const evS = getHours(s) * 60 + getMinutes(s);
-          const evE = getHours(e) * 60 + getMinutes(e);
-          if (evS >= safeMins || evE <= sMins) return '';
-          const top = Math.max(0, ((evS - sMins) / 60)) * HOUR_H;
-          const height = Math.max(16, ((Math.min(evE, safeMins) - Math.max(evS, sMins)) / 60) * HOUR_H);
-          const color = getEventColor(ev);
-          return `<div style="position:absolute;top:${top}px;left:2px;right:2px;height:${height - 2}px;background:${color}30;border-left:3px solid ${color};padding:2px 4px;font-size:8px;overflow:hidden;line-height:1.3;border-radius:2px">${ev.title}</div>`;
-        }).join('');
-        return `<div style="position:absolute;left:${left}px;width:${colW}px;top:0;height:${totalH}px;border-right:1px solid #e5e7eb">${evHtml}</div>`;
-      }).join('');
-
-      body = `
-        <div style="position:relative;height:28px;border-bottom:2px solid #e5e7eb;">${dayHeaders}</div>
-        <div style="position:relative;height:${totalH}px;overflow:hidden">${hourLines.join('')}${dayEventsHtml}</div>
-      `;
-    }
-
-    win.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
-      <title>Calendrier – ${periodLabel}</title>
-      <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;padding:16px}@page{size:A4 landscape;margin:12mm}</style>
-    </head><body>
-      <div style="margin-bottom:10px">
-        <div style="font-size:13px;font-weight:600">${periodLabel}</div>
-        <div style="font-size:10px;margin-top:3px">${calNamesHtml}</div>
-      </div>
-      ${body}
-    </body></html>`);
+    const html = buildPrintHtml({
+      days: eachDayOfInterval({ start: printStart, end: printEnd }),
+      events: printEvents,
+      selectedCalendars,
+      colorOverrides,
+      sMins: timeToMins(startTime),
+      safeMins: endMinsFromTime(endTime),
+      periodLabel,
+      orientation,
+      printView,
+      getEventColor,
+      printStart,
+      printEnd,
+    });
+    win.document.write(html);
     win.document.close();
     win.focus();
     setTimeout(() => win.print(), 400);
@@ -215,9 +149,9 @@ export default function PrintCalendarModal({
     >
       <div
         className="bg-white rounded-lg shadow-2xl flex overflow-hidden"
-        style={{ width: 900, maxWidth: '95vw', maxHeight: '90vh' }}
+        style={{ width: 940, maxWidth: '96vw', maxHeight: '92vh' }}
       >
-        {/* ---- Left: controls ---- */}
+        {/* ---- Controls ---- */}
         <div className="w-[270px] flex-shrink-0 border-r border-gray-200 flex flex-col p-5 gap-4 overflow-y-auto">
           <h2 className="text-base font-semibold text-gray-900">Imprimer</h2>
 
@@ -269,6 +203,25 @@ export default function PrintCalendarModal({
             </DropButton>
           </FieldGroup>
 
+          <FieldGroup label="Orientation">
+            <div className="flex gap-2">
+              {(['portrait', 'landscape'] as Orientation[]).map(o => (
+                <button
+                  key={o}
+                  onClick={() => setOrientation(o)}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 border rounded text-xs transition-colors
+                    ${orientation === o ? 'border-outlook-blue bg-blue-50 text-outlook-blue' : 'border-gray-300 hover:bg-gray-50'}`}
+                >
+                  <div
+                    className={`border-2 rounded-sm bg-white ${orientation === o ? 'border-outlook-blue' : 'border-gray-400'}`}
+                    style={o === 'portrait' ? { width: 14, height: 20 } : { width: 20, height: 14 }}
+                  />
+                  {o === 'portrait' ? 'Portrait' : 'Paysage'}
+                </button>
+              ))}
+            </div>
+          </FieldGroup>
+
           <FieldGroup label="Disposition">
             <button
               disabled
@@ -310,11 +263,11 @@ export default function PrintCalendarModal({
           </div>
         </div>
 
-        {/* ---- Right: preview ---- */}
+        {/* ---- Preview ---- */}
         <div className="flex-1 bg-gray-100 overflow-auto relative p-5 flex flex-col items-center">
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 p-1.5 hover:bg-gray-200 rounded text-gray-500"
+            className="absolute top-3 right-3 p-1.5 hover:bg-gray-200 rounded text-gray-500 z-10"
           >
             <X size={16} />
           </button>
@@ -328,6 +281,7 @@ export default function PrintCalendarModal({
             colorOverrides={colorOverrides}
             startTime={startTime}
             endTime={endTime}
+            orientation={orientation}
             getEventColor={getEventColor}
           />
         </div>
@@ -338,7 +292,467 @@ export default function PrintCalendarModal({
 }
 
 // ---------------------------------------------------------------------------
-// Small shared UI helpers
+// HTML print generator
+
+interface BuildOpts {
+  days: Date[];
+  events: CalendarEvent[];
+  selectedCalendars: Calendar[];
+  colorOverrides: Record<string, string>;
+  sMins: number;
+  safeMins: number;
+  periodLabel: string;
+  orientation: Orientation;
+  printView: PrintView;
+  getEventColor: (ev: CalendarEvent) => string;
+  printStart: Date;
+  printEnd: Date;
+}
+
+function buildPrintHtml(opts: BuildOpts): string {
+  const { days, events, selectedCalendars, colorOverrides, sMins, safeMins,
+          periodLabel, orientation, printView, getEventColor, printStart, printEnd } = opts;
+
+  const isLandscape = orientation === 'landscape';
+  // A4 content area at 96 dpi (minus 12mm side margins)
+  const pageW = isLandscape ? 1028 : 716;
+  const pageH = isLandscape ? 696 : 1028;
+  const GUTTER = 44;
+
+  const calNamesHtml = selectedCalendars
+    .map(c => `<span style="color:${colorOverrides[c.id] || c.color || '#0078D4'};font-weight:700">${c.name}</span>`)
+    .join('<span style="color:#9ca3af"> · </span>');
+
+  if (printView === 'month') {
+    return buildMonthHtml({ ...opts, pageW, calNamesHtml, isLandscape });
+  }
+
+  // ---- Time grid ----
+  const totalHours = Math.max(1, (safeMins - sMins) / 60);
+  const colW = Math.floor((pageW - GUTTER) / days.length);
+
+  // Fit grid in one page
+  const headerH = 62;
+  const dayHeaderH = 40;
+  // check if any all-day events exist
+  const hasAllDay = events.some(ev => ev.all_day);
+  const allDayH = hasAllDay ? 26 : 0;
+  const availH = pageH - headerH - dayHeaderH - allDayH - 8;
+  const HOUR_H = Math.max(32, Math.min(90, Math.floor(availH / totalHours)));
+  const totalH = HOUR_H * totalHours;
+
+  // Day header cells
+  const dayHeaderCells = days.map(day => {
+    const abbr = format(day, 'EEE', { locale: fr }).toUpperCase();
+    const num = format(day, 'd');
+    const todayNum = isToday(day)
+      ? `<span style="background:#0078D4;color:#fff;border-radius:50%;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:700">${num}</span>`
+      : `<span style="font-size:15px;font-weight:700;color:#111827">${num}</span>`;
+    return `<div style="flex:1;text-align:center;padding:5px 2px 4px;border-right:1px solid #e5e7eb;">
+      <div style="font-size:9px;color:#6b7280;letter-spacing:0.8px;margin-bottom:3px">${abbr}</div>
+      ${todayNum}
+    </div>`;
+  }).join('');
+
+  // All-day row
+  let allDayRowHtml = '';
+  if (hasAllDay) {
+    const cells = days.map(day => {
+      const dayEvs = events.filter(ev => ev.all_day && isSameDay(parseISO(ev.start_date), day));
+      const evHtml = dayEvs.map(ev => {
+        const c = getEventColor(ev);
+        return `<div style="background:${hexToRgba(c, 0.18)};border-left:3px solid ${c};border-radius:2px;padding:1px 4px;font-size:8px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:1px">${ev.title}</div>`;
+      }).join('');
+      return `<div style="flex:1;border-right:1px solid #e5e7eb;padding:2px 3px;">${evHtml}</div>`;
+    }).join('');
+    allDayRowHtml = `<div style="display:flex;border-bottom:1px solid #e5e7eb;background:#fafafa;min-height:${allDayH}px">
+      <div style="width:${GUTTER}px;flex-shrink:0;border-right:1px solid #e5e7eb;font-size:8px;color:#9ca3af;text-align:right;padding:4px 5px 0 0">Journée</div>
+      ${cells}
+    </div>`;
+  }
+
+  // Hour labels + grid lines (drawn inside the day columns div)
+  const hourLinesHtml = Array.from({ length: Math.ceil(totalHours) + 1 }, (_, i) => {
+    const top = i * HOUR_H;
+    return `<div style="position:absolute;top:${top}px;left:0;right:0;border-top:1px solid #e5e7eb;pointer-events:none"></div>`;
+  }).join('');
+
+  const halfLinesHtml = Array.from({ length: Math.ceil(totalHours) }, (_, i) => {
+    const top = i * HOUR_H + HOUR_H / 2;
+    return `<div style="position:absolute;top:${top}px;left:0;right:0;border-top:1px dashed #f0f0f0;pointer-events:none"></div>`;
+  }).join('');
+
+  const hourGutterHtml = Array.from({ length: Math.ceil(totalHours) }, (_, i) => {
+    const top = i * HOUR_H;
+    const h = Math.floor(sMins / 60) + i;
+    return `<div style="position:absolute;top:${top + 2}px;right:5px;font-size:9px;color:#9ca3af;line-height:1">${String(h).padStart(2, '0')}</div>
+      <div style="position:absolute;top:${top}px;left:${GUTTER - 1}px;right:0;border-top:1px solid #e5e7eb;"></div>`;
+  }).join('');
+
+  // Day columns with events
+  const dayColsHtml = days.map((day) => {
+    const dayEvs = events.filter(ev => !ev.all_day && isSameDay(parseISO(ev.start_date), day));
+
+    const evHtml = dayEvs.map(ev => {
+      const s = parseISO(ev.start_date);
+      const e = parseISO(ev.end_date);
+      const evS = getHours(s) * 60 + getMinutes(s);
+      const evE = getHours(e) * 60 + getMinutes(e);
+      if (evS >= safeMins || evE <= sMins) return '';
+      const top = Math.max(0, (evS - sMins) / 60) * HOUR_H;
+      const height = Math.max(HOUR_H * 0.35, ((Math.min(evE, safeMins) - Math.max(evS, sMins)) / 60) * HOUR_H) - 2;
+      const color = getEventColor(ev);
+      const showTime = height >= HOUR_H * 0.65;
+      const startStr = format(s, 'HH:mm');
+      const endStr = format(e, 'HH:mm');
+      return `<div style="
+        position:absolute;top:${top + 1}px;left:2px;right:2px;height:${height}px;
+        background:${hexToRgba(color, 0.15)};
+        border-left:3px solid ${color};
+        border-radius:2px;padding:2px 4px;overflow:hidden;line-height:1.3;
+      ">
+        <div style="font-weight:700;font-size:8.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#111">${ev.title}</div>
+        ${showTime ? `<div style="font-size:7.5px;color:${color};margin-top:1px">${startStr} – ${endStr}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    return `<div style="flex:1;position:relative;border-right:1px solid #e5e7eb;height:${totalH}px;">${evHtml}</div>`;
+  }).join('');
+
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<title>Calendrier – ${periodLabel}</title>
+<style>
+  @page { size: A4 ${orientation}; margin: 10mm 12mm; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#111827}
+  @media print{html,body{width:100%;}}
+</style></head><body>
+<div style="margin-bottom:10px">
+  <div style="font-size:14px;font-weight:800;margin-bottom:4px">📅 ${periodLabel}</div>
+  <div style="font-size:10px;line-height:1.8">${calNamesHtml}</div>
+</div>
+<div style="border:1px solid #d1d5db;border-radius:3px;overflow:hidden">
+  <div style="display:flex;border-bottom:2px solid #e5e7eb;background:#f9fafb">
+    <div style="width:${GUTTER}px;flex-shrink:0;border-right:1px solid #e5e7eb"></div>
+    ${dayHeaderCells}
+  </div>
+  ${allDayRowHtml}
+  <div style="position:relative;height:${totalH}px;display:flex">
+    <div style="width:${GUTTER}px;flex-shrink:0;position:relative;border-right:0">${hourGutterHtml}</div>
+    <div style="flex:1;display:flex;position:relative">
+      ${hourLinesHtml}${halfLinesHtml}
+      ${dayColsHtml}
+    </div>
+  </div>
+</div>
+</body></html>`;
+}
+
+function buildMonthHtml({ days: _days, events, selectedCalendars, colorOverrides, periodLabel,
+  orientation, getEventColor, printStart, printEnd, pageW, calNamesHtml, isLandscape: _iL }: BuildOpts & {
+    pageW: number; calNamesHtml: string; isLandscape: boolean;
+  }): string {
+  const gridStart = startOfWeek(printStart, { weekStartsOn: 1 });
+  const gridEnd = endOfWeek(printEnd, { weekStartsOn: 1 });
+  const allDays = eachDayOfInterval({ start: gridStart, end: gridEnd });
+  const weeks: Date[][] = [];
+  for (let i = 0; i < allDays.length; i += 7) weeks.push(allDays.slice(i, i + 7));
+
+  const DAY_NAMES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  const headers = DAY_NAMES.map(d =>
+    `<th style="border:1px solid #e5e7eb;padding:5px 3px;font-size:10px;background:#f9fafb;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">${d}</th>`
+  ).join('');
+
+  const rows = weeks.map(week => {
+    const cells = week.map(day => {
+      const dayEvs = events.filter(ev => isSameDay(parseISO(ev.start_date), day));
+      const inMonth = day >= printStart && day <= printEnd;
+      const todayStyle = isToday(day)
+        ? 'background:#0078D4;color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;'
+        : '';
+      const evHtml = dayEvs.slice(0, 4).map(ev => {
+        const c = getEventColor(ev);
+        return `<div style="background:${hexToRgba(c, 0.18)};border-left:3px solid ${c};border-radius:2px;padding:1px 3px;font-size:7.5px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:1px">${ev.title}</div>`;
+      }).join('') + (dayEvs.length > 4 ? `<div style="font-size:7px;color:#6b7280;padding:0 3px">+${dayEvs.length - 4}</div>` : '');
+      return `<td style="border:1px solid #e5e7eb;padding:3px;vertical-align:top;height:80px;${!inMonth ? 'background:#f9fafb;' : ''}">
+        <div style="font-size:10px;font-weight:${isToday(day) ? '700' : '500'};margin-bottom:2px;${!inMonth ? 'color:#d1d5db' : ''}">
+          <span style="${todayStyle}">${format(day, 'd')}</span>
+        </div>
+        ${evHtml}
+      </td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<title>Calendrier – ${periodLabel}</title>
+<style>
+  @page { size: A4 ${orientation}; margin: 10mm 12mm; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Arial,sans-serif}
+</style></head><body>
+<div style="margin-bottom:10px">
+  <div style="font-size:14px;font-weight:800;margin-bottom:4px">📅 ${periodLabel}</div>
+  <div style="font-size:10px;line-height:1.8">${calNamesHtml}</div>
+</div>
+<table style="width:100%;border-collapse:collapse">
+  <thead><tr>${headers}</tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+</body></html>`;
+}
+
+// ---------------------------------------------------------------------------
+// Live preview (React, scaled to fit)
+
+interface PreviewProps {
+  printView: PrintView;
+  printStart: Date;
+  printEnd: Date;
+  periodLabel: string;
+  events: CalendarEvent[];
+  selectedCalendars: Calendar[];
+  colorOverrides: Record<string, string>;
+  startTime: string;
+  endTime: string;
+  orientation: Orientation;
+  getEventColor: (ev: CalendarEvent) => string;
+}
+
+// Logical render width for each orientation (mirrors print layout)
+const PRINT_W: Record<Orientation, number> = { portrait: 716, landscape: 1028 };
+
+function CalendarPrintPreview(props: PreviewProps) {
+  const { orientation } = props;
+  const AVAILABLE = 560; // width of preview pane
+  const printW = PRINT_W[orientation];
+  const scale = AVAILABLE / printW;
+
+  return (
+    <div style={{ width: AVAILABLE, overflow: 'hidden' }}>
+      <div
+        style={{
+          transformOrigin: 'top left',
+          transform: `scale(${scale})`,
+          width: printW,
+        }}
+      >
+        <PreviewContent {...props} printW={printW} />
+      </div>
+    </div>
+  );
+}
+
+function PreviewContent({ printView, printStart, printEnd, periodLabel, events, selectedCalendars,
+  colorOverrides, startTime, endTime, getEventColor, printW }: PreviewProps & { printW: number }) {
+  const days = useMemo(
+    () => eachDayOfInterval({ start: printStart, end: printEnd }),
+    [printStart, printEnd],
+  );
+  const sMins = timeToMins(startTime);
+  const safeMins = endMinsFromTime(endTime);
+  const totalHours = Math.max(1, (safeMins - sMins) / 60);
+  const GUTTER = 44;
+  const colW = Math.floor((printW - GUTTER) / days.length);
+
+  // Same hour height as print
+  const hasAllDay = events.some(ev => ev.all_day);
+  const HOUR_H = Math.max(32, Math.min(90, Math.floor((650 - (hasAllDay ? 26 : 0)) / totalHours)));
+  const totalH = HOUR_H * totalHours;
+
+  const calNamesLine = (
+    <span>
+      {selectedCalendars.map((c, i) => (
+        <span key={c.id}>
+          {i > 0 && <span style={{ color: '#9ca3af' }}> · </span>}
+          <span style={{ color: colorOverrides[c.id] || c.color || '#0078D4', fontWeight: 700 }}>{c.name}</span>
+        </span>
+      ))}
+    </span>
+  );
+
+  if (printView === 'month') {
+    return (
+      <div style={{ fontFamily: 'Segoe UI, Arial, sans-serif', fontSize: 12 }}>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>📅 {periodLabel}</div>
+          <div style={{ fontSize: 10, lineHeight: 1.8 }}>{calNamesLine}</div>
+        </div>
+        <PreviewMonthGrid events={events} monthStart={printStart} getEventColor={getEventColor} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ fontFamily: 'Segoe UI, Arial, sans-serif', fontSize: 12 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>📅 {periodLabel}</div>
+        <div style={{ fontSize: 10, lineHeight: 1.8 }}>{calNamesLine}</div>
+      </div>
+
+      {/* Grid */}
+      <div style={{ border: '1px solid #d1d5db', borderRadius: 3, overflow: 'hidden' }}>
+        {/* Day headers */}
+        <div style={{ display: 'flex', borderBottom: '2px solid #e5e7eb', background: '#f9fafb' }}>
+          <div style={{ width: GUTTER, flexShrink: 0, borderRight: '1px solid #e5e7eb' }} />
+          {days.map(day => (
+            <div key={day.toISOString()} style={{ flex: 1, textAlign: 'center', padding: '5px 2px 4px', borderRight: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: 9, color: '#6b7280', letterSpacing: 0.8, marginBottom: 3, textTransform: 'uppercase' }}>
+                {format(day, 'EEE', { locale: fr })}
+              </div>
+              <div style={isToday(day)
+                ? { background: '#0078D4', color: '#fff', borderRadius: '50%', width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700 }
+                : { fontSize: 15, fontWeight: 700, color: '#111827' }}>
+                {format(day, 'd')}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* All-day row */}
+        {hasAllDay && (
+          <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', background: '#fafafa', minHeight: 26 }}>
+            <div style={{ width: GUTTER, flexShrink: 0, borderRight: '1px solid #e5e7eb', fontSize: 8, color: '#9ca3af', textAlign: 'right', padding: '4px 5px 0 0' }}>Journée</div>
+            {days.map(day => {
+              const dayEvs = events.filter(ev => ev.all_day && isSameDay(parseISO(ev.start_date), day));
+              return (
+                <div key={day.toISOString()} style={{ flex: 1, borderRight: '1px solid #e5e7eb', padding: '2px 3px' }}>
+                  {dayEvs.map(ev => {
+                    const c = getEventColor(ev);
+                    return (
+                      <div key={ev.id} style={{ background: hexToRgba(c, 0.18), borderLeft: `3px solid ${c}`, borderRadius: 2, padding: '1px 4px', fontSize: 8, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginBottom: 1 }}>
+                        {ev.title}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Time grid */}
+        <div style={{ position: 'relative', height: totalH, display: 'flex' }}>
+          {/* Gutter */}
+          <div style={{ width: GUTTER, flexShrink: 0, position: 'relative', borderRight: '1px solid #e5e7eb' }}>
+            {Array.from({ length: Math.ceil(totalHours) }, (_, i) => (
+              <div key={i} style={{ position: 'absolute', top: i * HOUR_H + 2, right: 5, fontSize: 9, color: '#9ca3af', lineHeight: 1 }}>
+                {String(Math.floor(sMins / 60) + i).padStart(2, '0')}
+              </div>
+            ))}
+          </div>
+
+          {/* Columns */}
+          <div style={{ flex: 1, display: 'flex', position: 'relative' }}>
+            {/* Hour lines */}
+            {Array.from({ length: Math.ceil(totalHours) + 1 }, (_, i) => (
+              <div key={i} style={{ position: 'absolute', top: i * HOUR_H, left: 0, right: 0, borderTop: '1px solid #e5e7eb', pointerEvents: 'none' }} />
+            ))}
+            {/* Half-hour lines */}
+            {Array.from({ length: Math.ceil(totalHours) }, (_, i) => (
+              <div key={i} style={{ position: 'absolute', top: i * HOUR_H + HOUR_H / 2, left: 0, right: 0, borderTop: '1px dashed #f0f0f0', pointerEvents: 'none' }} />
+            ))}
+
+            {days.map((day) => {
+              const dayEvs = events.filter(ev => !ev.all_day && isSameDay(parseISO(ev.start_date), day));
+              return (
+                <div key={day.toISOString()} style={{ flex: 1, position: 'relative', height: totalH, borderRight: '1px solid #e5e7eb' }}>
+                  {dayEvs.map(ev => {
+                    const s = parseISO(ev.start_date);
+                    const e = parseISO(ev.end_date);
+                    const evS = getHours(s) * 60 + getMinutes(s);
+                    const evE = getHours(e) * 60 + getMinutes(e);
+                    if (evS >= safeMins || evE <= sMins) return null;
+                    const top = Math.max(0, (evS - sMins) / 60) * HOUR_H + 1;
+                    const height = Math.max(HOUR_H * 0.35, ((Math.min(evE, safeMins) - Math.max(evS, sMins)) / 60) * HOUR_H) - 2;
+                    const color = getEventColor(ev);
+                    const showTime = height >= HOUR_H * 0.65;
+                    return (
+                      <div key={ev.id} style={{
+                        position: 'absolute', top, left: 2, right: 2, height,
+                        background: hexToRgba(color, 0.15), borderLeft: `3px solid ${color}`,
+                        borderRadius: 2, padding: '2px 4px', overflow: 'hidden', lineHeight: 1.3,
+                      }}>
+                        <div style={{ fontWeight: 700, fontSize: 8.5, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', color: '#111' }}>
+                          {ev.title}
+                        </div>
+                        {showTime && (
+                          <div style={{ fontSize: 7.5, color, marginTop: 1 }}>
+                            {format(s, 'HH:mm')} – {format(e, 'HH:mm')}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewMonthGrid({ events, monthStart, getEventColor }: {
+  events: CalendarEvent[];
+  monthStart: Date;
+  getEventColor: (ev: CalendarEvent) => string;
+}) {
+  const monthEnd = endOfMonth(monthStart);
+  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
+  const weeks: Date[][] = [];
+  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
+  const DAY_NAMES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr>
+          {DAY_NAMES.map(d => (
+            <th key={d} style={{ border: '1px solid #e5e7eb', padding: '5px 3px', fontSize: 10, background: '#f9fafb', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              {d}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {weeks.map((week, wi) => (
+          <tr key={wi}>
+            {week.map(day => {
+              const dayEvs = events.filter(ev => isSameDay(parseISO(ev.start_date), day));
+              const inMonth = day >= monthStart && day <= monthEnd;
+              return (
+                <td key={day.toISOString()} style={{ border: '1px solid #e5e7eb', padding: 3, verticalAlign: 'top', height: 80, background: inMonth ? undefined : '#f9fafb' }}>
+                  <div style={{ fontSize: 10, fontWeight: isToday(day) ? 700 : 500, marginBottom: 2, color: inMonth ? (isToday(day) ? '#0078D4' : undefined) : '#d1d5db' }}>
+                    {isToday(day)
+                      ? <span style={{ background: '#0078D4', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{format(day, 'd')}</span>
+                      : format(day, 'd')}
+                  </div>
+                  {dayEvs.slice(0, 4).map(ev => {
+                    const c = getEventColor(ev);
+                    return (
+                      <div key={ev.id} style={{ background: hexToRgba(c, 0.18), borderLeft: `3px solid ${c}`, borderRadius: 2, padding: '1px 3px', fontSize: 7.5, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginBottom: 1 }}>
+                        {ev.title}
+                      </div>
+                    );
+                  })}
+                  {dayEvs.length > 4 && <div style={{ fontSize: 7, color: '#6b7280' }}>+{dayEvs.length - 4}</div>}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared small helpers
 
 function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -349,9 +763,7 @@ function FieldGroup({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-function DropButton({
-  label, open, onToggle, children,
-}: {
+function DropButton({ label, open, onToggle, children }: {
   label: string; open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   return (
@@ -387,9 +799,7 @@ function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
-function CheckRow({
-  label, checked, onChange,
-}: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function CheckRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="flex items-center gap-2 cursor-pointer">
       <input
@@ -400,234 +810,5 @@ function CheckRow({
       />
       <span className="text-sm text-gray-700">{label}</span>
     </label>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Print preview
-
-interface PreviewProps {
-  printView: PrintView;
-  printStart: Date;
-  printEnd: Date;
-  periodLabel: string;
-  events: CalendarEvent[];
-  selectedCalendars: Calendar[];
-  colorOverrides: Record<string, string>;
-  startTime: string;
-  endTime: string;
-  getEventColor: (ev: CalendarEvent) => string;
-}
-
-function CalendarPrintPreview({
-  printView, printStart, printEnd, periodLabel,
-  events, selectedCalendars, colorOverrides,
-  startTime, endTime, getEventColor,
-}: PreviewProps) {
-  const days = useMemo(
-    () => eachDayOfInterval({ start: printStart, end: printEnd }),
-    [printStart, printEnd],
-  );
-  const sMins = timeToMins(startTime);
-  const eMins = endMinsFromTime(endTime);
-  const safeMins = eMins > sMins ? eMins : 1440;
-
-  const HOUR_H = 22;
-  const LABEL_W = 28;
-  const colW = printView === 'month' ? 0 : Math.max(1, Math.floor((460 - LABEL_W) / days.length));
-  const totalH = ((safeMins - sMins) / 60) * HOUR_H;
-
-  return (
-    <div className="bg-white shadow-md rounded" style={{ width: 490, minWidth: 490 }}>
-      <div className="px-3 py-2 border-b border-gray-200">
-        <div className="font-semibold text-blue-600" style={{ fontSize: 11 }}>{periodLabel}</div>
-        <div className="flex flex-wrap gap-x-2 mt-1" style={{ fontSize: 9 }}>
-          {selectedCalendars.map(cal => (
-            <span key={cal.id} style={{ color: colorOverrides[cal.id] || cal.color || '#0078D4' }}>
-              {cal.name}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="px-2 pb-2 pt-1" style={{ fontSize: 9 }}>
-        {printView === 'month' ? (
-          <MonthGrid events={events} monthStart={printStart} getEventColor={getEventColor} />
-        ) : (
-          <TimeGrid
-            days={days}
-            events={events}
-            sMins={sMins}
-            safeMins={safeMins}
-            hourH={HOUR_H}
-            labelW={LABEL_W}
-            colW={colW}
-            totalH={totalH}
-            getEventColor={getEventColor}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TimeGrid({
-  days, events, sMins, safeMins, hourH, labelW, colW, totalH, getEventColor,
-}: {
-  days: Date[]; events: CalendarEvent[];
-  sMins: number; safeMins: number;
-  hourH: number; labelW: number; colW: number; totalH: number;
-  getEventColor: (ev: CalendarEvent) => string;
-}) {
-  const hours = useMemo(() => {
-    const res: number[] = [];
-    for (let m = sMins; m < safeMins; m += 60) res.push(m);
-    return res;
-  }, [sMins, safeMins]);
-
-  return (
-    <div style={{ fontSize: 8 }}>
-      {/* Day header row */}
-      <div className="flex border-b border-gray-200 mb-0.5" style={{ paddingLeft: labelW }}>
-        {days.map(day => (
-          <div key={day.toISOString()} style={{ width: colW, flexShrink: 0, textAlign: 'center' }}>
-            <span className={isToday(day) ? 'font-bold text-blue-600' : ''}>
-              {format(day, 'EEE', { locale: fr })} {format(day, 'd')}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Grid body */}
-      <div className="relative" style={{ height: totalH }}>
-        {hours.map((m, i) => {
-          const top = i * hourH;
-          return (
-            <div key={m} style={{ position: 'absolute', top, left: 0, right: 0 }}>
-              <div style={{ position: 'absolute', left: 0, width: labelW - 2, textAlign: 'right', color: '#9ca3af', fontSize: 7, top: 1 }}>
-                {String(Math.floor(m / 60)).padStart(2, '0')}
-              </div>
-              <div style={{ position: 'absolute', left: labelW, right: 0, borderTop: '1px solid #e5e7eb' }} />
-            </div>
-          );
-        })}
-
-        {days.map((day, di) => {
-          const dayEvs = events.filter(ev => !ev.all_day && isSameDay(parseISO(ev.start_date), day));
-          return (
-            <div
-              key={day.toISOString()}
-              style={{
-                position: 'absolute',
-                left: labelW + di * colW,
-                width: colW,
-                top: 0,
-                height: totalH,
-                borderRight: '1px solid #e5e7eb',
-              }}
-            >
-              {dayEvs.map(ev => {
-                const s = parseISO(ev.start_date);
-                const e = parseISO(ev.end_date);
-                const evS = getHours(s) * 60 + getMinutes(s);
-                const evE = getHours(e) * 60 + getMinutes(e);
-                if (evS >= safeMins || evE <= sMins) return null;
-                const top = Math.max(0, (evS - sMins) / 60) * hourH;
-                const height = Math.max(10, ((Math.min(evE, safeMins) - Math.max(evS, sMins)) / 60) * hourH - 1);
-                const color = getEventColor(ev);
-                return (
-                  <div
-                    key={ev.id}
-                    style={{
-                      position: 'absolute', top, left: 1, right: 1, height,
-                      background: color + '33',
-                      borderLeft: `2px solid ${color}`,
-                      padding: '1px 2px',
-                      overflow: 'hidden',
-                      borderRadius: 2,
-                      lineHeight: 1.2,
-                      fontSize: 7,
-                    }}
-                  >
-                    {ev.title}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function MonthGrid({
-  events, monthStart, getEventColor,
-}: {
-  events: CalendarEvent[];
-  monthStart: Date;
-  getEventColor: (ev: CalendarEvent) => string;
-}) {
-  const monthEnd = endOfMonth(monthStart);
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
-  const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
-  const weeks: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
-  const DAY_NAMES = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-
-  return (
-    <div style={{ fontSize: 8 }}>
-      <div className="grid grid-cols-7">
-        {DAY_NAMES.map((d, i) => (
-          <div key={i} className="text-center font-medium text-gray-500 py-0.5">{d}</div>
-        ))}
-      </div>
-      {weeks.map((week, wi) => (
-        <div key={wi} className="grid grid-cols-7 border-t border-gray-100">
-          {week.map(day => {
-            const dayEvs = events.filter(ev => isSameDay(parseISO(ev.start_date), day));
-            const inMonth = day >= monthStart && day <= monthEnd;
-            return (
-              <div
-                key={day.toISOString()}
-                className="border-r border-gray-100 py-0.5 px-0.5"
-                style={{ minHeight: 42, opacity: inMonth ? 1 : 0.4 }}
-              >
-                <div
-                  className={`text-center ${isToday(day) ? 'text-blue-600 font-bold' : ''}`}
-                  style={{ fontSize: 8 }}
-                >
-                  {format(day, 'd')}
-                </div>
-                {dayEvs.slice(0, 2).map(ev => {
-                  const color = getEventColor(ev);
-                  return (
-                    <div
-                      key={ev.id}
-                      style={{
-                        background: color + '30',
-                        borderLeft: `2px solid ${color}`,
-                        padding: '1px 2px',
-                        marginBottom: 1,
-                        fontSize: 7,
-                        overflow: 'hidden',
-                        whiteSpace: 'nowrap',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {ev.title}
-                    </div>
-                  );
-                })}
-                {dayEvs.length > 2 && (
-                  <div style={{ fontSize: 7, color: '#6b7280' }}>+{dayEvs.length - 2}</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
   );
 }
