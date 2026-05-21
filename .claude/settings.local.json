@@ -9,7 +9,8 @@
       "Bash(npx tsc *)",
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\" -Recurse -Directory)",
       "Bash(Select-Object -First 20 FullName)",
-      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\client\\\\src\" -Recurse -Filter \"*alendar*\" -ErrorAction SilentlyContinue)"
+      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\client\\\\src\" -Recurse -Filter \"*alendar*\" -ErrorAction SilentlyContinue)",
+      "Bash(xargs grep -l \"CalendarEvent\\\\|type Calendar\")"
     ]
   }
 }
