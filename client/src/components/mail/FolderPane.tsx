@@ -230,15 +230,10 @@ export default function FolderPane({
 
   const orderedAccounts = useMemo(() => sortAccounts(accounts), [accounts, prefsVersion]);
 
-  // When search is active, filter accounts by name (folders filtered inside AccountFolders)
-  const visibleAccounts = useMemo(() => {
-    if (!searchOpen || !searchQuery.trim()) return orderedAccounts;
-    const q = searchQuery.toLowerCase();
-    return orderedAccounts.filter((a) =>
-      getAccountDisplayName(a).toLowerCase().includes(q) ||
-      a.email?.toLowerCase().includes(q)
-    );
-  }, [orderedAccounts, searchOpen, searchQuery]);
+  // When search is active, always show all accounts — folder filtering happens
+  // inside AccountFolders via displayedFolders (searching account names would
+  // hide accounts that have matching folders under a non-matching account name).
+  const visibleAccounts = orderedAccounts;
 
   const toggleAccount = (id: string) => {
     setExpandedAccounts((prev) => {
@@ -491,11 +486,6 @@ export default function FolderPane({
           </div>
         )}
 
-        {searchOpen && searchQuery.trim() && visibleAccounts.length === 0 && (
-          <div className="text-center text-outlook-text-disabled text-sm py-8 px-4">
-            Aucun dossier ne correspond à « {searchQuery} »
-          </div>
-        )}
       </div>
 
       {accountContextMenu && (
@@ -941,6 +931,11 @@ function AccountFolders({
   return (
     <div className="ml-4">
       {tree.map((node) => renderNode(node, 0))}
+      {searchQuery?.trim() && tree.length === 0 && (
+        <p className="text-xs text-outlook-text-disabled px-2 py-1 italic">
+          Aucun dossier trouvé
+        </p>
+      )}
     </div>
   );
 }
