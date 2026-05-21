@@ -470,6 +470,25 @@ export default function Layout({ children }: LayoutProps) {
                   </div>
                 </div>
 
+                <div className="lg:hidden border-b border-outlook-border py-1">
+                  <button
+                    onClick={() => { setUserMenuOpen(false); navigate('/settings'); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-outlook-bg-hover ${location.pathname.startsWith('/settings') ? 'text-outlook-blue font-medium' : ''}`}
+                  >
+                    <Settings size={14} />
+                    <span>{t('nav.settings')}</span>
+                  </button>
+                  {user?.isAdmin && (
+                    <button
+                      onClick={() => { setUserMenuOpen(false); navigate('/admin'); }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-outlook-bg-hover ${location.pathname.startsWith('/admin') ? 'text-outlook-blue font-medium' : ''}`}
+                    >
+                      <Shield size={14} />
+                      <span>{t('nav.admin')}</span>
+                    </button>
+                  )}
+                </div>
+
                 <button
                   onClick={() => { setUserMenuOpen(false); logout(); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-outlook-bg-hover"
@@ -588,29 +607,6 @@ export default function Layout({ children }: LayoutProps) {
           );
         })}
 
-        <button
-          onClick={() => navigate('/settings')}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] min-h-[52px] transition-colors
-            ${location.pathname.startsWith('/settings') ? 'text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
-          `}
-          aria-label={t('nav.settings')}
-        >
-          <Settings size={20} />
-          <span className="leading-tight truncate max-w-full px-1">{t('nav.settings')}</span>
-        </button>
-
-        {user?.isAdmin && (
-          <button
-            onClick={() => navigate('/admin')}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] min-h-[52px] transition-colors
-              ${location.pathname.startsWith('/admin') ? 'text-outlook-blue' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}
-            `}
-            aria-label={t('nav.admin')}
-          >
-            <Shield size={20} />
-            <span className="leading-tight truncate max-w-full px-1">{t('nav.admin')}</span>
-          </button>
-        )}
       </nav>
     </div>
   );
