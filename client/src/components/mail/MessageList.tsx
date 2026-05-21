@@ -900,7 +900,6 @@ export default function MessageList({
                       }}
                       {...(canSwipe ? {
                         drag: 'x' as const,
-                        dragDirectionLock: true,
                         dragElastic: 0.25,
                         dragMomentum: false,
                         dragConstraints: { left: 0, right: 0 },
