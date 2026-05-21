@@ -10,6 +10,7 @@ import {
   Loader2, ChevronDown, ChevronLeft, SortAsc, CheckCircle2, AlertCircle, Cloud,
   Palette, Image as ImageIcon, Move, Maximize2, Minimize2,
   BookOpen, Share2, AtSign, RotateCcw, Shield, ExternalLink,
+  MoreHorizontal, Smartphone,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { toAvatarSrc } from '../utils/avatar';
@@ -126,7 +127,36 @@ export default function ContactsPage() {
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [showMobileOptions, setShowMobileOptions] = useState(false);
+  const [phoneContacts, setPhoneContacts] = useState<ImportedContact[] | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>('name');
+
+  const phoneContactsSupported = typeof navigator !== 'undefined' && 'contacts' in navigator;
+
+  const handlePhoneImport = async () => {
+    setShowMobileOptions(false);
+    try {
+      const selected = await (navigator as any).contacts.select(['name', 'email', 'tel'], { multiple: true });
+      if (!selected?.length) return;
+      const imported: ImportedContact[] = selected
+        .map((c: any) => {
+          const nameParts = (c.name?.[0] || '').trim().split(/\s+/);
+          return {
+            firstName: nameParts[0] || '',
+            lastName: nameParts.slice(1).join(' ') || '',
+            displayName: c.name?.[0] || '',
+            email: c.email?.[0] || '',
+            phone: c.tel?.[0] || '',
+          };
+        })
+        .filter((c: ImportedContact) => c.email || c.displayName);
+      if (!imported.length) { toast.error('Aucun contact sélectionné'); return; }
+      setPhoneContacts(imported);
+      setShowImport(true);
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') toast.error('Impossible d\'accéder aux contacts du téléphone');
+    }
+  };
 
   // Distribution list state
   const isDistListView = selectedGroup === DIST_LIST_GROUP_ID;
@@ -408,7 +438,8 @@ export default function ContactsPage() {
               <Plus size={14} /> Nouveau contact
             </button>
           )}
-          <div className="flex gap-1.5">
+          {/* Desktop: Import/Export buttons */}
+          <div className="hidden md:flex gap-1.5">
             <button
               onClick={() => setShowImport(true)}
               className="flex-1 border border-outlook-border hover:bg-outlook-bg-hover rounded-md py-1.5 text-xs font-medium flex items-center justify-center gap-1.5"
@@ -448,6 +479,14 @@ export default function ContactsPage() {
               )}
             </div>
           </div>
+
+          {/* Mobile: Options button */}
+          <button
+            onClick={() => setShowMobileOptions(true)}
+            className="md:hidden w-full border border-outlook-border hover:bg-outlook-bg-hover rounded-md py-1.5 text-xs font-medium flex items-center justify-center gap-1.5"
+          >
+            <MoreHorizontal size={14} /> Options
+          </button>
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
             <input
@@ -740,10 +779,72 @@ export default function ContactsPage() {
 
       {showImport && (
         <ImportModal
-          onClose={() => setShowImport(false)}
+          onClose={() => { setShowImport(false); setPhoneContacts(null); }}
           onImport={(contacts, mode) => importMutation.mutate({ contacts, mode })}
           isImporting={importMutation.isPending}
+          initialContacts={phoneContacts}
+          initialFilename={phoneContacts ? 'Contacts du téléphone' : undefined}
         />
+      )}
+
+      {/* Mobile options bottom sheet */}
+      {showMobileOptions && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowMobileOptions(false)} />
+          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-outlook-border">
+              <span className="text-sm font-semibold text-outlook-text-primary">Options contacts</span>
+              <button onClick={() => setShowMobileOptions(false)} className="text-outlook-text-secondary hover:text-outlook-text-primary">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-2">
+              <button
+                onClick={() => { setShowMobileOptions(false); setPhoneContacts(null); setShowImport(true); }}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-outlook-bg-hover rounded-xl text-sm text-left"
+              >
+                <Upload size={18} className="text-outlook-blue flex-shrink-0" />
+                <div>
+                  <div className="font-medium">Importer un fichier</div>
+                  <div className="text-xs text-outlook-text-secondary">vCard (.vcf), CSV Google, Outlook…</div>
+                </div>
+              </button>
+              {phoneContactsSupported && (
+                <button
+                  onClick={handlePhoneImport}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-outlook-bg-hover rounded-xl text-sm text-left"
+                >
+                  <Smartphone size={18} className="text-emerald-500 flex-shrink-0" />
+                  <div>
+                    <div className="font-medium">Importer depuis le téléphone</div>
+                    <div className="text-xs text-outlook-text-secondary">Contacts enregistrés sur l'appareil</div>
+                  </div>
+                </button>
+              )}
+              <div className="border-t border-outlook-border my-2 mx-4" />
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-outlook-text-disabled px-4 pb-1">Exporter</p>
+              {([
+                ['vcf', 'vCard (.vcf)', 'Apple, Android, iOS'],
+                ['csv-google', 'CSV Google', 'Gmail / Google Contacts'],
+                ['csv-outlook', 'CSV Outlook', 'Outlook / Microsoft 365'],
+                ['csv-generic', 'CSV générique', 'Compatible tableur'],
+              ] as const).map(([fmt, title, desc]) => (
+                <button
+                  key={fmt}
+                  onClick={() => { setShowMobileOptions(false); handleExport(fmt); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-outlook-bg-hover rounded-xl text-sm text-left"
+                >
+                  <Download size={16} className="text-outlook-text-secondary flex-shrink-0" />
+                  <div>
+                    <div className="font-medium">{title}</div>
+                    <div className="text-xs text-outlook-text-secondary">{desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="h-6" />
+          </div>
+        </>
       )}
 
       {showDLForm && (
@@ -1583,14 +1684,16 @@ function FormField({
 // ---------- Import Modal ----------
 
 function ImportModal({
-  onClose, onImport, isImporting,
+  onClose, onImport, isImporting, initialContacts, initialFilename,
 }: {
   onClose: () => void;
   onImport: (contacts: ImportedContact[], mode: 'merge' | 'skip' | 'replace') => void;
   isImporting: boolean;
+  initialContacts?: ImportedContact[] | null;
+  initialFilename?: string;
 }) {
-  const [parsed, setParsed] = useState<ImportedContact[] | null>(null);
-  const [filename, setFilename] = useState('');
+  const [parsed, setParsed] = useState<ImportedContact[] | null>(initialContacts ?? null);
+  const [filename, setFilename] = useState(initialFilename ?? '');
   const [mode, setMode] = useState<'merge' | 'skip' | 'replace'>('merge');
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1726,13 +1829,15 @@ function ImportModal({
         <div className="px-6 py-3 border-t border-outlook-border flex justify-between gap-2 bg-gray-50">
           {parsed ? (
             <>
-              <button
-                type="button"
-                onClick={() => { setParsed(null); setFilename(''); }}
-                className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover"
-              >
-                Changer de fichier
-              </button>
+              {!initialContacts && (
+                <button
+                  type="button"
+                  onClick={() => { setParsed(null); setFilename(''); }}
+                  className="px-4 py-2 text-sm rounded-md hover:bg-outlook-bg-hover"
+                >
+                  Changer de fichier
+                </button>
+              )}
               <button
                 type="button"
                 disabled={isImporting}
