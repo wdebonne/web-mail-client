@@ -22,6 +22,7 @@ import {
   getAutoLoadAllEnabled, setAutoLoadAllEnabled,
   setSwipeMoveTarget, setSwipeCopyTarget, type SwipeAction,
   getFabPosition, setFabPosition, type FabPosition,
+  getFabLongPressAction, setFabLongPressAction, type FabLongPressAction,
   getFolderPaneFontSize, setFolderPaneFontSize,
   type FolderPaneFontSize, FOLDER_PANE_FONT_SIZE_LABELS, FOLDER_PANE_FONT_SIZE_PX,
   getNewMailPollMinutes, setNewMailPollMinutes, type NewMailPollMinutes,
@@ -865,6 +866,7 @@ function AppearanceSettings() {
           <label className="text-sm font-medium text-outlook-text-primary block mb-1">Mise en page mobile</label>
           <p className="text-xs text-outlook-text-disabled mb-3">Options visuelles pour les écrans tactiles (téléphone et tablette).</p>
           <FabPositionPicker />
+          <FabLongPressActionPicker />
         </div>
 
         {/* Densité / lisibilité */}
@@ -932,6 +934,53 @@ function FabPositionPicker() {
         })}
       </div>
       <p className="text-xs text-outlook-text-secondary mt-2">{labels[pos]}</p>
+    </div>
+  );
+}
+
+// Lets the user choose which action fires on a long-press of the mobile FAB.
+// New actions can be added to the union type in mailPreferences.ts as the app evolves.
+function FabLongPressActionPicker() {
+  const [action, setAction] = useState<FabLongPressAction>(() => getFabLongPressAction());
+  const choose = (a: FabLongPressAction) => {
+    setAction(a);
+    setFabLongPressAction(a);
+    toast.success('Comportement appui long mis à jour');
+  };
+  const options: { value: FabLongPressAction; label: string; hint: string }[] = [
+    { value: 'search', label: 'Recherche', hint: 'Ouvre un champ de filtrage dans la vue active' },
+    { value: 'none',   label: 'Aucune',    hint: 'Appui long sans effet' },
+  ];
+  return (
+    <div className="mt-4">
+      <label className="text-sm text-outlook-text-secondary block mb-1">
+        Action appui long (bouton flottant)
+      </label>
+      <p className="text-xs text-outlook-text-disabled mb-2">
+        Maintenez le bouton « + » enfoncé sur mobile pour accéder à cette action.
+      </p>
+      <div className="flex flex-col gap-2">
+        {options.map(({ value, label, hint }) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => choose(value)}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-md border text-left transition-colors ${
+              action === value
+                ? 'border-outlook-blue bg-outlook-blue/10'
+                : 'border-outlook-border hover:bg-outlook-bg-hover'
+            }`}
+          >
+            <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${
+              action === value ? 'border-outlook-blue bg-outlook-blue' : 'border-outlook-text-disabled'
+            }`} />
+            <span className="flex flex-col">
+              <span className={`text-sm font-medium ${action === value ? 'text-outlook-blue' : 'text-outlook-text-primary'}`}>{label}</span>
+              <span className="text-xs text-outlook-text-disabled">{hint}</span>
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -34,8 +34,10 @@ import {
   getSwipePrefs, getSwipeMoveTarget, getSwipeCopyTarget, setSwipeMoveTarget, setSwipeCopyTarget,
   getAutoLoadAllEnabled,
   getMailDisplayMode, setMailDisplayMode, MAIL_DISPLAY_MODE_CHANGED_EVENT,
+  getFabLongPressAction,
   type SwipeAction, type MailDisplayMode,
 } from '../utils/mailPreferences';
+import type { FabMenuItem } from '../components/ui/FloatingActionButton';
 import {
   toggleMessageCategory, clearMessageCategories, getMessageCategories,
   subscribeCategories,
@@ -1246,6 +1248,11 @@ export default function MailPage() {
   const [mobileView, setMobileView] = useState<'folders' | 'list' | 'message'>('list');
   const [showFolderPane, setShowFolderPane] = useState(true);
 
+  // FAB long-press search bars (mobile only)
+  const [folderSearchOpen, setFolderSearchOpen] = useState(false);
+  const [listSearchOpen, setListSearchOpen] = useState(false);
+  const [listSearchQuery, setListSearchQuery] = useState('');
+
   // Deep-link from a Web Push notification action (Outlook-style buttons:
   // archive / delete / reply / markRead / flag). The Service Worker forwards
   // the click via URL params; we run the matching mutation, then clean the
@@ -2323,6 +2330,8 @@ export default function MailPage() {
                     setShowFolderPane(false);
                   }
                 }}
+                searchOpen={folderSearchOpen}
+                onSearchClose={() => setFolderSearchOpen(false)}
               />
             </div>
             {/* Folder resize handle — desktop only */}
@@ -2353,8 +2362,49 @@ export default function MailPage() {
                   : selectedAccount ? getAccountDisplayName(selectedAccount) : ''}
             </span>
           </div>
+
+          {/* Inline search bar — triggered by FAB long-press → Recherche */}
+          {listSearchOpen && (
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border bg-outlook-bg-secondary animate-fade-in">
+              <Search size={15} className="text-outlook-text-secondary flex-shrink-0" />
+              <input
+                autoFocus
+                type="text"
+                placeholder="Filtrer les messages..."
+                value={listSearchQuery}
+                onChange={(e) => setListSearchQuery(e.target.value)}
+                className="flex-1 text-sm bg-transparent outline-none text-outlook-text-primary placeholder:text-outlook-text-disabled"
+              />
+              {listSearchQuery ? (
+                <button
+                  onClick={() => setListSearchQuery('')}
+                  className="text-outlook-text-secondary hover:text-outlook-text-primary p-0.5"
+                  aria-label="Effacer"
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+              <button
+                onClick={() => { setListSearchOpen(false); setListSearchQuery(''); }}
+                className="text-outlook-text-secondary hover:text-outlook-text-primary p-0.5 ml-1"
+                aria-label="Fermer la recherche"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
           <MessageList
-            messages={visibleMessages}
+            messages={listSearchOpen && listSearchQuery.trim()
+              ? visibleMessages.filter((m) => {
+                  const q = listSearchQuery.toLowerCase();
+                  return (
+                    m.subject?.toLowerCase().includes(q) ||
+                    m.from?.name?.toLowerCase().includes(q) ||
+                    m.from?.address?.toLowerCase().includes(q)
+                  );
+                })
+              : visibleMessages}
             selectedMessage={selectedMessage}
             loading={loadingMessages}
             onSelectMessage={handleSelectMessageMobile}
@@ -2952,16 +3002,29 @@ export default function MailPage() {
        *  Visible whenever the user is browsing the folder/list views, even if
        *  a draft compose tab is open in the background — tapping it then
        *  brings them back to the in-progress draft instead of dropping it. */}
-      {!composeExpanded && mobileView !== 'message' && (
-        <FloatingActionButton
-          onClick={() => {
-            setMobileView('message');
-            if (!isComposing) openCompose();
-          }}
-          label="Nouveau message"
-          icon={<Plus size={24} />}
-        />
-      )}
+      {!composeExpanded && mobileView !== 'message' && (() => {
+        const longPressAction = getFabLongPressAction();
+        const longPressItems: FabMenuItem[] = longPressAction === 'search'
+          ? [{ id: 'search', label: 'Recherche', icon: <Search size={18} /> }]
+          : [];
+        return (
+          <FloatingActionButton
+            onClick={() => {
+              setMobileView('message');
+              if (!isComposing) openCompose();
+            }}
+            label="Nouveau message"
+            icon={<Plus size={24} />}
+            longPressItems={longPressItems}
+            onLongPressAction={(id) => {
+              if (id === 'search') {
+                if (mobileView === 'folders') setFolderSearchOpen(true);
+                else if (mobileView === 'list') { setListSearchOpen(true); setListSearchQuery(''); }
+              }
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

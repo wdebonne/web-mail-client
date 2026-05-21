@@ -34,6 +34,7 @@ export default {
       animation: {
         'slide-in': 'slideIn 0.2s ease-out',
         'fade-in': 'fadeIn 0.15s ease-out',
+        'fab-item': 'fabItem 0.2s ease-out both',
       },
       keyframes: {
         slideIn: {
@@ -43,6 +44,10 @@ export default {
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
+        },
+        fabItem: {
+          '0%': { opacity: '0', transform: 'translateY(8px) scale(0.9)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
         },
       },
     },

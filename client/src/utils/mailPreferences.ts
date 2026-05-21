@@ -427,6 +427,21 @@ export function setFabPosition(position: FabPosition) {
 
 export const FAB_POSITION_CHANGED_EVENT = FAB_POSITION_EVENT;
 
+// --- Floating action button long-press action ---
+// Controls what happens when the user holds the FAB. Extensible: more actions
+// can be added to the union without breaking existing stored values.
+export type FabLongPressAction = 'search' | 'none';
+const KEY_FAB_LONG_PRESS = 'ui.fabLongPress';
+
+export function getFabLongPressAction(): FabLongPressAction {
+  const raw = localStorage.getItem(KEY_FAB_LONG_PRESS);
+  return raw === 'none' ? 'none' : 'search'; // default: search
+}
+
+export function setFabLongPressAction(action: FabLongPressAction) {
+  localStorage.setItem(KEY_FAB_LONG_PRESS, action);
+}
+
 // --- Folder pane font size (volet "Dossiers") ---
 // Allows users with small screens or large fingers to bump the text size of
 // the mailboxes / folders / favourites tree. Independent of the message list

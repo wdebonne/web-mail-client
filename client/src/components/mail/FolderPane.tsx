@@ -2,8 +2,9 @@ import {
   Inbox, Send, FileText, Trash2, Archive, Star, AlertTriangle,
   ChevronDown, ChevronRight, Plus, FolderIcon, FolderPlus, Pencil,
   Trash, Copy, GripVertical, RotateCcw, Tag, Palette, MailCheck,
+  Search, X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import { api } from '../../api';
@@ -76,6 +77,9 @@ interface FolderPaneProps {
   onAfterSelect?: () => void;
   /** External signal that mail preferences (favorites, unified selection…) changed elsewhere. */
   externalPrefsVersion?: number;
+  /** When true, show an inline search bar and filter folders/accounts by the typed query. */
+  searchOpen?: boolean;
+  onSearchClose?: () => void;
 }
 
 const FOLDER_ICONS: Record<string, any> = {
@@ -144,6 +148,7 @@ export default function FolderPane({
   onDropMessage, onCreateFolder, onRenameFolder, onDeleteFolder,
   onCopyFolderBetweenAccounts, onMoveFolder, onMarkFolderAllRead, onPreferencesChanged, onAfterSelect,
   externalPrefsVersion,
+  searchOpen = false, onSearchClose,
 }: FolderPaneProps) {
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => {
     const persisted = getExpandedAccounts();
@@ -153,6 +158,17 @@ export default function FolderPane({
   const [prefsVersion, setPrefsVersion] = useState(0);
   const triggerRerender = () => setPrefsVersion((n) => n + 1);
   const queryClient = useQueryClient();
+
+  // Inline search (triggered by FAB long-press → Recherche from parent)
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (searchOpen) {
+      setSearchQuery('');
+      // Defer focus so the bar has rendered
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+  }, [searchOpen]);
   const virtualFolder = useMailStore((s) => s.virtualFolder);
   const selectVirtualFolder = useMailStore((s) => s.selectVirtualFolder);
   const categoryFilter = useMailStore((s) => s.categoryFilter);
@@ -213,6 +229,16 @@ export default function FolderPane({
   }, [accounts]);
 
   const orderedAccounts = useMemo(() => sortAccounts(accounts), [accounts, prefsVersion]);
+
+  // When search is active, filter accounts by name (folders filtered inside AccountFolders)
+  const visibleAccounts = useMemo(() => {
+    if (!searchOpen || !searchQuery.trim()) return orderedAccounts;
+    const q = searchQuery.toLowerCase();
+    return orderedAccounts.filter((a) =>
+      getAccountDisplayName(a).toLowerCase().includes(q) ||
+      a.email?.toLowerCase().includes(q)
+    );
+  }, [orderedAccounts, searchOpen, searchQuery]);
 
   const toggleAccount = (id: string) => {
     setExpandedAccounts((prev) => {
@@ -317,35 +343,68 @@ export default function FolderPane({
         </button>
       </div>
 
+      {/* Inline search bar — shown when FAB long-press → Recherche is triggered */}
+      {searchOpen && (
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border bg-outlook-bg-secondary animate-fade-in flex-shrink-0">
+          <Search size={15} className="text-outlook-text-secondary flex-shrink-0" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Filtrer les dossiers..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="flex-1 text-sm bg-transparent outline-none text-outlook-text-primary placeholder:text-outlook-text-disabled"
+          />
+          {searchQuery ? (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-outlook-text-secondary hover:text-outlook-text-primary p-0.5"
+              aria-label="Effacer"
+            >
+              <X size={14} />
+            </button>
+          ) : null}
+          <button
+            onClick={() => { onSearchClose?.(); setSearchQuery(''); }}
+            className="text-outlook-text-secondary hover:text-outlook-text-primary p-0.5 ml-1"
+            aria-label="Fermer la recherche"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       <div
         className="flex-1 overflow-y-auto px-1 pb-4 pt-2 md:pt-0"
         style={{ fontSize: `${folderFontSizePx}px` }}
       >
-        <FavoritesSection
-          accounts={orderedAccounts}
-          expanded={favoritesExpanded}
-          onToggleExpanded={() => setFavoritesExpandedState((v) => !v)}
-          virtualFolder={virtualFolder}
-          selectedAccountId={selectedAccount?.id || null}
-          selectedFolder={selectedFolder}
-          onSelectVirtual={(v) => { selectVirtualFolder(v); onAfterSelect?.(); }}
-          onSelectFavorite={(fav) => {
-            const account = accounts.find((a) => a.id === fav.accountId);
-            if (account) onSelectFolderInAccount(account, fav.path);
-            onAfterSelect?.();
-          }}
-          onFavoriteContextMenu={(fav, x, y) => setFavoriteContextMenu({ x, y, fav })}
-          categoryFilter={categoryFilter}
-          onSelectCategoryFilter={(id) => setCategoryFilter(id)}
-          prefsVersion={prefsVersion + (externalPrefsVersion || 0)}
-          unreadPrefs={unreadPrefs}
-          onChanged={() => {
-            triggerRerender();
-            onPreferencesChanged?.();
-          }}
-        />
+        {!searchOpen && (
+          <FavoritesSection
+            accounts={orderedAccounts}
+            expanded={favoritesExpanded}
+            onToggleExpanded={() => setFavoritesExpandedState((v) => !v)}
+            virtualFolder={virtualFolder}
+            selectedAccountId={selectedAccount?.id || null}
+            selectedFolder={selectedFolder}
+            onSelectVirtual={(v) => { selectVirtualFolder(v); onAfterSelect?.(); }}
+            onSelectFavorite={(fav) => {
+              const account = accounts.find((a) => a.id === fav.accountId);
+              if (account) onSelectFolderInAccount(account, fav.path);
+              onAfterSelect?.();
+            }}
+            onFavoriteContextMenu={(fav, x, y) => setFavoriteContextMenu({ x, y, fav })}
+            categoryFilter={categoryFilter}
+            onSelectCategoryFilter={(id) => setCategoryFilter(id)}
+            prefsVersion={prefsVersion + (externalPrefsVersion || 0)}
+            unreadPrefs={unreadPrefs}
+            onChanged={() => {
+              triggerRerender();
+              onPreferencesChanged?.();
+            }}
+          />
+        )}
 
-        {orderedAccounts.map((account) => {
+        {visibleAccounts.map((account) => {
           const isExpanded = expandedAccounts.has(account.id);
           const indicator = accountDropIndicator?.id === account.id ? accountDropIndicator.position : null;
           return (
@@ -404,7 +463,7 @@ export default function FolderPane({
                 <span className="truncate flex-1 text-left">{getAccountDisplayName(account)}</span>
               </div>
 
-              {isExpanded && (
+              {(isExpanded || (searchOpen && searchQuery.trim())) && (
                 <AccountFolders
                   account={account}
                   selectedAccountId={selectedAccount?.id || null}
@@ -418,16 +477,23 @@ export default function FolderPane({
                   onFolderOrderChanged={triggerRerender}
                   prefsVersion={prefsVersion}
                   unreadPrefs={unreadPrefs}
+                  searchQuery={searchOpen ? searchQuery : undefined}
                 />
               )}
             </div>
           );
         })}
 
-        {accounts.length === 0 && (
+        {accounts.length === 0 && !searchOpen && (
           <div className="text-center text-outlook-text-disabled text-sm py-8 px-4">
             Aucun compte configuré.<br />
             Allez dans Paramètres pour ajouter un compte.
+          </div>
+        )}
+
+        {searchOpen && searchQuery.trim() && visibleAccounts.length === 0 && (
+          <div className="text-center text-outlook-text-disabled text-sm py-8 px-4">
+            Aucun dossier ne correspond à « {searchQuery} »
           </div>
         )}
       </div>
@@ -549,12 +615,13 @@ interface AccountFoldersProps {
   onFolderOrderChanged?: () => void;
   prefsVersion?: number;
   unreadPrefs: UnreadIndicatorPrefs;
+  searchQuery?: string;
 }
 
 function AccountFolders({
   account, selectedAccountId, selectedFolder, externalFolders,
   onSelectFolder, onContextMenu, onDropMessage, onCopyFolder, onMoveFolder, onFolderOrderChanged, prefsVersion,
-  unreadPrefs,
+  unreadPrefs, searchQuery,
 }: AccountFoldersProps) {
   // When a virtual folder (Favoris > Boîte de réception unifiée, etc.) is
   // active, we must NOT highlight any regular folder in the per-account tree —
@@ -570,6 +637,16 @@ function AccountFolders({
 
   const folders: MailFolder[] = (externalFolders || (data as MailFolder[]) || []) as MailFolder[];
   const ordered = useMemo(() => sortFolders(folders, account.id), [folders, account.id, prefsVersion]);
+
+  const displayedFolders = useMemo(() => {
+    if (!searchQuery?.trim()) return ordered;
+    const q = searchQuery.toLowerCase();
+    return ordered.filter((f) =>
+      getFolderLabel(f).toLowerCase().includes(q) ||
+      f.name?.toLowerCase().includes(q) ||
+      f.path?.toLowerCase().includes(q)
+    );
+  }, [ordered, searchQuery]);
 
   // Per-folder STATUS (unseen / total / recent) — only fetched when the user
   // actually wants to see unread indicators. Cached server-side for 20 s.
@@ -757,10 +834,16 @@ function AccountFolders({
   };
 
   // Build a parent/child tree preserving sorted order at every level.
+  // When a search filter is active we flatten to a plain list so every match is visible.
   const tree = useMemo(() => {
     type Node = { folder: MailFolder; children: Node[] };
+    const source = displayedFolders;
+    if (searchQuery?.trim()) {
+      // Flat list — no nesting when filtering
+      return source.map((f) => ({ folder: f, children: [] as Node[] }));
+    }
     const byPath = new Map<string, Node>();
-    for (const f of ordered) byPath.set(f.path, { folder: f, children: [] });
+    for (const f of source) byPath.set(f.path, { folder: f, children: [] });
     const roots: Node[] = [];
     for (const node of byPath.values()) {
       const f = node.folder;
@@ -776,7 +859,7 @@ function AccountFolders({
       roots.push(node);
     }
     return roots;
-  }, [ordered]);
+  }, [displayedFolders, searchQuery]);
 
   const renderFolder = (folder: MailFolder, depth: number): React.ReactNode => {
     const isSelected = !virtualFolder && selectedAccountId === account.id && folder.path === selectedFolder;
