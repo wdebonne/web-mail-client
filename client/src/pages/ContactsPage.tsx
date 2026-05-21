@@ -460,8 +460,23 @@ export default function ContactsPage() {
           </div>
         </div>
 
-        {/* Categories */}
-        <div className="px-2 py-2 border-b border-outlook-border overflow-y-auto max-h-[40%]">
+        {/* Mobile: horizontal chip category selector */}
+        <div className="md:hidden flex gap-2 overflow-x-auto py-2.5 px-3 border-b border-outlook-border flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
+          <MobileChip label="Tous" count={totalContacts} active={!selectedGroup} onClick={() => { setSelectedGroup(undefined); setSelectedContactId(null); }} />
+          <MobileChip label="Favoris" count={favCount} active={isFavView} color="amber" onClick={() => { setSelectedGroup(FAV_GROUP_ID); setSelectedContactId(null); }} />
+          <MobileChip label="Enregistrés" count={localCount} active={isLocalView} color="green" onClick={() => { setSelectedGroup(LOCAL_GROUP_ID); setSelectedContactId(null); }} />
+          <MobileChip label="Expéditeurs" count={sendersCount?.total ?? 0} active={isSenderView} color="orange" onClick={() => { setSelectedGroup(SENDER_GROUP_ID); setSelectedContactId(null); }} />
+          {hasNextcloud && (
+            <MobileChip label="NextCloud" count={nextcloudCount} active={isNextcloudView} color="blue" onClick={() => { setSelectedGroup(NEXTCLOUD_GROUP_ID); setSelectedContactId(null); }} />
+          )}
+          <MobileChip label="Listes" count={(distributionLists as any[]).length} active={isDistListView} color="purple" onClick={() => { setSelectedGroup(DIST_LIST_GROUP_ID); setSelectedContactId(null); setSelectedDistListId(null); }} />
+          {groups.map((g: ContactGroup) => (
+            <MobileChip key={g.id} label={g.name} count={g.member_count} active={selectedGroup === g.id} onClick={() => { setSelectedGroup(g.id); setSelectedContactId(null); }} />
+          ))}
+        </div>
+
+        {/* Desktop: vertical category list */}
+        <div className="hidden md:block px-2 py-2 border-b border-outlook-border overflow-y-auto max-h-[40%]">
           <NavItem
             label="Tous les contacts"
             icon={<Users size={14} />}
@@ -508,7 +523,6 @@ export default function ContactsPage() {
             icon={<BookOpen size={14} />}
             count={(distributionLists as any[]).length}
             active={isDistListView}
-
             onClick={() => { setSelectedGroup(DIST_LIST_GROUP_ID); setSelectedContactId(null); setSelectedDistListId(null); }}
             color="purple"
           />
@@ -656,10 +670,10 @@ export default function ContactsPage() {
       {/* Right panel: detail */}
       <div className={`${(selectedContactId || (isDistListView && selectedDistListId)) ? 'flex' : 'hidden md:flex'} flex-1 flex-col overflow-hidden`}>
         {(selectedContact || (isDistListView && selectedDistList)) && (
-          <div className="md:hidden flex items-center px-2 py-1.5 border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0">
+          <div className="md:hidden flex items-center px-3 py-2 border-b border-outlook-border bg-outlook-bg-primary flex-shrink-0">
             <button
               onClick={() => { setSelectedContactId(null); setSelectedDistListId(null); }}
-              className="flex items-center gap-1 px-2 py-1.5 text-sm text-outlook-text-primary hover:bg-outlook-bg-hover rounded"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-outlook-blue hover:bg-outlook-blue/10 active:bg-outlook-blue/20 rounded-full transition-colors"
               aria-label="Retour à la liste"
             >
               <ChevronLeft size={18} /> Retour
@@ -804,6 +818,32 @@ function NavItem({
   );
 }
 
+function MobileChip({
+  label, count, active, onClick, color,
+}: {
+  label: string; count?: number; active: boolean; onClick: () => void;
+  color?: 'orange' | 'amber' | 'green' | 'blue' | 'purple';
+}) {
+  const activeClass = color === 'amber' ? 'bg-amber-500 text-white'
+    : color === 'orange' ? 'bg-orange-500 text-white'
+    : color === 'green' ? 'bg-green-600 text-white'
+    : color === 'blue' ? 'bg-blue-500 text-white'
+    : color === 'purple' ? 'bg-purple-600 text-white'
+    : 'bg-outlook-blue text-white';
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors
+        ${active ? activeClass : 'bg-outlook-bg-hover text-outlook-text-secondary'}`}
+    >
+      {label}
+      {count !== undefined && count > 0 && (
+        <span className={`text-xs font-normal ${active ? 'opacity-80' : 'opacity-60'}`}>{count}</span>
+      )}
+    </button>
+  );
+}
+
 function ContactRow({
   contact, selected, onClick, onFav,
 }: {
@@ -813,7 +853,7 @@ function ContactRow({
   return (
     <div
       onClick={onClick}
-      className={`group flex items-center gap-3 px-3 py-2.5 border-b border-outlook-border cursor-pointer transition-colors
+      className={`group flex items-center gap-3 px-3 py-3 md:py-2.5 border-b border-outlook-border cursor-pointer transition-colors
         ${selected
           ? 'bg-outlook-bg-selected border-l-2 border-l-outlook-blue text-outlook-text-primary'
           : 'hover:bg-outlook-bg-hover'}`}
@@ -837,7 +877,10 @@ function ContactRow({
       </div>
       <button
         onClick={(e) => { e.stopPropagation(); onFav(!contact.is_favorite); }}
-        className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-amber-100 ${contact.is_favorite ? '!opacity-100' : ''}`}
+        className={`p-2 rounded transition-opacity hover:bg-amber-100
+          ${contact.is_favorite
+            ? 'opacity-100'
+            : 'opacity-30 md:opacity-0 md:group-hover:opacity-100'}`}
         title={contact.is_favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
       >
         <Star size={14} className={contact.is_favorite ? 'text-amber-500 fill-amber-500' : 'text-outlook-text-disabled'} />
