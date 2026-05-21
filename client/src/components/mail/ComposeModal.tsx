@@ -921,6 +921,31 @@ function RecipientField({
   onLabelClick?: () => void;
   onExpandDL?: (index: number, dl: EmailAddress['_dl']) => void;
 }) {
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+
+  useEffect(() => { setHighlightedIndex(-1); }, [suggestions]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlightedIndex(i => Math.min(i + 1, suggestions.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlightedIndex(i => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        onSelectSuggestion(suggestions[highlightedIndex >= 0 ? highlightedIndex : 0]);
+        return;
+      }
+    }
+    onKeyDown(e);
+  };
+
   return (
     <div className="flex items-start gap-2 px-4 py-1.5 border-b border-outlook-border relative flex-shrink-0">
       <button
@@ -976,7 +1001,7 @@ function RecipientField({
           type="text"
           value={inputValue}
           onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleKeyDown}
           onFocus={onFocus}
           onBlur={onBlur}
           className="flex-1 text-sm outline-none min-w-24"
@@ -997,7 +1022,7 @@ function RecipientField({
               <button
                 key={i}
                 onMouseDown={(e) => { e.preventDefault(); onSelectSuggestion(s); }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-outlook-bg-hover flex items-center gap-2.5"
+                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 ${i === highlightedIndex ? 'bg-outlook-blue/10' : 'hover:bg-outlook-bg-hover'}`}
               >
                 {s.isDistributionList ? (
                   <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
