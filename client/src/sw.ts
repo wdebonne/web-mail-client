@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 /* eslint-disable no-restricted-globals */
 
-import { precacheAndRoute } from 'workbox-precaching';
+import { precacheAndRoute, matchPrecache } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
 
@@ -38,16 +38,14 @@ registerRoute(
   new NetworkFirst({ cacheName: 'calendar-cache', networkTimeoutSeconds: 10 }),
 );
 
-// SPA fallback
-try {
-  registerRoute(new NavigationRoute(async () => {
-    const cache = await caches.open('workbox-precache-v2');
-    const match = await cache.match('/index.html');
-    return match || fetch('/index.html');
-  }, { allowlist: [/^\/(?!api\/).*/] }));
-} catch {
-  /* ignore */
-}
+// SPA fallback — matchPrecache resolves the real Workbox cache name and
+// handles the revision hash appended to /index.html in the precache manifest.
+registerRoute(
+  new NavigationRoute(
+    async () => (await matchPrecache('/index.html')) ?? fetch('/index.html'),
+    { allowlist: [/^\/(?!api\/).*/] },
+  ),
+);
 
 self.addEventListener('install', () => {
   // Do not call skipWaiting() — let vite-plugin-pwa's prompt flow control
