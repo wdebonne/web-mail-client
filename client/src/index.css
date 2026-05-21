@@ -91,6 +91,9 @@ html, body, #root {
   color: var(--outlook-text);
   background-color: var(--outlook-bg);
   overflow: hidden;
+  /* Prevent Chrome Android pull-to-refresh and iOS overscroll bounce on the
+     root shell. Scrollable inner containers keep their own scroll behaviour. */
+  overscroll-behavior: none;
 }
 
 /* Scrollbar styling */
