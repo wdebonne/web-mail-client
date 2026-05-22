@@ -167,12 +167,49 @@ export function setShowSidebar(v: boolean) {
 
 // ── View ──────────────────────────────────────────────────────
 export type CalendarView = 'day' | 'workweek' | 'week' | 'month' | 'agenda';
-export function getCalendarView(): CalendarView {
-  const v = localStorage.getItem(KEY_VIEW);
-  return (v === 'day' || v === 'workweek' || v === 'week' || v === 'month' || v === 'agenda') ? v : 'week';
+export type DeviceType = 'mobile' | 'tablet' | 'desktop';
+
+const KEY_VIEW_MOBILE  = 'calendar.view.mobile';
+const KEY_VIEW_TABLET  = 'calendar.view.tablet';
+const KEY_VIEW_DESKTOP = 'calendar.view.desktop';
+
+const VIEW_VALUES = ['day', 'workweek', 'week', 'month', 'agenda'] as const;
+function isValidView(v: string | null): v is CalendarView {
+  return VIEW_VALUES.includes(v as CalendarView);
 }
-export function setCalendarView(v: CalendarView) {
-  localStorage.setItem(KEY_VIEW, v);
+
+export function getDeviceType(): DeviceType {
+  if (typeof window === 'undefined') return 'desktop';
+  if (window.matchMedia('(max-width: 767px)').matches) return 'mobile';
+  if (window.matchMedia('(max-width: 1023px)').matches) return 'tablet';
+  return 'desktop';
+}
+
+function viewKeyFor(device: DeviceType): string {
+  if (device === 'mobile') return KEY_VIEW_MOBILE;
+  if (device === 'tablet') return KEY_VIEW_TABLET;
+  return KEY_VIEW_DESKTOP;
+}
+
+function defaultViewFor(device: DeviceType): CalendarView {
+  return device === 'desktop' ? 'week' : 'agenda';
+}
+
+export function getCalendarView(device?: DeviceType): CalendarView {
+  const d = device ?? getDeviceType();
+  const v = localStorage.getItem(viewKeyFor(d));
+  if (isValidView(v)) return v;
+  // Migrate existing desktop preference from old single key
+  if (d === 'desktop') {
+    const old = localStorage.getItem(KEY_VIEW);
+    if (isValidView(old)) return old;
+  }
+  return defaultViewFor(d);
+}
+
+export function setCalendarView(v: CalendarView, device?: DeviceType) {
+  const d = device ?? getDeviceType();
+  localStorage.setItem(viewKeyFor(d), v);
 }
 
 // ── Column sizing in time-grid views ──────────────────────────
