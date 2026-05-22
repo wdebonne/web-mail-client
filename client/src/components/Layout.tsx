@@ -46,6 +46,8 @@ export default function Layout({ children }: LayoutProps) {
   const toggleMobileSidebar = useUIStore((s) => s.toggleMobileSidebar);
   const queryClient = useQueryClient();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -131,29 +133,40 @@ export default function Layout({ children }: LayoutProps) {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
+        setSearchExpanded(true);
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+        }, 50);
       }
-      if (e.key === 'Escape' && showSuggestions) {
-        setShowSuggestions(false);
-        searchInputRef.current?.blur();
+      if (e.key === 'Escape') {
+        if (showSuggestions) {
+          setShowSuggestions(false);
+          searchInputRef.current?.blur();
+        }
+        if (searchExpanded) {
+          setSearchExpanded(false);
+          setSearchQuery('');
+          setSuggestions({ emails: [], contacts: [], events: [] });
+        }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [showSuggestions]);
+  }, [showSuggestions, searchExpanded]);
 
-  // Close suggestions when clicking outside
+  // Close suggestions / collapse search when clicking outside
   useEffect(() => {
-    if (!showSuggestions) return;
+    if (!showSuggestions && !searchExpanded) return;
     const onDocClick = (e: MouseEvent) => {
       if (!searchContainerRef.current?.contains(e.target as Node)) {
         setShowSuggestions(false);
+        if (!searchQuery.trim()) setSearchExpanded(false);
       }
     };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
-  }, [showSuggestions]);
+  }, [showSuggestions, searchExpanded, searchQuery]);
 
   // Debounced suggestions fetch
   const fetchSuggestions = useCallback((q: string) => {
@@ -243,50 +256,82 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="h-12 bg-outlook-blue flex items-center px-3 sm:px-4 flex-shrink-0 gap-2">
+      <header className="h-12 bg-outlook-bg-secondary border-b border-outlook-border flex items-center px-3 sm:px-4 flex-shrink-0 gap-2">
         <button
-          onClick={() => hamburgerActive && toggleMobileSidebar()}
-          className={`text-white p-1.5 rounded lg:hidden ${
-            hamburgerActive ? 'hover:bg-white/10' : 'opacity-40 cursor-default'
+          onClick={() => {
+            if (hamburgerActive) {
+              toggleMobileSidebar();
+              setMobileSidebarOpen((v) => !v);
+            }
+          }}
+          className={`text-outlook-text-primary p-1.5 rounded lg:hidden ${
+            hamburgerActive ? 'hover:bg-outlook-bg-hover' : 'opacity-40 cursor-default'
           }`}
           aria-label={t('layout.show_hide_sidebar')}
           title={t('layout.show_hide_sidebar')}
         >
-          <Menu size={20} />
+          <Menu
+            size={20}
+            style={{
+              transform: mobileSidebarOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.25s ease',
+            }}
+          />
         </button>
 
-        <span className="text-white font-semibold text-sm mr-4 hidden lg:inline">WebMail</span>
+        <span className="text-outlook-text-primary font-semibold text-sm mr-4 hidden lg:inline">WebMail</span>
 
-        <div ref={searchContainerRef} className="flex-1 max-w-2xl relative">
-          <form onSubmit={handleSearch}>
-            <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60 pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder={searchPlaceholder}
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  fetchSuggestions(e.target.value);
-                  setShowSuggestions(e.target.value.trim().length >= 2);
-                }}
-                onFocus={() => {
-                  if (searchQuery.trim().length >= 2) setShowSuggestions(true);
-                }}
-                className="w-full bg-white/15 text-white placeholder-white/50 rounded-lg px-3 py-2 pl-9 pr-8 text-sm border border-white/20 focus:bg-white/25 focus:outline-none focus:border-white/50 transition-all shadow-sm"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(''); setSuggestions({ emails: [], contacts: [], events: [] }); setShowSuggestions(false); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/90 transition-colors"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-          </form>
+        <div
+          ref={searchContainerRef}
+          className={`relative transition-all duration-200 ${searchExpanded ? 'flex-1 max-w-2xl' : 'w-9'}`}
+        >
+          {searchExpanded ? (
+            <form onSubmit={handleSearch}>
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-outlook-text-secondary pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder={searchPlaceholder}
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    fetchSuggestions(e.target.value);
+                    setShowSuggestions(e.target.value.trim().length >= 2);
+                  }}
+                  onFocus={() => {
+                    if (searchQuery.trim().length >= 2) setShowSuggestions(true);
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => {
+                      if (!searchQuery.trim()) setSearchExpanded(false);
+                    }, 200);
+                  }}
+                  className="w-full bg-outlook-bg-hover text-outlook-text-primary placeholder-outlook-text-secondary rounded-lg px-3 py-2 pl-9 pr-8 text-sm border border-outlook-border focus:bg-outlook-bg-selected focus:outline-none focus:border-outlook-blue transition-all shadow-sm"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(''); setSuggestions({ emails: [], contacts: [], events: [] }); setShowSuggestions(false); setSearchExpanded(false); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-outlook-text-secondary hover:text-outlook-text-primary transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </form>
+          ) : (
+            <button
+              onClick={() => {
+                setSearchExpanded(true);
+                setTimeout(() => searchInputRef.current?.focus(), 50);
+              }}
+              className="w-9 h-9 flex items-center justify-center rounded text-outlook-text-secondary hover:bg-outlook-bg-hover hover:text-outlook-text-primary transition-colors"
+              title={`Rechercher (Ctrl+K)`}
+            >
+              <Search size={20} />
+            </button>
+          )}
 
           {/* Suggestions dropdown */}
           <AnimatePresence>
@@ -424,7 +469,7 @@ export default function Layout({ children }: LayoutProps) {
           <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
-              className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white text-sm font-semibold transition-colors"
+              className="w-9 h-9 rounded-full bg-outlook-blue hover:bg-outlook-blue-hover flex items-center justify-center text-white text-sm font-semibold transition-colors"
               aria-haspopup="menu"
               aria-expanded={userMenuOpen}
               title={user?.displayName || user?.email || ''}
