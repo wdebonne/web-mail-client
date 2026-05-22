@@ -45,6 +45,7 @@ export default function Layout({ children }: LayoutProps) {
   const themeResolved = useThemeStore((s) => s.resolved);
   const setThemeMode = useThemeStore((s) => s.setMode);
   const toggleMobileSidebar = useUIStore((s) => s.toggleMobileSidebar);
+  const mobilePageTitle = useUIStore((s) => s.mobilePageTitle);
   const queryClient = useQueryClient();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -282,6 +283,12 @@ export default function Layout({ children }: LayoutProps) {
         </button>
 
         <span className="text-outlook-text-primary font-semibold text-sm mr-4 hidden lg:inline">WebMail</span>
+
+        {mobilePageTitle && !searchExpanded && (
+          <span className="flex-1 text-sm font-medium text-outlook-text-primary truncate lg:hidden">
+            {mobilePageTitle}
+          </span>
+        )}
 
         <div
           ref={searchContainerRef}
