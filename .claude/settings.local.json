@@ -18,7 +18,9 @@
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\server\\\\src\\\\routes\" -Name)",
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\server\\\\src\\\\types\")",
       "Bash(Get-ChildItem -Path \"F:\\\\Visual Studio Code\\\\Web - Mail Client\" -Directory)",
-      "Bash(grep -E \"\\\\.ts$\")"
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(node_modules\\\\.bin\\\\tsc --noEmit --project client/tsconfig.json)",
+      "Bash(node_modules\\\\.bin\\\\tsc --noEmit --project server/tsconfig.json)"
     ]
   }
 }
