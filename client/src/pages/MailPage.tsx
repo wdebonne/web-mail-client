@@ -1321,6 +1321,17 @@ export default function MailPage() {
   // Mobile/tablet: the top-bar hamburger emits a signal via the UI store. When
   // it fires, toggle between the folder list and the message list.
   const mobileSidebarSignal = useUIStore((s) => s.mobileSidebarSignal);
+  const setMobilePageTitle = useUIStore((s) => s.setMobilePageTitle);
+
+  useEffect(() => {
+    const title = virtualFolder === 'unified-inbox'
+      ? t('mail.folder.combined_inbox')
+      : virtualFolder === 'unified-sent'
+        ? t('mail.folder.combined_sent')
+        : selectedAccount ? getAccountDisplayName(selectedAccount) : '';
+    setMobilePageTitle(title);
+    return () => setMobilePageTitle('');
+  }, [virtualFolder, selectedAccount, t, setMobilePageTitle]);
   const lastSidebarSignalRef = useRef(mobileSidebarSignal);
   useEffect(() => {
     if (lastSidebarSignalRef.current === mobileSidebarSignal) return;
@@ -2347,22 +2358,6 @@ export default function MailPage() {
         {/* Message list block — resizable on desktop */}
         {/* Mobile view */}
         <div className={`${mobileView === 'list' ? 'flex' : 'hidden'} md:hidden flex-col w-full h-full bg-white rounded-md shadow-sm overflow-hidden`}>
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border">
-            <button
-              onClick={() => { setShowFolderPane(true); setMobileView('folders'); }}
-              className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <span className="text-sm font-medium text-outlook-text-primary truncate">
-              {virtualFolder === 'unified-inbox'
-                ? t('mail.folder.combined_inbox')
-                : virtualFolder === 'unified-sent'
-                  ? t('mail.folder.combined_sent')
-                  : selectedAccount ? getAccountDisplayName(selectedAccount) : ''}
-            </span>
-          </div>
-
           {/* Inline search bar — triggered by FAB long-press → Recherche */}
           {listSearchOpen && (
             <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border bg-outlook-bg-secondary animate-fade-in">

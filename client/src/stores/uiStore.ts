@@ -6,9 +6,14 @@ interface UIState {
   // own contextual sidebar (folder list, calendar list, …).
   mobileSidebarSignal: number;
   toggleMobileSidebar: () => void;
+  // Title shown in the mobile top bar (set by the active page).
+  mobilePageTitle: string;
+  setMobilePageTitle: (title: string) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   mobileSidebarSignal: 0,
   toggleMobileSidebar: () => set((s) => ({ mobileSidebarSignal: s.mobileSidebarSignal + 1 })),
+  mobilePageTitle: '',
+  setMobilePageTitle: (title) => set({ mobilePageTitle: title }),
 }));

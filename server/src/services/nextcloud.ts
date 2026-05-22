@@ -121,7 +121,8 @@ export class NextCloudService {
           await pool.query(
             `INSERT INTO contacts (user_id, email, first_name, last_name, display_name, phone, mobile, company, job_title, department, avatar_data, source, external_id, vcard)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'nextcloud', $12, $13)
-             ON CONFLICT (user_id, email) WHERE source = 'nextcloud' DO UPDATE SET
+             ON CONFLICT (user_id, external_id) WHERE source = 'nextcloud' DO UPDATE SET
+               email = EXCLUDED.email,
                first_name = EXCLUDED.first_name,
                last_name = EXCLUDED.last_name,
                display_name = EXCLUDED.display_name,
