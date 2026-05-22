@@ -371,7 +371,7 @@ export default function FolderPane({
 
       <div
         className="flex-1 overflow-y-auto px-1 pb-4 pt-2 md:pt-0"
-        style={{ fontSize: `${folderFontSizePx}px` }}
+        style={{ fontSize: `${folderFontSizePx}px`, overscrollBehavior: 'none' }}
       >
         {!searchOpen && (
           <FavoritesSection

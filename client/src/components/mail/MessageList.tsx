@@ -765,7 +765,7 @@ export default function MessageList({
       )}
 
       {/* Grouped message list — scrollable */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto" style={{ overscrollBehavior: 'none' }}>
         {filteredMessages.length === 0 ? (
           <div className="text-center text-outlook-text-disabled py-12">
             <p className="text-sm">
