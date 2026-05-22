@@ -14,7 +14,11 @@
       "Bash(ls *.md)",
       "Bash(ls README* CHANGELOG*)",
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\" -Recurse -ErrorAction SilentlyContinue)",
-      "Bash(Select-Object -First 20)"
+      "Bash(Select-Object -First 20)",
+      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\server\\\\src\\\\routes\" -Name)",
+      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\server\\\\src\\\\types\")",
+      "Bash(Get-ChildItem -Path \"F:\\\\Visual Studio Code\\\\Web - Mail Client\" -Directory)",
+      "Bash(grep -E \"\\\\.ts$\")"
     ]
   }
 }

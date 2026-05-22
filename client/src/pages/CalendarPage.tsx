@@ -38,6 +38,7 @@ import {
   getColorOverrides,
   getHiddenLocally,
   getColumnSizing, setColumnSizing,
+  getDeviceType, DeviceType,
 } from '../utils/calendarPreferences';
 
 const DEFAULT_FILTERS: CalendarFilters = {
@@ -48,7 +49,8 @@ export default function CalendarPage() {
   const queryClient = useQueryClient();
   const userTz = useAuthStore((s) => s.user?.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<CalendarViewMode>(() => getCalendarView());
+  const [deviceType, setDeviceTypeState] = useState<DeviceType>(() => getDeviceType());
+  const [view, setView] = useState<CalendarViewMode>(() => getCalendarView(getDeviceType()));
   const [dayCount, setDayCount] = useState(1);
   const [splitView, setSplitView] = useState(false);
   const [timeScale, setTimeScale] = useState(30);
@@ -112,7 +114,7 @@ export default function CalendarPage() {
     onError: (err: any) => toast.error(err.message || 'Échec de la synchronisation'),
   });
 
-  useEffect(() => setCalendarView(view), [view]);
+  useEffect(() => setCalendarView(view, deviceType), [view, deviceType]);
   useEffect(() => setRibbonMode(ribbonMode), [ribbonMode]);
   useEffect(() => setRibbonCollapsed(ribbonCollapsed), [ribbonCollapsed]);
   useEffect(() => setShowSidebar(showSidebar), [showSidebar]);
@@ -126,9 +128,30 @@ export default function CalendarPage() {
     setShowSidebarState((v) => !v);
   }, [mobileSidebarSignal]);
 
-  // On mobile / tablet (< lg = 1024px), the week / month grids are unreadable,
-  // so we force the day view with a single column regardless of the stored
-  // user preference (which is preserved for desktop).
+  // Per-device view preference: each device type (mobile/tablet/desktop) has its own
+  // saved view. When the screen size crosses a breakpoint we switch to that device's
+  // saved preference so the user's choice on one form-factor doesn't pollute another.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mqMobile = window.matchMedia('(max-width: 767px)');
+    const mqTablet = window.matchMedia('(max-width: 1023px)');
+    const update = () => {
+      const newDevice = getDeviceType();
+      setDeviceTypeState(prev => {
+        if (prev !== newDevice) {
+          setView(getCalendarView(newDevice) as CalendarViewMode);
+        }
+        return newDevice;
+      });
+    };
+    mqMobile.addEventListener('change', update);
+    mqTablet.addEventListener('change', update);
+    return () => {
+      mqMobile.removeEventListener('change', update);
+      mqTablet.removeEventListener('change', update);
+    };
+  }, []);
+
   const [isCompact, setIsCompact] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 1023px)').matches : false
   );
