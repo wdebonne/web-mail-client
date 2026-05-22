@@ -83,13 +83,6 @@ html.dark {
   box-sizing: border-box;
 }
 
-/* Disable pull-to-refresh and overscroll bounce on every element so Chrome
-   Android never shows the refresh spinner regardless of which inner container
-   the gesture originates from. Normal scrolling is unaffected. */
-* {
-  overscroll-behavior: none;
-}
-
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -98,6 +91,9 @@ html, body, #root {
   color: var(--outlook-text);
   background-color: var(--outlook-bg);
   overflow: hidden;
+  /* Prevent Chrome Android pull-to-refresh and iOS overscroll bounce at the
+     page shell level. Inner scrollable containers keep their own scroll behaviour. */
+  overscroll-behavior: none;
 }
 
 /* Scrollbar styling */
