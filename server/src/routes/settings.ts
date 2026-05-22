@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
 import { invalidateNotificationPrefsCache } from '../services/notificationPrefs';
+import { getUserClient } from '../services/nextcloudHelper';
+import { logger } from '../utils/logger';
 
 export const settingsRouter = Router();
 
@@ -85,7 +87,29 @@ settingsRouter.put('/avatar', async (req: AuthRequest, res) => {
   try {
     const { avatarUrl } = req.body;
     await pool.query('UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2', [avatarUrl, req.userId]);
-    res.json({ success: true, avatarUrl });
+
+    let ncSynced = false;
+    try {
+      const ncClient = await getUserClient(req.userId!);
+      if (ncClient) {
+        if (avatarUrl) {
+          let base64 = avatarUrl as string;
+          let mimeType = 'image/jpeg';
+          if (base64.startsWith('data:')) {
+            const match = base64.match(/^data:([^;]+);base64,(.+)$/s);
+            if (match) { mimeType = match[1]; base64 = match[2]; }
+          }
+          await ncClient.uploadAvatar(base64.replace(/\s/g, ''), mimeType);
+        } else {
+          await ncClient.deleteAvatar();
+        }
+        ncSynced = true;
+      }
+    } catch (ncErr: any) {
+      logger.warn({ err: ncErr, userId: req.userId }, 'Failed to sync avatar to Nextcloud');
+    }
+
+    res.json({ success: true, avatarUrl, ncSynced });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

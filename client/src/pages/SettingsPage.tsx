@@ -10,8 +10,9 @@ import {
   Eye, EyeOff, Save, SlidersHorizontal, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
   Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder,
-  Coffee,
+  Coffee, Camera, Cloud,
 } from 'lucide-react';
+import { toAvatarSrc } from '../utils/avatar';
 import toast from 'react-hot-toast';
 import CacheSettings from '../components/CacheSettings';
 import { APP_VERSION } from '../utils/version';
@@ -560,6 +561,9 @@ function ProfileSettings() {
     try { return localStorage.getItem('user.language') || i18n.language || 'fr'; } catch { return 'fr'; }
   });
   const [timezone, setTimezone] = useState(() => getUserTimezone());
+  const [avatarPreview, setAvatarPreview] = useState<string | undefined>(undefined);
+  const [ncSynced, setNcSynced] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => api.updateSettings(data),
@@ -580,6 +584,45 @@ function ProfileSettings() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const avatarMutation = useMutation({
+    mutationFn: (url: string | null) => api.updateAvatar(url),
+    onSuccess: (data, url) => {
+      updateUser({ avatarUrl: url ?? undefined });
+      setAvatarPreview(undefined);
+      setNcSynced(data.ncSynced);
+      toast.success('Photo de profil mise à jour');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 256;
+        let w = img.width;
+        let h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+        setAvatarPreview(canvas.toDataURL('image/jpeg', 0.85));
+        setNcSynced(false);
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const handleLanguageChange = (lang: string) => {
     setLanguage(lang);
@@ -604,10 +647,70 @@ function ProfileSettings() {
     return { level: 4, label: 'Très fort', color: 'bg-green-600' };
   })();
 
+  const initials = (user?.displayName?.[0] || user?.email?.[0] || '?').toUpperCase();
+  const displayedAvatar = avatarPreview !== undefined ? avatarPreview : toAvatarSrc(user?.avatarUrl);
+  const hasAvatar = !!(avatarPreview !== undefined ? avatarPreview : user?.avatarUrl);
+
   return (
     <div className="space-y-6">
-      {/* Informations du compte */}
+      {/* Photo de profil */}
       <section>
+        <h3 className="text-base font-semibold mb-3">Photo de profil</h3>
+        <div className="flex items-start gap-4">
+          <div className="w-20 h-20 rounded-full overflow-hidden bg-outlook-blue flex-shrink-0 flex items-center justify-center">
+            {displayedAvatar ? (
+              <img src={displayedAvatar} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-white text-2xl font-semibold">{initials}</span>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+            <button
+              type="button"
+              onClick={() => { setNcSynced(false); fileInputRef.current?.click(); }}
+              className="flex items-center gap-2 border border-outlook-border rounded-md px-3 py-2 text-sm hover:bg-outlook-bg-hover"
+            >
+              <Camera size={14} /> Modifier la photo
+            </button>
+            {hasAvatar && avatarPreview === undefined && (
+              <button
+                type="button"
+                onClick={() => avatarMutation.mutate(null)}
+                disabled={avatarMutation.isPending}
+                className="flex items-center gap-2 text-red-500 hover:text-red-600 text-sm px-3 py-2 disabled:opacity-50"
+              >
+                <Trash2 size={14} /> Supprimer la photo
+              </button>
+            )}
+            {avatarPreview !== undefined && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => avatarMutation.mutate(avatarPreview)}
+                  disabled={avatarMutation.isPending}
+                  className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded-md text-sm disabled:opacity-50 flex items-center gap-1"
+                >
+                  <Save size={12} /> {avatarMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+                <button
+                  onClick={() => setAvatarPreview(undefined)}
+                  className="border border-outlook-border px-3 py-1.5 rounded-md text-sm hover:bg-outlook-bg-hover"
+                >
+                  Annuler
+                </button>
+              </div>
+            )}
+            {ncSynced && (
+              <p className="text-xs text-green-600 flex items-center gap-1">
+                <Cloud size={12} /> Synchronisé avec Nextcloud
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Informations du compte */}
+      <section className="border-t border-outlook-border pt-6">
         <h3 className="text-base font-semibold mb-3">Informations du compte</h3>
         <div className="space-y-3">
           <div>

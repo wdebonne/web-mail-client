@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import CacheIndicator from './CacheIndicator';
 import { api } from '../api';
+import { toAvatarSrc } from '../utils/avatar';
 
 interface LayoutProps {
   children: ReactNode;
@@ -253,6 +254,7 @@ export default function Layout({ children }: LayoutProps) {
     suggestions.events.length > 0;
 
   const initials = (user?.displayName?.[0] || user?.email?.[0] || '?').toUpperCase();
+  const avatarSrc = toAvatarSrc(user?.avatarUrl);
 
   return (
     <div className="h-full flex flex-col">
@@ -469,12 +471,14 @@ export default function Layout({ children }: LayoutProps) {
           <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
-              className="w-9 h-9 rounded-full bg-outlook-blue hover:bg-outlook-blue-hover flex items-center justify-center text-white text-sm font-semibold transition-colors"
+              className="w-9 h-9 rounded-full bg-outlook-blue hover:bg-outlook-blue-hover flex items-center justify-center text-white text-sm font-semibold transition-colors overflow-hidden"
               aria-haspopup="menu"
               aria-expanded={userMenuOpen}
               title={user?.displayName || user?.email || ''}
             >
-              {initials}
+              {avatarSrc
+                ? <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+                : initials}
             </button>
 
             {userMenuOpen && (
@@ -483,8 +487,10 @@ export default function Layout({ children }: LayoutProps) {
                 className="absolute right-0 top-full mt-2 z-50 w-64 bg-outlook-bg-secondary text-outlook-text-primary border border-outlook-border rounded-md shadow-lg py-1"
               >
                 <div className="px-3 py-2 border-b border-outlook-border flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-full bg-outlook-blue text-white flex items-center justify-center text-sm font-semibold">
-                    {initials}
+                  <div className="w-9 h-9 rounded-full bg-outlook-blue text-white flex items-center justify-center text-sm font-semibold overflow-hidden">
+                    {avatarSrc
+                      ? <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+                      : initials}
                   </div>
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{user?.displayName || user?.email}</div>

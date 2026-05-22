@@ -495,6 +495,11 @@ export const api = {
   getSettings: () => request<any>('/settings'),
   updateSettings: (data: any) =>
     request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  updateAvatar: (avatarUrl: string | null) =>
+    request<{ success: boolean; avatarUrl: string | null; ncSynced: boolean }>(
+      '/settings/avatar',
+      { method: 'PUT', body: JSON.stringify({ avatarUrl }) }
+    ),
   changePassword: (currentPassword: string, newPassword: string) =>
     request('/settings/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) }),
 

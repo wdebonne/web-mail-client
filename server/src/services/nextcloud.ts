@@ -1033,6 +1033,40 @@ export class NextCloudService {
     const ascii = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     return ascii.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
   }
+
+  // \u2500\u2500 Avatar \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+  async uploadAvatar(imageBase64: string, mimeType: string = 'image/jpeg'): Promise<void> {
+    const imageBuffer = Buffer.from(imageBase64, 'base64');
+    const blob = new Blob([imageBuffer], { type: mimeType });
+    const form = new FormData();
+    form.append('imageFile', blob, 'avatar.jpg');
+
+    const url = `${this.config.url}/ocs/v2.php/cloud/users/${encodeURIComponent(this.config.username)}/avatar`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: this.getAuthHeader(),
+        'OCS-APIRequest': 'true',
+      },
+      body: form as any,
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Nextcloud avatar upload failed: ${response.status} ${text}`);
+    }
+  }
+
+  async deleteAvatar(): Promise<void> {
+    const url = `${this.config.url}/ocs/v2.php/cloud/users/${encodeURIComponent(this.config.username)}/avatar`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: this.ocsHeaders(),
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Nextcloud avatar delete failed: ${response.status}`);
+    }
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════
