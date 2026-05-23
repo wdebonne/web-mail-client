@@ -28,6 +28,7 @@ import { nextcloudFilesRouter } from './routes/nextcloudFiles';
 import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES } from './routes/branding';
 import { applicationsRouter } from './routes/applications';
 import { backupRouter } from './routes/backup';
+import { imageProxyRouter } from './routes/imageProxy';
 import { startBackupScheduler } from './services/backupScheduler';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
@@ -65,7 +66,7 @@ app.use((req, res, next) => {
     "default-src 'self'; " +
     "script-src 'self' 'unsafe-inline'; " +
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "img-src 'self' data: blob: https: http:; " +
+    "img-src 'self' data: blob: https:; " +
     "frame-src 'self' blob: data:; " +
     "connect-src 'self' wss: ws:; " +
     "font-src 'self' data: https://fonts.gstatic.com; " +
@@ -128,6 +129,7 @@ app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
 app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 app.use('/api/admin/backup', authMiddleware, backupRouter);
+app.use('/api/proxy/image', authMiddleware, imageProxyRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

@@ -35,6 +35,10 @@ import {
   getAutoLoadAllEnabled,
   getMailDisplayMode, setMailDisplayMode, MAIL_DISPLAY_MODE_CHANGED_EVENT,
   getFabLongPressAction,
+  getRibbonMode, setRibbonMode as saveRibbonMode,
+  getRibbonCollapsed, setRibbonCollapsed as saveRibbonCollapsed,
+  RIBBON_MODE_CHANGED_EVENT, RIBBON_COLLAPSED_CHANGED_EVENT,
+  type RibbonMode,
   type SwipeAction, type MailDisplayMode,
 } from '../utils/mailPreferences';
 import type { FabMenuItem } from '../components/ui/FloatingActionButton';
@@ -1517,12 +1521,18 @@ export default function MailPage() {
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isDraggingSplit = useRef(false);
-  const [ribbonCollapsed, setRibbonCollapsed] = useState(() => {
-    return localStorage.getItem('ribbonCollapsed') === 'true';
-  });
-  const [ribbonMode, setRibbonMode] = useState<'classic' | 'simplified'>(() => {
-    return (localStorage.getItem('ribbonMode') as 'classic' | 'simplified') || 'classic';
-  });
+  const [ribbonCollapsed, setRibbonCollapsed] = useState(() => getRibbonCollapsed());
+  const [ribbonMode, setRibbonMode] = useState<RibbonMode>(() => getRibbonMode());
+  useEffect(() => {
+    const onMode = (e: Event) => setRibbonMode((e as CustomEvent).detail.mode);
+    const onCollapsed = (e: Event) => setRibbonCollapsed((e as CustomEvent).detail.collapsed);
+    window.addEventListener(RIBBON_MODE_CHANGED_EVENT, onMode);
+    window.addEventListener(RIBBON_COLLAPSED_CHANGED_EVENT, onCollapsed);
+    return () => {
+      window.removeEventListener(RIBBON_MODE_CHANGED_EVENT, onMode);
+      window.removeEventListener(RIBBON_COLLAPSED_CHANGED_EVENT, onCollapsed);
+    };
+  }, []);
 
   // ── Search mode ─────────────────────────────────────────────────────────────
   const rawSearchQuery = searchParams.get('search') || '';
@@ -1979,14 +1989,14 @@ export default function MailPage() {
   const toggleRibbonCollapsed = useCallback(() => {
     setRibbonCollapsed(prev => {
       const next = !prev;
-      localStorage.setItem('ribbonCollapsed', String(next));
+      saveRibbonCollapsed(next);
       return next;
     });
   }, []);
 
-  const handleChangeRibbonMode = useCallback((mode: 'classic' | 'simplified') => {
+  const handleChangeRibbonMode = useCallback((mode: RibbonMode) => {
     setRibbonMode(mode);
-    localStorage.setItem('ribbonMode', mode);
+    saveRibbonMode(mode);
   }, []);
 
   const handlePrint = useCallback(() => {

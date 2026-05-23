@@ -16,6 +16,29 @@ import { useSecurityStore } from '../../stores/securityStore';
 import NextcloudFolderPicker from '../ui/NextcloudFolderPicker';
 import { HoverCard } from './ContactHoverCard';
 
+const DOMPURIFY_CONFIG: DOMPurify.Config = {
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'img', 'div', 'span',
+    'table', 'tr', 'td', 'th', 'thead', 'tbody', 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+    'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'style', 'font', 'center'],
+  ALLOWED_ATTR: ['href', 'src', 'alt', 'style', 'class', 'width', 'height', 'target',
+    'color', 'size', 'face', 'align', 'valign', 'bgcolor', 'border', 'cellpadding',
+    'cellspacing', 'colspan', 'rowspan', 'rel'],
+  ALLOW_DATA_ATTR: false,
+};
+
+function sanitizeEmailHtml(raw: string): string {
+  const clean = DOMPurify.sanitize(raw, DOMPURIFY_CONFIG);
+  const doc = new DOMParser().parseFromString(clean, 'text/html');
+  doc.querySelectorAll('img[src]').forEach((el) => {
+    const img = el as HTMLImageElement;
+    const src = img.getAttribute('src') ?? '';
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      img.setAttribute('src', `/api/proxy/image?url=${encodeURIComponent(src)}`);
+    }
+  });
+  return doc.body.innerHTML;
+}
+
 type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
 type PreviewAttachmentState = {
@@ -117,17 +140,7 @@ export default function MessageView({
     });
   };
 
-  const sanitizedHtml = message?.bodyHtml
-    ? DOMPurify.sanitize(message.bodyHtml, {
-        ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'img', 'div', 'span',
-          'table', 'tr', 'td', 'th', 'thead', 'tbody', 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
-          'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'style', 'font', 'center'],
-        ALLOWED_ATTR: ['href', 'src', 'alt', 'style', 'class', 'width', 'height', 'target',
-          'color', 'size', 'face', 'align', 'valign', 'bgcolor', 'border', 'cellpadding',
-          'cellspacing', 'colspan', 'rowspan', 'rel'],
-        ALLOW_DATA_ATTR: false,
-      })
-    : '';
+  const sanitizedHtml = message?.bodyHtml ? sanitizeEmailHtml(message.bodyHtml) : '';
 
   // ───── Security pipeline — detect PGP armor in inbound message and verify/decrypt.
   // The verdict is re-evaluated whenever the viewed message changes or the unlocked-key
@@ -642,17 +655,7 @@ export default function MessageView({
               const key = threadKeyOf(m);
               const isOpen = expandedKeys.has(key);
               const isLast = idx === sortedThread.length - 1;
-              const bodyHtml = m.bodyHtml
-                ? DOMPurify.sanitize(m.bodyHtml, {
-                    ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'img', 'div', 'span',
-                      'table', 'tr', 'td', 'th', 'thead', 'tbody', 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
-                      'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'style', 'font', 'center'],
-                    ALLOWED_ATTR: ['href', 'src', 'alt', 'style', 'class', 'width', 'height', 'target',
-                      'color', 'size', 'face', 'align', 'valign', 'bgcolor', 'border', 'cellpadding',
-                      'cellspacing', 'colspan', 'rowspan', 'rel'],
-                    ALLOW_DATA_ATTR: false,
-                  })
-                : '';
+              const bodyHtml = m.bodyHtml ? sanitizeEmailHtml(m.bodyHtml) : '';
               const cardAttachments = (m.attachments || []).filter(att => (att.size || 0) >= attachmentMinVisibleBytes);
               return (
                 <div
