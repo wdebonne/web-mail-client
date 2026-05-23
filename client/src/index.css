@@ -115,27 +115,22 @@ html, body, #root {
   background: var(--outlook-scroll-thumb-hover);
 }
 
-/* Email body styling */
+/* ---------------------------------------------------------------
+   Email rendering — NOTE: les emails HTML sont rendus dans une <iframe>
+   dont le CSS est injecté directement via EMAIL_IFRAME_CSS (MessageView.tsx).
+   Les classes .email-body ci-dessous s'appliquent uniquement aux emails
+   en texte brut (<pre>) et aux zones de composition/citation hors iframe.
+   --------------------------------------------------------------- */
 .email-body {
   font-family: "Segoe UI", sans-serif;
   font-size: 14px;
   line-height: 1.6;
   color: var(--outlook-text);
   word-break: break-word;
-  /* Prevent wide HTML emails (fixed-width tables, large images, long
-     inline content) from forcing the message column to scroll
-     horizontally on mobile / tablet. The container itself can scroll
-     vertically; horizontal overflow inside the body is contained. */
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
-/* Native rendering — constrain the body to a readable column even when the
-   reading pane is wide. Mirrors Gmail / Outlook behaviour and prevents
-   marketing emails from being stretched edge-to-edge on large screens.
-   Combined with `.email-body { max-width: 100% }`, the body never exceeds
-   the container width either. The block is centered horizontally so the
-   message sits in the middle of the reading pane (same as Outlook). */
 .email-body.email-body-native {
   max-width: 820px;
   margin-left: auto;
@@ -147,34 +142,15 @@ html, body, #root {
   height: auto;
 }
 
-/* Marketing emails frequently use <table width="600"> with inline
-   widths or absolute pixel values. Cap them with max-width so they
-   never push past the viewport on small screens, but **keep** their
-   declared width on wider screens so the centering hints (<center>,
-   align="center", margin:0 auto) of the original layout are preserved
-   — Gmail/Outlook behave the same way. Forcing width:auto would
-   shrink-fit the tables and break that centering. */
 .email-body table {
   max-width: 100% !important;
   height: auto !important;
   table-layout: auto !important;
 }
 
-/* On small screens (phones / narrow tablets) the declared widths of
-   marketing tables (e.g. width="600") still overflow even with
-   max-width:100% applied to the outer table, because nested tables
-   inherit pixel widths via inline styles. Force every table inside the
-   email body to expand to the full container width on mobile so the
-   message fills the reading pane (no horizontal scrolling, no awkward
-   left-aligned shrunk-fit block). We keep declared widths on desktop so
-   the original centering (<center>, align="center", margin:0 auto) is
-   preserved on large screens. */
 @media (max-width: 767px) {
   .email-body,
   .email-body * {
-    /* Allow flex/table descendants to shrink below their content width.
-       Without this, a fixed-width <table width="600"> inside a flex
-       chain still pushes its ancestors past the viewport. */
     min-width: 0 !important;
     max-width: 100% !important;
     box-sizing: border-box;
@@ -184,11 +160,6 @@ html, body, #root {
     word-break: break-word;
     overflow-wrap: anywhere;
   }
-  /* Outlook-mobile-style rendering: collapse every email table (and its
-     rows / cells) to block-level so multi-column newsletter layouts
-     stack vertically and naturally fit the viewport. This is the same
-     trick Gmail and the Outlook mobile webview use to neutralise the
-     `<table width="600">` patterns shipped by marketing emails. */
   .email-body table,
   .email-body tbody,
   .email-body thead,
@@ -206,7 +177,6 @@ html, body, #root {
     max-width: 100% !important;
     height: auto !important;
   }
-  /* Long unbreakable strings (URLs, tracking refs) must wrap. */
   .email-body a,
   .email-body p,
   .email-body span,
@@ -223,8 +193,6 @@ html, body, #root {
   overflow-wrap: anywhere;
 }
 
-/* Long unbroken strings (URLs, tracking pixels references, etc.) must
-   not stretch the layout. */
 .email-body pre,
 .email-body code {
   white-space: pre-wrap;
@@ -245,31 +213,34 @@ html, body, #root {
 }
 
 /* ---------------------------------------------------------------
-   Dark-mode readability for incoming HTML emails.
-
-   Emails often embed hard-coded colors (black text, white/transparent
-   backgrounds, dark quote borders…) via inline styles that override any
-   theme we set. To guarantee legibility without rewriting user content,
-   we render the email body on a neutral light surface when the app is
-   in dark mode. This mirrors what Gmail/Outlook Web do.
+   Volet de lecture — fond toujours clair autour de l'iframe email.
+   Les emails HTML ont des couleurs codées en dur (texte noir, fond blanc) ;
+   le fond de l'iframe est toujours blanc (voir EMAIL_IFRAME_CSS).
+   En mode sombre on garde un fond proche du blanc pour éviter un contraste
+   brutal entre la coque sombre et le contenu de l'email.
    --------------------------------------------------------------- */
+.email-reading-pane {
+  background-color: #f5f4f3;
+}
+
+html.dark .email-reading-pane {
+  background-color: #2a2828;
+}
+
+/* Fallback .email-body pour les citations hors-iframe en mode sombre */
 html.dark .email-body {
   background-color: #ffffff;
   color: #1f1f1f;
-  padding: 16px;
-  border-radius: 6px;
+  padding: 12px;
+  border-radius: 4px;
   color-scheme: light;
 }
 
-/* Ensure descendants also use the light color scheme (form controls,
-   scrollbars inside the body, etc.) and stay readable even when their
-   inline styles assume a white background. */
 html.dark .email-body,
 html.dark .email-body * {
   color-scheme: light;
 }
 
-/* Re-apply the app accent on links inside the rendered email. */
 html.dark .email-body a {
   color: #0078D4;
 }
