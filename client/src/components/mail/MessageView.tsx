@@ -39,6 +39,46 @@ function sanitizeEmailHtml(raw: string): string {
   return doc.body.innerHTML;
 }
 
+function EmailIframe({ html, nativeMode }: { html: string; nativeMode: boolean }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const srcDoc = useMemo(() => (
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank">' +
+    '<style>html,body{margin:0;padding:0;overflow-x:hidden;}</style></head>' +
+    `<body>${html}</body></html>`
+  ), [html]);
+
+  useEffect(() => { setLoaded(false); }, [srcDoc]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    const iframe = iframeRef.current;
+    if (!iframe?.contentDocument?.body) return;
+    const resize = () => {
+      const h = iframe.contentDocument?.documentElement?.scrollHeight ?? 0;
+      if (h > 0) iframe.style.height = `${h}px`;
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(iframe.contentDocument.body);
+    return () => ro.disconnect();
+  }, [loaded]);
+
+  return (
+    <div className={nativeMode ? 'max-w-[820px] mx-auto' : undefined}>
+      <iframe
+        ref={iframeRef}
+        srcDoc={srcDoc}
+        sandbox="allow-same-origin allow-popups"
+        style={{ width: '100%', border: 'none', display: 'block', minHeight: '60px' }}
+        onLoad={() => setLoaded(true)}
+        title="email-body"
+      />
+    </div>
+  );
+}
+
 type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
 type PreviewAttachmentState = {
@@ -736,7 +776,7 @@ export default function MessageView({
                       )}
                       <div className="px-3 sm:px-5 py-3">
                         {bodyHtml ? (
-                          <div className={bodyClass} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+                          <EmailIframe html={bodyHtml} nativeMode={effectiveDisplayMode === 'native'} />
                         ) : (
                           <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
                             {m.bodyText || ''}
@@ -802,10 +842,7 @@ export default function MessageView({
               {securePlaintext}
             </pre>
           ) : sanitizedHtml ? (
-            <div
-              className={bodyClass}
-              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-            />
+            <EmailIframe html={sanitizedHtml} nativeMode={effectiveDisplayMode === 'native'} />
           ) : (
             <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
               {message.bodyText || ''}
