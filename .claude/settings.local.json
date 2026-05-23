@@ -23,7 +23,8 @@
       "Bash(node_modules\\\\.bin\\\\tsc --noEmit --project server/tsconfig.json)",
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\src\" -Recurse -Directory)",
       "Bash(Format-Table FullName)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }
