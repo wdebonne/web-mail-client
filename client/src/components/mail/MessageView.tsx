@@ -16,7 +16,7 @@ import { useSecurityStore } from '../../stores/securityStore';
 import NextcloudFolderPicker from '../ui/NextcloudFolderPicker';
 import { HoverCard } from './ContactHoverCard';
 
-const DOMPURIFY_CONFIG: DOMPurify.Config = {
+const DOMPURIFY_CONFIG = {
   ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'img', 'div', 'span',
     'table', 'tr', 'td', 'th', 'thead', 'tbody', 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
     'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'style', 'font', 'center'],
