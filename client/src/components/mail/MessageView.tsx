@@ -26,6 +26,26 @@ const DOMPURIFY_CONFIG = {
   ALLOW_DATA_ATTR: false,
 };
 
+// CSS injecté dans chaque iframe email.
+// Remplace les classes .email-body de index.css qui ne traversent pas la frontière iframe.
+const EMAIL_IFRAME_CSS = `
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,"Helvetica Neue",sans-serif;font-size:14px;line-height:1.6;color:#323130;background:#ffffff;word-break:break-word;overflow-wrap:anywhere;overflow-x:hidden}
+img{max-width:100%;height:auto}
+table{max-width:100%!important;height:auto!important;table-layout:auto!important}
+td,th{max-width:100%!important;word-break:break-word;overflow-wrap:anywhere}
+pre,code{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;max-width:100%}
+a{color:#0078D4;text-decoration:none;word-break:break-word;overflow-wrap:anywhere}
+a:hover{text-decoration:underline}
+@media(max-width:640px){
+  html,body,*{min-width:0!important;max-width:100%!important;box-sizing:border-box}
+  html,body{overflow-x:hidden;overflow-wrap:anywhere;word-break:break-word}
+  table,tbody,thead,tfoot,tr,td,th{display:block!important;width:100%!important;height:auto!important;float:none!important}
+  img{width:auto!important;max-width:100%!important;height:auto!important}
+  a,p,span,div{word-break:break-word;overflow-wrap:anywhere}
+}
+`;
+
 function sanitizeEmailHtml(raw: string): string {
   const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
   const clean = DOMPurify.sanitize(raw, DOMPURIFY_CONFIG);
@@ -59,9 +79,12 @@ function EmailIframe({ html, nativeMode }: { html: string; nativeMode: boolean }
   const [loaded, setLoaded] = useState(false);
 
   const srcDoc = useMemo(() => (
-    '<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank">' +
-    '<style>html,body{margin:0;padding:0;overflow-x:hidden;}</style></head>' +
-    `<body>${html}</body></html>`
+    `<!DOCTYPE html><html><head>` +
+    `<meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1.0">` +
+    `<base target="_blank">` +
+    `<style>${EMAIL_IFRAME_CSS}</style>` +
+    `</head><body>${html}</body></html>`
   ), [html]);
 
   useEffect(() => { setLoaded(false); }, [srcDoc]);
@@ -70,18 +93,31 @@ function EmailIframe({ html, nativeMode }: { html: string; nativeMode: boolean }
     if (!loaded) return;
     const iframe = iframeRef.current;
     if (!iframe?.contentDocument?.body) return;
+
     const resize = () => {
       const h = iframe.contentDocument?.documentElement?.scrollHeight ?? 0;
       if (h > 0) iframe.style.height = `${h}px`;
     };
+
     resize();
+
     const ro = new ResizeObserver(resize);
     ro.observe(iframe.contentDocument.body);
+
+    // Recalcule la hauteur quand les images finissent de charger (fréquent dans les emails marketing)
+    const imgs = Array.from(iframe.contentDocument.querySelectorAll<HTMLImageElement>('img'));
+    imgs.forEach(img => {
+      if (!img.complete) {
+        img.addEventListener('load', resize, { once: true });
+        img.addEventListener('error', resize, { once: true });
+      }
+    });
+
     return () => ro.disconnect();
   }, [loaded]);
 
   return (
-    <div className={nativeMode ? 'max-w-[820px] mx-auto' : undefined}>
+    <div className={nativeMode ? 'max-w-[820px] mx-auto overflow-x-hidden' : 'overflow-x-hidden'}>
       <iframe
         ref={iframeRef}
         srcDoc={srcDoc}
@@ -154,7 +190,6 @@ export default function MessageView({
   const [localDisplayMode, setLocalDisplayMode] = useState<'native' | 'stretched' | null>(null);
   useEffect(() => { setLocalDisplayMode(null); }, [message?.uid, message?._accountId]);
   const effectiveDisplayMode: 'native' | 'stretched' = localDisplayMode ?? mailDisplayMode;
-  const bodyClass = `email-body${effectiveDisplayMode === 'native' ? ' email-body-native' : ''}`;
 
   // --- Conversation thread (expandable stack) ---
   const isThreadMode = !!(conversationMessages && conversationMessages.length > 1);
@@ -703,7 +738,7 @@ export default function MessageView({
 
       {/* Message body — in thread mode, render a vertical stack of collapsible cards */}
       {isThreadMode ? (
-        <div className="flex-1 overflow-y-auto bg-outlook-bg-primary/20 min-w-0">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden email-reading-pane min-w-0">
           <div className="flex flex-col gap-2 p-3 pb-28 md:pb-3">
             {sortedThread.map((m, idx) => {
               const key = threadKeyOf(m);
@@ -821,7 +856,7 @@ export default function MessageView({
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 pb-28 md:pb-4 min-w-0">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden email-reading-pane px-3 sm:px-6 py-4 pb-28 md:pb-4 min-w-0">
           <SecurityBanner verdict={verdict} />
           {/* Inline display-mode toggle — lets the user override the global
               "natif/étiré" preference just for the message currently shown. */}
