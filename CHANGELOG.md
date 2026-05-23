@@ -11,6 +11,42 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.16.0] - 2026-05-23
+
+### Ajouté
+
+- **Barre d'action flottante mobile (MessageView)**
+  - Dans la vue de lecture d'un message sur mobile, les boutons *Répondre*, *Répondre à tous*, *Transférer*, *Étoile*, *Marquer lu/non-lu* et *Supprimer* sont désormais regroupés dans une **barre flottante** persistante en bas de l'écran.
+  - La barre flotte légèrement au-dessus du bord inférieur de l'écran (offset `bottom-4`) pour rester lisible et ne pas coller au bord de l'appareil.
+  - Le bouton *Répondre à tous* n'apparaît que lorsque le message a plusieurs destinataires (À + Cc ≥ 2).
+  - Les anciens boutons inline en bas du message sont masqués sur mobile pour éviter la duplication.
+
+- **Vue de lecture mobile dédiée**
+  - Titre de page adapté dynamiquement sur mobile selon le message ouvert.
+  - Gestion d'état spécifique à la vue mobile : retour arrière, navigation entre messages et synchronisation de l'interface.
+
+- **Avatar utilisateur avec synchronisation Nextcloud**
+  - L'avatar du profil utilisateur peut être synchronisé depuis et vers le compte Nextcloud associé, assurant une cohérence visuelle entre les deux plateformes.
+
+- **Préférences de vue par appareil — Calendrier**
+  - Les vues calendrier (Jour / Semaine / Mois / Agenda) sont mémorisées **séparément** pour mobile et desktop. Changer de vue sur mobile ne perturbe plus l'affichage sur ordinateur et vice-versa.
+
+### Corrigé
+
+- **Défilement parasite sur mobile (iOS & Android)**
+  - Prévention du *pull-to-refresh* sur Chrome Android lors de swipes vers le bas dans la liste de mails.
+  - Suppression du *bounce scroll* sur iOS : le conteneur racine et le volet de mails ne rebondissent plus en dépassant les limites de la page.
+  - Correction du verrouillage du défilement lors de mouvements tactiles simultanés dans `MessageView` et `MailPage`.
+
+- **Synchronisation du cache — appels API redondants**
+  - Les données ne sont plus rechargées depuis le serveur si le cache local est encore valide (< seuil de fraîcheur), réduisant la charge réseau sur mobile.
+
+- **Interface mobile — barre de recherche et menu**
+  - L'état ouvert/fermé de la barre de recherche est désormais correctement préservé lors des transitions de navigation.
+  - Le menu mobile est ajusté pour une meilleure cohérence visuelle.
+
+---
+
 ## [1.15.0] - 2026-05-21
 
 ### Ajouté
