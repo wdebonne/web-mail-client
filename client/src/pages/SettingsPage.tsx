@@ -33,6 +33,9 @@ import {
   getUnreadIndicatorPrefs, setUnreadIndicatorPrefs,
   type UnreadIndicatorPrefs, type UnreadIndicatorScope,
   UNREAD_INDICATORS_CHANGED_EVENT, UNREAD_SCOPE_LABELS,
+  getRibbonMode, setRibbonMode,
+  getRibbonCollapsed, setRibbonCollapsed,
+  type RibbonMode,
 } from '../utils/mailPreferences';
 import type { MailAccount, MailFolder } from '../types';
 import {
@@ -924,6 +927,86 @@ function AccountSettings() {
   );
 }
 
+function RibbonDefaultPicker() {
+  const [ribbonMode, setRibbonModeState] = useState<RibbonMode>(() => getRibbonMode());
+  const [ribbonCollapsed, setRibbonCollapsedState] = useState<boolean>(() => getRibbonCollapsed());
+
+  const handleMode = (m: RibbonMode) => {
+    setRibbonModeState(m);
+    setRibbonMode(m);
+    toast.success(m === 'classic' ? 'Mode ruban classique activé' : 'Mode ruban simplifié activé');
+  };
+
+  const handleCollapsed = (collapsed: boolean) => {
+    setRibbonCollapsedState(collapsed);
+    setRibbonCollapsed(collapsed);
+    toast.success(collapsed ? 'Ruban réduit par défaut' : 'Ruban développé par défaut');
+  };
+
+  const modes: { value: RibbonMode; label: string; hint: string }[] = [
+    { value: 'classic',    label: 'Classique',   hint: 'Ruban complet avec onglets et groupes de boutons.' },
+    { value: 'simplified', label: 'Simplifié',   hint: 'Barre d\'outils compacte sur une seule ligne.' },
+  ];
+
+  const collapsedOptions: { value: boolean; label: string; hint: string }[] = [
+    { value: false, label: 'Développé',  hint: 'Le ruban est visible au démarrage.' },
+    { value: true,  label: 'Réduit',     hint: 'Le ruban est replié au démarrage.' },
+  ];
+
+  return (
+    <div className="border-t border-outlook-border pt-4">
+      <label className="text-sm font-medium text-outlook-text-primary block mb-1">Ruban d'actions</label>
+      <p className="text-xs text-outlook-text-disabled mb-3">
+        Choisissez le mode et l'état par défaut du ruban à chaque connexion.
+      </p>
+      <div className="space-y-3">
+        <div>
+          <span className="text-xs text-outlook-text-secondary block mb-1.5">Mode par défaut</span>
+          <div className="grid grid-cols-2 gap-2">
+            {modes.map(({ value, label, hint }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => handleMode(value)}
+                className={`flex flex-col items-start p-3 rounded-md border text-left transition-colors ${
+                  ribbonMode === value
+                    ? 'border-outlook-blue bg-outlook-blue/10'
+                    : 'border-outlook-border hover:bg-outlook-bg-hover'
+                }`}
+              >
+                <span className={`text-sm font-medium ${ribbonMode === value ? 'text-outlook-blue' : 'text-outlook-text-primary'}`}>{label}</span>
+                <span className="text-[11px] text-outlook-text-disabled mt-0.5 leading-tight">{hint}</span>
+                {ribbonMode === value && <CheckCircle2 size={12} className="text-outlook-blue mt-1.5" />}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <span className="text-xs text-outlook-text-secondary block mb-1.5">État initial</span>
+          <div className="grid grid-cols-2 gap-2">
+            {collapsedOptions.map(({ value, label, hint }) => (
+              <button
+                key={String(value)}
+                type="button"
+                onClick={() => handleCollapsed(value)}
+                className={`flex flex-col items-start p-3 rounded-md border text-left transition-colors ${
+                  ribbonCollapsed === value
+                    ? 'border-outlook-blue bg-outlook-blue/10'
+                    : 'border-outlook-border hover:bg-outlook-bg-hover'
+                }`}
+              >
+                <span className={`text-sm font-medium ${ribbonCollapsed === value ? 'text-outlook-blue' : 'text-outlook-text-primary'}`}>{label}</span>
+                <span className="text-[11px] text-outlook-text-disabled mt-0.5 leading-tight">{hint}</span>
+                {ribbonCollapsed === value && <CheckCircle2 size={12} className="text-outlook-blue mt-1.5" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AppearanceSettings() {
   const { mode, setMode } = useThemeStore();
 
@@ -981,6 +1064,9 @@ function AppearanceSettings() {
             <UnreadIndicatorsPicker />
           </div>
         </div>
+
+        {/* Ruban d'actions */}
+        <RibbonDefaultPicker />
 
       </div>
     </div>

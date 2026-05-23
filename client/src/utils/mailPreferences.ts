@@ -738,3 +738,33 @@ export function pushRecentCopyFolder(accountId: string, path: string) {
 }
 
 export const RECENT_FOLDERS_CHANGED_EVENT = RECENT_FOLDERS_EVENT;
+
+// --- Ribbon preferences ---
+export type RibbonMode = 'classic' | 'simplified';
+const KEY_RIBBON_MODE = 'ribbonMode';
+const KEY_RIBBON_COLLAPSED = 'ribbonCollapsed';
+export const RIBBON_MODE_CHANGED_EVENT = 'ribbon-mode-changed';
+export const RIBBON_COLLAPSED_CHANGED_EVENT = 'ribbon-collapsed-changed';
+
+export function getRibbonMode(): RibbonMode {
+  const raw = localStorage.getItem(KEY_RIBBON_MODE);
+  return raw === 'simplified' ? 'simplified' : 'classic';
+}
+
+export function setRibbonMode(mode: RibbonMode) {
+  localStorage.setItem(KEY_RIBBON_MODE, mode);
+  try {
+    window.dispatchEvent(new CustomEvent(RIBBON_MODE_CHANGED_EVENT, { detail: { mode } }));
+  } catch { /* noop */ }
+}
+
+export function getRibbonCollapsed(): boolean {
+  return localStorage.getItem(KEY_RIBBON_COLLAPSED) === 'true';
+}
+
+export function setRibbonCollapsed(collapsed: boolean) {
+  localStorage.setItem(KEY_RIBBON_COLLAPSED, String(collapsed));
+  try {
+    window.dispatchEvent(new CustomEvent(RIBBON_COLLAPSED_CHANGED_EVENT, { detail: { collapsed } }));
+  } catch { /* noop */ }
+}
