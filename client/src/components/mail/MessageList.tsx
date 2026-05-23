@@ -1259,7 +1259,7 @@ export default function MessageList({
         onClick: () => onReply(message),
       });
     }
-    if (onReplyAll) {
+    if (onReplyAll && ((message.to?.length ?? 0) + (message.cc?.length ?? 0)) > 1) {
       items.push({
         label: 'Répondre à tous',
         icon: <ReplyAll size={14} />,
