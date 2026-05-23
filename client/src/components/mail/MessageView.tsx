@@ -85,7 +85,6 @@ function EmailIframe({ html, nativeMode }: { html: string; nativeMode: boolean }
       <iframe
         ref={iframeRef}
         srcDoc={srcDoc}
-        sandbox="allow-same-origin allow-popups"
         style={{ width: '100%', border: 'none', display: 'block', minHeight: '60px' }}
         onLoad={() => setLoaded(true)}
         title="email-body"
