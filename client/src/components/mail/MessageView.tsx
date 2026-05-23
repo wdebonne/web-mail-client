@@ -951,8 +951,8 @@ export default function MessageView({
 
       {/* ── Mobile floating action bar ── */}
       <div
-        className="md:hidden fixed bottom-0 left-0 right-0 z-30 flex justify-center"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}
+        className="md:hidden fixed bottom-4 left-0 right-0 z-30 flex justify-center"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         <div className="mb-2 mx-3 flex items-center bg-[#1c1c1e]/90 backdrop-blur-md rounded-2xl shadow-2xl border border-white/10 px-1.5 py-1">
           <FloatBtn icon={Reply} label="Répondre" onClick={onReply} />
