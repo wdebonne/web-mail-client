@@ -809,8 +809,8 @@ export default function MessageView({
             </pre>
           )}
 
-          {/* Bottom reply/forward buttons */}
-          <div className="flex items-center gap-2 mt-6 pt-4 border-t border-outlook-border">
+          {/* Bottom reply/forward buttons — hidden on mobile (duplicated by floating action bar) */}
+          <div className="hidden md:flex items-center gap-2 mt-6 pt-4 border-t border-outlook-border">
             <button
               onClick={onReply}
               className="flex items-center gap-2 px-4 py-2 text-sm text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded hover:bg-outlook-bg-hover transition-colors"
