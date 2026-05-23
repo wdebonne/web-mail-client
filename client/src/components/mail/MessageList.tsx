@@ -1479,9 +1479,13 @@ export function resolveFolderDisplayName(folder: string): string {
   const names: Record<string, string> = {
     'INBOX': 'Boîte de réception',
     'Sent': 'Éléments envoyés',
+    'Sent Items': 'Éléments envoyés',
     'Drafts': 'Brouillons',
     'Trash': 'Éléments supprimés',
+    'Deleted': 'Éléments supprimés',
+    'Deleted Items': 'Éléments supprimés',
     'Junk': 'Courrier indésirable',
+    'Spam': 'Courrier indésirable',
     'Archive': 'Archives',
   };
   // Try leaf segment against common folder names (handles `.` and `/` delimiters).

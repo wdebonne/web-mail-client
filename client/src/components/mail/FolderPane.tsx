@@ -95,14 +95,30 @@ const FOLDER_ICONS: Record<string, any> = {
 const FOLDER_LABELS: Record<string, string> = {
   'INBOX': 'Boîte de réception',
   'Sent': 'Éléments envoyés',
+  'Sent Items': 'Éléments envoyés',
   'Drafts': 'Brouillons',
   'Trash': 'Éléments supprimés',
+  'Deleted': 'Éléments supprimés',
+  'Deleted Items': 'Éléments supprimés',
   'Junk': 'Courrier indésirable',
+  'Spam': 'Courrier indésirable',
   'Archive': 'Archives',
   'INBOX.Sent': 'Éléments envoyés',
   'INBOX.Drafts': 'Brouillons',
   'INBOX.Trash': 'Éléments supprimés',
+  'INBOX.Deleted': 'Éléments supprimés',
+  'INBOX.Deleted Items': 'Éléments supprimés',
   'INBOX.Junk': 'Courrier indésirable',
+  'INBOX.Spam': 'Courrier indésirable',
+};
+
+const SPECIAL_USE_LABELS: Record<string, string> = {
+  '\\Inbox': 'Boîte de réception',
+  '\\Sent': 'Éléments envoyés',
+  '\\Drafts': 'Brouillons',
+  '\\Trash': 'Éléments supprimés',
+  '\\Junk': 'Courrier indésirable',
+  '\\Archive': 'Archives',
 };
 
 function isSpecialFolder(folder?: MailFolder): boolean {
@@ -125,6 +141,7 @@ function getFolderIcon(folder: MailFolder) {
 }
 
 function getFolderLabel(folder: MailFolder) {
+  if (folder.specialUse && SPECIAL_USE_LABELS[folder.specialUse]) return SPECIAL_USE_LABELS[folder.specialUse];
   const mapped = FOLDER_LABELS[folder.path] || FOLDER_LABELS[folder.name];
   if (mapped) return mapped;
   // Always display only the leaf segment, so nested folders show their short name
