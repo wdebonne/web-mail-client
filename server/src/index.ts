@@ -129,7 +129,7 @@ app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
 app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 app.use('/api/admin/backup', authMiddleware, backupRouter);
-app.use('/api/proxy/image', authMiddleware, imageProxyRouter);
+app.use('/api/proxy/image', imageProxyRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

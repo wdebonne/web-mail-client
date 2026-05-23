@@ -29,11 +29,12 @@ const DOMPURIFY_CONFIG = {
 function sanitizeEmailHtml(raw: string): string {
   const clean = DOMPurify.sanitize(raw, DOMPURIFY_CONFIG);
   const doc = new DOMParser().parseFromString(clean, 'text/html');
+  const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
   doc.querySelectorAll('img[src]').forEach((el) => {
     const img = el as HTMLImageElement;
     const src = img.getAttribute('src') ?? '';
     if (src.startsWith('http://') || src.startsWith('https://')) {
-      img.setAttribute('src', `/api/proxy/image?url=${encodeURIComponent(src)}`);
+      img.setAttribute('src', `${proxyBase}${encodeURIComponent(src)}`);
     }
   });
   return doc.body.innerHTML;
