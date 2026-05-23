@@ -9,6 +9,10 @@ interface UIState {
   // Title shown in the mobile top bar (set by the active page).
   mobilePageTitle: string;
   setMobilePageTitle: (title: string) => void;
+  // True when a mail is open full-screen on mobile — hides the top header and
+  // bottom nav to maximise reading area.
+  mobileReadingView: boolean;
+  setMobileReadingView: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -16,4 +20,6 @@ export const useUIStore = create<UIState>((set) => ({
   toggleMobileSidebar: () => set((s) => ({ mobileSidebarSignal: s.mobileSidebarSignal + 1 })),
   mobilePageTitle: '',
   setMobilePageTitle: (title) => set({ mobilePageTitle: title }),
+  mobileReadingView: false,
+  setMobileReadingView: (v) => set({ mobileReadingView: v }),
 }));

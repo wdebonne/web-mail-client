@@ -547,42 +547,6 @@ export default function MessageView({
           </div>
         </div>
 
-        {/* Mobile / small tablet action bar — full-width row below sender info */}
-        <div className="md:hidden mt-2 -mx-1 flex items-center justify-between border-t border-outlook-border pt-2">
-          <div className="flex items-center gap-0.5 overflow-x-auto">
-            <ActionButton icon={Reply} label="Répondre" onClick={onReply} />
-            <ActionButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} />
-            <ActionButton icon={Forward} label="Transférer" onClick={onForward} />
-          </div>
-          <div className="flex items-center gap-0.5">
-            <ActionButton
-              icon={Star}
-              label={message.flags?.flagged ? 'Retirer' : 'Indicateur'}
-              onClick={onToggleFlag}
-              active={message.flags?.flagged}
-            />
-            <ActionButton icon={Trash2} label="Supprimer" onClick={onDelete} danger />
-            <div className="relative">
-              <ActionButton icon={MoreHorizontal} label="Plus" onClick={() => setShowMore(!showMore)} />
-              {showMore && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowMore(false)} />
-                  <div className="absolute right-0 top-full mt-1 bg-white border border-outlook-border rounded-md shadow-lg py-1 z-20 min-w-48">
-                    <button onClick={() => { (onArchive ? onArchive() : onMove('Archive')); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
-                      <Archive size={14} /> Archiver
-                    </button>
-                    <button onClick={() => { onMove('Junk'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
-                      <Flag size={14} /> Marquer comme indésirable
-                    </button>
-                    <button onClick={() => { onMove('INBOX'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
-                      <FolderInput size={14} /> Déplacer vers...
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
       )}
 
@@ -671,7 +635,7 @@ export default function MessageView({
       {/* Message body — in thread mode, render a vertical stack of collapsible cards */}
       {isThreadMode ? (
         <div className="flex-1 overflow-y-auto bg-outlook-bg-primary/20 min-w-0">
-          <div className="flex flex-col gap-2 p-3">
+          <div className="flex flex-col gap-2 p-3 pb-28 md:pb-3">
             {sortedThread.map((m, idx) => {
               const key = threadKeyOf(m);
               const isOpen = expandedKeys.has(key);
@@ -798,7 +762,7 @@ export default function MessageView({
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 min-w-0">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 pb-28 md:pb-4 min-w-0">
           <SecurityBanner verdict={verdict} />
           {/* Inline display-mode toggle — lets the user override the global
               "natif/étiré" preference just for the message currently shown. */}
@@ -982,6 +946,54 @@ export default function MessageView({
         onPick={(folder) => { performNextcloudSave(folder); }}
         onClose={() => { if (!ncSaving) setNcSaveTarget(null); }}
       />
+
+      {/* ── Mobile floating action bar ── */}
+      <div
+        className="md:hidden fixed bottom-0 left-0 right-0 z-30 flex justify-center"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}
+      >
+        <div className="mb-3 mx-4 flex items-center bg-[#1c1c1e]/90 backdrop-blur-md rounded-2xl shadow-2xl border border-white/10 px-2 py-1.5">
+          <FloatBtn icon={Reply} label="Répondre" onClick={onReply} />
+          <FloatBtn icon={ReplyAll} label="Rép. tous" onClick={onReplyAll} />
+          <FloatBtn icon={Forward} label="Transférer" onClick={onForward} />
+          <div className="w-px h-7 bg-white/15 mx-1.5" />
+          <FloatBtn
+            icon={Star}
+            label={message.flags?.flagged ? 'Retirer' : 'Favoris'}
+            onClick={onToggleFlag}
+            active={message.flags?.flagged}
+          />
+          <FloatBtn icon={Trash2} label="Supprimer" onClick={onDelete} danger />
+          <div className="relative">
+            <FloatBtn icon={MoreHorizontal} label="Plus" onClick={() => setShowMore(!showMore)} />
+            {showMore && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowMore(false)} />
+                <div className="absolute bottom-full mb-2 right-0 bg-white border border-outlook-border rounded-xl shadow-2xl py-1 z-20 min-w-52 overflow-hidden">
+                  <button
+                    onClick={() => { (onArchive ? onArchive() : onMove('Archive')); setShowMore(false); }}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-3 text-outlook-text-primary"
+                  >
+                    <Archive size={16} className="text-outlook-text-secondary" /> Archiver
+                  </button>
+                  <button
+                    onClick={() => { onMove('Junk'); setShowMore(false); }}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-3 text-outlook-text-primary"
+                  >
+                    <Flag size={16} className="text-outlook-text-secondary" /> Marquer comme indésirable
+                  </button>
+                  <button
+                    onClick={() => { onMove('INBOX'); setShowMore(false); }}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-3 text-outlook-text-primary"
+                  >
+                    <FolderInput size={16} className="text-outlook-text-secondary" /> Déplacer vers...
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
     </motion.div>
   );
 }
@@ -995,13 +1007,35 @@ function ActionButton({
     <button
       onClick={onClick}
       className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded transition-colors
-        ${danger ? 'hover:bg-red-50 hover:text-outlook-danger' : 
+        ${danger ? 'hover:bg-red-50 hover:text-outlook-danger' :
           active ? 'text-outlook-warning bg-amber-50' :
           'hover:bg-outlook-bg-hover text-outlook-text-secondary hover:text-outlook-text-primary'}`}
       title={label}
     >
       <Icon size={14} />
       <span className="hidden lg:inline">{label}</span>
+    </button>
+  );
+}
+
+function FloatBtn({
+  icon: Icon, label, onClick, danger, active,
+}: {
+  icon: any; label: string; onClick: () => void; danger?: boolean; active?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors min-w-[52px]
+        ${danger
+          ? 'text-red-400 active:bg-white/10'
+          : active
+            ? 'text-amber-400 active:bg-white/10'
+            : 'text-white/80 active:bg-white/10'}`}
+    >
+      <Icon size={20} />
+      <span className="text-[10px] leading-tight">{label}</span>
     </button>
   );
 }

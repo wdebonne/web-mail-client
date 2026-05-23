@@ -46,6 +46,7 @@ export default function Layout({ children }: LayoutProps) {
   const setThemeMode = useThemeStore((s) => s.setMode);
   const toggleMobileSidebar = useUIStore((s) => s.toggleMobileSidebar);
   const mobilePageTitle = useUIStore((s) => s.mobilePageTitle);
+  const mobileReadingView = useUIStore((s) => s.mobileReadingView);
   const queryClient = useQueryClient();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -259,7 +260,7 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="h-12 bg-outlook-bg-secondary border-b border-outlook-border flex items-center px-3 sm:px-4 flex-shrink-0 gap-2">
+      <header className={`h-12 bg-outlook-bg-secondary border-b border-outlook-border items-center px-3 sm:px-4 flex-shrink-0 gap-2 ${mobileReadingView ? 'hidden lg:flex' : 'flex'}`}>
         <button
           onClick={() => {
             if (hamburgerActive) {
@@ -650,7 +651,7 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       <nav
-        className="lg:hidden flex items-stretch justify-around bg-outlook-bg-primary border-t border-outlook-border flex-shrink-0"
+        className={`items-stretch justify-around bg-outlook-bg-primary border-t border-outlook-border flex-shrink-0 ${mobileReadingView ? 'hidden' : 'lg:hidden flex'}`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         {primaryNavItems.map((item) => {
