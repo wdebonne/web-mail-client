@@ -424,10 +424,10 @@ export default function MessageView({
 
       {/* Message header — sender info left, actions right (single-message mode only) */}
       {!isThreadMode && (
-      <div className="px-3 sm:px-6 py-3 border-b border-outlook-border flex-shrink-0">
-        <div className="flex items-start gap-3">
+      <div className="px-3 sm:px-6 py-2 md:py-3 border-b border-outlook-border flex-shrink-0">
+        <div className="flex items-start gap-2 md:gap-3">
           <div
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
+            className="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
             style={{ backgroundColor: getAvatarColor(message.from?.name, message.from?.address) }}
           >
             {getInitials(message.from?.name, message.from?.address)}
@@ -954,13 +954,13 @@ export default function MessageView({
         className="md:hidden fixed bottom-0 left-0 right-0 z-30 flex justify-center"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}
       >
-        <div className="mb-3 mx-4 flex items-center bg-[#1c1c1e]/90 backdrop-blur-md rounded-2xl shadow-2xl border border-white/10 px-2 py-1.5">
+        <div className="mb-2 mx-3 flex items-center bg-[#1c1c1e]/90 backdrop-blur-md rounded-2xl shadow-2xl border border-white/10 px-1.5 py-1">
           <FloatBtn icon={Reply} label="Répondre" onClick={onReply} />
           {((message.to?.length ?? 0) + (message.cc?.length ?? 0)) > 1 && (
             <FloatBtn icon={ReplyAll} label="Rép. tous" onClick={onReplyAll} />
           )}
           <FloatBtn icon={Forward} label="Transférer" onClick={onForward} />
-          <div className="w-px h-7 bg-white/15 mx-1.5" />
+          <div className="w-px h-5 bg-white/15 mx-1" />
           <FloatBtn
             icon={Star}
             label={message.flags?.flagged ? 'Retirer' : 'Favoris'}
@@ -1031,15 +1031,15 @@ function FloatBtn({
     <button
       onClick={onClick}
       title={label}
-      className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors min-w-[52px]
+      className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition-colors min-w-[46px]
         ${danger
           ? 'text-red-400 active:bg-white/10'
           : active
             ? 'text-amber-400 active:bg-white/10'
             : 'text-white/80 active:bg-white/10'}`}
     >
-      <Icon size={20} />
-      <span className="text-[10px] leading-tight">{label}</span>
+      <Icon size={18} />
+      <span className="text-[9px] leading-tight">{label}</span>
     </button>
   );
 }
