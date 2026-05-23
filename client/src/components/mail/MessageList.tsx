@@ -10,7 +10,7 @@ import {
   Check, MailCheck, PanelLeftOpen, PanelLeftClose,
   Tag, MessagesSquare, Clock, X,
 } from 'lucide-react';
-import { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
@@ -1180,8 +1180,7 @@ export default function MessageList({
                   );
 
                   if (!canSwipe) {
-                    // Without swipe, give the motion.div the list key directly.
-                    return <div key={message.uid} style={{ display: 'contents' }}>{rowNode}</div>;
+                    return <React.Fragment key={message.uid}>{rowNode}</React.Fragment>;
                   }
 
                   // Outlook-style: show a single full-width coloured strip
