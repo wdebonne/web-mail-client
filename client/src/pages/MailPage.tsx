@@ -2215,6 +2215,7 @@ export default function MailPage() {
           }}
           onSync={handleSync}
           hasSelectedMessage={!!selectedMessage}
+          showReplyAll={selectedMessage ? ((selectedMessage.to?.length ?? 0) + (selectedMessage.cc?.length ?? 0)) > 1 : true}
           isFlagged={!!selectedMessage?.flags?.flagged}
           isRead={!!selectedMessage?.flags?.seen}
           showFolderPane={showFolderPane}

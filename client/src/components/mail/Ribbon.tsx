@@ -83,6 +83,7 @@ interface RibbonProps {
   onMarkUnread: () => void;
   onSync: () => void;
   hasSelectedMessage: boolean;
+  showReplyAll?: boolean;
   isFlagged: boolean;
   isRead: boolean;
 
@@ -562,7 +563,7 @@ function SearchTabSimplified(props: SearchTabProps) {
 export default function Ribbon({
   onNewMessage, onReply, onReplyAll, onForward, onDelete, onArchive,
   onToggleFlag, onMarkRead, onMarkUnread, onSync,
-  hasSelectedMessage, isFlagged, isRead,
+  hasSelectedMessage, showReplyAll = true, isFlagged, isRead,
   showFolderPane, onToggleFolderPane, onPrint, onDownloadEml,
   attachmentActionMode, onChangeAttachmentActionMode,
   isCollapsed, onToggleCollapse,
@@ -1316,7 +1317,7 @@ export default function Ribbon({
               <SimplifiedButton icon={MailPlus} label="Nouveau" onClick={onNewMessage} />
               <SimplifiedSep />
               <SimplifiedButton icon={Reply} label="Répondre" onClick={onReply} disabled={!hasSelectedMessage} />
-              <SimplifiedButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} disabled={!hasSelectedMessage} />
+              {showReplyAll && <SimplifiedButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} disabled={!hasSelectedMessage} />}
               <SimplifiedButton icon={Forward} label="Transférer" onClick={onForward} disabled={!hasSelectedMessage} />
               <SimplifiedSep />
               <SimplifiedButton icon={Trash2} label="Supprimer" onClick={onDelete} disabled={!hasSelectedMessage} danger />
@@ -1552,7 +1553,7 @@ export default function Ribbon({
               {/* Répondre */}
               <RibbonGroup label="Répondre">
                 <RibbonButton icon={Reply} label="Répondre" onClick={onReply} disabled={!hasSelectedMessage} />
-                <RibbonButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} disabled={!hasSelectedMessage} />
+                {showReplyAll && <RibbonButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} disabled={!hasSelectedMessage} />}
                 <RibbonButton icon={Forward} label="Transférer" onClick={onForward} disabled={!hasSelectedMessage} />
               </RibbonGroup>
               <RibbonSeparator />

@@ -511,7 +511,9 @@ export default function MessageView({
           <div className="hidden md:flex flex-col items-end gap-1 flex-shrink-0">
             <div className="flex items-center gap-0.5">
               <ActionButton icon={Reply} label="Répondre" onClick={onReply} />
-              <ActionButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} />
+              {((message.to?.length ?? 0) + (message.cc?.length ?? 0)) > 1 && (
+                <ActionButton icon={ReplyAll} label="Répondre à tous" onClick={onReplyAll} />
+              )}
               <ActionButton icon={Forward} label="Transférer" onClick={onForward} />
               <div className="w-px h-5 bg-outlook-border mx-0.5" />
               <ActionButton icon={Trash2} label="Supprimer" onClick={onDelete} danger />
@@ -954,7 +956,9 @@ export default function MessageView({
       >
         <div className="mb-3 mx-4 flex items-center bg-[#1c1c1e]/90 backdrop-blur-md rounded-2xl shadow-2xl border border-white/10 px-2 py-1.5">
           <FloatBtn icon={Reply} label="Répondre" onClick={onReply} />
-          <FloatBtn icon={ReplyAll} label="Rép. tous" onClick={onReplyAll} />
+          {((message.to?.length ?? 0) + (message.cc?.length ?? 0)) > 1 && (
+            <FloatBtn icon={ReplyAll} label="Rép. tous" onClick={onReplyAll} />
+          )}
           <FloatBtn icon={Forward} label="Transférer" onClick={onForward} />
           <div className="w-px h-7 bg-white/15 mx-1.5" />
           <FloatBtn
