@@ -1322,6 +1322,7 @@ export default function MailPage() {
   // it fires, toggle between the folder list and the message list.
   const mobileSidebarSignal = useUIStore((s) => s.mobileSidebarSignal);
   const setMobilePageTitle = useUIStore((s) => s.setMobilePageTitle);
+  const setMobileReadingView = useUIStore((s) => s.setMobileReadingView);
 
   useEffect(() => {
     const title = virtualFolder === 'unified-inbox'
@@ -1345,6 +1346,12 @@ export default function MailPage() {
       return next;
     });
   }, [mobileSidebarSignal]);
+
+  // Sync full-screen reading state to UIStore so Layout can hide chrome.
+  useEffect(() => {
+    setMobileReadingView(mobileView === 'message');
+    return () => setMobileReadingView(false);
+  }, [mobileView, setMobileReadingView]);
 
   // Mobile/tablet OS "back" button: intercept and map to in-app navigation
   // (message view → list, list → folder pane). The default browser/OS back

@@ -21,7 +21,8 @@
       "Bash(grep -E \"\\\\.ts$\")",
       "Bash(node_modules\\\\.bin\\\\tsc --noEmit --project client/tsconfig.json)",
       "Bash(node_modules\\\\.bin\\\\tsc --noEmit --project server/tsconfig.json)",
-      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\src\" -Recurse -Directory)"
+      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\src\" -Recurse -Directory)",
+      "Bash(Format-Table FullName)"
     ]
   }
 }
