@@ -28,25 +28,27 @@ const DOMPURIFY_CONFIG = {
 
 function sanitizeEmailHtml(raw: string): string {
   const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
-
-  // Pre-process: rewrite CSS url() references BEFORE DOMPurify so that
-  // background-image and other CSS image references are also proxied.
-  const withProxiedCss = raw.replace(
-    /url\(\s*['"]?(https?:\/\/[^'")\s]+)['"]?\s*\)/gi,
-    (_, url) => `url("${proxyBase}${encodeURIComponent(url)}")`
-  );
-
-  const clean = DOMPurify.sanitize(withProxiedCss, DOMPURIFY_CONFIG);
+  const clean = DOMPurify.sanitize(raw, DOMPURIFY_CONFIG);
   const doc = new DOMParser().parseFromString(clean, 'text/html');
 
-  // Post-process: rewrite <img src> attributes (CSS url() pre-processing
-  // doesn't cover HTML attribute syntax).
+  // Proxy <img src> attributes.
   doc.querySelectorAll('img[src]').forEach((el) => {
     const img = el as HTMLImageElement;
     const src = img.getAttribute('src') ?? '';
     if ((src.startsWith('http://') || src.startsWith('https://')) && !src.startsWith(proxyBase)) {
       img.setAttribute('src', `${proxyBase}${encodeURIComponent(src)}`);
     }
+  });
+
+  // Proxy url() references in inline style="" attributes ONLY — NOT in <style>
+  // tag content, to avoid proxying @import/font rules as images.
+  doc.querySelectorAll('[style]').forEach((el) => {
+    const style = el.getAttribute('style') ?? '';
+    const proxied = style.replace(
+      /url\(\s*['"]?(https?:\/\/[^'")\s]+)['"]?\s*\)/gi,
+      (_, url) => `url("${proxyBase}${encodeURIComponent(url)}")`
+    );
+    if (proxied !== style) el.setAttribute('style', proxied);
   });
 
   return doc.body.innerHTML;
