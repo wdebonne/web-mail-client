@@ -27,16 +27,28 @@ const DOMPURIFY_CONFIG = {
 };
 
 function sanitizeEmailHtml(raw: string): string {
-  const clean = DOMPurify.sanitize(raw, DOMPURIFY_CONFIG);
-  const doc = new DOMParser().parseFromString(clean, 'text/html');
   const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
+
+  // Pre-process: rewrite CSS url() references BEFORE DOMPurify so that
+  // background-image and other CSS image references are also proxied.
+  const withProxiedCss = raw.replace(
+    /url\(\s*['"]?(https?:\/\/[^'")\s]+)['"]?\s*\)/gi,
+    (_, url) => `url("${proxyBase}${encodeURIComponent(url)}")`
+  );
+
+  const clean = DOMPurify.sanitize(withProxiedCss, DOMPURIFY_CONFIG);
+  const doc = new DOMParser().parseFromString(clean, 'text/html');
+
+  // Post-process: rewrite <img src> attributes (CSS url() pre-processing
+  // doesn't cover HTML attribute syntax).
   doc.querySelectorAll('img[src]').forEach((el) => {
     const img = el as HTMLImageElement;
     const src = img.getAttribute('src') ?? '';
-    if (src.startsWith('http://') || src.startsWith('https://')) {
+    if ((src.startsWith('http://') || src.startsWith('https://')) && !src.startsWith(proxyBase)) {
       img.setAttribute('src', `${proxyBase}${encodeURIComponent(src)}`);
     }
   });
+
   return doc.body.innerHTML;
 }
 
