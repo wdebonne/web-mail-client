@@ -958,6 +958,62 @@ export class NextCloudService {
     return results;
   }
 
+  /**
+   * Search for folders across the entire drive using PROPFIND Depth: infinity.
+   * This bypasses the search index and reads directly from WebDAV, so it always
+   * finds folders regardless of indexing state.
+   */
+  async searchFolders(query: string, limit = 100): Promise<Array<{ name: string; path: string; isFolder: true }>> {
+    const url = this.filesBase();
+    const res = await fetch(url, {
+      method: 'PROPFIND',
+      headers: {
+        Authorization: this.getAuthHeader(),
+        Depth: 'infinity',
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: `<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:">
+  <d:prop>
+    <d:resourcetype/>
+    <d:displayname/>
+  </d:prop>
+</d:propfind>`,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`PROPFIND folders failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+    const xml = await res.text();
+    const queryLower = query.toLowerCase();
+    const results: Array<{ name: string; path: string; isFolder: true }> = [];
+    const userRoot = `/remote.php/dav/files/${encodeURIComponent(this.config.username)}/`;
+    const responses = xml.split(/<\s*[a-z0-9]*:?response\b/i).slice(1);
+    for (const chunk of responses) {
+      if (results.length >= limit) break;
+      // Skip non-collection (file) entries early for performance.
+      if (!/<\s*[a-z0-9]*:?collection\b/i.test(chunk)) continue;
+      const hrefMatch = chunk.match(/<\s*[a-z0-9]*:?href\b[^>]*>([^<]+)</i);
+      if (!hrefMatch) continue;
+      let href = hrefMatch[1].trim();
+      try { href = decodeURI(href); } catch { /* ignore */ }
+      const normalized = href.replace(/\/+$/, '');
+      if (normalized === userRoot.replace(/\/+$/, '')) continue;
+      let userRel = href;
+      const idx = href.indexOf(userRoot);
+      if (idx >= 0) userRel = href.slice(idx + userRoot.length);
+      try { userRel = decodeURI(userRel); } catch { /* ignore */ }
+      userRel = userRel.replace(/\/+$/, '');
+      if (!userRel) continue;
+      const segs = userRel.split('/');
+      const name = segs[segs.length - 1];
+      if (!name.toLowerCase().includes(queryLower)) continue;
+      results.push({ name, path: '/' + userRel, isFolder: true });
+    }
+    results.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    return results;
+  }
+
   /** Returns true if the WebDAV resource exists. */
   async fileExists(relPath: string): Promise<boolean> {
     const res = await fetch(this.filesUrl(relPath), {

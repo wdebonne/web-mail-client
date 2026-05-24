@@ -581,6 +581,10 @@ export const api = {
     request<{ path: string; items: Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }> }>(
       `/nextcloud/files/list?path=${encodeURIComponent(path)}`
     ),
+  nextcloudFilesFolderSearch: (q: string) =>
+    request<{ items: Array<{ name: string; path: string; isFolder: boolean }> }>(
+      `/nextcloud/files/search-folders?q=${encodeURIComponent(q)}`
+    ),
   nextcloudFilesSearch: (q: string) =>
     request<{ items: Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }> }>(
       `/nextcloud/files/search?q=${encodeURIComponent(q)}`

@@ -43,6 +43,21 @@ nextcloudFilesRouter.get('/list', async (req: AuthRequest, res) => {
   }
 });
 
+// GET /api/nextcloud/files/search-folders?q=report — search folders via PROPFIND infinity.
+nextcloudFilesRouter.get('/search-folders', async (req: AuthRequest, res) => {
+  try {
+    const client = await getUserClient(req.userId!);
+    if (!client) return res.status(409).json({ error: 'NextCloud not linked' });
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (q.length < 2) return res.status(400).json({ error: 'Query must be at least 2 characters' });
+    const items = await client.searchFolders(q);
+    res.json({ items });
+  } catch (e) {
+    logger.error(e as Error, 'nextcloud-files search-folders error');
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 // GET /api/nextcloud/files/search?q=report — search across the full drive.
 nextcloudFilesRouter.get('/search', async (req: AuthRequest, res) => {
   try {
