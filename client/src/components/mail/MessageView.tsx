@@ -5,7 +5,7 @@ import {
   Reply, ReplyAll, Forward, Trash2, Star, MoreHorizontal,
   Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown,
   ChevronRight, MessagesSquare, Lock, ShieldCheck, ShieldAlert, ShieldX, KeyRound,
-  Maximize2, Minimize2, CloudUpload,
+  Maximize2, Minimize2, CloudUpload, Languages, Loader2,
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -45,6 +45,15 @@ a:hover{text-decoration:underline}
   a,p,span,div{word-break:break-word;overflow-wrap:anywhere}
 }
 `;
+
+const LANG_LABELS: Record<string, string> = {
+  en: 'anglais', de: 'allemand', es: 'espagnol', it: 'italien',
+  pt: 'portugais', nl: 'néerlandais', ru: 'russe', zh: 'chinois',
+  ja: 'japonais', ar: 'arabe', pl: 'polonais', tr: 'turc',
+  ko: 'coréen', sv: 'suédois', da: 'danois', fi: 'finnois',
+  nb: 'norvégien', cs: 'tchèque', hu: 'hongrois', ro: 'roumain',
+  uk: 'ukrainien', he: 'hébreu', th: 'thaï', id: 'indonésien',
+};
 
 function sanitizeEmailHtml(raw: string): string {
   const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
@@ -189,6 +198,19 @@ export default function MessageView({
   // message changes so that switching threads goes back to the global default.
   const [localDisplayMode, setLocalDisplayMode] = useState<'native' | 'stretched' | null>(null);
   useEffect(() => { setLocalDisplayMode(null); }, [message?.uid, message?._accountId]);
+
+  // Translation state — reset when the displayed message changes.
+  const [translatedText, setTranslatedText] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [translatedFrom, setTranslatedFrom] = useState<string | null>(null);
+  useEffect(() => {
+    setTranslatedText(null);
+    setShowTranslation(false);
+    setTranslationError(null);
+    setTranslatedFrom(null);
+  }, [message?.uid, message?._accountId]);
   const effectiveDisplayMode: 'native' | 'stretched' = localDisplayMode ?? mailDisplayMode;
 
   // --- Conversation thread (expandable stack) ---
@@ -344,6 +366,34 @@ export default function MessageView({
     }
     setPreviewAttachment(null);
     setPreviewLoadingName(null);
+  };
+
+  const handleTranslate = async () => {
+    if (!message) return;
+    if (showTranslation) { setShowTranslation(false); return; }
+    if (translatedText) { setShowTranslation(true); return; }
+
+    let textToTranslate = message.bodyText || '';
+    if (!textToTranslate && message.bodyHtml) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = message.bodyHtml;
+      textToTranslate = tmp.innerText || tmp.textContent || '';
+    }
+    if (!textToTranslate.trim()) return;
+
+    const targetLang = localStorage.getItem('user.language') || 'fr';
+    setTranslating(true);
+    setTranslationError(null);
+    try {
+      const result = await api.translateText(textToTranslate, targetLang);
+      setTranslatedText(result.translatedText);
+      setTranslatedFrom(result.detectedLanguage);
+      setShowTranslation(true);
+    } catch (err: unknown) {
+      setTranslationError(err instanceof Error ? err.message : 'Traduction impossible');
+    } finally {
+      setTranslating(false);
+    }
   };
 
   const decodeBase64ToUint8Array = (b64: string) => {
@@ -858,35 +908,61 @@ export default function MessageView({
       ) : (
         <div className="flex-1 overflow-y-auto overflow-x-hidden email-reading-pane px-3 sm:px-6 py-4 pb-28 md:pb-4 min-w-0">
           <SecurityBanner verdict={verdict} />
-          {/* Inline display-mode toggle — lets the user override the global
-              "natif/étiré" preference just for the message currently shown. */}
-          {(sanitizedHtml || securePlaintext) && (
-            <div className="hidden md:flex items-center justify-end mb-2 -mt-1">
+          {/* Controls row: translate button (all screens) + display-mode toggle (desktop) */}
+          {(sanitizedHtml || securePlaintext || message.bodyText) && (
+            <div className="flex items-center justify-end mb-2 -mt-1 gap-1.5">
               <button
                 type="button"
-                onClick={() =>
-                  setLocalDisplayMode(prev => {
-                    const current = prev ?? mailDisplayMode;
-                    return current === 'native' ? 'stretched' : 'native';
-                  })
-                }
-                className="flex items-center gap-1.5 px-2 py-1 text-2xs text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover border border-outlook-border rounded transition-colors"
-                title={
-                  effectiveDisplayMode === 'native'
-                    ? 'Afficher ce mail étiré (toute la largeur)'
-                    : 'Afficher ce mail en largeur de lecture (natif)'
-                }
+                onClick={handleTranslate}
+                disabled={translating}
+                className="flex items-center gap-1.5 px-2 py-1 text-2xs text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover border border-outlook-border rounded transition-colors disabled:opacity-50"
+                title="Traduire le message"
               >
-                {effectiveDisplayMode === 'native'
-                  ? <Maximize2 size={12} />
-                  : <Minimize2 size={12} />}
-                <span>
-                  {effectiveDisplayMode === 'native' ? 'Étirer' : 'Vue native'}
-                </span>
+                {translating
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : <Languages size={12} />}
+                <span>{translating ? 'Traduction…' : showTranslation ? "Voir l'original" : 'Traduire'}</span>
               </button>
+              {(sanitizedHtml || securePlaintext) && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLocalDisplayMode(prev => {
+                      const current = prev ?? mailDisplayMode;
+                      return current === 'native' ? 'stretched' : 'native';
+                    })
+                  }
+                  className="hidden md:flex items-center gap-1.5 px-2 py-1 text-2xs text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover border border-outlook-border rounded transition-colors"
+                  title={
+                    effectiveDisplayMode === 'native'
+                      ? 'Afficher ce mail étiré (toute la largeur)'
+                      : 'Afficher ce mail en largeur de lecture (natif)'
+                  }
+                >
+                  {effectiveDisplayMode === 'native' ? <Maximize2 size={12} /> : <Minimize2 size={12} />}
+                  <span>{effectiveDisplayMode === 'native' ? 'Étirer' : 'Vue native'}</span>
+                </button>
+              )}
             </div>
           )}
-          {securePlaintext ? (
+          {translationError && (
+            <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              Traduction impossible : {translationError}
+            </div>
+          )}
+          {showTranslation && translatedText ? (
+            <>
+              {translatedFrom && (
+                <div className="mb-2 flex items-center gap-1 text-2xs text-outlook-text-secondary">
+                  <Languages size={11} />
+                  Traduit depuis : {LANG_LABELS[translatedFrom] ?? translatedFrom}
+                </div>
+              )}
+              <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
+                {translatedText}
+              </pre>
+            </>
+          ) : securePlaintext ? (
             <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">
               {securePlaintext}
             </pre>

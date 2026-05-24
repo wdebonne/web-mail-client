@@ -49,6 +49,13 @@
       "view": {
         "back": "Retour",
         "hide_source": "Masquer le code source"
+      },
+      "translate": {
+        "button": "Traduire",
+        "translating": "Traduction…",
+        "show_original": "Voir l'original",
+        "translated_from": "Traduit depuis",
+        "error": "Traduction impossible"
       }
     },
     "message_headers": {

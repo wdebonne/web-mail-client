@@ -11,6 +11,21 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.17.0] - 2026-05-24
+
+### Ajouté
+
+- **Traduction des e-mails (LibreTranslate)**
+  - Bouton **Traduire** dans la vue de lecture des messages (visible sur mobile et desktop), positionné en haut à droite du corps du mail à côté du toggle natif/étiré.
+  - Un clic déclenche la traduction via le service **LibreTranslate** (configurable via `LIBRETRANSLATE_URL` / `LIBRETRANSLATE_API_KEY` dans le `.env` serveur) et affiche le texte traduit à la place du contenu original.
+  - **Détection automatique** de la langue source — un libellé discret *« Traduit depuis : anglais »* (ou la langue détectée) apparaît au-dessus du texte traduit.
+  - Bouton bascule : cliquer à nouveau sur le bouton (libellé *« Voir l'original »*) restaure le contenu original sans re-appeler l'API (traduction mise en cache pour la session).
+  - La langue cible correspond à la langue choisie dans les paramètres de l'application (`Paramètres → Profil → Langue`).
+  - Limite de 10 000 caractères par requête ; bannière d'erreur en cas d'indisponibilité du service.
+  - Route serveur `POST /api/translate` (authentifiée) pour éviter d'exposer la clé API côté client.
+
+---
+
 ## [1.16.0] - 2026-05-23
 
 ### Ajouté
