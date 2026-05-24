@@ -29,6 +29,7 @@ import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES
 import { applicationsRouter } from './routes/applications';
 import { backupRouter } from './routes/backup';
 import { imageProxyRouter } from './routes/imageProxy';
+import { translateRouter } from './routes/translate';
 import { startBackupScheduler } from './services/backupScheduler';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
@@ -130,6 +131,7 @@ app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
 app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 app.use('/api/admin/backup', authMiddleware, backupRouter);
 app.use('/api/proxy/image', imageProxyRouter);
+app.use('/api/translate', authMiddleware, translateRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.16.0-blue)
+![Version](https://img.shields.io/badge/version-1.17.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -89,6 +89,7 @@ La langue affichée est choisie selon l’ordre suivant :
   - **Liste de messages** — *Regrouper par conversation* · *Regrouper par branches dans les conversations* · *Ne pas regrouper*. En mode regroupé, chaque fil est condensé en une seule ligne « racine » (objet + compteur de messages) et un chevron permet de déplier les messages descendants, indentés sous le parent. En vue unifiée, chaque enfant porte un badge de dossier d'origine (ex. `Éléments envoyés`).
   - **Volet de lecture → Organisation des messages** — *Afficher tous les messages de la conversation sélectionnée* (empilement de cartes dépliables, seul le plus récent ouvert) ou *Afficher uniquement le message sélectionné*.
   - Préférences persistées localement (`conversationGrouping`, `conversationShowAllInReadingPane`).
+- 🌍 **Traduction des e-mails** : bouton *Traduire* dans la vue de lecture — détecte automatiquement la langue source et traduit vers la langue de l'interface via **LibreTranslate** (auto-hébergeable). Toggle *Voir l'original* pour basculer sans re-appel réseau. Configurable via `LIBRETRANSLATE_URL` / `LIBRETRANSLATE_API_KEY`.
 - 📐 **Mode d'affichage du corps des mails (natif / étiré)** : bouton *Affichage mail* dans l'onglet **Afficher** du ruban — bascule globale entre *Natif* (largeur de lecture ~820 px centrée, parité style messagerie professionnelle desktop) et *Étiré* (toute la largeur du volet). Override possible message par message depuis la vue de lecture. Sur mobile, les newsletters HTML (`<table width="600">`) sont automatiquement remises en flux : tables empilées en blocs, images redimensionnées, plus aucun défilement horizontal. Barre d'objet masquée et bloc expéditeur repliable par défaut sur petit écran pour gagner de la hauteur.
 - 🛡️🔐 **Chiffrement & signature S/MIME + OpenPGP** : page **Sécurité** dédiée pour générer / importer des clés PGP (Curve25519) et des certificats S/MIME (PKCS#12). Les clés privées sont chiffrées AES-GCM 256 via PBKDF2-SHA-256 (310 000 itérations) et stockées en IndexedDB, jamais envoyées au serveur. Sélecteur de mode (bouclier) dans le compose : **PGP** signer / chiffrer / signer+chiffrer · **S/MIME** signer / chiffrer / signer+chiffrer. Détection et déchiffrement automatiques à la réception, avec bannière de statut (vérifiée, déchiffrée, verrouillée, invalide).
 - ↩️ **Indicateur « répondu »** dans la liste des mails (icône *Répondre* devant la date) basé sur le flag IMAP `\Answered`.

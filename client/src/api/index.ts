@@ -1120,6 +1120,13 @@ export const api = {
       users: Array<{ id: string; email: string; displayName: string | null; isAdmin: boolean }>;
       groups: Array<{ id: string; name: string }>;
     }>(`/admin/rules/directory`),
+
+  // Translation
+  translateText: (text: string, targetLang: string, sourceLang?: string) =>
+    request<{ translatedText: string; detectedLanguage: string | null }>('/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text, targetLang, sourceLang }),
+    }),
 };
 
 // ─── Mail rules types (mirrors server/src/services/mailRules.ts) ───────
