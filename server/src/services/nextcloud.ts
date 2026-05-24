@@ -912,6 +912,93 @@ export class NextCloudService {
     return results;
   }
 
+  /**
+   * Search for files and folders across the entire Nextcloud drive using
+   * WebDAV DASL basic search. Returns items whose display name matches the
+   * query (case-insensitive, substring match via SQL-style wildcards).
+   */
+  async searchFiles(query: string, limit = 100): Promise<Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }>> {
+    const escXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const scopeHref = this.filesBase();
+    const res = await fetch(scopeHref, {
+      method: 'SEARCH',
+      headers: {
+        Authorization: this.getAuthHeader(),
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: `<?xml version="1.0" encoding="UTF-8"?>
+<d:searchrequest xmlns:d="DAV:">
+  <d:basicsearch>
+    <d:select>
+      <d:prop>
+        <d:displayname/>
+        <d:getcontentlength/>
+        <d:getcontenttype/>
+        <d:resourcetype/>
+      </d:prop>
+    </d:select>
+    <d:from>
+      <d:scope>
+        <d:href>${escXml(scopeHref)}</d:href>
+        <d:depth>infinity</d:depth>
+      </d:scope>
+    </d:from>
+    <d:where>
+      <d:like>
+        <d:prop><d:displayname/></d:prop>
+        <d:literal>%${escXml(query)}%</d:literal>
+      </d:like>
+    </d:where>
+    <d:orderby/>
+    <d:limit><d:nresults>${limit}</d:nresults></d:limit>
+  </d:basicsearch>
+</d:searchrequest>`,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`SEARCH files failed (${res.status}): ${txt.slice(0, 200)}`);
+    }
+    const xml = await res.text();
+    return this.parseSearchResults(xml);
+  }
+
+  private parseSearchResults(xml: string): Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }> {
+    const results: Array<{ name: string; path: string; isFolder: boolean; size?: number; contentType?: string }> = [];
+    const userRoot = `/remote.php/dav/files/${encodeURIComponent(this.config.username)}/`;
+    const responses = xml.split(/<\s*[a-z0-9]*:?response\b/i).slice(1);
+    for (const chunk of responses) {
+      const hrefMatch = chunk.match(/<\s*[a-z0-9]*:?href\b[^>]*>([^<]+)</i);
+      if (!hrefMatch) continue;
+      let href = hrefMatch[1].trim();
+      try { href = decodeURI(href); } catch { /* ignore */ }
+      const normalized = href.replace(/\/+$/, '');
+      if (normalized === userRoot.replace(/\/+$/, '')) continue;
+      let userRel = href;
+      const idx = href.indexOf(userRoot);
+      if (idx >= 0) userRel = href.slice(idx + userRoot.length);
+      try { userRel = decodeURI(userRel); } catch { /* ignore */ }
+      userRel = userRel.replace(/\/+$/, '');
+      if (!userRel) continue;
+      const isFolder = /<\s*[a-z0-9]*:?collection\b/i.test(chunk);
+      const sizeMatch = chunk.match(/<\s*[a-z0-9]*:?getcontentlength\b[^>]*>([^<]*)</i);
+      const ctMatch = chunk.match(/<\s*[a-z0-9]*:?getcontenttype\b[^>]*>([^<]*)</i);
+      const segs = userRel.split('/');
+      const name = segs[segs.length - 1];
+      results.push({
+        name,
+        path: '/' + userRel,
+        isFolder,
+        size: sizeMatch && sizeMatch[1] ? parseInt(sizeMatch[1], 10) : undefined,
+        contentType: ctMatch && ctMatch[1] ? ctMatch[1] : undefined,
+      });
+    }
+    results.sort((a, b) => {
+      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+    return results;
+  }
+
   /** Returns true if the WebDAV resource exists. */
   async fileExists(relPath: string): Promise<boolean> {
     const res = await fetch(this.filesUrl(relPath), {
