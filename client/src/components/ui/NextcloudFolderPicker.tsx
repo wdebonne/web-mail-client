@@ -92,9 +92,8 @@ export default function NextcloudFolderPicker({ open, title, subtitle, onPick, o
       setSearchLoading(true);
       setSearchError(null);
       try {
-        const res = await api.nextcloudFilesSearch(search.trim());
-        // Folder picker only needs folders.
-        setSearchResults(res.items.filter(i => i.isFolder));
+        const res = await api.nextcloudFilesFolderSearch(search.trim());
+        setSearchResults(res.items);
       } catch (e: any) {
         setSearchError(e?.message || 'Erreur de recherche');
         setSearchResults([]);
