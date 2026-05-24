@@ -24,7 +24,8 @@
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\src\" -Recurse -Directory)",
       "Bash(Format-Table FullName)",
       "Bash(npm run *)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(xargs grep -l \"nextcloud.*file\\\\|Nextcloud.*file\")"
     ]
   }
 }

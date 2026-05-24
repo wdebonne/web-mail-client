@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Folder, ChevronLeft, X, Home, Loader2, Check, Cloud, Search } from 'lucide-react';
 import { api } from '../../api';
@@ -31,6 +31,12 @@ function formatSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+function parentLabel(path: string): string {
+  const segs = path.split('/').filter(Boolean);
+  if (segs.length <= 1) return 'Racine';
+  return segs.slice(0, -1).join(' / ');
+}
+
 export default function NextcloudFilePicker({ open, onPick, onClose }: NextcloudFilePickerProps) {
   const [path, setPath] = useState<string>('/');
   const [items, setItems] = useState<Item[]>([]);
@@ -38,12 +44,19 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<Item[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isSearchMode = search.trim().length >= 2;
 
   const load = async (p: string) => {
     setLoading(true);
     setError(null);
     setSelected(new Set());
     setSearch('');
+    setSearchResults([]);
     try {
       const res = await api.nextcloudFilesList(p);
       setItems(res.items);
@@ -61,15 +74,47 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
       setPath('/');
       setSelected(new Set());
       setSearch('');
+      setSearchResults([]);
       load('/');
     }
   }, [open]);
 
-  const filteredItems = useMemo(() => {
-    if (!search.trim()) return items;
+  // Debounced global search triggered when query reaches 2+ chars.
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!isSearchMode) {
+      setSearchResults([]);
+      setSearchError(null);
+      setSelected(new Set());
+      return;
+    }
+    setSelected(new Set());
+    debounceRef.current = setTimeout(async () => {
+      setSearchLoading(true);
+      setSearchError(null);
+      try {
+        const res = await api.nextcloudFilesSearch(search.trim());
+        setSearchResults(res.items);
+      } catch (e: any) {
+        setSearchError(e?.message || 'Erreur de recherche');
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search]);
+
+  const displayedItems = isSearchMode ? searchResults : items;
+
+  // Local filter only applies in browse mode (< 2 chars typed but >= 1).
+  const filteredBrowseItems = useMemo(() => {
+    if (isSearchMode || !search.trim()) return items;
     const q = search.trim().toLowerCase();
     return items.filter(i => i.name.toLowerCase().includes(q));
-  }, [items, search]);
+  }, [items, search, isSearchMode]);
+
+  const visibleItems = isSearchMode ? searchResults : filteredBrowseItems;
 
   if (!open) return null;
 
@@ -91,21 +136,28 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
     load(segs.length ? '/' + segs.join('/') : '/');
   };
 
-  const toggleSelect = (item: Item) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(item.path)) next.delete(item.path);
-      else next.add(item.path);
-      return next;
-    });
+  const handleItemClick = (item: Item) => {
+    if (item.isFolder) {
+      load(item.path);
+    } else {
+      setSelected(prev => {
+        const next = new Set(prev);
+        if (next.has(item.path)) next.delete(item.path);
+        else next.add(item.path);
+        return next;
+      });
+    }
   };
 
-  const selectedItems = items.filter(i => !i.isFolder && selected.has(i.path));
+  const selectedItems = displayedItems.filter(i => !i.isFolder && selected.has(i.path));
 
   const handleAttach = () => {
     if (selectedItems.length === 0) return;
     onPick(selectedItems.map(i => ({ path: i.path, name: i.name, contentType: i.contentType, size: i.size })));
   };
+
+  const isLoading = isSearchMode ? searchLoading : loading;
+  const currentError = isSearchMode ? searchError : error;
 
   return (
     <div
@@ -136,7 +188,7 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Rechercher dans ce dossier…"
+              placeholder="Rechercher dans tout Nextcloud…"
               className="w-full pl-7 pr-3 py-1.5 text-xs border border-outlook-border rounded focus:outline-none focus:border-outlook-blue bg-white"
             />
             {search && (
@@ -147,56 +199,72 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
           </div>
         </div>
 
-        {/* Breadcrumb / nav */}
-        <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/40 flex items-center gap-1 text-xs flex-shrink-0 overflow-x-auto">
-          <button
-            onClick={goUp}
-            disabled={path === '/' || path === ''}
-            className="p-1 rounded hover:bg-outlook-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
-            aria-label="Dossier parent"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <button onClick={() => load('/')} className="p-1 rounded hover:bg-outlook-bg-hover" aria-label="Racine">
-            <Home size={13} />
-          </button>
-          <div className="flex items-center gap-0.5 min-w-0 flex-wrap">
-            {breadcrumbs.map((b, idx) => (
-              <span key={b.path} className="flex items-center gap-0.5">
-                {idx > 0 && <span className="text-outlook-text-disabled">/</span>}
-                <button
-                  onClick={() => load(b.path)}
-                  className={`px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover truncate max-w-[120px] ${
-                    idx === breadcrumbs.length - 1 ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'
-                  }`}
-                >
-                  {b.label}
-                </button>
-              </span>
-            ))}
+        {/* Breadcrumb / nav — hidden in global search mode */}
+        {!isSearchMode && (
+          <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/40 flex items-center gap-1 text-xs flex-shrink-0 overflow-x-auto">
+            <button
+              onClick={goUp}
+              disabled={path === '/' || path === ''}
+              className="p-1 rounded hover:bg-outlook-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Dossier parent"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button onClick={() => load('/')} className="p-1 rounded hover:bg-outlook-bg-hover" aria-label="Racine">
+              <Home size={13} />
+            </button>
+            <div className="flex items-center gap-0.5 min-w-0 flex-wrap">
+              {breadcrumbs.map((b, idx) => (
+                <span key={b.path} className="flex items-center gap-0.5">
+                  {idx > 0 && <span className="text-outlook-text-disabled">/</span>}
+                  <button
+                    onClick={() => load(b.path)}
+                    className={`px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover truncate max-w-[120px] ${
+                      idx === breadcrumbs.length - 1 ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'
+                    }`}
+                  >
+                    {b.label}
+                  </button>
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Global search indicator */}
+        {isSearchMode && (
+          <div className="px-4 py-1.5 border-b border-outlook-border bg-outlook-blue/5 flex items-center gap-1.5 text-xs text-outlook-text-secondary flex-shrink-0">
+            <Search size={11} className="text-outlook-blue flex-shrink-0" />
+            {searchLoading
+              ? 'Recherche en cours…'
+              : `${searchResults.length} résultat${searchResults.length !== 1 ? 's' : ''} pour « ${search.trim()} »`}
+          </div>
+        )}
 
         {/* Listing */}
         <div className="flex-1 overflow-y-auto">
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center py-8 text-sm text-outlook-text-secondary">
-              <Loader2 size={16} className="animate-spin mr-2" /> Chargement...
+              <Loader2 size={16} className="animate-spin mr-2" /> {isSearchMode ? 'Recherche…' : 'Chargement…'}
             </div>
-          ) : error ? (
-            <div className="px-4 py-6 text-sm text-red-600">{error}</div>
-          ) : filteredItems.length === 0 ? (
+          ) : currentError ? (
+            <div className="px-4 py-6 text-sm text-red-600">{currentError}</div>
+          ) : visibleItems.length === 0 ? (
             <div className="px-4 py-8 text-sm text-outlook-text-disabled text-center">
-              {search ? `Aucun résultat pour « ${search} »` : 'Ce dossier est vide.'}
+              {isSearchMode
+                ? `Aucun résultat pour « ${search.trim()} »`
+                : search
+                  ? `Aucun résultat pour « ${search} »`
+                  : 'Ce dossier est vide.'}
             </div>
           ) : (
             <ul>
-              {filteredItems.map(item => {
+              {visibleItems.map(item => {
                 const isSelected = !item.isFolder && selected.has(item.path);
                 return (
                   <li key={item.path}>
                     <button
-                      onClick={() => item.isFolder ? load(item.path) : toggleSelect(item)}
+                      onClick={() => handleItemClick(item)}
                       className={`w-full text-left px-4 py-2 flex items-center gap-2 text-sm border-b border-outlook-border/50 transition-colors ${
                         isSelected
                           ? 'bg-outlook-blue/10 hover:bg-outlook-blue/15'
@@ -212,7 +280,12 @@ export default function NextcloudFilePicker({ open, onPick, onClose }: Nextcloud
                           {isSelected && <Check size={9} className="text-white" />}
                         </div>
                       )}
-                      <span className="truncate flex-1">{item.name}</span>
+                      <span className="flex flex-col min-w-0 flex-1">
+                        <span className="truncate">{item.name}</span>
+                        {isSearchMode && (
+                          <span className="text-[10px] text-outlook-text-disabled truncate">{parentLabel(item.path)}</span>
+                        )}
+                      </span>
                       {!item.isFolder && item.size != null && (
                         <span className="text-xs text-outlook-text-disabled flex-shrink-0">{formatSize(item.size)}</span>
                       )}
