@@ -30,6 +30,12 @@ function joinPath(base: string, segment: string): string {
   return (b + s) || '/';
 }
 
+function parentLabel(path: string): string {
+  const segs = path.split('/').filter(Boolean);
+  if (segs.length <= 1) return 'Racine';
+  return segs.slice(0, -1).join(' / ');
+}
+
 export default function NextcloudFolderPicker({ open, title, subtitle, onPick, onClose }: NextcloudFolderPickerProps) {
   const [path, setPath] = useState<string>('/');
   const [items, setItems] = useState<Item[]>([]);
@@ -38,12 +44,19 @@ export default function NextcloudFolderPicker({ open, title, subtitle, onPick, o
   const [newFolderInput, setNewFolderInput] = useState('');
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<Item[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isSearchMode = search.trim().length >= 2;
 
   const load = async (p: string) => {
     setLoading(true);
     setError(null);
     setSearch('');
+    setSearchResults([]);
     try {
       const res = await api.nextcloudFilesList(p);
       // Only show folders to make navigation crisp; files are noise here.
@@ -62,15 +75,43 @@ export default function NextcloudFolderPicker({ open, title, subtitle, onPick, o
       setPath('/');
       setNewFolderInput('');
       setSearch('');
+      setSearchResults([]);
       load('/');
     }
   }, [open]);
 
+  // Debounced global search triggered when query reaches 2+ chars.
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!isSearchMode) {
+      setSearchResults([]);
+      setSearchError(null);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setSearchLoading(true);
+      setSearchError(null);
+      try {
+        const res = await api.nextcloudFilesSearch(search.trim());
+        // Folder picker only needs folders.
+        setSearchResults(res.items.filter(i => i.isFolder));
+      } catch (e: any) {
+        setSearchError(e?.message || 'Erreur de recherche');
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search]);
+
   if (!open) return null;
 
-  const filteredItems = search.trim()
+  const filteredBrowseItems = search.trim() && !isSearchMode
     ? items.filter(it => it.name.toLowerCase().includes(search.trim().toLowerCase()))
     : items;
+
+  const visibleItems = isSearchMode ? searchResults : filteredBrowseItems;
 
   const breadcrumbs = (() => {
     const segs = path.split('/').filter(Boolean);
@@ -108,6 +149,9 @@ export default function NextcloudFolderPicker({ open, title, subtitle, onPick, o
     }
   };
 
+  const isLoading = isSearchMode ? searchLoading : loading;
+  const currentError = isSearchMode ? searchError : error;
+
   return (
     <div
       className="fixed inset-0 z-[10000] bg-black/60 flex items-center justify-center p-4"
@@ -118,6 +162,7 @@ export default function NextcloudFolderPicker({ open, title, subtitle, onPick, o
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-lg max-h-[85vh] flex flex-col bg-white rounded-lg shadow-xl border border-outlook-border overflow-hidden"
       >
+        {/* Header */}
         <div className="px-4 py-3 border-b border-outlook-border flex items-start justify-between gap-3 flex-shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-semibold text-outlook-text-primary">
@@ -131,88 +176,108 @@ export default function NextcloudFolderPicker({ open, title, subtitle, onPick, o
           </button>
         </div>
 
-        {/* Breadcrumb / nav */}
-        <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/40 flex items-center gap-1 text-xs flex-shrink-0 overflow-x-auto">
-          <button
-            onClick={goUp}
-            disabled={path === '/' || path === ''}
-            className="p-1 rounded hover:bg-outlook-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
-            aria-label="Dossier parent"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <button
-            onClick={() => load('/')}
-            className="p-1 rounded hover:bg-outlook-bg-hover"
-            aria-label="Racine"
-          >
-            <Home size={13} />
-          </button>
-          <div className="flex items-center gap-0.5 min-w-0 flex-wrap">
-            {breadcrumbs.map((b, idx) => (
-              <span key={b.path} className="flex items-center gap-0.5">
-                {idx > 0 && <span className="text-outlook-text-disabled">/</span>}
-                <button
-                  onClick={() => load(b.path)}
-                  className={`px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover truncate max-w-[120px] ${
-                    idx === breadcrumbs.length - 1 ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'
-                  }`}
-                >
-                  {b.label}
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-
         {/* Search */}
-        {!loading && !error && items.length > 0 && (
-          <div className="px-4 py-2 border-b border-outlook-border flex items-center gap-2 flex-shrink-0">
-            <Search size={13} className="text-outlook-text-secondary flex-shrink-0" />
+        <div className="px-3 py-2 border-b border-outlook-border flex-shrink-0">
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outlook-text-disabled pointer-events-none" />
             <input
               ref={searchRef}
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filtrer les dossiers..."
-              className="flex-1 px-2 py-1 text-xs border border-outlook-border rounded focus:outline-none focus:border-outlook-blue"
+              placeholder="Rechercher un dossier dans tout Nextcloud…"
+              className="w-full pl-7 pr-3 py-1.5 text-xs border border-outlook-border rounded focus:outline-none focus:border-outlook-blue bg-white"
             />
             {search && (
               <button
                 onClick={() => { setSearch(''); searchRef.current?.focus(); }}
-                className="p-0.5 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled hover:text-outlook-text-primary"
                 aria-label="Effacer la recherche"
               >
-                <X size={12} />
+                <X size={11} />
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Breadcrumb / nav — hidden in global search mode */}
+        {!isSearchMode && (
+          <div className="px-4 py-2 border-b border-outlook-border bg-outlook-bg-primary/40 flex items-center gap-1 text-xs flex-shrink-0 overflow-x-auto">
+            <button
+              onClick={goUp}
+              disabled={path === '/' || path === ''}
+              className="p-1 rounded hover:bg-outlook-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Dossier parent"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              onClick={() => load('/')}
+              className="p-1 rounded hover:bg-outlook-bg-hover"
+              aria-label="Racine"
+            >
+              <Home size={13} />
+            </button>
+            <div className="flex items-center gap-0.5 min-w-0 flex-wrap">
+              {breadcrumbs.map((b, idx) => (
+                <span key={b.path} className="flex items-center gap-0.5">
+                  {idx > 0 && <span className="text-outlook-text-disabled">/</span>}
+                  <button
+                    onClick={() => load(b.path)}
+                    className={`px-1.5 py-0.5 rounded hover:bg-outlook-bg-hover truncate max-w-[120px] ${
+                      idx === breadcrumbs.length - 1 ? 'font-medium text-outlook-text-primary' : 'text-outlook-text-secondary'
+                    }`}
+                  >
+                    {b.label}
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Global search indicator */}
+        {isSearchMode && (
+          <div className="px-4 py-1.5 border-b border-outlook-border bg-outlook-blue/5 flex items-center gap-1.5 text-xs text-outlook-text-secondary flex-shrink-0">
+            <Search size={11} className="text-outlook-blue flex-shrink-0" />
+            {searchLoading
+              ? 'Recherche en cours…'
+              : `${searchResults.length} dossier${searchResults.length !== 1 ? 's' : ''} pour « ${search.trim()} »`}
           </div>
         )}
 
         {/* Listing */}
         <div className="flex-1 overflow-y-auto">
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center py-8 text-sm text-outlook-text-secondary">
-              <Loader2 size={16} className="animate-spin mr-2" /> Chargement...
+              <Loader2 size={16} className="animate-spin mr-2" /> {isSearchMode ? 'Recherche…' : 'Chargement…'}
             </div>
-          ) : error ? (
-            <div className="px-4 py-6 text-sm text-red-600">{error}</div>
-          ) : filteredItems.length === 0 ? (
+          ) : currentError ? (
+            <div className="px-4 py-6 text-sm text-red-600">{currentError}</div>
+          ) : visibleItems.length === 0 ? (
             <div className="px-4 py-8 text-sm text-outlook-text-disabled text-center">
-              {search.trim()
-                ? `Aucun dossier correspondant à « ${search.trim()} ».`
-                : 'Aucun sous-dossier dans ce dossier.'}
+              {isSearchMode
+                ? `Aucun dossier pour « ${search.trim()} ».`
+                : search.trim()
+                  ? `Aucun dossier correspondant à « ${search.trim()} ».`
+                  : 'Aucun sous-dossier dans ce dossier.'}
             </div>
           ) : (
             <ul>
-              {filteredItems.map(it => (
+              {visibleItems.map(it => (
                 <li key={it.path}>
                   <button
                     onClick={() => load(it.path)}
                     className="w-full text-left px-4 py-2 flex items-center gap-2 text-sm hover:bg-outlook-bg-hover border-b border-outlook-border/50"
                   >
                     <Folder size={14} className="text-outlook-blue flex-shrink-0" />
-                    <span className="truncate">{it.name}</span>
+                    <span className="flex flex-col min-w-0 flex-1">
+                      <span className="truncate">{it.name}</span>
+                      {isSearchMode && (
+                        <span className="text-[10px] text-outlook-text-disabled truncate">{parentLabel(it.path)}</span>
+                      )}
+                    </span>
+                    <ChevronLeft size={12} className="rotate-180 text-outlook-text-disabled flex-shrink-0" />
                   </button>
                 </li>
               ))}
