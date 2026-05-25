@@ -484,7 +484,7 @@ function buildPrintHtml(opts: BuildOpts): string {
 <title>Calendrier – ${periodLabel}</title>
 <style>
   @page { size: A4 ${orientation}; margin: 10mm 12mm; }
-  *{box-sizing:border-box;margin:0;padding:0}
+  *{box-sizing:border-box;margin:0;padding:0;print-color-adjust:exact;-webkit-print-color-adjust:exact;}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#111827}
   @media print{html,body{width:100%;}}
 </style></head><body>
@@ -549,7 +549,7 @@ function buildMonthHtml({ days: _days, events, selectedCalendars, colorOverrides
 <title>Calendrier – ${periodLabel}</title>
 <style>
   @page { size: A4 ${orientation}; margin: 10mm 12mm; }
-  *{box-sizing:border-box;margin:0;padding:0}
+  *{box-sizing:border-box;margin:0;padding:0;print-color-adjust:exact;-webkit-print-color-adjust:exact;}
   body{font-family:'Segoe UI',Arial,sans-serif}
 </style></head><body>
 <div style="margin-bottom:10px">
