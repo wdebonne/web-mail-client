@@ -1279,6 +1279,30 @@ function UnreadIndicatorsPicker() {
       </div>
       <div className="mt-3">
         <label className="text-xs text-outlook-text-secondary block mb-1">
+          Dossiers spéciaux
+        </label>
+        <div className="space-y-2 mb-3">
+          <button
+            type="button"
+            onClick={() => update({ showJunkUnread: !prefs.showJunkUnread })}
+            className={`w-full text-left px-3 py-2 rounded-md border transition-colors flex items-start gap-2 ${
+              prefs.showJunkUnread
+                ? 'border-outlook-blue bg-outlook-blue/10'
+                : 'border-outlook-border hover:bg-outlook-bg-hover'
+            }`}
+          >
+            <span className={`mt-0.5 inline-flex items-center justify-center w-4 h-4 border rounded text-[11px] ${prefs.showJunkUnread ? 'bg-outlook-blue border-outlook-blue text-white' : 'border-outlook-border'}`}>
+              {prefs.showJunkUnread ? '✓' : ''}
+            </span>
+            <span className="flex flex-col">
+              <span className="text-sm text-outlook-text-primary">Afficher les non lus sur le courrier indésirable</span>
+              <span className="text-[11px] text-outlook-text-disabled">Les Éléments supprimés n'affichent jamais de compteur non lu.</span>
+            </span>
+          </button>
+        </div>
+      </div>
+      <div className="mt-3">
+        <label className="text-xs text-outlook-text-secondary block mb-1">
           Appliquer aux dossiers
         </label>
         <div className="flex flex-wrap gap-2">
