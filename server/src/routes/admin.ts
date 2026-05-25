@@ -18,6 +18,7 @@ import {
 import { upsertAutoResponderForAccount } from './autoResponder';
 import { invalidateNotificationPrefsCache } from '../services/notificationPrefs';
 import { addLog } from '../services/auditLog';
+import { testConnection, listFolders, runMigration, MigrationSource, MigrationDestination } from '../services/migrationService';
 
 export const adminRouter = Router();
 
@@ -2970,4 +2971,52 @@ adminRouter.get('/security/login-attempts', async (req: AuthRequest, res) => {
     );
     res.json(result.rows);
   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ========================================
+// ---- Migration IMAP ----
+// ========================================
+
+adminRouter.post('/migration/test', async (req: AuthRequest, res) => {
+  try {
+    const { host, port, secure, email, password } = req.body;
+    if (!host || !port || !email || !password) {
+      return res.status(400).json({ error: 'host, port, email et password sont requis' });
+    }
+    const result = await testConnection({ host, port: parseInt(port), secure: Boolean(secure), email, password });
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+adminRouter.post('/migration/folders', async (req: AuthRequest, res) => {
+  try {
+    const { host, port, secure, email, password } = req.body;
+    if (!host || !port || !email || !password) {
+      return res.status(400).json({ error: 'host, port, email et password sont requis' });
+    }
+    const folders = await listFolders({ host, port: parseInt(port), secure: Boolean(secure), email, password });
+    res.json(folders);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+adminRouter.post('/migration/start', async (req: AuthRequest, res) => {
+  try {
+    const { source, destination, selectedFolders } = req.body;
+    if (!source || !destination || !Array.isArray(selectedFolders) || selectedFolders.length === 0) {
+      return res.status(400).json({ error: 'source, destination et selectedFolders sont requis' });
+    }
+    const userId = req.userId!;
+    // Run migration in background and stream progress via WebSocket
+    res.json({ started: true });
+    runMigration(userId, source as MigrationSource, destination as MigrationDestination, selectedFolders)
+      .catch((err) => {
+        logger.error({ err: err.message }, 'Migration failed');
+      });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });

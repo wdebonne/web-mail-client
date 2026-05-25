@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.18.0-blue)
+![Version](https://img.shields.io/badge/version-1.19.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -208,6 +208,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🔑 **Apparence page de connexion — mot de passe oublié** : option activable/désactivable depuis l'admin (*Apparence connexion → Options affichées*). Lorsqu'activé, un lien « Mot de passe oublié ? » apparaît sur la page de connexion ; l'utilisateur saisit son email et reçoit un lien de réinitialisation valable 24 h via le template SMTP `password_reset`. La réponse est toujours identique que l'email existe ou non (protection contre l'énumération d'adresses).
 - 🌐 **Restriction de domaine pour l'inscription** : champ *Domaines autorisés* dans l'admin (*Apparence connexion*) acceptant une liste de domaines séparés par des virgules (ex. `domaine.fr,domaine.com`). Toute tentative d'inscription depuis un domaine non autorisé est rejetée. Vide = tous les domaines acceptés. Ignoré pour le premier utilisateur (admin).
 - 💾 **Sauvegarde & restauration serveur** (*Admin → Système → Sauvegarde*) : sauvegarde complète de la base de données (utilisateurs, comptes mail, paramètres, calendriers, contacts, règles, listes de distribution, plugins, sécurité…) dans un fichier `.json.gz` chiffré. **Sauvegarde manuelle** à la demande avec label personnalisable. **Sauvegarde automatique planifiée** (quotidienne, hebdomadaire, mensuelle) avec heure configurable. **Rétention intelligente** entièrement paramétrable : conserver les N dernières, 1 par semaine sur M semaines, 1 par mois sur P mois, 1 par an sur Q ans. **Téléchargement et suppression** individuels avec confirmation. **Restauration** depuis un fichier uploadé avec option de **remplacement d'URL** automatique (migration vers un autre serveur) — les passkeys WebAuthn liées à l'ancien domaine sont supprimées automatiquement si le hostname change pour éviter tout blocage de connexion. Voir [docs/BACKUP.md](docs/BACKUP.md).
+
+- 🔄 **Migration IMAP intégrée** (*Admin → Intégrations → Migration IMAP*) : wizard en 4 étapes pour transférer des boîtes mail d'un serveur IMAP vers un autre (ex. Microsoft 365 → O2switch) sans outil externe. Test de connexion des deux serveurs, sélection des dossiers à migrer avec comptage d'emails, exécution en arrière-plan avec progression en temps réel via WebSocket (barre dossiers + barre emails). Préservation des flags (lu/non-lu, étoilé) et des dates d'origine. Rapport final détaillé. Pré-configuré pour `outlook.office365.com`.
 
 ### Intégration O2Switch (cPanel)
 - 🖥️ Gestion des comptes cPanel via UAPI v3

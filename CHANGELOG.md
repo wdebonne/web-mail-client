@@ -11,6 +11,29 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.19.0] - 2026-05-25
+
+### Ajouté
+
+- **Migration IMAP intégrée (Microsoft 365 → O2switch / tout serveur IMAP)**
+  - Nouvel onglet **Migration IMAP** dans le panneau d'administration (groupe Intégrations).
+  - Wizard en 4 étapes guidant l'administrateur de bout en bout :
+    1. **Source** — configuration du serveur IMAP source (pré-rempli avec `outlook.office365.com:993`) + test de connexion intégré bloquant le passage à l'étape suivante en cas d'échec.
+    2. **Destination** — configuration du serveur IMAP cible (ex. O2switch) + test de connexion.
+    3. **Sélection des dossiers** — liste complète des dossiers du serveur source avec le nombre d'emails par dossier, sélection/désélection individuelle ou globale, compteur récapitulatif (dossiers + emails sélectionnés).
+    4. **Progression en temps réel** — double barre de progression (dossiers et emails) mise à jour via **WebSocket**, affichage du dossier en cours de traitement, rapport final détaillé (migrés / ignorés / durée / erreurs par dossier).
+  - La migration s'exécute **en arrière-plan** côté serveur (la réponse HTTP est immédiate) et envoie les mises à jour de progression via WebSocket.
+  - Les messages sont transférés en **RFC 822 brut** via `imapflow` (déjà présent dans le projet) : les **flags** (lu/non-lu, étoilé…) et les **dates d'origine** sont préservés.
+  - Les dossiers inexistants sur la destination sont créés automatiquement.
+  - Les erreurs par dossier sont ignorées et reportées dans le rapport final sans interrompre la migration globale.
+  - Les messages sont traités par **lots de 50** pour éviter les timeouts sur les grandes boîtes.
+  - 3 nouveaux endpoints API :
+    - `POST /api/admin/migration/test` — teste une connexion IMAP
+    - `POST /api/admin/migration/folders` — liste les dossiers et leur nombre d'emails
+    - `POST /api/admin/migration/start` — démarre la migration en arrière-plan
+
+---
+
 ## [1.18.0] - 2026-05-24
 
 ### Ajouté
