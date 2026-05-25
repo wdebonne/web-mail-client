@@ -35,7 +35,7 @@ interface MigrationProgress {
     totalMessages: number;
     migratedMessages: number;
     skippedMessages: number;
-    failedFolders: { folder: string; error: string }[];
+    failedFolders: { folder: string; message: string }[];
     durationSeconds: number;
   };
 }
