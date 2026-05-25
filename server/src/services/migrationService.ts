@@ -40,7 +40,7 @@ export interface MigrationReport {
   totalMessages: number;
   migratedMessages: number;
   skippedMessages: number;
-  failedFolders: { folder: string; error: string }[];
+  failedFolders: { folder: string; message: string }[];
   durationSeconds: number;
 }
 
@@ -100,7 +100,7 @@ export async function runMigration(
   selectedFolders: string[]
 ): Promise<MigrationReport> {
   const startedAt = Date.now();
-  const failedFolders: { folder: string; error: string }[] = [];
+  const failedFolders: { folder: string; message: string }[] = [];
   let totalMessages = 0;
   let migratedMessages = 0;
   let skippedMessages = 0;
@@ -180,7 +180,7 @@ export async function runMigration(
             }
 
             try {
-              await dstClient.append(folderPath, msg.source, msg.flags, msg.internalDate);
+              await dstClient.append(folderPath, msg.source, msg.flags ? Array.from(msg.flags) : undefined, msg.internalDate);
               migratedMessages++;
             } catch (appendErr: any) {
               logger.warn({ folder: folderPath, err: appendErr.message }, 'Migration: append failed');
@@ -206,7 +206,7 @@ export async function runMigration(
       }
     } catch (err: any) {
       logger.error({ folder: folderPath, err: err.message }, 'Migration: folder failed');
-      failedFolders.push({ folder: folderPath, error: err.message });
+      failedFolders.push({ folder: folderPath, message: err.message });
     }
   }
 
