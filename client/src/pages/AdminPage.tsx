@@ -23,6 +23,7 @@ import AdminRulesManagement from '../components/admin/AdminRulesManagement';
 import AdminApplications from '../components/admin/AdminApplications';
 import AdminSmtpSettings from '../components/admin/AdminSmtpSettings';
 import AdminBackup from '../components/admin/AdminBackup';
+import AdminMigration from '../components/admin/AdminMigration';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
@@ -30,7 +31,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -61,6 +62,7 @@ export default function AdminPage() {
     { id: 'calendars' as const,      icon: Calendar,        label: t('admin.tab.calendars'),      group: t('admin.group.calendar') },
     // Intégrations
     { id: 'o2switch' as const,       icon: Server,          label: t('admin.tab.o2switch'),       group: t('admin.group.integrations') },
+    { id: 'migration' as const,      icon: RefreshCw,       label: 'Migration IMAP',              group: t('admin.group.integrations') },
     { id: 'plugins' as const,        icon: Plug,            label: t('admin.tab.plugins'),        group: t('admin.group.integrations') },
     { id: 'nextcloud' as const,      icon: Cloud,           label: t('admin.tab.nextcloud'),      group: t('admin.group.integrations') },
     { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
@@ -160,6 +162,7 @@ export default function AdminPage() {
             {tab === 'distributionlists' && <AdminDistributionLists />}
             {tab === 'security' && <SecurityPanel />}
             {tab === 'backup' && <AdminBackup />}
+            {tab === 'migration' && <AdminMigration />}
           </div>
         </div>
       </div>

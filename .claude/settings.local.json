@@ -25,7 +25,12 @@
       "Bash(Format-Table FullName)",
       "Bash(npm run *)",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(xargs grep -l \"nextcloud.*file\\\\|Nextcloud.*file\")"
+      "Bash(xargs grep -l \"nextcloud.*file\\\\|Nextcloud.*file\")",
+      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(Get-Content \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\package.json\")",
+      "Bash(Select-Object -First 10)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('version','?'\\)\\)\")"
     ]
   }
 }
