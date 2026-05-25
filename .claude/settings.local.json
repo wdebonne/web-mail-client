@@ -32,7 +32,10 @@
       "Bash(Select-Object -First 10)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('version','?'\\)\\)\")",
       "WebFetch(domain:faq.o2switch.fr)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(Get-ChildItem -Path client\\\\src\\\\components -Recurse -Filter \"*.tsx\")",
+      "Bash(Sort-Object)",
+      "Bash(npx vite *)"
     ]
   }
 }

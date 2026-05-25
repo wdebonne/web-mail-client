@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.19.0-blue)
+![Version](https://img.shields.io/badge/version-1.20.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -97,7 +97,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🗜️ **Rédaction plein-largeur** : bouton Agrandir/Réduire dans l'en-tête du compose pour masquer les volets et donner toute la largeur au brouillon
 - 📎 **Glisser-déposer de pièces jointes** directement sur la fenêtre de rédaction (overlay visuel pendant le survol)
 - 🎚️ Ruban auto-adaptatif (classique ↔ simplifié selon la largeur)
-- 🎛️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF), **Recherche** (filtres de recherche avancée, affiché uniquement lors d'une recherche active)
+- 🎛️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF), **Publipostage** (mail merge, visible uniquement en rédaction), **Recherche** (filtres de recherche avancée, affiché uniquement lors d'une recherche active)
+- 📨 **Publipostage (Mail Merge)** : envoi personnalisé en masse depuis un fichier source (`.csv`, `.xlsx`, `.xls`, `.ods`) chargé localement ou depuis **Nextcloud**. Variables `{NomColonne}` remplacées automatiquement dans le sujet et le corps ; mapping personnalisable si les noms diffèrent entre modèle et fichier. Aperçu par ligne avec navigation `1/N` (flèches + clavier). Envoi groupé en arrière-plan avec compteur de progression et rapport final. Disponible dans l'onglet **Publipostage** du ruban de rédaction.
 - 👥📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
 
 ### Recherche unifiée
@@ -405,9 +406,10 @@ webmail/
 │   │   │   ├── mail/       # Composants mail
 │   │   │   │   ├── ComposeModal.tsx   # Rédaction inline/modale
 │   │   │   │   ├── FolderPane.tsx     # Panneau dossiers
+│   │   │   │   ├── MailMergePanel.tsx # Publipostage (parsing, aperçu, envoi groupé)
 │   │   │   │   ├── MessageList.tsx    # Liste des messages
 │   │   │   │   ├── MessageView.tsx    # Lecture d'un message
-│   │   │   │   └── Ribbon.tsx         # Ruban classique/simplifié (+ onglet Recherche)
+│   │   │   │   └── Ribbon.tsx         # Ruban classique/simplifié (+ onglets Recherche/Publipostage)
 │   │   │   └── ui/         # Composants UI génériques
 │   │   ├── hooks/          # Hooks (WebSocket, réseau)
 │   │   ├── pages/          # Pages (Mail, Calendar, Contacts, Settings, Admin, Search)

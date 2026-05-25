@@ -44,9 +44,20 @@ interface ComposeModalProps {
   onToggleExpand?: () => void;
 }
 
+export interface ComposeSnapshot {
+  accountId: string;
+  subject: string;
+  bodyHtml: string;
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  bcc: EmailAddress[];
+  attachments: any[];
+}
+
 export interface ComposeApi {
   addFiles: (files: FileList | File[]) => void;
   applyTemplate: (subject: string, bodyHtml: string) => void;
+  getComposeSnapshot: () => ComposeSnapshot;
 }
 
 export default function ComposeModal({
@@ -246,7 +257,19 @@ export default function ComposeModal({
     }
   }, []);
 
-  // Expose API to the ribbon (Insérer > Joindre un fichier)
+  // Always-fresh snapshot for publipostage (ref updated every render, safe for reads)
+  const _snapshotRef = useRef<ComposeSnapshot | null>(null);
+  _snapshotRef.current = {
+    accountId,
+    subject,
+    bodyHtml: editorRef.current?.innerHTML ?? bodyHtml,
+    to,
+    cc: showCc ? cc : [],
+    bcc: showBcc ? bcc : [],
+    attachments,
+  };
+
+  // Expose API to the ribbon (Insérer > Joindre un fichier, Publipostage)
   useEffect(() => {
     if (!apiRef) return;
     apiRef.current = {
@@ -256,6 +279,10 @@ export default function ComposeModal({
         setBodyHtml(tplBody || '');
         if (editorRef.current) editorRef.current.innerHTML = tplBody || '';
       },
+      getComposeSnapshot: () => ({
+        ...(_snapshotRef.current ?? { accountId: '', subject: '', bodyHtml: '', to: [], cc: [], bcc: [], attachments: [] }),
+        bodyHtml: editorRef.current?.innerHTML ?? _snapshotRef.current?.bodyHtml ?? '',
+      }),
     };
     return () => { if (apiRef) apiRef.current = null; };
   }, [apiRef, addFiles, editorRef]);

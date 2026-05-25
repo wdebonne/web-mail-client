@@ -11,6 +11,22 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.20.0] - 2026-05-25
+
+### Ajouté
+
+- **Publipostage (Mail Merge) — envoi personnalisé en masse**
+  - Nouvel onglet **Publipostage** dans le ruban de rédaction (visible uniquement en mode composition, à côté de *Message* et *Insérer*).
+  - **Chargement du fichier source** : sélection locale (`.csv`, `.xlsx`, `.xls`, `.ods`) ou depuis **Nextcloud** via le même sélecteur que les pièces jointes. Le fichier est parsé côté client via la librairie `xlsx` (déjà présente dans le projet) — aucun envoi du fichier au serveur.
+  - **Détection automatique des variables** : les balises `{NomColonne}` présentes dans le sujet et le corps du message sont détectées à la volée. Le mapping est pré-rempli automatiquement si le nom de la variable correspond exactement (casse ignorée) au nom d'une colonne du fichier.
+  - **Mapping des variables** (`Variables`) : modale dédiée permettant de choisir, pour chaque variable `{…}` détectée, quelle colonne du fichier lui correspond �� utile quand les noms diffèrent (ex. `{Nom}` → colonne « Nom utilisateur »). Un sélecteur séparé permet de choisir la **colonne e-mail destinataire** : si défini, chaque email part vers l'adresse de cette colonne au lieu du champ *À :* du message.
+  - **Compteur et navigation** : affichage `1 / 25` (ligne 1 sur 25 lignes de données) avec flèches `◀ ▶` pour naviguer entre les lignes — disponible directement dans le ruban.
+  - **Aperçu par ligne** : bouton *Aperçu* ouvrant une modale plein-écran affichant le rendu final du message pour la ligne courante (sujet et corps avec toutes les variables remplacées, destinataire résolu). Navigation entre lignes depuis la modale via flèches et touches clavier `← →`. Touche `Échap` pour fermer.
+  - **Envoi groupé en arrière-plan** : le bouton *Envoyer (N)* déclenche l'envoi de chaque email un par un via `POST /api/mail/send`, en affichant un compteur de progression `done/total` dans le ruban. Un toast récapitulatif signale succès / nombre d'échecs à la fin. La composition reste ouverte.
+  - Disponible en **mode ruban classique** (icônes + labels groupés) et **mode simplifié** (compact, même sur petits écrans).
+
+---
+
 ## [1.19.0] - 2026-05-25
 
 ### Ajouté
