@@ -34,6 +34,49 @@ function endMinsFromTime(t: string): number {
   return t === '00:00' ? 1440 : timeToMins(t);
 }
 
+// Outlook-style lane layout for overlapping events (mirrors CalendarPage layoutDay)
+type PrintLaid = { evIdx: number; col: number; cols: number; span: number };
+function layoutPrintDay(evs: Array<{ start: number; end: number }>): PrintLaid[] {
+  const items = evs
+    .map((ev, i) => ({ ...ev, idx: i }))
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+  const clusters: typeof items[] = [];
+  let cur: typeof items = [];
+  let curEnd = -Infinity;
+  for (const it of items) {
+    if (it.start < curEnd) {
+      cur.push(it);
+      curEnd = Math.max(curEnd, it.end);
+    } else {
+      if (cur.length) clusters.push(cur);
+      cur = [it];
+      curEnd = it.end;
+    }
+  }
+  if (cur.length) clusters.push(cur);
+  const out: PrintLaid[] = [];
+  for (const cluster of clusters) {
+    const lanes: number[] = [];
+    const assigned: { it: typeof cluster[number]; col: number }[] = [];
+    for (const it of cluster) {
+      let col = lanes.findIndex(end => end <= it.start);
+      if (col === -1) { col = lanes.length; lanes.push(it.end); }
+      else { lanes[col] = it.end; }
+      assigned.push({ it, col });
+    }
+    const cols = lanes.length;
+    for (const { it, col } of assigned) {
+      let span = 1;
+      for (let c = col + 1; c < cols; c++) {
+        if (assigned.some(o => o.col === c && o.it.start < it.end && o.it.end > it.start)) break;
+        span++;
+      }
+      out.push({ evIdx: it.idx, col, cols, span });
+    }
+  }
+  return out;
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   let h = hex.replace('#', '');
   if (h.length === 3) h = h.split('').map(c => c + c).join('');
@@ -391,22 +434,41 @@ function buildPrintHtml(opts: BuildOpts): string {
 
   // Day columns with events
   const dayColsHtml = days.map((day) => {
-    const dayEvs = events.filter(ev => !ev.all_day && isSameDay(parseISO(ev.start_date), day));
-
-    const evHtml = dayEvs.map(ev => {
+    const allDayEvs = events.filter(ev => !ev.all_day && isSameDay(parseISO(ev.start_date), day));
+    const visibleEvs = allDayEvs.filter(ev => {
       const s = parseISO(ev.start_date);
       const e = parseISO(ev.end_date);
       const evS = getHours(s) * 60 + getMinutes(s);
       const evE = getHours(e) * 60 + getMinutes(e);
-      if (evS >= safeMins || evE <= sMins) return '';
+      return evS < safeMins && evE > sMins;
+    });
+    const layout = layoutPrintDay(visibleEvs.map(ev => {
+      const s = parseISO(ev.start_date);
+      const e = parseISO(ev.end_date);
+      return { start: getHours(s) * 60 + getMinutes(s), end: getHours(e) * 60 + getMinutes(e) };
+    }));
+
+    const evHtml = visibleEvs.map((ev, i) => {
+      const { col, cols, span } = layout[i];
+      const s = parseISO(ev.start_date);
+      const e = parseISO(ev.end_date);
+      const evS = getHours(s) * 60 + getMinutes(s);
+      const evE = getHours(e) * 60 + getMinutes(e);
       const top = Math.max(0, (evS - sMins) / 60) * HOUR_H;
       const height = Math.max(HOUR_H * 0.35, ((Math.min(evE, safeMins) - Math.max(evS, sMins)) / 60) * HOUR_H) - 2;
       const color = getEventColor(ev);
       const showTime = height >= HOUR_H * 0.65;
       const startStr = format(s, 'HH:mm');
       const endStr = format(e, 'HH:mm');
+      const EV_GUTTER = 2;
+      const EV_OVERLAP = cols > 1 ? 4 : 0;
+      const widthPct = (span / cols) * 100;
+      const leftPct = (col / cols) * 100;
       return `<div style="
-        position:absolute;top:${top + 1}px;left:2px;right:2px;height:${height}px;
+        position:absolute;top:${top + 1}px;
+        left:calc(${leftPct}% + ${EV_GUTTER}px);
+        width:calc(${widthPct}% - ${EV_GUTTER * 2}px + ${EV_OVERLAP}px);
+        height:${height}px;z-index:${10 + col};
         background:${hexToRgba(color, 0.15)};
         border-left:3px solid ${color};
         border-radius:2px;padding:2px 4px;overflow:hidden;line-height:1.3;
@@ -655,22 +717,41 @@ function PreviewContent({ printView, printStart, printEnd, periodLabel, events, 
             ))}
 
             {days.map((day) => {
-              const dayEvs = events.filter(ev => !ev.all_day && isSameDay(parseISO(ev.start_date), day));
+              const allDayEvs = events.filter(ev => !ev.all_day && isSameDay(parseISO(ev.start_date), day));
+              const visibleEvs = allDayEvs.filter(ev => {
+                const s = parseISO(ev.start_date);
+                const e = parseISO(ev.end_date);
+                const evS = getHours(s) * 60 + getMinutes(s);
+                const evE = getHours(e) * 60 + getMinutes(e);
+                return evS < safeMins && evE > sMins;
+              });
+              const layout = layoutPrintDay(visibleEvs.map(ev => {
+                const s = parseISO(ev.start_date);
+                const e = parseISO(ev.end_date);
+                return { start: getHours(s) * 60 + getMinutes(s), end: getHours(e) * 60 + getMinutes(e) };
+              }));
               return (
                 <div key={day.toISOString()} style={{ flex: 1, position: 'relative', height: totalH, borderRight: '1px solid #e5e7eb' }}>
-                  {dayEvs.map(ev => {
+                  {visibleEvs.map((ev, i) => {
+                    const { col, cols, span } = layout[i];
                     const s = parseISO(ev.start_date);
                     const e = parseISO(ev.end_date);
                     const evS = getHours(s) * 60 + getMinutes(s);
                     const evE = getHours(e) * 60 + getMinutes(e);
-                    if (evS >= safeMins || evE <= sMins) return null;
                     const top = Math.max(0, (evS - sMins) / 60) * HOUR_H + 1;
                     const height = Math.max(HOUR_H * 0.35, ((Math.min(evE, safeMins) - Math.max(evS, sMins)) / 60) * HOUR_H) - 2;
                     const color = getEventColor(ev);
                     const showTime = height >= HOUR_H * 0.65;
+                    const EV_GUTTER = 2;
+                    const EV_OVERLAP = cols > 1 ? 4 : 0;
+                    const widthPct = (span / cols) * 100;
+                    const leftPct = (col / cols) * 100;
                     return (
                       <div key={ev.id} style={{
-                        position: 'absolute', top, left: 2, right: 2, height,
+                        position: 'absolute', top,
+                        left: `calc(${leftPct}% + ${EV_GUTTER}px)`,
+                        width: `calc(${widthPct}% - ${EV_GUTTER * 2}px + ${EV_OVERLAP}px)`,
+                        height, zIndex: 10 + col,
                         background: hexToRgba(color, 0.15), borderLeft: `3px solid ${color}`,
                         borderRadius: 2, padding: '2px 4px', overflow: 'hidden', lineHeight: 1.3,
                       }}>
