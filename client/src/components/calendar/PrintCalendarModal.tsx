@@ -404,7 +404,7 @@ function buildPrintHtml(opts: BuildOpts): string {
       const dayEvs = events.filter(ev => ev.all_day && isSameDay(parseISO(ev.start_date), day));
       const evHtml = dayEvs.map(ev => {
         const c = getEventColor(ev);
-        return `<div style="background:${hexToRgba(c, 0.18)};border-left:3px solid ${c};border-radius:2px;padding:1px 4px;font-size:8px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:1px">${ev.title}</div>`;
+        return `<div style="background:${hexToRgba(c, 0.75)};border-radius:3px;padding:1px 4px;font-size:8px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:1px;color:#111">${ev.title}</div>`;
       }).join('');
       return `<div style="flex:1;border-right:1px solid #e5e7eb;padding:2px 3px;">${evHtml}</div>`;
     }).join('');
@@ -469,12 +469,11 @@ function buildPrintHtml(opts: BuildOpts): string {
         left:calc(${leftPct}% + ${EV_GUTTER}px);
         width:calc(${widthPct}% - ${EV_GUTTER * 2}px + ${EV_OVERLAP}px);
         height:${height}px;z-index:${10 + col};
-        background:${hexToRgba(color, 0.15)};
-        border-left:3px solid ${color};
-        border-radius:2px;padding:2px 4px;overflow:hidden;line-height:1.3;
+        background:${hexToRgba(color, 0.75)};
+        border-radius:3px;padding:2px 4px;overflow:hidden;line-height:1.3;
       ">
         <div style="font-weight:700;font-size:8.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#111">${ev.title}</div>
-        ${showTime ? `<div style="font-size:7.5px;color:${color};margin-top:1px">${startStr} – ${endStr}</div>` : ''}
+        ${showTime ? `<div style="font-size:7.5px;color:#222;margin-top:1px">${startStr} – ${endStr}</div>` : ''}
       </div>`;
     }).join('');
 
@@ -534,7 +533,7 @@ function buildMonthHtml({ days: _days, events, selectedCalendars, colorOverrides
         : '';
       const evHtml = dayEvs.slice(0, 4).map(ev => {
         const c = getEventColor(ev);
-        return `<div style="background:${hexToRgba(c, 0.18)};border-left:3px solid ${c};border-radius:2px;padding:1px 3px;font-size:7.5px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:1px">${ev.title}</div>`;
+        return `<div style="background:${hexToRgba(c, 0.75)};border-radius:3px;padding:1px 3px;font-size:7.5px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:1px;color:#111">${ev.title}</div>`;
       }).join('') + (dayEvs.length > 4 ? `<div style="font-size:7px;color:#6b7280;padding:0 3px">+${dayEvs.length - 4}</div>` : '');
       return `<td style="border:1px solid #e5e7eb;padding:3px;vertical-align:top;height:80px;${!inMonth ? 'background:#f9fafb;' : ''}">
         <div style="font-size:10px;font-weight:${isToday(day) ? '700' : '500'};margin-bottom:2px;${!inMonth ? 'color:#d1d5db' : ''}">
@@ -683,7 +682,7 @@ function PreviewContent({ printView, printStart, printEnd, periodLabel, events, 
                   {dayEvs.map(ev => {
                     const c = getEventColor(ev);
                     return (
-                      <div key={ev.id} style={{ background: hexToRgba(c, 0.18), borderLeft: `3px solid ${c}`, borderRadius: 2, padding: '1px 4px', fontSize: 8, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginBottom: 1 }}>
+                      <div key={ev.id} style={{ background: hexToRgba(c, 0.75), borderRadius: 3, padding: '1px 4px', fontSize: 8, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginBottom: 1, color: '#111' }}>
                         {ev.title}
                       </div>
                     );
@@ -752,14 +751,14 @@ function PreviewContent({ printView, printStart, printEnd, periodLabel, events, 
                         left: `calc(${leftPct}% + ${EV_GUTTER}px)`,
                         width: `calc(${widthPct}% - ${EV_GUTTER * 2}px + ${EV_OVERLAP}px)`,
                         height, zIndex: 10 + col,
-                        background: hexToRgba(color, 0.15), borderLeft: `3px solid ${color}`,
-                        borderRadius: 2, padding: '2px 4px', overflow: 'hidden', lineHeight: 1.3,
+                        background: hexToRgba(color, 0.75),
+                        borderRadius: 3, padding: '2px 4px', overflow: 'hidden', lineHeight: 1.3,
                       }}>
                         <div style={{ fontWeight: 700, fontSize: 8.5, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', color: '#111' }}>
                           {ev.title}
                         </div>
                         {showTime && (
-                          <div style={{ fontSize: 7.5, color, marginTop: 1 }}>
+                          <div style={{ fontSize: 7.5, color: '#222', marginTop: 1 }}>
                             {format(s, 'HH:mm')} – {format(e, 'HH:mm')}
                           </div>
                         )}
@@ -816,7 +815,7 @@ function PreviewMonthGrid({ events, monthStart, getEventColor }: {
                   {dayEvs.slice(0, 4).map(ev => {
                     const c = getEventColor(ev);
                     return (
-                      <div key={ev.id} style={{ background: hexToRgba(c, 0.18), borderLeft: `3px solid ${c}`, borderRadius: 2, padding: '1px 3px', fontSize: 7.5, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginBottom: 1 }}>
+                      <div key={ev.id} style={{ background: hexToRgba(c, 0.75), borderRadius: 3, padding: '1px 3px', fontSize: 7.5, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginBottom: 1, color: '#111' }}>
                         {ev.title}
                       </div>
                     );
