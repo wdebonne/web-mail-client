@@ -183,11 +183,32 @@ export default function MailPage() {
     queryKey: ['folders', selectedAccount?.id],
     queryFn: () => selectedAccount ? api.getFolders(selectedAccount.id) : Promise.resolve([]),
     enabled: !!selectedAccount,
+    staleTime: 1000 * 60 * 5,
+    placeholderData: keepPreviousData,
     retry: (failureCount, error: any) => {
       if (error?.status === 404) return false;
       return failureCount < 3;
     },
   });
+
+  // Hydrate the folder tree from IndexedDB immediately when the account changes,
+  // before the network round-trip completes — mirrors the messages hydration pattern.
+  useEffect(() => {
+    if (!selectedAccount) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cachedFolders = await offlineDB.getFoldersCache(selectedAccount.id);
+        if (cancelled || !cachedFolders?.length) return;
+        const existing = queryClient.getQueryData<any>(['folders', selectedAccount.id]);
+        if (existing && Array.isArray(existing) && existing.length) return;
+        queryClient.setQueryData(['folders', selectedAccount.id], cachedFolders);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedAccount?.id]);
 
   useEffect(() => {
     if ((foldersError as any)?.status === 404) {
@@ -440,7 +461,10 @@ export default function MailPage() {
         const existing = queryClient.getQueryData<any>(['messages', selectedAccount.id, selectedFolder]);
         if (existing && Array.isArray(existing.messages) && existing.messages.length) return;
         if (cached.length) {
-          setMessages(cached as any, cached.length, 1);
+          const sorted = [...cached].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+          );
+          setMessages(sorted as any, sorted.length, 1);
         }
       } catch {
         /* ignore */
