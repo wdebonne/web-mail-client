@@ -759,10 +759,11 @@ export default function MailPage() {
     });
     const removedIndex = removedMessage ? messages.indexOf(removedMessage) : -1;
     const sel = useMailStore.getState().selectedMessage;
-    const wasViewingDeleted = !!(sel && sel.uid === uid && (!accId || (sel as any)._accountId === accId));
+    const selAccId = (sel as any)?._accountId;
+    const wasViewingDeleted = !!(sel && sel.uid === uid && (!accId || !selAccId || selAccId === accId));
     removeMessage(uid, accId, fld);
     removeMessageFromVirtualCaches(uid, accId, fld);
-    if (wasViewingDeleted) setMobileView('list');
+    if (wasViewingDeleted) { mobileSelectionTokenRef.current++; setMobileView('list'); selectMessage(null); }
 
     // Optimistic unseen counter decrement for unread messages
     if (removedMessage && !removedMessage.flags?.seen) {
@@ -1390,6 +1391,7 @@ export default function MailPage() {
   // so they can leave the page.
   const mobileViewRef = useRef(mobileView);
   useEffect(() => { mobileViewRef.current = mobileView; }, [mobileView]);
+  const mobileSelectionTokenRef = useRef(0);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     // Only intercept on mobile widths — md+ shows all panes simultaneously.
@@ -1405,6 +1407,7 @@ export default function MailPage() {
       const v = mobileViewRef.current;
       if (v === 'message') {
         try { window.history.pushState({ [SENTINEL]: true }, ''); } catch { /* ignore */ }
+        mobileSelectionTokenRef.current++;
         setMobileView('list');
         selectMessage(null);
       } else if (v === 'list') {
@@ -1931,10 +1934,14 @@ export default function MailPage() {
     }
   }, [selectedAccount, selectAccount, selectFolder]);
 
-  // When selecting a message on mobile, switch to message view
+  // When selecting a message on mobile, switch to message view.
+  // Uses a token to cancel the navigation if the user presses back before the load completes.
   const handleSelectMessageMobile = async (message: any) => {
+    const token = ++mobileSelectionTokenRef.current;
     await handleSelectMessage(message);
-    setMobileView('message');
+    if (token === mobileSelectionTokenRef.current) {
+      setMobileView('message');
+    }
   };
 
   // Handle drag & drop move (legacy signature: within active account)
@@ -2629,7 +2636,7 @@ export default function MailPage() {
             {/* Mobile back button */}
             <div className="flex items-center gap-2 px-3 py-2 border-b border-outlook-border md:hidden">
               <button
-                onClick={() => { setMobileView('list'); selectMessage(null); }}
+                onClick={() => { mobileSelectionTokenRef.current++; setMobileView('list'); selectMessage(null); }}
                 className="text-outlook-text-secondary hover:text-outlook-text-primary p-1 rounded hover:bg-outlook-bg-hover"
               >
                 <ArrowLeft size={18} />
