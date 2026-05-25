@@ -115,6 +115,7 @@ export default function PrintCalendarModal({
   const [endTime, setEndTime] = useState('00:00');
   const [showMiniMonth, setShowMiniMonth] = useState(false);
   const [detailedAgenda, setDetailedAgenda] = useState(false);
+  const [busyMode, setBusyMode] = useState(false);
 
   const { printStart, printEnd } = useMemo(() => {
     if (printView === 'month') {
@@ -177,6 +178,7 @@ export default function PrintCalendarModal({
       getEventColor,
       printStart,
       printEnd,
+      busyMode,
     });
     win.document.write(html);
     win.document.close();
@@ -286,6 +288,7 @@ export default function PrintCalendarModal({
           <div className="space-y-2">
             <CheckRow label="Afficher le mini-mois" checked={showMiniMonth} onChange={setShowMiniMonth} />
             <CheckRow label="Imprimer l'agenda détaillé" checked={detailedAgenda} onChange={setDetailedAgenda} />
+            <CheckRow label="Mode occupé (masquer les détails)" checked={busyMode} onChange={setBusyMode} />
           </div>
 
           <div className="flex-1" />
@@ -326,6 +329,7 @@ export default function PrintCalendarModal({
             endTime={endTime}
             orientation={orientation}
             getEventColor={getEventColor}
+            busyMode={busyMode}
           />
         </div>
       </div>
@@ -350,11 +354,12 @@ interface BuildOpts {
   getEventColor: (ev: CalendarEvent) => string;
   printStart: Date;
   printEnd: Date;
+  busyMode: boolean;
 }
 
 function buildPrintHtml(opts: BuildOpts): string {
   const { days, events, selectedCalendars, colorOverrides, sMins, safeMins,
-          periodLabel, orientation, printView, getEventColor, printStart, printEnd } = opts;
+          periodLabel, orientation, printView, getEventColor, printStart, printEnd, busyMode } = opts;
 
   const isLandscape = orientation === 'landscape';
   // A4 content area at 96 dpi (minus 12mm side margins)
@@ -404,7 +409,7 @@ function buildPrintHtml(opts: BuildOpts): string {
       const dayEvs = events.filter(ev => ev.all_day && isSameDay(parseISO(ev.start_date), day));
       const evHtml = dayEvs.map(ev => {
         const c = getEventColor(ev);
-        return `<div style="background:${hexToRgba(c, 0.75)};border-radius:3px;padding:1px 4px;font-size:8px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:1px;color:#111">${ev.title}</div>`;
+        return `<div style="background:${hexToRgba(c, 0.75)};border-radius:3px;padding:1px 4px;font-size:8px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:1px;color:#111">${busyMode ? 'Occupé' : ev.title}</div>`;
       }).join('');
       return `<div style="flex:1;border-right:1px solid #e5e7eb;padding:2px 3px;">${evHtml}</div>`;
     }).join('');
@@ -457,13 +462,14 @@ function buildPrintHtml(opts: BuildOpts): string {
       const top = Math.max(0, (evS - sMins) / 60) * HOUR_H;
       const height = Math.max(HOUR_H * 0.35, ((Math.min(evE, safeMins) - Math.max(evS, sMins)) / 60) * HOUR_H) - 2;
       const color = getEventColor(ev);
-      const showTime = height >= HOUR_H * 0.65;
+      const showTime = !busyMode && height >= HOUR_H * 0.65;
       const startStr = format(s, 'HH:mm');
       const endStr = format(e, 'HH:mm');
       const EV_GUTTER = 2;
       const EV_OVERLAP = cols > 1 ? 4 : 0;
       const widthPct = (span / cols) * 100;
       const leftPct = (col / cols) * 100;
+      const label = busyMode ? 'Occupé' : ev.title;
       return `<div style="
         position:absolute;top:${top + 1}px;
         left:calc(${leftPct}% + ${EV_GUTTER}px);
@@ -472,7 +478,7 @@ function buildPrintHtml(opts: BuildOpts): string {
         background:${hexToRgba(color, 0.75)};
         border-radius:3px;padding:2px 4px;overflow:hidden;line-height:1.3;
       ">
-        <div style="font-weight:700;font-size:8.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#111">${ev.title}</div>
+        <div style="font-weight:700;font-size:8.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#111">${label}</div>
         ${showTime ? `<div style="font-size:7.5px;color:#222;margin-top:1px">${startStr} – ${endStr}</div>` : ''}
       </div>`;
     }).join('');
@@ -578,6 +584,7 @@ interface PreviewProps {
   endTime: string;
   orientation: Orientation;
   getEventColor: (ev: CalendarEvent) => string;
+  busyMode: boolean;
 }
 
 // Logical render width for each orientation (mirrors print layout)
@@ -605,7 +612,7 @@ function CalendarPrintPreview(props: PreviewProps) {
 }
 
 function PreviewContent({ printView, printStart, printEnd, periodLabel, events, selectedCalendars,
-  colorOverrides, startTime, endTime, getEventColor, printW }: PreviewProps & { printW: number }) {
+  colorOverrides, startTime, endTime, getEventColor, printW, busyMode }: PreviewProps & { printW: number }) {
   const days = useMemo(
     () => eachDayOfInterval({ start: printStart, end: printEnd }),
     [printStart, printEnd],
@@ -683,7 +690,7 @@ function PreviewContent({ printView, printStart, printEnd, periodLabel, events, 
                     const c = getEventColor(ev);
                     return (
                       <div key={ev.id} style={{ background: hexToRgba(c, 0.75), borderRadius: 3, padding: '1px 4px', fontSize: 8, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginBottom: 1, color: '#111' }}>
-                        {ev.title}
+                        {busyMode ? 'Occupé' : ev.title}
                       </div>
                     );
                   })}
@@ -740,7 +747,7 @@ function PreviewContent({ printView, printStart, printEnd, periodLabel, events, 
                     const top = Math.max(0, (evS - sMins) / 60) * HOUR_H + 1;
                     const height = Math.max(HOUR_H * 0.35, ((Math.min(evE, safeMins) - Math.max(evS, sMins)) / 60) * HOUR_H) - 2;
                     const color = getEventColor(ev);
-                    const showTime = height >= HOUR_H * 0.65;
+                    const showTime = !busyMode && height >= HOUR_H * 0.65;
                     const EV_GUTTER = 2;
                     const EV_OVERLAP = cols > 1 ? 4 : 0;
                     const widthPct = (span / cols) * 100;
@@ -755,7 +762,7 @@ function PreviewContent({ printView, printStart, printEnd, periodLabel, events, 
                         borderRadius: 3, padding: '2px 4px', overflow: 'hidden', lineHeight: 1.3,
                       }}>
                         <div style={{ fontWeight: 700, fontSize: 8.5, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', color: '#111' }}>
-                          {ev.title}
+                          {busyMode ? 'Occupé' : ev.title}
                         </div>
                         {showTime && (
                           <div style={{ fontSize: 7.5, color: '#222', marginTop: 1 }}>
