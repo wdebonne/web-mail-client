@@ -589,7 +589,7 @@ export default function AdminMigration() {
                     </p>
                     <ul className="text-xs text-red-600 space-y-1">
                       {progress.report.failedFolders.map(f => (
-                        <li key={f.folder}><strong>{f.folder}</strong> : {f.error}</li>
+                        <li key={f.folder}><strong>{f.folder}</strong> : {f.message}</li>
                       ))}
                     </ul>
                   </div>
