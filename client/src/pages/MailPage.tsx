@@ -2276,6 +2276,7 @@ export default function MailPage() {
           isComposing={isComposing}
           composeEditorRef={composeEditorRef}
           onComposeAttachFiles={(files) => composeApiRef.current?.addFiles(files)}
+          composeApiRef={composeApiRef}
           onOpenTemplatesPicker={isComposing ? () => setShowTemplatePicker(true) : undefined}
           onOpenTemplatesManager={() => setShowTemplatesManager(true)}
           onToggleEmojiPanel={() => {

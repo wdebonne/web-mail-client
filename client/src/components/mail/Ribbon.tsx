@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../api';
 import NextcloudFilePicker, { type NextcloudFileItem } from '../ui/NextcloudFilePicker';
+import { PublipostageTabContent } from './MailMergePanel';
 import { CategoryPicker } from './CategoryModals';
 import { SignaturesManagerModal } from './SignatureModals';
 import { getSignatures, MailSignature, wrapSignatureHtml } from '../../utils/signatures';
@@ -49,7 +50,7 @@ import {
   UNREAD_INDICATORS_CHANGED_EVENT, UNREAD_SCOPE_LABELS,
 } from '../../utils/mailPreferences';
 
-type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer' | 'recherche';
+type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer' | 'publipostage' | 'recherche';
 type RibbonMode = 'classic' | 'simplified';
 type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
 
@@ -109,7 +110,7 @@ interface RibbonProps {
   onChangeTabMode: (mode: TabMode) => void;
   onChangeMaxTabs: (max: number) => void;
 
-  // Compose (Message / Insérer tabs)
+  // Compose (Message / Insérer / Publipostage tabs)
   isComposing?: boolean;
   composeEditorRef?: React.RefObject<HTMLDivElement>;
   onComposeAttachFiles?: (files: FileList | File[]) => void;
@@ -117,6 +118,7 @@ interface RibbonProps {
   isEmojiPanelOpen?: boolean;
   onToggleGifPanel?: () => void;
   isGifPanelOpen?: boolean;
+  composeApiRef?: React.MutableRefObject<import('./ComposeModal').ComposeApi | null>;
 
   // Favorites mailbox management (Afficher tab)
   accounts?: MailAccount[];
@@ -569,7 +571,7 @@ export default function Ribbon({
   isCollapsed, onToggleCollapse,
   ribbonMode, onChangeRibbonMode,
   tabMode, maxTabs, onChangeTabMode, onChangeMaxTabs,
-  isComposing = false, composeEditorRef, onComposeAttachFiles,
+  isComposing = false, composeEditorRef, onComposeAttachFiles, composeApiRef,
   onToggleEmojiPanel, isEmojiPanelOpen = false,
   onToggleGifPanel, isGifPanelOpen = false,
   accounts = [], onFavoritesChanged,
@@ -713,7 +715,7 @@ export default function Ribbon({
   useEffect(() => {
     if (isComposing && !prevComposingRef.current) {
       setActiveTab('message');
-    } else if (!isComposing && prevComposingRef.current && (activeTab === 'message' || activeTab === 'inserer')) {
+    } else if (!isComposing && prevComposingRef.current && (activeTab === 'message' || activeTab === 'inserer' || activeTab === 'publipostage')) {
       setActiveTab('accueil');
     }
     prevComposingRef.current = isComposing;
@@ -735,13 +737,14 @@ export default function Ribbon({
     ...(isSearchMode ? ['recherche'] as RibbonTab[] : []),
     'accueil',
     'afficher',
-    ...((isComposing ? ['message', 'inserer'] : []) as RibbonTab[]),
+    ...((isComposing ? ['message', 'inserer', 'publipostage'] : []) as RibbonTab[]),
   ];
   const tabLabel = (t: RibbonTab) => {
     if (t === 'recherche') return 'Recherche';
     if (t === 'accueil') return 'Accueil';
     if (t === 'afficher') return 'Afficher';
     if (t === 'message') return 'Message';
+    if (t === 'publipostage') return 'Publipostage';
     return 'Insérer';
   };
 
@@ -1509,6 +1512,10 @@ export default function Ribbon({
           {activeTab === 'inserer' && (
             <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} onOpenTemplatesPicker={onOpenTemplatesPicker} onOpenTemplatesManager={onOpenTemplatesManager} compact />
           )}
+
+          {activeTab === 'publipostage' && (
+            <PublipostageTabContent composeApiRef={composeApiRef} compact />
+          )}
         </div>
         {sharedPopups}
       </div>
@@ -1620,6 +1627,10 @@ export default function Ribbon({
 
           {activeTab === 'inserer' && (
             <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} onOpenTemplatesPicker={onOpenTemplatesPicker} onOpenTemplatesManager={onOpenTemplatesManager} />
+          )}
+
+          {activeTab === 'publipostage' && (
+            <PublipostageTabContent composeApiRef={composeApiRef} />
           )}
 
           {activeTab === 'afficher' && (
