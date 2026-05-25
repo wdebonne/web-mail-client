@@ -334,6 +334,24 @@ export function isTrashFolderPath(folders: MailFolder[], path: string): boolean 
     || p.includes('deleted') || p.includes('supprim');
 }
 
+/** Return the Junk/Spam folder path for an account, preferring specialUse, then common names. */
+export function findJunkFolderPath(folders: MailFolder[]): string | null {
+  const bySpecial = folders.find((f) => f.specialUse === '\\Junk');
+  if (bySpecial) return bySpecial.path;
+  const byName = folders.find((f) => {
+    const n = f.name.toLowerCase();
+    return n === 'junk' || n === 'spam' || n === 'junk e-mail'
+      || n.includes('indésirable') || n.includes('indesirable');
+  });
+  if (byName) return byName.path;
+  const byPath = folders.find((f) => {
+    const p = f.path.toLowerCase();
+    return p === 'junk' || p.endsWith('.junk') || p === 'spam' || p.endsWith('.spam')
+      || p.includes('indésirable') || p.includes('indesirable');
+  });
+  return byPath ? byPath.path : null;
+}
+
 // --- Delete confirmation preference ---
 const KEY_DELETE_CONFIRM = 'mail.deleteConfirmEnabled'; // boolean (default true)
 
@@ -499,6 +517,7 @@ export interface UnreadIndicatorPrefs {
   showBold: boolean;
   showDot: boolean;
   scope: UnreadIndicatorScope;
+  showJunkUnread: boolean;  // afficher les non lus sur le courrier indésirable (défaut: true)
 }
 
 const KEY_UNREAD_PREFS = 'mail.unreadIndicators.v1';
@@ -509,6 +528,7 @@ const DEFAULT_UNREAD_PREFS: UnreadIndicatorPrefs = {
   showBold: false,
   showDot: false,
   scope: 'all-folders',
+  showJunkUnread: true,
 };
 
 export function getUnreadIndicatorPrefs(): UnreadIndicatorPrefs {
@@ -523,6 +543,7 @@ export function getUnreadIndicatorPrefs(): UnreadIndicatorPrefs {
       scope: ['inbox-only', 'favorites-only', 'inbox-and-favorites', 'all-folders'].includes(parsed.scope)
         ? parsed.scope
         : DEFAULT_UNREAD_PREFS.scope,
+      showJunkUnread: typeof parsed.showJunkUnread === 'boolean' ? parsed.showJunkUnread : DEFAULT_UNREAD_PREFS.showJunkUnread,
     };
   } catch {
     return { ...DEFAULT_UNREAD_PREFS };

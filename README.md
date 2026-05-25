@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.17.0-blue)
+![Version](https://img.shields.io/badge/version-1.18.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -126,7 +126,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🏷️ **Sélecteur de catégories mobile** : sur téléphone/tablette, un menu déroulant remplace les onglets horizontaux pour filtrer les contacts par catégorie
 - 📲 **Import depuis les contacts du téléphone** : bouton d'import (mobile) exploitant l'**API Contacts** du navigateur — sélectionnez vos contacts natifs pour les importer directement dans l'application
 - 🔗 Enrichissement depuis NextCloud (photo, fonction, rôle)
-- ☁️ **Joindre un fichier depuis Nextcloud** : bouton *Nextcloud* dans le ruban **Insérer → Inclure** (visible si NC est synchronisé) — modal de navigation dans le drive NC pour sélectionner un ou plusieurs fichiers à attacher directement à l'e-mail en cours de rédaction
+- ☁️ **Joindre un fichier depuis Nextcloud** : bouton *Nextcloud* dans le ruban **Insérer → Inclure** (visible si NC est synchronisé) — modal de navigation dans le drive NC avec **recherche globale** (≥ 2 caractères, chemin parent affiché) pour sélectionner un ou plusieurs fichiers à attacher directement à l'e-mail en cours de rédaction
+- 📁 **Enregistrer dans Nextcloud** : modal de sélection de dossier avec **recherche globale** (PROPFIND WebDAV, indépendante de l'index Nextcloud) et création de sous-dossiers à la volée
 - 📥 **Expéditeurs automatiques** : tout expéditeur de mail reçu est enregistré comme "contact non permanent"
 - ✅ **Promotion de contact** : conversion d'un expéditeur en contact permanent
 - 🔤 **Autocomplétion intelligente** dans le composeur avec affichage des noms (seuil 1 caractère) — navigation ↑/↓ et sélection **Entrée/Tab** dans les suggestions des champs À/Cc/Cci

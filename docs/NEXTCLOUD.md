@@ -164,27 +164,34 @@ Une modale de confirmation liste les gains et pertes de chaque direction (partag
 
 ## Gestion des fichiers (drive NC)
 
-### Enregistrer une pièce jointe dans Nextcloud
-
-Sur chaque pièce jointe reçue, un bouton **CloudUpload** permet d'enregistrer le fichier dans le drive NC. Une modal de sélection de dossier (`NextcloudFolderPicker`) permet de choisir la destination, avec création de sous-dossiers à la volée.
-
-**Mode d'ouverture « Nextcloud »** : dans **Afficher → Pièce jointe** ou **Paramètres → Messagerie**, l'option *Nextcloud* déclenche directement l'enregistrement NC au clic sur une pièce jointe (sans passer par le menu). Nécessite un compte NC lié.
-
 ### Joindre un fichier depuis Nextcloud (rédaction)
 
 Dans le ruban **Insérer → Inclure**, le bouton *Nextcloud* (icône nuage) est visible dès que le compte NC est synchronisé.
 
 1. Cliquer sur **Nextcloud** — la modal `NextcloudFilePicker` s'ouvre
-2. Naviguer dans l'arborescence du drive (dossiers + fichiers, fil d'Ariane)
-3. Cocher un ou plusieurs fichiers (la taille est affichée)
-4. Cliquer **Joindre** — les fichiers sont téléchargés depuis NC et attachés à l'e-mail
+2. **Rechercher** un fichier dans tout le drive via le champ de recherche (≥ 2 caractères, debounce 400 ms) **ou** naviguer dans l'arborescence (fil d'Ariane)
+3. En mode recherche, le chemin parent s'affiche sous chaque résultat ; cliquer sur un dossier y navigue directement
+4. Cocher un ou plusieurs fichiers (la taille est affichée)
+5. Cliquer **Joindre** — les fichiers sont téléchargés depuis NC et attachés à l'e-mail
+
+### Enregistrer une pièce jointe dans Nextcloud
+
+Sur chaque pièce jointe reçue, un bouton **CloudUpload** permet d'enregistrer le fichier dans le drive NC. La modal `NextcloudFolderPicker` permet de choisir la destination :
+
+- **Rechercher** un dossier dans tout le drive (≥ 2 caractères) — la recherche utilise `PROPFIND Depth: infinity` directement sur WebDAV, sans dépendre de l'index de recherche Nextcloud.
+- **Naviguer** dans l'arborescence via le fil d'Ariane
+- **Créer** des sous-dossiers à la volée (les `/` créent la hiérarchie complète)
+
+**Mode d'ouverture « Nextcloud »** : dans **Afficher → Pièce jointe** ou **Paramètres → Messagerie**, l'option *Nextcloud* déclenche directement l'enregistrement NC au clic sur une pièce jointe (sans passer par le menu). Nécessite un compte NC lié.
 
 **Endpoints utilisés :**
 
 | Méthode | URL | Description |
 |---------|-----|-------------|
 | `GET` | `/api/nextcloud/files/status` | Vérifier si NC est lié (retourne `{ linked }`) |
-| `GET` | `/api/nextcloud/files/list?path=` | Lister les enfants d'un dossier |
+| `GET` | `/api/nextcloud/files/list?path=` | Lister les enfants immédiats d'un dossier |
+| `GET` | `/api/nextcloud/files/search?q=` | Recherche globale fichiers+dossiers (OCS Unified Search, Nextcloud 20+) |
+| `GET` | `/api/nextcloud/files/search-folders?q=` | Recherche globale dossiers uniquement (PROPFIND infinity, sans index) |
 | `GET` | `/api/nextcloud/files/get?path=` | Télécharger un fichier (base64, 100 Mo max) |
 | `POST` | `/api/nextcloud/files/mkdir` | Créer un dossier (récursif) |
 | `POST` | `/api/nextcloud/files/upload` | Uploader une pièce jointe dans NC |
@@ -226,6 +233,8 @@ Tables ajoutées :
 | Bouton Nextcloud absent dans le ruban Insérer | Vérifier que le compte NC est bien lié (barre de statut « Lié NC »). Le bouton n'apparaît que si `linked: true` dans `/calendar/nextcloud-status` |
 | Erreur « NextCloud not linked » lors du téléchargement | Le mot de passe NC stocké ne peut pas être décrypté (rotation de `ENCRYPTION_KEY` ?) → re-saisir le mot de passe via *Lier existant* dans l'admin |
 | Lien public vide | L'app « calendar » NextCloud doit être activée pour que `<CS:publish-calendar>` fonctionne |
+| Recherche de fichiers renvoie 0 résultat (`/search`) | L'index de recherche OCS Nextcloud n'est pas activé ou pas encore construit. Activer l'app *Files - Automated tagging* ou attendre l'indexation complète. La recherche de dossiers (`/search-folders`) n'est pas concernée car elle utilise PROPFIND directement. |
+| Recherche de dossiers très lente (`/search-folders`) | Le drive contient un très grand nombre de fichiers : `PROPFIND Depth: infinity` parcourt tout l'arbre WebDAV. Envisager d'organiser les fichiers en sous-arborescences moins profondes. |
 | « there is no unique or exclusion constraint matching the ON CONFLICT specification » (code `42P10`) sur `NextCloudService.syncCalendars` / `syncContacts` | Les index uniques partiels `idx_contacts_nc_email_unique`, `idx_contacts_nc_external_unique` et `idx_calendars_nc_external_unique` sont manquants ou ont un prédicat plus strict que la clause `WHERE source='nextcloud'` des requêtes. Redémarrer le serveur : la migration force un `DROP INDEX IF EXISTS` puis recrée les index avec le bon prédicat. Si la recréation échoue, c'est qu'il existe des doublons en base — les supprimer puis relancer. |
 
 Logs utiles côté serveur : `grep -i "NC" logs/*.log` (tags : `NextCloud`, `nextcloud`, `NC sync`).

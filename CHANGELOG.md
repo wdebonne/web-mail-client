@@ -11,6 +11,19 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.18.0] - 2026-05-24
+
+### Ajouté
+
+- **Recherche globale dans les modals Nextcloud**
+  - **"Joindre depuis Nextcloud"** (`NextcloudFilePicker`) : le champ de recherche filtre désormais l'ensemble du drive Nextcloud (et non plus uniquement le dossier courant). Dès 2 caractères saisis, une requête est envoyée à l'API OCS de recherche unifiée (`/ocs/v2.php/search/providers/files/search`) avec un debounce de 400 ms. Les résultats affichent le **chemin parent** sous chaque nom de fichier. Cliquer sur un dossier dans les résultats navigue directement vers ce dossier et efface la recherche. En dessous de 2 caractères, le comportement de navigation par dossier reprend normalement.
+  - **"Enregistrer dans Nextcloud"** (`NextcloudFolderPicker`) : même logique de recherche globale, mais limitée aux **dossiers** via l'endpoint `GET /api/nextcloud/files/search-folders` qui utilise un `PROPFIND Depth: infinity` direct sur WebDAV — indépendant de l'index de recherche Nextcloud, garantissant que tous les dossiers sont trouvables même sans indexation complète. Le chemin parent est affiché sous chaque résultat. Cliquer sur un dossier y navigue et en fait la destination courante pour "Enregistrer ici".
+  - Deux nouveaux endpoints backend :
+    - `GET /api/nextcloud/files/search?q=` — recherche de fichiers et dossiers via OCS Unified Search (Nextcloud 20+)
+    - `GET /api/nextcloud/files/search-folders?q=` — recherche de dossiers via PROPFIND `Depth: infinity` (sans dépendance à l'index de recherche)
+
+---
+
 ## [1.17.0] - 2026-05-24
 
 ### Ajouté

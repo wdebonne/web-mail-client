@@ -37,6 +37,8 @@ import {
   setFavoritesExpanded as persistFavoritesExpanded,
   findInboxFolderPath,
   findSentFolderPath,
+  findTrashFolderPath,
+  findJunkFolderPath,
   FavoriteFolder,
   getFolderPaneFontSize,
   FOLDER_PANE_FONT_SIZE_PX,
@@ -679,8 +681,14 @@ function AccountFolders({
     { messages: number; unseen: number; recent: number }
   >;
   const inboxPath = useMemo(() => findInboxFolderPath(folders), [folders]);
+  const trashPath = useMemo(() => findTrashFolderPath(folders), [folders]);
+  const junkPath = useMemo(() => findJunkFolderPath(folders), [folders]);
 
   const isFolderInScope = (folderPath: string): boolean => {
+    // Éléments supprimés : jamais d'indicateur non lu
+    if (trashPath && folderPath === trashPath) return false;
+    // Courrier indésirable : contrôlé par la préférence utilisateur
+    if (junkPath && folderPath === junkPath) return unreadPrefs.showJunkUnread;
     switch (unreadPrefs.scope) {
       case 'inbox-only':
       case 'inbox-and-favorites':
