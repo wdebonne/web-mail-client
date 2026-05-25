@@ -3,7 +3,9 @@
 
 import { precacheAndRoute, matchPrecache } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
-import { NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
+import { NetworkFirst, StaleWhileRevalidate, CacheFirst } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision: string | null }>;
@@ -11,6 +13,23 @@ declare const self: ServiceWorkerGlobalScope & {
 
 // Precache build assets injected by Vite PWA
 precacheAndRoute(self.__WB_MANIFEST || []);
+
+// Email images via the proxy — CacheFirst so images already seen are served
+// instantly from Cache Storage without any network request.
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/api/proxy/image'),
+  new CacheFirst({
+    cacheName: 'email-images',
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({
+        maxEntries: 1000,
+        maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
+        purgeOnQuotaError: true,
+      }),
+    ],
+  }),
+);
 
 // Runtime caches for API endpoints
 registerRoute(
