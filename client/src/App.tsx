@@ -81,7 +81,7 @@ function App() {
     const t = window.setTimeout(async () => {
       if (await isCacheFresh().catch(() => false)) return;
       syncAllCache().catch(() => {});
-    }, 4000);
+    }, 1000);
     return () => window.clearTimeout(t);
   }, [user, isOnline]);
 
