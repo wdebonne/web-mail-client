@@ -705,6 +705,16 @@ function AccountFolders({
   const [folderDropIndicator, setFolderDropIndicator] = useState<
     { path: string; position: DropPosition } | null
   >(null);
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+
+  const toggleCollapse = (path: string) => {
+    setCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
 
   const handleFolderDragStart = (e: React.DragEvent, folder: MailFolder) => {
     e.dataTransfer.setData(
@@ -876,7 +886,7 @@ function AccountFolders({
     return roots;
   }, [displayedFolders, searchQuery]);
 
-  const renderFolder = (folder: MailFolder, depth: number): React.ReactNode => {
+  const renderFolder = (folder: MailFolder, depth: number, hasChildren: boolean): React.ReactNode => {
     const isSelected = !virtualFolder && selectedAccountId === account.id && folder.path === selectedFolder;
     const isDragOver = dragOver === folder.path;
     const indicator = folderDropIndicator?.path === folder.path ? folderDropIndicator.position : null;
@@ -887,6 +897,7 @@ function AccountFolders({
     const useBold = showUnread && unreadPrefs.showBold;
     const showDot = showUnread && unreadPrefs.showDot;
     const showCount = showUnread && unreadPrefs.showCount;
+    const isCollapsed = collapsedFolders.has(folder.path);
     return (
       <div key={folder.path} className="relative">
         {indicator === 'before' && (
@@ -920,6 +931,21 @@ function AccountFolders({
                   : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'
             }`}
         >
+          {hasChildren ? (
+            <span
+              role="button"
+              aria-label={isCollapsed ? 'Développer' : 'Réduire'}
+              onClick={(e) => { e.stopPropagation(); toggleCollapse(folder.path); }}
+              className="flex-shrink-0 text-outlook-text-secondary hover:text-outlook-text-primary"
+            >
+              {isCollapsed
+                ? <ChevronRight size={14} className="md:w-3 md:h-3" />
+                : <ChevronDown size={14} className="md:w-3 md:h-3" />
+              }
+            </span>
+          ) : (
+            <span className="w-3.5 md:w-3 flex-shrink-0" />
+          )}
           <Icon size={16} className={`md:w-3.5 md:h-3.5 flex-shrink-0 ${isSelected || isDragOver ? 'text-outlook-blue' : ''}`} />
           {showDot && (
             <span
@@ -945,10 +971,11 @@ function AccountFolders({
   };
 
   const renderNode = (node: { folder: MailFolder; children: { folder: MailFolder; children: any[] }[] }, depth: number): React.ReactNode => {
+    const isCollapsed = collapsedFolders.has(node.folder.path);
     return (
       <div key={node.folder.path}>
-        {renderFolder(node.folder, depth)}
-        {node.children.map((child) => renderNode(child, depth + 1))}
+        {renderFolder(node.folder, depth, node.children.length > 0)}
+        {!isCollapsed && node.children.map((child) => renderNode(child, depth + 1))}
       </div>
     );
   };
