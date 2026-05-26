@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Cloud, ChevronLeft, ChevronRight, Eye, EyeOff, X, Send,
-  Loader2, FileSpreadsheet, ArrowLeftRight,
+  Loader2, FileSpreadsheet, ArrowLeftRight, ListOrdered,
 } from 'lucide-react';
 import { api } from '../../api';
 import NextcloudFilePicker, { type NextcloudFileItem } from '../ui/NextcloudFilePicker';
@@ -446,6 +446,46 @@ export function PublipostageTabContent({
     }
   };
 
+  const [enqueuing, setEnqueuing] = useState(false);
+
+  const handleEnqueueAll = async () => {
+    if (!mergeState) return;
+    const tpl = savedTemplate ?? (() => {
+      const snap = composeApiRef?.current?.getComposeSnapshot();
+      return snap ? { subject: snap.subject, bodyHtml: snap.bodyHtml, to: snap.to } : null;
+    })();
+    const snapshot = composeApiRef?.current?.getComposeSnapshot();
+    if (!tpl || !snapshot) { toast.error('Impossible d\'accéder aux données du message'); return; }
+    if (!snapshot.accountId) { toast.error('Aucun compte expéditeur sélectionné'); return; }
+
+    const { rows, mapping, emailColumn } = mergeState;
+    const recipients = rows.map(row => {
+      const resolvedSubject = applyVars(tpl.subject, row, mapping);
+      const resolvedBody    = applyVars(tpl.bodyHtml, row, mapping);
+      const email = emailColumn && row[emailColumn] ? row[emailColumn] : snapshot.to[0]?.address ?? '';
+      const displayName = emailColumn && row[emailColumn] ? '' : snapshot.to[0]?.name ?? '';
+      return { email, displayName: displayName || undefined, subject: resolvedSubject, bodyHtml: resolvedBody, bodyText: '' };
+    }).filter(r => !!r.email);
+
+    if (!recipients.length) { toast.error('Aucun destinataire valide trouvé'); return; }
+
+    setEnqueuing(true);
+    try {
+      const jobName = `${tpl.subject || 'Publipostage'} (${recipients.length} destinataires)`;
+      await api.createBulkSendJob({
+        accountId: snapshot.accountId,
+        name: jobName,
+        source: 'mailmerge',
+        recipients,
+      });
+      toast.success(`${recipients.length} mails ajoutés à la file d'envoi`);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Erreur lors de la mise en file');
+    } finally {
+      setEnqueuing(false);
+    }
+  };
+
   const getVariables = () => {
     // When in preview mode, variables come from the saved template, not the resolved compose
     const src = savedTemplate ?? (() => {
@@ -532,7 +572,13 @@ export function PublipostageTabContent({
               icon={sending ? Loader2 : Send}
               label={sendLabel}
               onClick={handleSendAll}
-              disabled={sending}
+              disabled={sending || enqueuing}
+            />
+            <MSimplifiedButton
+              icon={enqueuing ? Loader2 : ListOrdered}
+              label={enqueuing ? 'Mise en file…' : 'File d\'attente'}
+              onClick={handleEnqueueAll}
+              disabled={sending || enqueuing}
             />
           </>
         )}
@@ -623,7 +669,13 @@ export function PublipostageTabContent({
               icon={sending ? Loader2 : Send}
               label={sendLabel}
               onClick={handleSendAll}
-              disabled={sending}
+              disabled={sending || enqueuing}
+            />
+            <MRibbonButton
+              icon={enqueuing ? Loader2 : ListOrdered}
+              label={enqueuing ? 'Mise en file…' : 'File d\'attente'}
+              onClick={handleEnqueueAll}
+              disabled={sending || enqueuing}
             />
           </MRibbonGroup>
         </>

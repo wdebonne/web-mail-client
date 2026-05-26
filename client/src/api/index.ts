@@ -1135,6 +1135,105 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text, targetLang, sourceLang }),
     }),
+
+  // ─── Bulk send queue ────────────────────────────────────────────────────────
+  getBulkSendSettings: () =>
+    request<{
+      rateLimit: number | null;
+      rateWindowMinutes: number | null;
+      effectiveRateLimit: number;
+      effectiveRateWindow: number;
+      adminDefaults: { defaultRateLimit: number; defaultRateWindow: number; maxRateLimit: number; minRateWindow: number };
+    }>('/bulk-send/settings'),
+
+  updateBulkSendSettings: (data: { rateLimit: number | null; rateWindowMinutes: number | null }) =>
+    request<{ success: boolean }>('/bulk-send/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  createBulkSendJob: (data: {
+    accountId: string;
+    name: string;
+    source: 'mailmerge' | 'distributionlist' | 'manual';
+    recipients: Array<{
+      email: string;
+      displayName?: string;
+      subject: string;
+      bodyHtml: string;
+      bodyText?: string;
+      attachments?: any[];
+    }>;
+  }) =>
+    request<{ jobId: string }>('/bulk-send/jobs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getBulkSendJobs: (params?: { search?: string; status?: string; page?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.search) q.set('search', params.search);
+    if (params?.status) q.set('status', params.status);
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.limit) q.set('limit', String(params.limit));
+    return request<{
+      jobs: any[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/bulk-send/jobs${q.toString() ? '?' + q.toString() : ''}`);
+  },
+
+  getBulkSendJob: (id: string, params?: { page?: number; status?: string; search?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.status) q.set('status', params.status);
+    if (params?.search) q.set('search', params.search);
+    return request<{ job: any; recipients: any[]; total: number; page: number; limit: number }>(
+      `/bulk-send/jobs/${id}${q.toString() ? '?' + q.toString() : ''}`
+    );
+  },
+
+  pauseBulkSendJob: (id: string) =>
+    request<{ success: boolean }>(`/bulk-send/jobs/${id}/pause`, { method: 'POST' }),
+
+  resumeBulkSendJob: (id: string) =>
+    request<{ success: boolean }>(`/bulk-send/jobs/${id}/resume`, { method: 'POST' }),
+
+  cancelBulkSendJob: (id: string) =>
+    request<{ success: boolean }>(`/bulk-send/jobs/${id}`, { method: 'DELETE' }),
+
+  // Admin bulk send
+  adminGetBulkSendJobs: (params?: { search?: string; status?: string; userId?: string; page?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.search) q.set('search', params.search);
+    if (params?.status) q.set('status', params.status);
+    if (params?.userId) q.set('userId', params.userId);
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.limit) q.set('limit', String(params.limit));
+    return request<{ jobs: any[]; total: number; page: number; limit: number }>(
+      `/admin/bulk-send/jobs${q.toString() ? '?' + q.toString() : ''}`
+    );
+  },
+
+  adminGetBulkSendSettings: () =>
+    request<{ defaultRateLimit: number; defaultRateWindow: number; maxRateLimit: number; minRateWindow: number }>(
+      '/admin/bulk-send/settings'
+    ),
+
+  adminUpdateBulkSendSettings: (data: { defaultRateLimit: number; defaultRateWindow: number; maxRateLimit: number; minRateWindow: number }) =>
+    request<{ success: boolean }>('/admin/bulk-send/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  adminCancelBulkSendJob: (id: string) =>
+    request<{ success: boolean }>(`/admin/bulk-send/jobs/${id}/cancel`, { method: 'POST' }),
+
+  adminGetBulkSendStats: () =>
+    request<{ pending: string; running: string; paused: string; completed: string; cancelled: string; total_sent: string; total_errors: string }>(
+      '/admin/bulk-send/stats'
+    ),
 };
 
 // ─── Mail rules types (mirrors server/src/services/mailRules.ts) ───────

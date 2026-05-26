@@ -31,6 +31,8 @@ import { backupRouter } from './routes/backup';
 import { imageProxyRouter } from './routes/imageProxy';
 import { translateRouter } from './routes/translate';
 import { startBackupScheduler } from './services/backupScheduler';
+import { bulkSendRouter, adminBulkSendRouter } from './routes/bulkSend';
+import { startBulkSendProcessor } from './services/bulkSendProcessor';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { setupWebSocket } from './services/websocket';
@@ -132,6 +134,8 @@ app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 app.use('/api/admin/backup', authMiddleware, backupRouter);
 app.use('/api/proxy/image', imageProxyRouter);
 app.use('/api/translate', authMiddleware, translateRouter);
+app.use('/api/bulk-send', authMiddleware, bulkSendRouter);
+app.use('/api/admin/bulk-send', authMiddleware, adminBulkSendRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -189,6 +193,7 @@ async function start() {
 
     // Start automatic backup scheduler
     startBackupScheduler();
+    startBulkSendProcessor();
 
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);

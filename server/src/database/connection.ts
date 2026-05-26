@@ -881,6 +881,59 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_backup_records_created ON backup_records(created_at DESC);
     `);
 
+    // Bulk send queue
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS bulk_send_jobs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        account_id UUID NOT NULL REFERENCES mail_accounts(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        source VARCHAR(30) NOT NULL DEFAULT 'mailmerge',
+        total INTEGER NOT NULL DEFAULT 0,
+        sent INTEGER NOT NULL DEFAULT 0,
+        errors INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_bulk_send_jobs_user ON bulk_send_jobs(user_id);
+      CREATE INDEX IF NOT EXISTS idx_bulk_send_jobs_status ON bulk_send_jobs(status) WHERE status IN ('pending','running','paused');
+
+      CREATE TABLE IF NOT EXISTS bulk_send_recipients (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        job_id UUID NOT NULL REFERENCES bulk_send_jobs(id) ON DELETE CASCADE,
+        email VARCHAR(255) NOT NULL,
+        display_name VARCHAR(255),
+        subject TEXT,
+        body_html TEXT,
+        body_text TEXT,
+        attachments JSONB,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        error TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_retry_at TIMESTAMPTZ,
+        sent_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_bulk_send_recipients_job ON bulk_send_recipients(job_id);
+      CREATE INDEX IF NOT EXISTS idx_bulk_send_recipients_pending ON bulk_send_recipients(job_id, status) WHERE status = 'pending';
+
+      CREATE TABLE IF NOT EXISTS bulk_send_user_settings (
+        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        rate_limit INTEGER,
+        rate_window_minutes INTEGER,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      INSERT INTO admin_settings (key, value, description) VALUES
+        ('bulk_send_default_rate_limit',    '50',  'Nombre max de mails par fenêtre de temps (envoi en masse)'),
+        ('bulk_send_default_rate_window',   '5',   'Durée de la fenêtre en minutes (envoi en masse)'),
+        ('bulk_send_max_rate_limit',        '200', 'Limite maximale qu''un utilisateur peut configurer'),
+        ('bulk_send_min_rate_window',       '1',   'Fenêtre minimale en minutes qu''un utilisateur peut configurer')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

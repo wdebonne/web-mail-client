@@ -287,6 +287,48 @@ export const sharedCalendarAccess = pgTable('shared_calendar_access', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Bulk send jobs — one row per mass-send campaign
+export const bulkSendJobs = pgTable('bulk_send_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  accountId: uuid('account_id').references(() => mailAccounts.id, { onDelete: 'cascade' }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  status: varchar('status', { length: 20 }).default('pending').notNull(), // pending|running|paused|completed|cancelled
+  source: varchar('source', { length: 30 }).default('mailmerge').notNull(), // mailmerge|distributionlist|manual
+  total: integer('total').default(0).notNull(),
+  sent: integer('sent').default(0).notNull(),
+  errors: integer('errors').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+  completedAt: timestamp('completed_at'),
+});
+
+// Bulk send recipients — one row per individual email in a job
+export const bulkSendRecipients = pgTable('bulk_send_recipients', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  jobId: uuid('job_id').references(() => bulkSendJobs.id, { onDelete: 'cascade' }).notNull(),
+  email: varchar('email', { length: 255 }).notNull(),
+  displayName: varchar('display_name', { length: 255 }),
+  subject: text('subject'),
+  bodyHtml: text('body_html'),
+  bodyText: text('body_text'),
+  attachments: jsonb('attachments'),
+  status: varchar('status', { length: 20 }).default('pending').notNull(), // pending|sent|error|cancelled
+  error: text('error'),
+  attempts: integer('attempts').default(0).notNull(),
+  nextRetryAt: timestamp('next_retry_at'),
+  sentAt: timestamp('sent_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Bulk send user settings — per-user rate limit overrides
+export const bulkSendUserSettings = pgTable('bulk_send_user_settings', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  rateLimit: integer('rate_limit'), // null = use admin default
+  rateWindowMinutes: integer('rate_window_minutes'), // null = use admin default
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // External calendar shares (public links, invitees by email)
 export const externalCalendarShares = pgTable('external_calendar_shares', {
   id: uuid('id').primaryKey().defaultRandom(),
