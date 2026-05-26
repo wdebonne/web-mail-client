@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -16,9 +16,11 @@ import ContextMenu, { ContextMenuItem } from '../ui/ContextMenu';
 import {
   arrangeCalendars, CalendarGroup, createGroup, renameGroup, deleteGroup,
   moveCalendarToGroup, reorderGroups, isGroupExpanded, setGroupExpanded,
+  getCalendarGroups, setCalendarGroups,
   getNameOverrides, setNameOverride,
   getColorOverrides, setColorOverride,
 } from '../../utils/calendarPreferences';
+import { api } from '../../api';
 import { BASE_COLORS } from '../../utils/colorUtils';
 
 
@@ -85,7 +87,22 @@ export default function CalendarSidebar({
   const [dropTarget, setDropTarget] = useState<{ groupId: string; index: number } | null>(null);
   const [dropGroupTarget, setDropGroupTarget] = useState<string | null>(null);
 
-  const bump = () => onChangeRefreshKey?.();
+  const pushGroups = useCallback(() => {
+    api.updateCalendarGroups(getCalendarGroups()).catch(() => {});
+  }, []);
+
+  // On mount: load groups from server (source of truth) → overwrite localStorage
+  useEffect(() => {
+    api.getCalendarGroups().then(groups => {
+      if (Array.isArray(groups)) {
+        setCalendarGroups(groups);
+        onChangeRefreshKey?.();
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const bump = () => { onChangeRefreshKey?.(); pushGroups(); };
 
 
   // ── Mini date picker ──────────────────────────────────────

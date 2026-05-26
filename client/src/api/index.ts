@@ -440,6 +440,12 @@ export const api = {
   // Calendar
   getCalendars: () => request<any[]>('/calendar'),
 
+  getCalendarGroups: () => request<any[] | null>('/calendar/groups'),
+
+  updateCalendarGroups: (groups: any[]) =>
+    request('/calendar/groups', { method: 'PUT', body: JSON.stringify(groups) }),
+
+
   createCalendar: (data: any) =>
     request('/calendar', { method: 'POST', body: JSON.stringify(data) }),
 

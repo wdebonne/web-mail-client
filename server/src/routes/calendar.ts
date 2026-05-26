@@ -45,6 +45,36 @@ const eventSchema = z.object({
   })).optional(),
 });
 
+// Calendar groups — cross-device sync via user_preferences
+calendarRouter.get('/groups', async (req: AuthRequest, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT value FROM user_preferences WHERE user_id = $1 AND key = 'calendar.groups'`,
+      [req.userId]
+    );
+    if (r.rows.length === 0) return res.json(null);
+    res.json(JSON.parse(r.rows[0].value));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+calendarRouter.put('/groups', async (req: AuthRequest, res) => {
+  try {
+    const groups = req.body;
+    if (!Array.isArray(groups)) return res.status(400).json({ error: 'groups doit être un tableau' });
+    await pool.query(
+      `INSERT INTO user_preferences (user_id, key, value, updated_at)
+       VALUES ($1, 'calendar.groups', $2, NOW())
+       ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [req.userId, JSON.stringify(groups)]
+    );
+    res.json({ ok: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Nextcloud status for the current user (is the user linked to a NC account?)
 calendarRouter.get('/nextcloud-status', async (req: AuthRequest, res) => {
   try {
