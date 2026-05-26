@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Cloud, ChevronLeft, ChevronRight, Eye, EyeOff, X, Send,
   Loader2, FileSpreadsheet, ArrowLeftRight, ListOrdered,
+  ListFilter, Search, CheckSquare, Square, RotateCcw,
 } from 'lucide-react';
 import { api } from '../../api';
 import NextcloudFilePicker, { type NextcloudFileItem } from '../ui/NextcloudFilePicker';
@@ -232,6 +233,315 @@ function MappingModal({
   );
 }
 
+// ─── Filter Rows Modal ────────────────────────────────────────────────────────
+
+function FilterRowsModal({
+  rows,
+  columns,
+  disabledRows,
+  onSave,
+  onClose,
+}: {
+  rows: MailMergeRow[];
+  columns: string[];
+  disabledRows: Set<number>;
+  onSave: (disabled: Set<number>) => void;
+  onClose: () => void;
+}) {
+  const [localDisabled, setLocalDisabled] = useState<Set<number>>(() => new Set(disabledRows));
+  const [search, setSearch] = useState('');
+  const [filterCol, setFilterCol] = useState<string>(columns[0] ?? '');
+  const [filterVal, setFilterVal] = useState<string>('');
+
+  // Distinct values for the selected filter column
+  const distinctValues = useMemo(() => {
+    if (!filterCol) return [];
+    const vals = new Set(rows.map(r => r[filterCol] ?? ''));
+    return [...vals].sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [rows, filterCol]);
+
+  // Count of rows per value (total / active)
+  const valueCounts = useMemo(() => {
+    const map: Record<string, { total: number; active: number }> = {};
+    rows.forEach((r, i) => {
+      const v = r[filterCol] ?? '';
+      if (!map[v]) map[v] = { total: 0, active: 0 };
+      map[v].total++;
+      if (!localDisabled.has(i)) map[v].active++;
+    });
+    return map;
+  }, [rows, filterCol, localDisabled]);
+
+  // Rows visible in the table (filtered by search text + optional column filter)
+  const visibleRows = useMemo(() => {
+    const q = search.toLowerCase();
+    return rows.map((r, i) => ({ row: r, idx: i })).filter(({ row }) => {
+      const matchSearch = !q || Object.values(row).some(v => v.toLowerCase().includes(q));
+      const matchCol = !filterVal || (row[filterCol] ?? '') === filterVal;
+      return matchSearch && matchCol;
+    });
+  }, [rows, columns, search, filterCol, filterVal]);
+
+  const activeCount = rows.length - localDisabled.size;
+
+  const toggle = (idx: number) => {
+    setLocalDisabled(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+
+  const enableAll = () => setLocalDisabled(new Set());
+  const disableAll = () => setLocalDisabled(new Set(rows.map((_, i) => i)));
+  const invertAll = () => setLocalDisabled(new Set(rows.map((_, i) => i).filter(i => !localDisabled.has(i))));
+
+  // Enable only rows where filterCol === value (disable all others)
+  const applyValueFilter = (val: string) => {
+    const newDisabled = new Set<number>();
+    rows.forEach((r, i) => {
+      if ((r[filterCol] ?? '') !== val) newDisabled.add(i);
+    });
+    setLocalDisabled(newDisabled);
+    setFilterVal(val);
+  };
+
+  // Enable rows where filterCol === value (without touching other rows)
+  const addValueFilter = (val: string, enable: boolean) => {
+    setLocalDisabled(prev => {
+      const next = new Set(prev);
+      rows.forEach((r, i) => {
+        if ((r[filterCol] ?? '') === val) {
+          if (enable) next.delete(i); else next.add(i);
+        }
+      });
+      return next;
+    });
+  };
+
+  const save = () => { onSave(localDisabled); onClose(); };
+
+  // Columns to display in the table (limit to avoid overflow)
+  const displayCols = columns.slice(0, 6);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9500] flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative bg-white rounded-lg shadow-xl w-[860px] max-h-[85vh] flex flex-col border border-outlook-border">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-outlook-border">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-outlook-text-primary flex items-center gap-1.5">
+              <ListFilter size={15} /> Filtrer les lignes
+            </h2>
+            <span className="text-xs bg-blue-100 text-blue-700 font-medium px-2 py-0.5 rounded-full">
+              {activeCount} / {rows.length} activée{activeCount > 1 ? 's' : ''}
+            </span>
+          </div>
+          <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-0.5 rounded">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-1 min-h-0">
+          {/* Left panel — column value filter */}
+          <div className="w-52 shrink-0 border-r border-outlook-border flex flex-col bg-gray-50">
+            <div className="px-3 pt-3 pb-2">
+              <p className="text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wider mb-2">
+                Filtre rapide par valeur
+              </p>
+              <select
+                value={filterCol}
+                onChange={e => { setFilterCol(e.target.value); setFilterVal(''); }}
+                className="w-full text-xs border border-outlook-border rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+              >
+                {columns.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
+              {distinctValues.map(val => {
+                const counts = valueCounts[val] ?? { total: 0, active: 0 };
+                const allActive = counts.active === counts.total;
+                const someActive = counts.active > 0 && counts.active < counts.total;
+                return (
+                  <div key={val} className="group flex items-center gap-1.5 rounded hover:bg-white hover:shadow-sm px-1.5 py-1.5 transition-all">
+                    <button
+                      onClick={() => addValueFilter(val, !allActive)}
+                      className="flex-shrink-0"
+                      title={allActive ? `Désactiver toutes les lignes "${val}"` : `Activer toutes les lignes "${val}"`}
+                    >
+                      {allActive ? (
+                        <CheckSquare size={14} className="text-outlook-blue" />
+                      ) : someActive ? (
+                        <div className="w-3.5 h-3.5 border-2 border-outlook-blue rounded-sm flex items-center justify-center">
+                          <div className="w-1.5 h-1.5 bg-outlook-blue rounded-sm" />
+                        </div>
+                      ) : (
+                        <Square size={14} className="text-outlook-text-disabled" />
+                      )}
+                    </button>
+                    <button
+                      className="flex-1 flex items-center justify-between text-left min-w-0"
+                      onClick={() => applyValueFilter(val)}
+                      title={`Activer uniquement les lignes "${val}"`}
+                    >
+                      <span className={`text-xs truncate ${filterVal === val ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}>
+                        {val === '' ? <em className="text-outlook-text-disabled">(vide)</em> : val}
+                      </span>
+                      <span className="text-[10px] text-outlook-text-disabled ml-1 flex-shrink-0">
+                        {counts.active}/{counts.total}
+                      </span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {filterVal && (
+              <div className="px-3 pb-2">
+                <button
+                  onClick={() => setFilterVal('')}
+                  className="w-full text-xs text-outlook-text-secondary border border-outlook-border rounded px-2 py-1 hover:bg-white flex items-center justify-center gap-1"
+                >
+                  <RotateCcw size={11} /> Afficher toutes
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Right panel — row table */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Search + bulk actions */}
+            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-outlook-border">
+              <div className="relative flex-1">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outlook-text-disabled" />
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Rechercher dans les lignes…"
+                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-outlook-border rounded focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled hover:text-outlook-text-primary">
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={enableAll}
+                  className="text-[10px] text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded px-2 py-1 hover:bg-outlook-bg-hover whitespace-nowrap"
+                  title="Activer toutes les lignes"
+                >
+                  Tout activer
+                </button>
+                <button
+                  onClick={disableAll}
+                  className="text-[10px] text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded px-2 py-1 hover:bg-outlook-bg-hover whitespace-nowrap"
+                  title="Désactiver toutes les lignes"
+                >
+                  Tout désact.
+                </button>
+                <button
+                  onClick={invertAll}
+                  className="text-[10px] text-outlook-text-secondary hover:text-outlook-text-primary border border-outlook-border rounded px-2 py-1 hover:bg-outlook-bg-hover"
+                  title="Inverser la sélection"
+                >
+                  <RotateCcw size={12} />
+                </button>
+              </div>
+            </div>
+
+            {/* Row list */}
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-gray-50 border-b border-outlook-border z-10">
+                  <tr>
+                    <th className="w-8 px-2 py-2 text-center text-outlook-text-disabled font-normal">#</th>
+                    <th className="w-7 px-2 py-2"></th>
+                    {displayCols.map(col => (
+                      <th key={col} className="px-3 py-2 text-left text-outlook-text-secondary font-medium truncate max-w-[120px]" title={col}>
+                        {col}
+                      </th>
+                    ))}
+                    {columns.length > displayCols.length && (
+                      <th className="px-3 py-2 text-outlook-text-disabled font-normal text-center">
+                        +{columns.length - displayCols.length}
+                      </th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={displayCols.length + 3} className="px-3 py-6 text-center text-outlook-text-disabled">
+                        Aucune ligne ne correspond à la recherche
+                      </td>
+                    </tr>
+                  ) : visibleRows.map(({ row, idx }) => {
+                    const disabled = localDisabled.has(idx);
+                    return (
+                      <tr
+                        key={idx}
+                        onClick={() => toggle(idx)}
+                        className={`cursor-pointer border-b border-outlook-border/50 transition-colors
+                          ${disabled ? 'bg-gray-50 opacity-50' : 'hover:bg-blue-50/40'}`}
+                      >
+                        <td className="px-2 py-1.5 text-center text-outlook-text-disabled tabular-nums">{idx + 1}</td>
+                        <td className="px-2 py-1.5 text-center">
+                          {disabled
+                            ? <Square size={13} className="text-outlook-text-disabled mx-auto" />
+                            : <CheckSquare size={13} className="text-outlook-blue mx-auto" />
+                          }
+                        </td>
+                        {displayCols.map(col => (
+                          <td key={col} className={`px-3 py-1.5 truncate max-w-[140px] ${disabled ? 'text-outlook-text-disabled' : 'text-outlook-text-primary'}`} title={row[col]}>
+                            {filterCol === col && filterVal && row[col] === filterVal
+                              ? <span className="bg-yellow-100 text-yellow-800 px-0.5 rounded">{row[col]}</span>
+                              : (row[col] || <span className="text-outlook-text-disabled italic">—</span>)
+                            }
+                          </td>
+                        ))}
+                        {columns.length > displayCols.length && <td />}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Visible count hint */}
+            {visibleRows.length < rows.length && (
+              <div className="px-3 py-1.5 text-[10px] text-outlook-text-disabled border-t border-outlook-border/50">
+                {visibleRows.length} ligne{visibleRows.length > 1 ? 's' : ''} affichée{visibleRows.length > 1 ? 's' : ''} sur {rows.length}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-outlook-border bg-gray-50">
+          <p className="text-xs text-outlook-text-secondary">
+            <span className="font-medium text-outlook-text-primary">{activeCount}</span> ligne{activeCount > 1 ? 's' : ''} seront envoyées
+            {rows.length - activeCount > 0 && (
+              <span className="text-outlook-text-disabled"> · {rows.length - activeCount} ignorée{rows.length - activeCount > 1 ? 's' : ''}</span>
+            )}
+          </p>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="text-sm px-3 py-1.5 border border-outlook-border rounded hover:bg-outlook-bg-hover text-outlook-text-secondary transition-colors">
+              Annuler
+            </button>
+            <button onClick={save} className="text-sm px-4 py-1.5 bg-outlook-blue text-white rounded hover:bg-outlook-blue/90 transition-colors">
+              Appliquer ({activeCount})
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ─── Send All helper ──────────────────────────────────────────────────────────
 
 async function sendAll(
@@ -288,6 +598,8 @@ export function PublipostageTabContent({
   const [loading, setLoading] = useState(false);
   const [showNcPicker, setShowNcPicker] = useState(false);
   const [showMapping, setShowMapping] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
+  const [disabledRows, setDisabledRows] = useState<Set<number>>(new Set());
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ done: number; total: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -369,6 +681,7 @@ export function PublipostageTabContent({
         emailColumn: guessEmailColumn(columns),
         currentRowIndex: 0,
       });
+      setDisabledRows(new Set());
       toast.success(`${rows.length} ligne${rows.length > 1 ? 's' : ''} chargée${rows.length > 1 ? 's' : ''} depuis "${file.name}"`);
     } catch (e: any) {
       toast.error(e?.message ?? 'Erreur lors du chargement du fichier');
@@ -421,20 +734,26 @@ export function PublipostageTabContent({
     }
   };
 
+  // Active rows (not disabled)
+  const activeRows = useMemo(
+    () => mergeState?.rows.filter((_, i) => !disabledRows.has(i)) ?? [],
+    [mergeState, disabledRows]
+  );
+
   const handleSendAll = async () => {
     if (!mergeState) return;
-    // When in preview mode the compose holds resolved content, so use savedTemplate.
-    // Otherwise read the current compose snapshot as the template.
     const tpl = savedTemplate ?? (() => {
       const snap = composeApiRef?.current?.getComposeSnapshot();
       return snap ? { subject: snap.subject, bodyHtml: snap.bodyHtml, to: snap.to } : null;
     })();
     const snapshot = composeApiRef?.current?.getComposeSnapshot();
     if (!tpl || !snapshot) { toast.error('Impossible d\'accéder aux données du message'); return; }
+    if (!activeRows.length) { toast.error('Aucune ligne active — activez au moins une ligne dans le filtre'); return; }
 
     setSending(true);
-    setSendProgress({ done: 0, total: mergeState.rows.length });
-    const { success, errors } = await sendAll(mergeState, snapshot, tpl, (done, total) =>
+    setSendProgress({ done: 0, total: activeRows.length });
+    const filteredState = { ...mergeState, rows: activeRows };
+    const { success, errors } = await sendAll(filteredState, snapshot, tpl, (done, total) =>
       setSendProgress({ done, total })
     );
     setSending(false);
@@ -457,9 +776,10 @@ export function PublipostageTabContent({
     const snapshot = composeApiRef?.current?.getComposeSnapshot();
     if (!tpl || !snapshot) { toast.error('Impossible d\'accéder aux données du message'); return; }
     if (!snapshot.accountId) { toast.error('Aucun compte expéditeur sélectionné'); return; }
+    if (!activeRows.length) { toast.error('Aucune ligne active — activez au moins une ligne dans le filtre'); return; }
 
-    const { rows, mapping, emailColumn } = mergeState;
-    const recipients = rows.map(row => {
+    const { mapping, emailColumn } = mergeState;
+    const recipients = activeRows.map(row => {
       const resolvedSubject = applyVars(tpl.subject, row, mapping);
       const resolvedBody    = applyVars(tpl.bodyHtml, row, mapping);
       const email = emailColumn && row[emailColumn] ? row[emailColumn] : snapshot.to[0]?.address ?? '';
@@ -496,10 +816,12 @@ export function PublipostageTabContent({
   };
 
   const totalRows = mergeState?.rows.length ?? 0;
+  const activeRowCount = activeRows.length;
+  const hasFilter = disabledRows.size > 0;
   const currentRow = mergeState?.currentRowIndex ?? 0;
   const sendLabel = sending
-    ? `${sendProgress?.done ?? 0}/${sendProgress?.total ?? totalRows}`
-    : `Envoyer (${totalRows})`;
+    ? `${sendProgress?.done ?? 0}/${sendProgress?.total ?? activeRowCount}`
+    : `Envoyer (${activeRowCount})`;
 
   const modals = (
     <>
@@ -518,6 +840,15 @@ export function PublipostageTabContent({
           emailColumn={mergeState.emailColumn}
           onSave={handleSaveMapping}
           onClose={() => setShowMapping(false)}
+        />
+      )}
+      {showFilter && mergeState && (
+        <FilterRowsModal
+          rows={mergeState.rows}
+          columns={mergeState.columns}
+          disabledRows={disabledRows}
+          onSave={setDisabledRows}
+          onClose={() => setShowFilter(false)}
         />
       )}
     </>
@@ -567,6 +898,19 @@ export function PublipostageTabContent({
               active={previewMode}
             />
             <MSimplifiedButton icon={ArrowLeftRight} label="Variables" onClick={() => setShowMapping(true)} />
+            <div className="relative">
+              <MSimplifiedButton
+                icon={ListFilter}
+                label="Filtrer"
+                onClick={() => setShowFilter(true)}
+                active={hasFilter}
+              />
+              {hasFilter && (
+                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-outlook-blue text-white text-[8px] font-bold rounded-full flex items-center justify-center leading-none pointer-events-none">
+                  {totalRows - activeRowCount}
+                </span>
+              )}
+            </div>
             <MSimplifiedSep />
             <MSimplifiedButton
               icon={sending ? Loader2 : Send}
@@ -638,6 +982,7 @@ export function PublipostageTabContent({
               </button>
               <span className="text-xs font-medium tabular-nums text-outlook-text-primary px-1 min-w-[52px] text-center">
                 {currentRow + 1} / {totalRows}
+                {hasFilter && <span className="text-outlook-text-disabled text-[9px] block leading-none">({activeRowCount} actives)</span>}
               </span>
               <button
                 onClick={() => updateRow(1)}
@@ -660,6 +1005,19 @@ export function PublipostageTabContent({
               active={previewMode}
             />
             <MRibbonButton icon={ArrowLeftRight} label="Variables" onClick={() => setShowMapping(true)} />
+            <div className="relative">
+              <MRibbonButton
+                icon={ListFilter}
+                label={hasFilter ? `Filtrer (${activeRowCount})` : 'Filtrer'}
+                onClick={() => setShowFilter(true)}
+                active={hasFilter}
+              />
+              {hasFilter && (
+                <span className="absolute top-0 right-0 w-4 h-4 bg-outlook-blue text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none pointer-events-none">
+                  {totalRows - activeRowCount}
+                </span>
+              )}
+            </div>
           </MRibbonGroup>
           <MRibbonSep />
 
