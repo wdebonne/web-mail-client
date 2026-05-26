@@ -35,7 +35,8 @@
       "Bash(npm install *)",
       "Bash(Get-ChildItem -Path client\\\\src\\\\components -Recurse -Filter \"*.tsx\")",
       "Bash(Sort-Object)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
     ]
   }
 }
