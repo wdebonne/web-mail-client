@@ -1143,6 +1143,8 @@ function ContactPickerModal({
           ) : (
             contacts.map(c => {
               const isSelected = c.email ? selected.has(c.email) : false;
+              const avatarSrc = toAvatarSrc(c.avatar_data) ?? c.avatar_url ?? null;
+              const displayName = c.display_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || '?';
               return (
                 <button
                   key={c.id}
@@ -1151,13 +1153,20 @@ function ContactPickerModal({
                   className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-outlook-bg-hover transition-colors border-b border-outlook-border/50
                     ${isSelected ? 'bg-blue-50' : ''} ${!c.email ? 'opacity-40 cursor-not-allowed' : ''}`}
                 >
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0
-                    ${isSelected ? 'bg-outlook-blue text-white' : 'bg-outlook-blue/10 text-outlook-blue'}`}>
-                    {isSelected ? <Check size={14} /> : (c.display_name || c.first_name || c.email || '?')[0].toUpperCase()}
-                  </div>
+                  {isSelected ? (
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 bg-outlook-blue text-white">
+                      <Check size={14} />
+                    </div>
+                  ) : avatarSrc ? (
+                    <img src={avatarSrc} className="w-9 h-9 rounded-full object-cover flex-shrink-0" alt={displayName} />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 bg-outlook-blue/10 text-outlook-blue">
+                      {displayName[0].toUpperCase()}
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium truncate text-outlook-text-primary">
-                      {c.display_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email}
+                      {displayName}
                     </div>
                     <div className="text-xs text-outlook-text-secondary truncate">{c.email}</div>
                     {c.company && <div className="text-xs text-outlook-text-disabled truncate">{c.company}</div>}
