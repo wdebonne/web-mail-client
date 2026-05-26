@@ -594,6 +594,7 @@ export default function CalendarSidebar({
           <div
             className="fixed z-[9999] bg-white border border-outlook-border rounded-md shadow-lg p-2 w-52"
             style={{ top: colorPicker.y + 4, left: colorPicker.x + 4 }}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-wrap gap-1">
               {BASE_COLORS.map(col => (
