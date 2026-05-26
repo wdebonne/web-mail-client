@@ -1138,10 +1138,10 @@ function ContactPickerModal({
           />
         </div>
         <div className="flex-1 overflow-y-auto">
-          {contacts.length === 0 ? (
+          {contacts.filter(c => c.email).length === 0 ? (
             <div className="text-center py-8 text-outlook-text-disabled text-sm">Aucun contact trouvé</div>
           ) : (
-            contacts.map(c => {
+            contacts.filter(c => c.email).map(c => {
               const isSelected = c.email ? selected.has(c.email) : false;
               const avatarSrc = toAvatarSrc(c.avatar_data) ?? c.avatar_url ?? null;
               const displayName = c.display_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || '?';

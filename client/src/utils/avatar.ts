@@ -7,6 +7,6 @@ export function toAvatarSrc(data: string | null | undefined): string | null {
   if (!data) return null;
   const clean = data.replace(/\s/g, '');
   if (!clean) return null;
-  if (clean.startsWith('data:')) return clean;
+  if (clean.startsWith('data:') || clean.startsWith('http://') || clean.startsWith('https://')) return clean;
   return `data:image/jpeg;base64,${clean}`;
 }
