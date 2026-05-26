@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Cloud, ChevronLeft, ChevronRight, Eye, EyeOff, X, Send,
   Loader2, FileSpreadsheet, ArrowLeftRight, ListOrdered,
-  ListFilter, Search, CheckSquare, Square, RotateCcw,
+  ListFilter, Search, CheckSquare, Square, RotateCcw, Table2,
 } from 'lucide-react';
 import { api } from '../../api';
 import NextcloudFilePicker, { type NextcloudFileItem } from '../ui/NextcloudFilePicker';
@@ -42,21 +42,33 @@ function applyVars(template: string, row: MailMergeRow, mapping: Record<string, 
   });
 }
 
-async function parseSpreadsheet(file: File): Promise<{ columns: string[]; rows: MailMergeRow[] }> {
+type WorkbookInfo = {
+  sheetNames: string[];
+  sheetRowCounts: Record<string, number>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  wb: any;
+};
+
+async function readWorkbook(file: File): Promise<WorkbookInfo> {
   const XLSX = await import('xlsx');
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const wb = XLSX.read(e.target?.result, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
-        if (!json.length) { reject(new Error('Fichier vide ou sans données')); return; }
-        const columns = Object.keys(json[0]);
-        const rows = json.map(r =>
-          Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v)]))
-        );
-        resolve({ columns, rows });
+        const sheetRowCounts: Record<string, number> = {};
+        for (const name of wb.SheetNames) {
+          const ws = wb.Sheets[name];
+          const ref = ws['!ref'];
+          if (ref) {
+            const range = XLSX.utils.decode_range(ref);
+            // rows minus header row
+            sheetRowCounts[name] = Math.max(0, range.e.r - range.s.r);
+          } else {
+            sheetRowCounts[name] = 0;
+          }
+        }
+        resolve({ sheetNames: wb.SheetNames as string[], sheetRowCounts, wb });
       } catch (err: any) {
         reject(new Error(`Impossible de lire le fichier : ${err?.message}`));
       }
@@ -64,6 +76,24 @@ async function parseSpreadsheet(file: File): Promise<{ columns: string[]; rows: 
     reader.onerror = () => reject(new Error('Erreur de lecture du fichier'));
     reader.readAsArrayBuffer(file);
   });
+}
+
+async function parseSpreadsheet(
+  file: File,
+  sheetName?: string,
+): Promise<{ columns: string[]; rows: MailMergeRow[]; usedSheet: string }> {
+  const XLSX = await import('xlsx');
+  const { wb, sheetNames } = await readWorkbook(file);
+  const target = sheetName ?? sheetNames[0];
+  const ws = wb.Sheets[target];
+  if (!ws) throw new Error(`Feuille "${target}" introuvable`);
+  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+  if (!json.length) throw new Error('Feuille vide ou sans données');
+  const columns = Object.keys(json[0]);
+  const rows = json.map(r =>
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v)]))
+  );
+  return { columns, rows, usedSheet: target };
 }
 
 function guessEmailColumn(columns: string[]): string {
@@ -230,6 +260,88 @@ function MappingModal({
       </div>
     </div>,
     document.body
+  );
+}
+
+// ─── Sheet Selector Modal ─────────────────────────────────────────────────────
+
+function SheetSelectorModal({
+  fileName,
+  sheetNames,
+  sheetRowCounts,
+  onSelect,
+  onClose,
+}: {
+  fileName: string;
+  sheetNames: string[];
+  sheetRowCounts: Record<string, number>;
+  onSelect: (name: string) => void;
+  onClose: () => void;
+}) {
+  const [selected, setSelected] = useState(sheetNames[0]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl border border-outlook-border w-full max-w-sm mx-4 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-outlook-border bg-outlook-bg-secondary">
+          <div className="flex items-center gap-2">
+            <Table2 size={16} className="text-outlook-blue" />
+            <span className="text-sm font-semibold text-outlook-text-primary">Sélectionner un tableau</span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-outlook-bg-hover text-outlook-text-secondary transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* File name */}
+        <div className="px-4 pt-3 pb-1">
+          <p className="text-xs text-outlook-text-disabled truncate">{fileName}</p>
+          <p className="text-xs text-outlook-text-secondary mt-0.5">
+            Ce fichier contient {sheetNames.length} feuilles. Choisissez celle à utiliser pour le publipostage.
+          </p>
+        </div>
+
+        {/* Sheet list */}
+        <div className="px-3 py-2 flex flex-col gap-1 max-h-64 overflow-y-auto">
+          {sheetNames.map(name => (
+            <button
+              key={name}
+              onClick={() => setSelected(name)}
+              className={`flex items-center justify-between w-full px-3 py-2 rounded-lg border text-left transition-colors
+                ${selected === name
+                  ? 'border-outlook-blue bg-blue-50 text-outlook-blue'
+                  : 'border-transparent hover:border-outlook-border hover:bg-outlook-bg-hover text-outlook-text-primary'}`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <FileSpreadsheet size={14} className="shrink-0" />
+                <span className="text-sm font-medium truncate">{name}</span>
+              </div>
+              <span className="text-xs text-outlook-text-disabled ml-2 shrink-0">
+                {sheetRowCounts[name]} ligne{sheetRowCounts[name] !== 1 ? 's' : ''}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-outlook-border bg-outlook-bg-secondary">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 rounded text-sm text-outlook-text-secondary hover:bg-outlook-bg-hover transition-colors"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => onSelect(selected)}
+            className="px-4 py-1.5 rounded text-sm font-medium bg-outlook-blue text-white hover:bg-blue-600 transition-colors"
+          >
+            Utiliser cette feuille
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -599,6 +711,8 @@ export function PublipostageTabContent({
   const [showNcPicker, setShowNcPicker] = useState(false);
   const [showMapping, setShowMapping] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
+  const [showSheetSelector, setShowSheetSelector] = useState(false);
+  const [pendingFileSheets, setPendingFileSheets] = useState<{ file: File; sheetNames: string[]; sheetRowCounts: Record<string, number> } | null>(null);
   const [disabledRows, setDisabledRows] = useState<Set<number>>(new Set());
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ done: number; total: number } | null>(null);
@@ -664,17 +778,15 @@ export function PublipostageTabContent({
     }
   };
 
-  const loadFile = async (file: File) => {
-    // Exit preview before loading a new file
+  const applySheetData = async (file: File, sheetName?: string) => {
     if (previewMode) exitPreview(savedTemplate);
-
     setLoading(true);
     try {
-      const { columns, rows } = await parseSpreadsheet(file);
+      const { columns, rows, usedSheet } = await parseSpreadsheet(file, sheetName);
       const snapshot = composeApiRef?.current?.getComposeSnapshot();
       const variables = snapshot ? detectVariables(snapshot.subject, snapshot.bodyHtml) : [];
       setMergeState({
-        fileName: file.name,
+        fileName: sheetName ? `${file.name} — ${usedSheet}` : file.name,
         columns,
         rows,
         mapping: buildAutoMapping(variables, columns),
@@ -682,11 +794,43 @@ export function PublipostageTabContent({
         currentRowIndex: 0,
       });
       setDisabledRows(new Set());
-      toast.success(`${rows.length} ligne${rows.length > 1 ? 's' : ''} chargée${rows.length > 1 ? 's' : ''} depuis "${file.name}"`);
+      toast.success(`${rows.length} ligne${rows.length > 1 ? 's' : ''} chargée${rows.length > 1 ? 's' : ''} (feuille "${usedSheet}")`);
     } catch (e: any) {
       toast.error(e?.message ?? 'Erreur lors du chargement du fichier');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadFile = async (file: File) => {
+    // For CSV, skip workbook detection
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      applySheetData(file);
+      return;
+    }
+    setLoading(true);
+    try {
+      const { sheetNames, sheetRowCounts } = await readWorkbook(file);
+      if (sheetNames.length <= 1) {
+        // Single sheet — load directly (don't double-count loading state)
+        setLoading(false);
+        applySheetData(file, sheetNames[0]);
+      } else {
+        setLoading(false);
+        setPendingFileSheets({ file, sheetNames, sheetRowCounts });
+        setShowSheetSelector(true);
+      }
+    } catch (e: any) {
+      setLoading(false);
+      toast.error(e?.message ?? 'Erreur lors du chargement du fichier');
+    }
+  };
+
+  const handleSheetSelected = (sheetName: string) => {
+    setShowSheetSelector(false);
+    if (pendingFileSheets) {
+      applySheetData(pendingFileSheets.file, sheetName);
+      setPendingFileSheets(null);
     }
   };
 
@@ -859,6 +1003,15 @@ export function PublipostageTabContent({
           disabledRows={disabledRows}
           onSave={setDisabledRows}
           onClose={() => setShowFilter(false)}
+        />
+      )}
+      {showSheetSelector && pendingFileSheets && (
+        <SheetSelectorModal
+          fileName={pendingFileSheets.file.name}
+          sheetNames={pendingFileSheets.sheetNames}
+          sheetRowCounts={pendingFileSheets.sheetRowCounts}
+          onSelect={handleSheetSelected}
+          onClose={() => { setShowSheetSelector(false); setPendingFileSheets(null); }}
         />
       )}
     </>
