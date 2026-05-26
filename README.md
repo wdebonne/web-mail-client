@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.20.0-blue)
+![Version](https://img.shields.io/badge/version-1.21.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -98,7 +98,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 📎 **Glisser-déposer de pièces jointes** directement sur la fenêtre de rédaction (overlay visuel pendant le survol)
 - 🎚️ Ruban auto-adaptatif (classique ↔ simplifié selon la largeur)
 - 🎛️ **Ruban à onglets** : Accueil, Afficher, **Message** (outils de mise en forme, visible uniquement en rédaction), **Insérer** (pièces jointes, liens, images, tableaux, symboles, emojis, GIF), **Publipostage** (mail merge, visible uniquement en rédaction), **Recherche** (filtres de recherche avancée, affiché uniquement lors d'une recherche active)
-- 📨 **Publipostage (Mail Merge)** : envoi personnalisé en masse depuis un fichier source (`.csv`, `.xlsx`, `.xls`, `.ods`) chargé localement ou depuis **Nextcloud**. Variables `{NomColonne}` remplacées automatiquement dans le sujet et le corps ; mapping personnalisable si les noms diffèrent entre modèle et fichier. Aperçu par ligne avec navigation `1/N` (flèches + clavier). Envoi groupé en arrière-plan avec compteur de progression et rapport final. Disponible dans l'onglet **Publipostage** du ruban de rédaction.
+- 📨 **Publipostage (Mail Merge)** : envoi personnalisé en masse depuis un fichier source (`.csv`, `.xlsx`, `.xls`, `.ods`) chargé localement ou depuis **Nextcloud**. Variables `{NomColonne}` remplacées automatiquement dans le sujet et le corps ; mapping personnalisable si les noms diffèrent entre modèle et fichier. Aperçu par ligne avec navigation `1/N` (flèches + clavier). Envoi groupé en arrière-plan avec compteur de progression et rapport final. **Filtre des lignes** : bouton *Filtrer* dans le ruban pour sélectionner individuellement les lignes à envoyer — filtre rapide par valeur de colonne (ex. activer uniquement les lignes où "Relance" = "Oui"), recherche textuelle, cases à cocher, actions globales (tout activer / désactiver / inverser). Disponible dans l'onglet **Publipostage** du ruban de rédaction.
+- 📬 **File d'envoi en masse (Bulk Send Queue)** : au lieu d'envoyer immédiatement, le bouton *File d'attente* soumet la campagne à une file persistante en base de données. Un processeur de fond (toutes les 30 s) envoie les mails par lots en respectant un **quota configurable** (ex. 50 mails / 5 min) — admin et utilisateur ont chacun leurs réglages, avec un plafond admin strict que les utilisateurs ne peuvent pas dépasser. Chaque destinataire est suivi individuellement (en attente / envoyé / erreur) avec **3 tentatives automatiques** espacées de 5 min. Panneau de suivi utilisateur (pause / reprise / annulation, détail destinataire par destinataire, filtre et recherche). Panneau administrateur avec vue de tous les jobs de tous les utilisateurs, statistiques globales et configuration des quotas par défaut.
 - 👥📋 **Modal de sélection de contacts** : clic sur les champs destinataire pour parcourir le carnet d'adresses
 
 ### Recherche unifiée

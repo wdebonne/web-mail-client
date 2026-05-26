@@ -11,6 +11,47 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.21.0] - 2026-05-26
+
+### Ajouté
+
+- **File d'envoi en masse (Bulk Send Queue)**
+  - Nouveau bouton **File d'attente** dans l'onglet **Publipostage** du ruban de rédaction (à côté du bouton *Envoyer*) : soumet l'ensemble de la campagne à une file persistante en base de données au lieu d'envoyer immédiatement depuis le navigateur.
+  - **Trois nouvelles tables PostgreSQL** : `bulk_send_jobs` (une ligne par campagne), `bulk_send_recipients` (une ligne par destinataire avec statut individuel), `bulk_send_user_settings` (réglages de débit par utilisateur).
+  - **Processeur de fond** (`bulkSendProcessor.ts`) démarré au lancement du serveur : tourne toutes les **30 secondes**, identifie les jobs actifs, respecte le quota de débit de chaque utilisateur et envoie les emails en lots.
+  - **Rate limiting configurable à deux niveaux** :
+    - *Admin* (paramètres globaux) : nombre max de mails par fenêtre de temps, durée de la fenêtre, plafond maximal et fenêtre minimale que les utilisateurs peuvent configurer.
+    - *Utilisateur* : réglage personnel de son propre quota dans les limites fixées par l'admin (plafond admin strict, impossible à dépasser).
+  - **3 tentatives automatiques** par destinataire : en cas d'échec d'envoi, la remise est retentée 2 fois supplémentaires avec un délai de 5 min entre chaque. Au-delà, le destinataire est marqué en erreur définitive.
+  - **Panneau de suivi utilisateur** (`BulkSendQueuePanel`) : liste de ses campagnes avec barre de progression (envoyés / erreurs / total), badges de statut, boutons **Pause / Reprendre / Annuler**, détail cliquable par campagne avec liste des destinataires filtrables (par statut ou email), modal de réglage du débit personnel, recherche et filtre par statut.
+  - **Panneau administrateur** (`AdminBulkSend`, onglet *Messagerie → Envoi en masse*) : vue de **tous les jobs de tous les utilisateurs**, statistiques globales (en attente / en cours / en pause / total envoyés / total erreurs), tableau avec détail par campagne, recherche globale (nom, email utilisateur), filtre par statut, annulation de n'importe quel job, panneau de configuration des paramètres de débit par défaut.
+  - 7 nouveaux endpoints API :
+    - `POST /api/bulk-send/jobs` — créer une campagne
+    - `GET /api/bulk-send/jobs` — lister ses campagnes (paginé, filtrable)
+    - `GET /api/bulk-send/jobs/:id` — détail d'une campagne + destinataires
+    - `POST /api/bulk-send/jobs/:id/pause|resume` — pause / reprise
+    - `DELETE /api/bulk-send/jobs/:id` — annulation
+    - `GET|PUT /api/bulk-send/settings` — réglages de débit utilisateur
+    - `GET|PUT /api/admin/bulk-send/settings` — réglages globaux admin
+    - `GET /api/admin/bulk-send/jobs` — tous les jobs (admin)
+    - `GET /api/admin/bulk-send/stats` — statistiques agrégées (admin)
+
+- **Filtre des lignes dans le Publipostage**
+  - Nouveau bouton **Filtrer** dans le ruban Publipostage (modes classique et compact), disponible dès qu'un fichier source est chargé.
+  - Un **badge bleu** sur le bouton indique le nombre de lignes actuellement **exclues** de l'envoi dès qu'un filtre est actif.
+  - **Modal de sélection des lignes** (`FilterRowsModal`) avec deux panneaux :
+    - *Panneau gauche — Filtre rapide par valeur* : sélecteur de colonne, liste des valeurs distinctes avec compteur `actives/total`, triple interaction :
+      - **Case à cocher** = activer/désactiver toutes les lignes de cette valeur
+      - **Clic sur la valeur** = activer *uniquement* les lignes correspondantes et désactiver toutes les autres (idéal pour « je veux seulement les lignes où "Relance" = "Oui" »)
+      - Mise en **surbrillance jaune** de la valeur filtrée dans le tableau de droite
+    - *Panneau droit — Tableau des lignes* : recherche textuelle sur toutes les colonnes, liste paginée avec cases à cocher, lignes désactivées grisées et transparentes, affichage de 6 colonnes maximum avec compteur des colonnes supplémentaires.
+  - Boutons d'action globale : **Tout activer**, **Tout désactiver**, **Inverser la sélection**.
+  - Le pied de la modal affiche un résumé : *X lignes seront envoyées · Y ignorées*.
+  - Les boutons **Envoyer** et **File d'attente** du ruban n'envoient que les lignes actives ; leurs compteurs reflètent le nombre de lignes actives (ex. `Envoyer (47)` sur 50 lignes).
+  - Rechargement d'un fichier source → réinitialisation automatique du filtre.
+
+---
+
 ## [1.20.0] - 2026-05-25
 
 ### Ajouté
