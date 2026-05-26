@@ -806,8 +806,14 @@ mailRouter.get('/badge', async (req: AuthRequest, res) => {
     const sourceRaw = String(req.query.source || 'inbox-unread');
     const source: BadgeSource =
       sourceRaw === 'inbox-recent' || sourceRaw === 'inbox-total' ? sourceRaw : 'inbox-unread';
-    const scope = String(req.query.scope || 'all') === 'default' ? 'default' : 'all';
-    const cacheKey = `${req.userId}:${source}:${scope}`;
+    const scopeRaw = String(req.query.scope || 'all');
+    const scope: 'all' | 'default' | 'custom' =
+      scopeRaw === 'default' ? 'default' : scopeRaw === 'custom' ? 'custom' : 'all';
+    const requestedIds: string[] =
+      scope === 'custom' && req.query.accountIds
+        ? String(req.query.accountIds).split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+    const cacheKey = `${req.userId}:${source}:${scope}:${requestedIds.sort().join(',')}`;
     const cached = badgeCache.get(cacheKey);
     if (cached && Date.now() - cached.at < BADGE_TTL_MS) {
       return res.json({ source, scope, ...cached.value, cached: true });
@@ -825,10 +831,16 @@ mailRouter.get('/badge', async (req: AuthRequest, res) => {
           AND NOT EXISTS (SELECT 1 FROM mailbox_assignments mba2 WHERE mba2.mail_account_id = ma.id AND mba2.user_id = $1)`,
       [req.userId],
     );
-    let accountIds: string[] = accountsResult.rows.map((r: any) => r.id);
+    const allowedIds = new Set<string>(accountsResult.rows.map((r: any) => r.id));
+    let accountIds: string[];
     if (scope === 'default') {
       const def = accountsResult.rows.find((r: any) => r.is_default);
-      accountIds = def ? [def.id] : accountIds.slice(0, 1);
+      accountIds = def ? [def.id] : accountsResult.rows.slice(0, 1).map((r: any) => r.id);
+    } else if (scope === 'custom' && requestedIds.length > 0) {
+      // On ne garde que les IDs qui appartiennent réellement à cet utilisateur.
+      accountIds = requestedIds.filter((id) => allowedIds.has(id));
+    } else {
+      accountIds = [...allowedIds];
     }
 
     const perAccount: Array<{ accountId: string; count: number }> = [];

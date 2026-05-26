@@ -11,6 +11,10 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision: string | null }>;
 };
 
+// Dernier compteur de messages non-lus transmis par le client.
+// Permet de ré-appliquer la pastille si l'app est fermée quand la notif est supprimée.
+let storedBadgeCount = 0;
+
 // Precache build assets injected by Vite PWA
 precacheAndRoute(self.__WB_MANIFEST || []);
 
@@ -201,6 +205,31 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
       }
     }
     await self.clients.openWindow(targetUrl);
+  })());
+});
+
+self.addEventListener('message', (event: MessageEvent) => {
+  if (event.data?.type === 'badge-count-update') {
+    storedBadgeCount = event.data.count ?? 0;
+  }
+});
+
+// Quand l'utilisateur supprime une notification sans ouvrir l'app, Android
+// efface la pastille. On la ré-applique immédiatement.
+self.addEventListener('notificationclose', (event: NotificationEvent) => {
+  event.waitUntil((async () => {
+    const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (clientsList.length > 0) {
+      // L'app est ouverte : on lui demande de rafraîchir le badge depuis le serveur.
+      for (const client of clientsList) {
+        (client as WindowClient).postMessage({ type: 'notification-dismissed-refresh' });
+      }
+    } else if (storedBadgeCount > 0) {
+      // L'app est fermée : on ré-applique le dernier compteur connu.
+      try {
+        await (self.navigator as any).setAppBadge?.(storedBadgeCount);
+      } catch { /* noop */ }
+    }
   })());
 });
 

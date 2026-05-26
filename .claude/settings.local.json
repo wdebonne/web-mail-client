@@ -38,7 +38,10 @@
       "Bash(npx vite *)",
       "Bash(node_modules/.bin/tsc --noEmit)",
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\client\\\\src\\\\components\\\\calendar\" -Recurse -File)",
-      "Bash(Get-ChildItem -Recurse -Directory)"
+      "Bash(Get-ChildItem -Recurse -Directory)",
+      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\" -Recurse -File -Name)",
+      "Bash(Select-Object -First 50)",
+      "PowerShell(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\" -Recurse -File | Where-Object { $_.Extension -in '.js', '.ts', '.tsx', '.jsx', '.html', '.json' } | Select-Object -First 100 | ForEach-Object { $_.FullName })"
     ]
   }
 }

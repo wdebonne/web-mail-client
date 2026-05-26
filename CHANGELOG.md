@@ -11,6 +11,29 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.22.0] - 2026-05-26
+
+### Ajouté
+
+- **Sélection des comptes pour la pastille PWA**
+  - Le paramètre **Comptes pris en compte** dans *Réglages → Notifications → Pastille de l'application* propose désormais trois modes :
+    - **Boîte de réception unifiée** — additionne tous les comptes (comportement précédent).
+    - **Compte par défaut uniquement** — n'utilise que la boîte principale de l'utilisateur.
+    - **Sélection personnalisée…** — affiche une liste de cases à cocher avec le nom, l'adresse e-mail et la couleur de chaque boîte mail. L'utilisateur sélectionne librement une ou plusieurs boîtes dont les non-lus sont additionnés.
+  - Un avertissement s'affiche si la sélection personnalisée est vide (pastille resterait à 0).
+  - La vérification de sécurité côté serveur garantit qu'un compte ne peut être ciblé que s'il appartient ou est assigné à l'utilisateur (les IDs fournis non autorisés sont silencieusement ignorés).
+
+### Corrigé
+
+- **Pastille PWA indépendante des notifications push**
+  - Sur Android, supprimer une notification push depuis le centre de notifications effaçait également la pastille sur l'icône de l'application, même si des mails non lus étaient toujours présents.
+  - Le service worker écoute désormais l'événement `notificationclose` :
+    - Si l'application est ouverte en arrière-plan, le client reçoit un message `notification-dismissed-refresh` et relance immédiatement un rafraîchissement du compteur depuis le serveur.
+    - Si l'application est fermée, le service worker ré-applique directement le dernier compteur connu via `navigator.setAppBadge()`.
+  - Le service de pastille (`appBadgeService`) transmet le compteur courant au service worker via `postMessage` à chaque mise à jour, assurant la cohérence même après un redémarrage de l'application.
+
+---
+
 ## [1.21.0] - 2026-05-26
 
 ### Ajouté

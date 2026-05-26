@@ -116,15 +116,18 @@ export interface NotificationPrefs {
 
 /** Configuration de la pastille type Outlook (compteur sur l'icône PWA). */
 export type AppBadgeSource = 'inbox-unread' | 'inbox-recent' | 'inbox-total';
-export type AppBadgeScope = 'all' | 'default';
+/** 'all' = tous les comptes, 'default' = compte par défaut, 'custom' = sélection manuelle. */
+export type AppBadgeScope = 'all' | 'default' | 'custom';
 
 export interface AppBadgePrefs {
   /** Active la mise à jour de la pastille de l'icône PWA. */
   enabled: boolean;
   /** Information remontée par la pastille. */
   source: AppBadgeSource;
-  /** Comptes pris en compte : tous (assignés et possédés) ou uniquement le compte par défaut. */
+  /** Comptes pris en compte : tous, uniquement le défaut, ou une sélection personnalisée. */
   scope: AppBadgeScope;
+  /** IDs des comptes à inclure quand scope === 'custom'. */
+  accountIds?: string[];
   /** Cadence de rafraîchissement en arrière-plan (1 à 60 minutes). */
   refreshIntervalMinutes: number;
   /** Quand l'utilisateur lit/archive un mail dans l'app, on tente une mise à jour immédiate. */
