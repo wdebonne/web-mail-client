@@ -448,8 +448,11 @@ export class NextCloudService {
   }
 
   private parseVCard(vcard: string): any {
+    // Unfold vCard lines per RFC 6350: CRLF or LF followed by LWSP is a continuation
+    const unfolded = vcard.replace(/\r?\n[ \t]/g, '');
+
     const get = (field: string) => {
-      const match = vcard.match(new RegExp(`${field}[^:]*:(.+)`, 'i'));
+      const match = unfolded.match(new RegExp(`^${field}[^:]*:(.+)`, 'im'));
       return match ? match[1].trim() : undefined;
     };
 

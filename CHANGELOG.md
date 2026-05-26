@@ -9,6 +9,20 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Corrigé
+
+- **Contacts Nextcloud : caractères `&#13;` dans les noms et e-mails**
+  - Les données vCard embarquées dans le XML CardDAV contiennent des retours chariot encodés en entités XML (`&#13;`). Le parser regex ne décodait pas ces entités, les stockant telles quelles en base.
+  - Le vCard extrait est maintenant nettoyé des entités XML courantes (`&#13;`, `&amp;`, `&lt;`, `&gt;`) avant parsing.
+
+- **Photos de contacts Nextcloud cassées**
+  - Les données base64 des photos vCard sont réparties sur plusieurs lignes repliées (RFC 6350 line folding). La regex de parsing ne capturait que la première ligne, tronquant le base64 et rendant l'image invalide.
+  - Le vCard est désormais déplié (`\r?\n` suivi d'un espace/tabulation supprimé) avant extraction des champs. La regex bénéficie aussi d'une ancre de début de ligne (`^` + flag `m`) pour éviter les faux positifs.
+  - Les URLs de photo (`http://` / `https://`) sont maintenant passées telles quelles dans `toAvatarSrc` au lieu d'être encodées à tort en base64.
+
+- **Carnet d'adresses : contacts sans adresse e-mail masqués**
+  - Les contacts sans e-mail apparaissaient dans la liste du carnet d'adresses (modale de composition) en état désactivé. Ils sont maintenant filtrés et n'apparaissent plus.
+
 ---
 
 ## [1.22.0] - 2026-05-26
