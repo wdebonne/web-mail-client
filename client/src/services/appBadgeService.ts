@@ -85,6 +85,8 @@ async function reconfigure() {
         lastShown = 0;
       } catch { /* noop */ }
     }
+    // Informer le SW de fermer la notification-résumé silencieuse.
+    notifySWBadgeCount(0);
     return;
   }
 

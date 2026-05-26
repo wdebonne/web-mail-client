@@ -62,6 +62,34 @@ async function applyBadgeFromDB(): Promise<void> {
   }
 }
 
+// ── Notification persistante silencieuse ────────────────────────────────────
+// Sur Android Chrome, le badge est couplé au système de notifications Android.
+// Zéro notification active = Android efface le badge (limitation navigateur).
+// Solution identique à Gmail / Outlook Android : maintenir une notification
+// silencieuse et invisible qui porte le compteur, remplacée à chaque changement.
+
+const SUMMARY_TAG = 'unread-badge-summary';
+
+async function updateSummaryNotification(count: number): Promise<void> {
+  // Fermer toute notification-résumé existante (via `tag` elle sera remplacée
+  // automatiquement si count > 0, mais on close explicitement si count = 0).
+  if (count <= 0) {
+    const existing = await self.registration.getNotifications({ tag: SUMMARY_TAG });
+    for (const n of existing) n.close();
+    return;
+  }
+  const label = count === 1 ? '1 mail non lu' : `${count} mails non lus`;
+  await self.registration.showNotification(label, {
+    body: 'WebMail — Appuyer pour ouvrir la boîte de réception',
+    tag: SUMMARY_TAG,
+    silent: true,
+    requireInteraction: false,
+    badge: '/icon-192.png',
+    icon: '/icon-192.png',
+    data: { isSummary: true, url: '/', count },
+  } as any);
+}
+
 // Precache build assets injected by Vite PWA
 precacheAndRoute(self.__WB_MANIFEST || []);
 
@@ -195,6 +223,7 @@ self.addEventListener('push', (event: PushEvent) => {
     if (typeof payload.unreadCount === 'number' && payload.unreadCount > 0) {
       await writeBadgeCount(payload.unreadCount);
       try { await (self.navigator as any).setAppBadge?.(payload.unreadCount); } catch { /* noop */ }
+      await updateSummaryNotification(payload.unreadCount);
     }
 
     // Si un client est ouvert au premier plan, on lui demande de jouer le son
@@ -267,25 +296,36 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
 
 self.addEventListener('message', (event: MessageEvent) => {
   if (event.data?.type === 'badge-count-update') {
+    const count: number = event.data.count ?? 0;
     // Persisté dans IndexedDB — survit aux redémarrages du SW.
-    writeBadgeCount(event.data.count ?? 0).catch(() => {});
+    writeBadgeCount(count).catch(() => {});
+    // Mettre à jour la notification silencieuse qui maintient le badge sur Android.
+    updateSummaryNotification(count).catch(() => {});
   }
 });
 
-// Quand l'utilisateur supprime une notification sans ouvrir l'app, Android efface
-// la pastille. On la ré-applique depuis IndexedDB (persiste après redémarrage SW).
+// Quand une notification est supprimée, Android efface le badge si c'était la
+// dernière notification active. On ré-applique le badge ET on recrée la
+// notification-résumé silencieuse pour le maintenir (comportement Gmail/Outlook).
 self.addEventListener('notificationclose', (event: NotificationEvent) => {
+  const data = (event.notification.data || {}) as Record<string, any>;
   event.waitUntil((async () => {
+    // Ré-appliquer le badge depuis IDB dans tous les cas.
+    await applyBadgeFromDB();
+
     const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (clientsList.length > 0) {
-      // L'app est ouverte : on lui demande de rafraîchir le badge depuis le serveur.
+      // L'app est ouverte : lui demander de rafraîchir le badge depuis le serveur.
       for (const client of clientsList) {
         (client as WindowClient).postMessage({ type: 'notification-dismissed-refresh' });
       }
-    } else {
-      // L'app est fermée : on ré-applique depuis IndexedDB.
-      await applyBadgeFromDB();
     }
+
+    // Recréer la notification-résumé pour maintenir le badge.
+    // Si c'était la notification-résumé elle-même qui a été supprimée, on la
+    // recrée immédiatement (comme Gmail quand on supprime son "X unread" badge).
+    const count = await readBadgeCount();
+    await updateSummaryNotification(count);
   })());
 });
 
