@@ -24,6 +24,7 @@ import AdminApplications from '../components/admin/AdminApplications';
 import AdminSmtpSettings from '../components/admin/AdminSmtpSettings';
 import AdminBackup from '../components/admin/AdminBackup';
 import AdminMigration from '../components/admin/AdminMigration';
+import AdminBulkSend from '../components/admin/AdminBulkSend';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
@@ -31,7 +32,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -58,6 +59,7 @@ export default function AdminPage() {
     { id: 'mailtemplates' as const,     icon: FileText,   label: t('admin.tab.mailtemplates'),       group: t('admin.group.mail') },
     { id: 'rules' as const,             icon: Filter,     label: t('admin.tab.rules'),               group: t('admin.group.mail') },
     { id: 'distributionlists' as const, icon: BookOpen,   label: 'Listes de distribution',           group: t('admin.group.mail') },
+    { id: 'bulksend' as const,          icon: Send,       label: 'Envoi en masse',                   group: t('admin.group.mail') },
     // Calendrier
     { id: 'calendars' as const,      icon: Calendar,        label: t('admin.tab.calendars'),      group: t('admin.group.calendar') },
     // Intégrations
@@ -163,6 +165,7 @@ export default function AdminPage() {
             {tab === 'security' && <SecurityPanel />}
             {tab === 'backup' && <AdminBackup />}
             {tab === 'migration' && <AdminMigration />}
+            {tab === 'bulksend' && <AdminBulkSend />}
           </div>
         </div>
       </div>
