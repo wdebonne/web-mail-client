@@ -819,6 +819,16 @@ export function PublipostageTabContent({
   const activeRowCount = activeRows.length;
   const hasFilter = disabledRows.size > 0;
   const currentRow = mergeState?.currentRowIndex ?? 0;
+  const currentRowIsDisabled = disabledRows.has(currentRow);
+  // 1-based position of currentRow within active rows (0 if current row is disabled)
+  const activeRowPosition = useMemo(() => {
+    if (!hasFilter) return currentRow + 1;
+    let pos = 0;
+    for (let i = 0; i <= currentRow; i++) {
+      if (!disabledRows.has(i)) pos++;
+    }
+    return pos;
+  }, [hasFilter, currentRow, disabledRows]);
   const sendLabel = sending
     ? `${sendProgress?.done ?? 0}/${sendProgress?.total ?? activeRowCount}`
     : `Envoyer (${activeRowCount})`;
@@ -880,7 +890,9 @@ export function PublipostageTabContent({
               <ChevronLeft size={14} />
             </button>
             <span className="text-xs tabular-nums text-outlook-text-primary px-1 min-w-[40px] text-center">
-              {currentRow + 1}/{totalRows}
+              {hasFilter
+                ? (currentRowIsDisabled ? `⊘/${activeRowCount}` : `${activeRowPosition}/${activeRowCount}`)
+                : `${currentRow + 1}/${totalRows}`}
             </span>
             <button
               onClick={() => updateRow(1)}
@@ -981,8 +993,12 @@ export function PublipostageTabContent({
                 <ChevronLeft size={16} />
               </button>
               <span className="text-xs font-medium tabular-nums text-outlook-text-primary px-1 min-w-[52px] text-center">
-                {currentRow + 1} / {totalRows}
-                {hasFilter && <span className="text-outlook-text-disabled text-[9px] block leading-none">({activeRowCount} actives)</span>}
+                {hasFilter
+                  ? (currentRowIsDisabled ? `⊘ / ${activeRowCount}` : `${activeRowPosition} / ${activeRowCount}`)
+                  : `${currentRow + 1} / ${totalRows}`}
+                {hasFilter && currentRowIsDisabled && (
+                  <span className="text-outlook-text-disabled text-[9px] block leading-none">ignorée</span>
+                )}
               </span>
               <button
                 onClick={() => updateRow(1)}
