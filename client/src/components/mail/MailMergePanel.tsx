@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Cloud, ChevronLeft, ChevronRight, Eye, X, Send,
+  Cloud, ChevronLeft, ChevronRight, Eye, EyeOff, X, Send,
   Loader2, FileSpreadsheet, ArrowLeftRight,
 } from 'lucide-react';
 import { api } from '../../api';
@@ -232,131 +232,12 @@ function MappingModal({
   );
 }
 
-// ─── Preview Modal ────────────────────────────────────────────────────────────
-
-function PreviewModal({
-  mergeState, subject, bodyHtml,
-  onRowChange, onClose,
-}: {
-  mergeState: MailMergeState;
-  subject: string;
-  bodyHtml: string;
-  onRowChange: (i: number) => void;
-  onClose: () => void;
-}) {
-  const { rows, mapping, emailColumn, currentRowIndex } = mergeState;
-  const row = rows[currentRowIndex] ?? {};
-  const total = rows.length;
-
-  const resolvedSubject = applyVars(subject, row, mapping);
-  const resolvedBody   = applyVars(bodyHtml, row, mapping);
-  const recipientEmail = emailColumn ? (row[emailColumn] || '—') : null;
-
-  const prev = () => { if (currentRowIndex > 0) onRowChange(currentRowIndex - 1); };
-  const next = () => { if (currentRowIndex < total - 1) onRowChange(currentRowIndex + 1); };
-
-  // Keyboard navigation
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') prev();
-      if (e.key === 'ArrowRight') next();
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  });
-
-  return createPortal(
-    <div className="fixed inset-0 z-[9500] flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white rounded-lg shadow-xl w-[720px] max-h-[88vh] flex flex-col border border-outlook-border">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-outlook-border bg-outlook-bg-secondary">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold text-outlook-text-primary">Aperçu du publipostage</h2>
-            <div className="flex items-center gap-0.5 bg-white border border-outlook-border rounded px-1">
-              <button
-                onClick={prev}
-                disabled={currentRowIndex === 0}
-                className="p-0.5 rounded hover:bg-outlook-bg-hover disabled:opacity-30 text-outlook-text-secondary transition-colors"
-                title="Ligne précédente (←)"
-              >
-                <ChevronLeft size={15} />
-              </button>
-              <span className="text-xs font-medium tabular-nums text-outlook-text-primary px-2 min-w-[52px] text-center">
-                {currentRowIndex + 1} / {total}
-              </span>
-              <button
-                onClick={next}
-                disabled={currentRowIndex === total - 1}
-                className="p-0.5 rounded hover:bg-outlook-bg-hover disabled:opacity-30 text-outlook-text-secondary transition-colors"
-                title="Ligne suivante (→)"
-              >
-                <ChevronRight size={15} />
-              </button>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-outlook-text-secondary hover:text-outlook-text-primary p-0.5 rounded">
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Email meta */}
-        <div className="px-4 py-2 bg-outlook-bg-secondary border-b border-outlook-border space-y-1">
-          {recipientEmail !== null && (
-            <div className="flex gap-2 text-sm">
-              <span className="text-outlook-text-secondary w-14 shrink-0 text-right">À :</span>
-              <span className="text-outlook-text-primary">{recipientEmail}</span>
-            </div>
-          )}
-          <div className="flex gap-2 text-sm">
-            <span className="text-outlook-text-secondary w-14 shrink-0 text-right">Objet :</span>
-            <span className="text-outlook-text-primary font-medium">{resolvedSubject || <em className="opacity-50">sans objet</em>}</span>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5">
-          <div
-            className="text-sm text-outlook-text-primary leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: resolvedBody }}
-          />
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-outlook-border">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={prev}
-              disabled={currentRowIndex === 0}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded border border-outlook-border hover:bg-outlook-bg-hover disabled:opacity-30 text-outlook-text-secondary transition-colors"
-            >
-              <ChevronLeft size={13} /> Précédent
-            </button>
-            <span className="text-xs text-outlook-text-disabled tabular-nums">{currentRowIndex + 1} / {total}</span>
-            <button
-              onClick={next}
-              disabled={currentRowIndex === total - 1}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded border border-outlook-border hover:bg-outlook-bg-hover disabled:opacity-30 text-outlook-text-secondary transition-colors"
-            >
-              Suivant <ChevronRight size={13} />
-            </button>
-          </div>
-          <button onClick={onClose} className="text-sm px-3 py-1.5 border border-outlook-border rounded hover:bg-outlook-bg-hover text-outlook-text-secondary transition-colors">
-            Fermer
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
 // ─── Send All helper ──────────────────────────────────────────────────────────
 
 async function sendAll(
   mergeState: MailMergeState,
   snapshot: ReturnType<ComposeApi['getComposeSnapshot']>,
+  template: { subject: string; bodyHtml: string },
   onProgress: (done: number, total: number) => void,
 ): Promise<{ success: number; errors: number }> {
   const { rows, mapping, emailColumn } = mergeState;
@@ -365,8 +246,9 @@ async function sendAll(
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const resolvedSubject = applyVars(snapshot.subject, row, mapping);
-    const resolvedBody    = applyVars(snapshot.bodyHtml, row, mapping);
+    // Always resolve from the saved template, not from the (possibly previewed) compose state
+    const resolvedSubject = applyVars(template.subject, row, mapping);
+    const resolvedBody    = applyVars(template.bodyHtml, row, mapping);
     const toRecipients    = emailColumn && row[emailColumn]
       ? [{ address: row[emailColumn], name: '' }]
       : snapshot.to;
@@ -405,11 +287,17 @@ export function PublipostageTabContent({
   const [ncLinked, setNcLinked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showNcPicker, setShowNcPicker] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
   const [showMapping, setShowMapping] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ done: number; total: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Inline preview state ────────────────────────────────────────────────────
+  // When previewMode is true, the compose editor shows resolved values for the
+  // current row. savedTemplate holds the original {variable} content so it can
+  // be restored when preview is toggled off.
+  const [previewMode, setPreviewMode] = useState(false);
+  const [savedTemplate, setSavedTemplate] = useState<{ subject: string; bodyHtml: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -419,7 +307,47 @@ export function PublipostageTabContent({
     return () => { cancelled = true; };
   }, []);
 
+  // Apply resolved content for a given row index into the compose editor
+  const applyPreviewRow = useCallback((
+    rowIndex: number,
+    state: MailMergeState,
+    template: { subject: string; bodyHtml: string },
+  ) => {
+    const row = state.rows[rowIndex] ?? {};
+    const resolvedSubject = applyVars(template.subject, row, state.mapping);
+    const resolvedBody    = applyVars(template.bodyHtml, row, state.mapping);
+    composeApiRef?.current?.applyTemplate(resolvedSubject, resolvedBody);
+  }, [composeApiRef]);
+
+  // Exit preview mode and restore the original template
+  const exitPreview = useCallback((template: { subject: string; bodyHtml: string } | null) => {
+    if (template) {
+      composeApiRef?.current?.applyTemplate(template.subject, template.bodyHtml);
+    }
+    setPreviewMode(false);
+    setSavedTemplate(null);
+  }, [composeApiRef]);
+
+  // Toggle preview on/off
+  const togglePreview = () => {
+    if (!mergeState) return;
+    if (!previewMode) {
+      // Capture the current template content before we overwrite it
+      const snapshot = composeApiRef?.current?.getComposeSnapshot();
+      if (!snapshot) return;
+      const tpl = { subject: snapshot.subject, bodyHtml: snapshot.bodyHtml };
+      setSavedTemplate(tpl);
+      setPreviewMode(true);
+      applyPreviewRow(mergeState.currentRowIndex, mergeState, tpl);
+    } else {
+      exitPreview(savedTemplate);
+    }
+  };
+
   const loadFile = async (file: File) => {
+    // Exit preview before loading a new file
+    if (previewMode) exitPreview(savedTemplate);
+
     setLoading(true);
     try {
       const { columns, rows } = await parseSpreadsheet(file);
@@ -464,13 +392,41 @@ export function PublipostageTabContent({
     }
   };
 
+  // Navigate between rows; if in preview mode, update the compose editor immediately
+  const updateRow = (delta: number) => {
+    if (!mergeState) return;
+    const newIndex = Math.max(0, Math.min(mergeState.rows.length - 1, mergeState.currentRowIndex + delta));
+    if (newIndex === mergeState.currentRowIndex) return;
+    const nextState = { ...mergeState, currentRowIndex: newIndex };
+    setMergeState(nextState);
+    if (previewMode && savedTemplate) {
+      applyPreviewRow(newIndex, nextState, savedTemplate);
+    }
+  };
+
+  // Save mapping — if in preview mode, re-resolve immediately with the new mapping
+  const handleSaveMapping = (m: Record<string, string>, emailCol: string) => {
+    const nextState = mergeState ? { ...mergeState, mapping: m, emailColumn: emailCol } : null;
+    setMergeState(nextState);
+    if (previewMode && savedTemplate && nextState) {
+      applyPreviewRow(nextState.currentRowIndex, nextState, savedTemplate);
+    }
+  };
+
   const handleSendAll = async () => {
     if (!mergeState) return;
+    // When in preview mode the compose holds resolved content, so use savedTemplate.
+    // Otherwise read the current compose snapshot as the template.
+    const tpl = savedTemplate ?? (() => {
+      const snap = composeApiRef?.current?.getComposeSnapshot();
+      return snap ? { subject: snap.subject, bodyHtml: snap.bodyHtml } : null;
+    })();
     const snapshot = composeApiRef?.current?.getComposeSnapshot();
-    if (!snapshot) { toast.error('Impossible d\'accéder aux données du message'); return; }
+    if (!tpl || !snapshot) { toast.error('Impossible d\'accéder aux données du message'); return; }
+
     setSending(true);
     setSendProgress({ done: 0, total: mergeState.rows.length });
-    const { success, errors } = await sendAll(mergeState, snapshot, (done, total) =>
+    const { success, errors } = await sendAll(mergeState, snapshot, tpl, (done, total) =>
       setSendProgress({ done, total })
     );
     setSending(false);
@@ -483,12 +439,13 @@ export function PublipostageTabContent({
   };
 
   const getVariables = () => {
-    const snapshot = composeApiRef?.current?.getComposeSnapshot();
-    return snapshot ? detectVariables(snapshot.subject, snapshot.bodyHtml) : [];
+    // When in preview mode, variables come from the saved template, not the resolved compose
+    const src = savedTemplate ?? (() => {
+      const snap = composeApiRef?.current?.getComposeSnapshot();
+      return snap ? { subject: snap.subject, bodyHtml: snap.bodyHtml } : null;
+    })();
+    return src ? detectVariables(src.subject, src.bodyHtml) : [];
   };
-
-  const updateRow = (delta: number) =>
-    setMergeState(s => s ? { ...s, currentRowIndex: Math.max(0, Math.min(s.rows.length - 1, s.currentRowIndex + delta)) } : s);
 
   const totalRows = mergeState?.rows.length ?? 0;
   const currentRow = mergeState?.currentRowIndex ?? 0;
@@ -505,25 +462,13 @@ export function PublipostageTabContent({
           onClose={() => setShowNcPicker(false)}
         />
       )}
-      {showPreview && mergeState && (() => {
-        const snapshot = composeApiRef?.current?.getComposeSnapshot();
-        return (
-          <PreviewModal
-            mergeState={mergeState}
-            subject={snapshot?.subject ?? ''}
-            bodyHtml={snapshot?.bodyHtml ?? ''}
-            onRowChange={i => setMergeState(s => s ? { ...s, currentRowIndex: i } : s)}
-            onClose={() => setShowPreview(false)}
-          />
-        );
-      })()}
       {showMapping && mergeState && (
         <MappingModal
           variables={getVariables()}
           columns={mergeState.columns}
           mapping={mergeState.mapping}
           emailColumn={mergeState.emailColumn}
-          onSave={(m, e) => setMergeState(s => s ? { ...s, mapping: m, emailColumn: e } : s)}
+          onSave={handleSaveMapping}
           onClose={() => setShowMapping(false)}
         />
       )}
@@ -567,7 +512,12 @@ export function PublipostageTabContent({
               <ChevronRight size={14} />
             </button>
             <MSimplifiedSep />
-            <MSimplifiedButton icon={Eye} label="Aperçu" onClick={() => setShowPreview(true)} />
+            <MSimplifiedButton
+              icon={previewMode ? EyeOff : Eye}
+              label={previewMode ? 'Quitter aperçu' : 'Aperçu'}
+              onClick={togglePreview}
+              active={previewMode}
+            />
             <MSimplifiedButton icon={ArrowLeftRight} label="Variables" onClick={() => setShowMapping(true)} />
             <MSimplifiedSep />
             <MSimplifiedButton
@@ -649,7 +599,12 @@ export function PublipostageTabContent({
 
           {/* Aperçu & Variables */}
           <MRibbonGroup label="Aperçu">
-            <MRibbonButton icon={Eye} label="Aperçu" onClick={() => setShowPreview(true)} />
+            <MRibbonButton
+              icon={previewMode ? EyeOff : Eye}
+              label={previewMode ? 'Quitter' : 'Aperçu'}
+              onClick={togglePreview}
+              active={previewMode}
+            />
             <MRibbonButton icon={ArrowLeftRight} label="Variables" onClick={() => setShowMapping(true)} />
           </MRibbonGroup>
           <MRibbonSep />
