@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Monitor, Smartphone, Tablet, Volume2, BellRing, Send, Eye, RotateCcw,
 } from 'lucide-react';
@@ -19,6 +20,8 @@ import {
   VibratePresetId, getDefaultNotificationPrefs, playNotificationSound,
   buildNotificationContent, resolveVibratePattern, detectCurrentPlatform,
 } from '../../utils/notificationPrefs';
+import { api } from '../../api';
+import { MailAccount } from '../../types';
 import NotificationPreview from './NotificationPreview';
 
 interface Props {
@@ -581,6 +584,19 @@ function AppBadgeSection({ value, onChange }: AppBadgeProps) {
   const supported = typeof navigator !== 'undefined' && 'setAppBadge' in navigator;
   const update = (patch: Partial<typeof badge>) => onChange({ ...value, appBadge: { ...badge, ...patch } });
 
+  const { data: accounts = [] } = useQuery<MailAccount[]>({
+    queryKey: ['accounts'],
+    queryFn: api.getAccounts,
+  });
+
+  const selectedIds = badge.accountIds ?? [];
+  const toggleAccount = (id: string) => {
+    const next = selectedIds.includes(id)
+      ? selectedIds.filter((x) => x !== id)
+      : [...selectedIds, id];
+    update({ accountIds: next });
+  };
+
   return (
     <div className="p-4 border border-outlook-border rounded-md bg-outlook-bg-secondary/30 space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -627,16 +643,44 @@ function AppBadgeSection({ value, onChange }: AppBadgeProps) {
           </p>
         </div>
 
-        <div>
+        <div className={badge.scope === 'custom' ? 'sm:col-span-2' : ''}>
           <label className="text-xs text-outlook-text-secondary">Comptes pris en compte</label>
           <select
             value={badge.scope}
             onChange={(e) => update({ scope: e.target.value as any })}
             className="w-full mt-1 px-2 py-1.5 text-sm border border-outlook-border rounded bg-outlook-bg-primary"
           >
-            <option value="all">Tous mes comptes (cumulé)</option>
+            <option value="all">Boîte de réception unifiée (tous les comptes)</option>
             <option value="default">Compte par défaut uniquement</option>
+            <option value="custom">Sélection personnalisée…</option>
           </select>
+          {badge.scope === 'custom' && (
+            <div className="mt-2 border border-outlook-border rounded p-2 space-y-1.5 bg-outlook-bg-primary max-h-40 overflow-y-auto">
+              {accounts.length === 0 && (
+                <p className="text-xs text-outlook-text-secondary italic">Chargement des comptes…</p>
+              )}
+              {accounts.map((acc) => (
+                <label key={acc.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-outlook-bg-secondary/40 px-1 py-0.5 rounded">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(acc.id)}
+                    onChange={() => toggleAccount(acc.id)}
+                  />
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: acc.color || '#6b7280' }}
+                  />
+                  <span className="truncate">{acc.name || acc.email}</span>
+                  <span className="text-outlook-text-secondary text-xs truncate">{acc.email}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          {badge.scope === 'custom' && selectedIds.length === 0 && accounts.length > 0 && (
+            <p className="mt-1 text-[11px] text-amber-500">
+              Aucun compte sélectionné — la pastille restera à 0.
+            </p>
+          )}
         </div>
 
         <div>

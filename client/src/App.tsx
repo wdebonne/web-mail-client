@@ -106,7 +106,7 @@ function App() {
     if (!('serviceWorker' in navigator)) return;
     const onMessage = (event: MessageEvent) => {
       const t = (event.data || {}).type;
-      if (t === 'notification-click' || t === 'play-notification-sound') {
+      if (t === 'notification-click' || t === 'play-notification-sound' || t === 'notification-dismissed-refresh') {
         requestAppBadgeRefresh();
       }
     };

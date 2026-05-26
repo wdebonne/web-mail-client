@@ -31,6 +31,12 @@ function badgingSupported(): boolean {
   return typeof navigator !== 'undefined' && 'setAppBadge' in navigator;
 }
 
+function notifySWBadgeCount(count: number) {
+  try {
+    navigator.serviceWorker?.controller?.postMessage({ type: 'badge-count-update', count });
+  } catch { /* noop */ }
+}
+
 async function applyBadge(count: number, max: number) {
   if (!badgingSupported()) return;
   const value = Math.max(0, Math.min(count, max));
@@ -41,6 +47,7 @@ async function applyBadge(count: number, max: number) {
       await (navigator as any).setAppBadge?.(value);
     }
     lastShown = value;
+    notifySWBadgeCount(value);
   } catch {
     /* Permission refusée ou plateforme non supportée — ignore. */
   }
@@ -50,7 +57,7 @@ async function refreshOnce(prefs: AppBadgePrefs) {
   if (inFlight) return;
   inFlight = true;
   try {
-    const res = await api.getBadgeCount(prefs.source, prefs.scope);
+    const res = await api.getBadgeCount(prefs.source, prefs.scope, prefs.accountIds);
     await applyBadge(res.count, prefs.maxCount);
   } catch {
     /* hors-ligne ou serveur indispo — on garde la dernière valeur. */

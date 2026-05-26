@@ -220,11 +220,15 @@ export const api = {
   /** Pastille (Web App Badging API). `source` = type d'information remontée. */
   getBadgeCount: (
     source: 'inbox-unread' | 'inbox-recent' | 'inbox-total' = 'inbox-unread',
-    scope: 'all' | 'default' = 'all',
-  ) =>
-    request<{ source: string; scope: string; count: number; perAccount: Array<{ accountId: string; count: number }>; cached?: boolean }>(
-      `/mail/badge?source=${encodeURIComponent(source)}&scope=${encodeURIComponent(scope)}`,
-    ),
+    scope: 'all' | 'default' | 'custom' = 'all',
+    accountIds?: string[],
+  ) => {
+    let url = `/mail/badge?source=${encodeURIComponent(source)}&scope=${encodeURIComponent(scope)}`;
+    if (scope === 'custom' && accountIds?.length) {
+      url += `&accountIds=${encodeURIComponent(accountIds.join(','))}`;
+    }
+    return request<{ source: string; scope: string; count: number; perAccount: Array<{ accountId: string; count: number }>; cached?: boolean }>(url);
+  },
 
   createFolder: (accountId: string, path: string) =>
     request(`/mail/accounts/${accountId}/folders`, {
