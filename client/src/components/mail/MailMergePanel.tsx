@@ -294,10 +294,10 @@ export function PublipostageTabContent({
 
   // ── Inline preview state ────────────────────────────────────────────────────
   // When previewMode is true, the compose editor shows resolved values for the
-  // current row. savedTemplate holds the original {variable} content so it can
-  // be restored when preview is toggled off.
+  // current row. savedTemplate holds the original {variable} content and
+  // original recipients so everything can be restored when preview is toggled off.
   const [previewMode, setPreviewMode] = useState(false);
-  const [savedTemplate, setSavedTemplate] = useState<{ subject: string; bodyHtml: string } | null>(null);
+  const [savedTemplate, setSavedTemplate] = useState<{ subject: string; bodyHtml: string; to: any[] } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -311,18 +311,26 @@ export function PublipostageTabContent({
   const applyPreviewRow = useCallback((
     rowIndex: number,
     state: MailMergeState,
-    template: { subject: string; bodyHtml: string },
+    template: { subject: string; bodyHtml: string; to: any[] },
   ) => {
     const row = state.rows[rowIndex] ?? {};
     const resolvedSubject = applyVars(template.subject, row, state.mapping);
     const resolvedBody    = applyVars(template.bodyHtml, row, state.mapping);
     composeApiRef?.current?.applyTemplate(resolvedSubject, resolvedBody);
+    // Update the To: field if an email column is mapped
+    if (state.emailColumn && row[state.emailColumn]) {
+      composeApiRef?.current?.setPreviewTo([{ address: row[state.emailColumn], name: '' }]);
+    } else {
+      // Restore the original recipients when no email column is configured
+      composeApiRef?.current?.setPreviewTo(template.to);
+    }
   }, [composeApiRef]);
 
-  // Exit preview mode and restore the original template
-  const exitPreview = useCallback((template: { subject: string; bodyHtml: string } | null) => {
+  // Exit preview mode and restore the original template + recipients
+  const exitPreview = useCallback((template: { subject: string; bodyHtml: string; to: any[] } | null) => {
     if (template) {
       composeApiRef?.current?.applyTemplate(template.subject, template.bodyHtml);
+      composeApiRef?.current?.setPreviewTo(template.to);
     }
     setPreviewMode(false);
     setSavedTemplate(null);
@@ -332,10 +340,10 @@ export function PublipostageTabContent({
   const togglePreview = () => {
     if (!mergeState) return;
     if (!previewMode) {
-      // Capture the current template content before we overwrite it
+      // Capture the current template content + recipients before we overwrite them
       const snapshot = composeApiRef?.current?.getComposeSnapshot();
       if (!snapshot) return;
-      const tpl = { subject: snapshot.subject, bodyHtml: snapshot.bodyHtml };
+      const tpl = { subject: snapshot.subject, bodyHtml: snapshot.bodyHtml, to: snapshot.to };
       setSavedTemplate(tpl);
       setPreviewMode(true);
       applyPreviewRow(mergeState.currentRowIndex, mergeState, tpl);
@@ -419,7 +427,7 @@ export function PublipostageTabContent({
     // Otherwise read the current compose snapshot as the template.
     const tpl = savedTemplate ?? (() => {
       const snap = composeApiRef?.current?.getComposeSnapshot();
-      return snap ? { subject: snap.subject, bodyHtml: snap.bodyHtml } : null;
+      return snap ? { subject: snap.subject, bodyHtml: snap.bodyHtml, to: snap.to } : null;
     })();
     const snapshot = composeApiRef?.current?.getComposeSnapshot();
     if (!tpl || !snapshot) { toast.error('Impossible d\'accéder aux données du message'); return; }
@@ -442,7 +450,7 @@ export function PublipostageTabContent({
     // When in preview mode, variables come from the saved template, not the resolved compose
     const src = savedTemplate ?? (() => {
       const snap = composeApiRef?.current?.getComposeSnapshot();
-      return snap ? { subject: snap.subject, bodyHtml: snap.bodyHtml } : null;
+      return snap ? { subject: snap.subject, bodyHtml: snap.bodyHtml, to: snap.to } : null;
     })();
     return src ? detectVariables(src.subject, src.bodyHtml) : [];
   };

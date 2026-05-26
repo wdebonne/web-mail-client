@@ -58,6 +58,8 @@ export interface ComposeApi {
   addFiles: (files: FileList | File[]) => void;
   applyTemplate: (subject: string, bodyHtml: string) => void;
   getComposeSnapshot: () => ComposeSnapshot;
+  /** Temporarily override the To recipients for mail-merge preview; pass the original array to restore. */
+  setPreviewTo: (to: EmailAddress[]) => void;
 }
 
 export default function ComposeModal({
@@ -283,6 +285,7 @@ export default function ComposeModal({
         ...(_snapshotRef.current ?? { accountId: '', subject: '', bodyHtml: '', to: [], cc: [], bcc: [], attachments: [] }),
         bodyHtml: editorRef.current?.innerHTML ?? _snapshotRef.current?.bodyHtml ?? '',
       }),
+      setPreviewTo: (recipients: EmailAddress[]) => setTo(recipients),
     };
     return () => { if (apiRef) apiRef.current = null; };
   }, [apiRef, addFiles, editorRef]);
