@@ -11,9 +11,56 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision: string | null }>;
 };
 
-// Dernier compteur de messages non-lus transmis par le client.
-// Permet de ré-appliquer la pastille si l'app est fermée quand la notif est supprimée.
-let storedBadgeCount = 0;
+// ── Badge persistence via IndexedDB ─────────────────────────────────────────
+// Les variables JS du SW sont effacées à chaque fois qu'Android tue le processus
+// (toutes les ~30 s d'inactivité). IndexedDB persiste, lui.
+
+const BADGE_DB = 'webmail-badge';
+const BADGE_STORE = 'kv';
+
+function openBadgeDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = self.indexedDB.open(BADGE_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(BADGE_STORE)) {
+        req.result.createObjectStore(BADGE_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function readBadgeCount(): Promise<number> {
+  try {
+    const db = await openBadgeDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(BADGE_STORE, 'readonly');
+      const req = tx.objectStore(BADGE_STORE).get('count');
+      req.onsuccess = () => { db.close(); resolve(typeof req.result === 'number' ? req.result : 0); };
+      req.onerror = () => { db.close(); resolve(0); };
+    });
+  } catch { return 0; }
+}
+
+async function writeBadgeCount(count: number): Promise<void> {
+  try {
+    const db = await openBadgeDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(BADGE_STORE, 'readwrite');
+      tx.objectStore(BADGE_STORE).put(count, 'count');
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); resolve(); };
+    });
+  } catch { /* noop */ }
+}
+
+async function applyBadgeFromDB(): Promise<void> {
+  const count = await readBadgeCount();
+  if (count > 0) {
+    try { await (self.navigator as any).setAppBadge?.(count); } catch { /* noop */ }
+  }
+}
 
 // Precache build assets injected by Vite PWA
 precacheAndRoute(self.__WB_MANIFEST || []);
@@ -96,6 +143,8 @@ interface PushPayload {
   actions?: Array<{ action: string; title: string; icon?: string }>;
   vibrate?: number[];
   timestamp?: number;
+  /** Nombre total de mails non lus dans la boîte de réception (envoyé par le serveur). */
+  unreadCount?: number;
 }
 
 self.addEventListener('push', (event: PushEvent) => {
@@ -140,6 +189,14 @@ self.addEventListener('push', (event: PushEvent) => {
 
   event.waitUntil((async () => {
     await self.registration.showNotification(title, options);
+
+    // Si le payload contient le nombre total de non-lus, on l'applique
+    // immédiatement et on le persiste dans IndexedDB pour le notificationclose.
+    if (typeof payload.unreadCount === 'number' && payload.unreadCount > 0) {
+      await writeBadgeCount(payload.unreadCount);
+      try { await (self.navigator as any).setAppBadge?.(payload.unreadCount); } catch { /* noop */ }
+    }
+
     // Si un client est ouvert au premier plan, on lui demande de jouer le son
     // configuré par l'utilisateur (Web Audio) — les sons custom ne sont pas
     // jouables depuis le Service Worker.
@@ -210,12 +267,13 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
 
 self.addEventListener('message', (event: MessageEvent) => {
   if (event.data?.type === 'badge-count-update') {
-    storedBadgeCount = event.data.count ?? 0;
+    // Persisté dans IndexedDB — survit aux redémarrages du SW.
+    writeBadgeCount(event.data.count ?? 0).catch(() => {});
   }
 });
 
-// Quand l'utilisateur supprime une notification sans ouvrir l'app, Android
-// efface la pastille. On la ré-applique immédiatement.
+// Quand l'utilisateur supprime une notification sans ouvrir l'app, Android efface
+// la pastille. On la ré-applique depuis IndexedDB (persiste après redémarrage SW).
 self.addEventListener('notificationclose', (event: NotificationEvent) => {
   event.waitUntil((async () => {
     const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -224,11 +282,9 @@ self.addEventListener('notificationclose', (event: NotificationEvent) => {
       for (const client of clientsList) {
         (client as WindowClient).postMessage({ type: 'notification-dismissed-refresh' });
       }
-    } else if (storedBadgeCount > 0) {
-      // L'app est fermée : on ré-applique le dernier compteur connu.
-      try {
-        await (self.navigator as any).setAppBadge?.(storedBadgeCount);
-      } catch { /* noop */ }
+    } else {
+      // L'app est fermée : on ré-applique depuis IndexedDB.
+      await applyBadgeFromDB();
     }
   })());
 });
