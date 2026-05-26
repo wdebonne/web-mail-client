@@ -37,7 +37,8 @@
       "Bash(Sort-Object)",
       "Bash(npx vite *)",
       "Bash(node_modules/.bin/tsc --noEmit)",
-      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\client\\\\src\\\\components\\\\calendar\" -Recurse -File)"
+      "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\\\\client\\\\src\\\\components\\\\calendar\" -Recurse -File)",
+      "Bash(Get-ChildItem -Recurse -Directory)"
     ]
   }
 }
