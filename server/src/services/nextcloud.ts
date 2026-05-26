@@ -438,7 +438,7 @@ export class NextCloudService {
     const regex = /<card:address-data>([\s\S]*?)<\/card:address-data>/g;
     let match;
     while ((match = regex.exec(xml)) !== null) {
-      const vcard = match[1].trim();
+      const vcard = match[1].trim().replace(/&#13;/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
       const contact = this.parseVCard(vcard);
       if (contact.email || contact.displayName) {
         contacts.push({ ...contact, vcard });
