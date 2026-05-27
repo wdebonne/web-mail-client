@@ -11,6 +11,34 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [1.24.0] - 2026-05-27
+
+### Ajouté
+
+- **SSO / OpenID Connect (Synology SSO Server & fournisseurs OIDC)**
+  - Nouvelle section **Admin → Intégrations → SSO / OpenID Connect** permettant de configurer l'authentification unique via n'importe quel fournisseur OIDC compatible (Synology SSO Server, Keycloak, Azure AD, etc.).
+  - Bouton **« Se connecter avec SSO »** affiché sur la page de connexion uniquement quand le SSO est activé. Les méthodes existantes (mot de passe, passkey/WebAuthn) restent disponibles en parallèle — aucune rupture de compatibilité.
+  - **Connexion transparente** : si l'utilisateur a déjà une session active chez le fournisseur (ex. DSM ouvert dans le même navigateur), la connexion à l'application se fait sans aucune saisie (1 clic → redirection → retour automatique).
+  - **Flux OIDC Authorization Code** : `state` et `nonce` stockés en session serveur pour prévenir les attaques CSRF et replay.
+  - **Discovery OIDC automatique** : les endpoints d'autorisation, token et userinfo sont récupérés automatiquement depuis `{issuerUrl}/.well-known/openid-configuration` — aucune configuration manuelle des URLs.
+  - **Auto-provisionnement** : à la première connexion SSO, le compte utilisateur est créé automatiquement en base. Les connexions suivantes mettent à jour le nom d'affichage.
+  - **Support des certificats auto-signés** : option *Vérifier le certificat TLS* désactivable pour les NAS Synology avec certificat auto-signé.
+  - **Client Secret chiffré AES-256-GCM** en base de données, jamais exposé en clair dans l'API (retourné comme `"__encrypted__"`).
+  - **URI de redirection auto-détectée** depuis le host de la requête (configurable manuellement si nécessaire).
+  - Affichage de l'URI exacte à configurer côté fournisseur directement dans l'interface admin.
+  - **Gestion des erreurs SSO** sur la page de connexion : messages explicites pour les cas `discovery_failed`, `callback_failed`, `no_email`, `account_disabled`.
+  - **Test de connexion intégré** : vérifie la discovery OIDC et retourne l'issuer découvert + l'endpoint d'autorisation.
+  - 4 nouveaux endpoints API :
+    - `GET  /api/auth/sso/config` — config publique (enabled + providerName) pour la page de login
+    - `GET  /api/auth/sso/login` — démarre le flux OIDC (redirection vers le fournisseur)
+    - `GET  /api/auth/sso/callback` — callback OIDC (échange du code, provisionnement, émission de session)
+    - `GET  /api/admin/sso/settings` — lire la configuration SSO (admin)
+    - `PUT  /api/admin/sso/settings` — enregistrer la configuration SSO (admin)
+    - `POST /api/admin/sso/test` — tester la connexion au serveur SSO (admin)
+  - Dépendance ajoutée : `openid-client@^4` (client OIDC/OAuth2 pour Node.js).
+
+---
+
 ## [1.23.0] - 2026-05-27
 
 ### Ajouté

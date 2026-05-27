@@ -32,6 +32,7 @@ L'API utilise deux méthodes d'authentification :
 - [Sauvegarde & restauration](#sauvegarde--restauration-admin)
 - [Notifications push](#notifications-push)
 - [LDAP](#ldap-admin)
+- [SSO / OpenID Connect](#sso--openid-connect-admin)
 - [Codes d'erreur](#codes-derreur)
 
 ---
@@ -2580,6 +2581,128 @@ ou (création à la volée) :
 Supprime un mapping manuel.
 
 **Réponse 200 :** `{ "ok": true }`
+
+---
+
+## SSO / OpenID Connect *(admin)*
+
+Configuration de l'authentification unique via un fournisseur OIDC (Synology SSO Server, Keycloak, Azure AD…).
+
+### GET /api/auth/sso/config
+
+Endpoint **public** — retourne la configuration minimale pour la page de connexion (bouton SSO affiché ou non).
+
+**Réponse 200 :**
+```json
+{ "enabled": true, "providerName": "Synology SSO" }
+```
+
+---
+
+### GET /api/auth/sso/login
+
+Démarre le flux OIDC Authorization Code. Redirige le navigateur vers la page d'authentification du fournisseur.
+
+> Stocke `state` et `nonce` en session serveur pour validation au callback.
+
+**Réponse :** `302 Redirect → {authorization_endpoint}?...`
+
+**Erreurs :**
+- `403` — SSO désactivé.
+- `503` — URL du serveur ou Client ID manquant.
+- `302 /login?sso_error=discovery_failed` — Serveur SSO inaccessible.
+
+---
+
+### GET /api/auth/sso/callback
+
+Callback OIDC. Reçoit le code d'autorisation du fournisseur, l'échange contre des tokens, provisionne l'utilisateur et émet une session.
+
+> Cet endpoint est appelé automatiquement par le fournisseur SSO — il ne doit pas être appelé manuellement.
+
+**Flux :**
+1. Vérifie `state` et `nonce` contre les valeurs de session.
+2. Échange le code contre `access_token` + `id_token`.
+3. Récupère les informations utilisateur (`email`, `name`) via `userinfo`.
+4. Crée ou met à jour l'utilisateur en base (`email`, `display_name`).
+5. Émet un device session + cookie `wm_refresh` (httpOnly).
+6. Redirige vers `/?sso=1` — le client appelle `/api/auth/refresh` pour obtenir le JWT.
+
+**Réponse succès :** `302 Redirect → /?sso=1`
+
+**Erreurs (redirections) :**
+- `302 /login?sso_error=callback_failed` — Erreur d'échange de code ou validation échouée.
+- `302 /login?sso_error=no_email` — Le fournisseur n'a pas retourné d'adresse email.
+- `302 /login?sso_error=account_disabled` — Le compte est désactivé dans l'application.
+
+---
+
+### GET /api/admin/sso/settings
+
+Retourne la configuration SSO. Le Client Secret est remplacé par `"__encrypted__"` s'il est enregistré.
+
+> Requiert `is_admin = true`.
+
+**Réponse 200 :**
+```json
+{
+  "sso_enabled": false,
+  "sso_provider_name": "Synology SSO",
+  "sso_issuer_url": "https://nas.local:5001/webman/sso",
+  "sso_client_id": "mon-app-client-id",
+  "sso_client_secret": "__encrypted__",
+  "sso_redirect_uri": "",
+  "sso_tls_reject_unauthorized": true
+}
+```
+
+---
+
+### PUT /api/admin/sso/settings
+
+Enregistre la configuration SSO. Le Client Secret n'est mis à jour que si une valeur différente de `"__encrypted__"` est fournie.
+
+> Requiert `is_admin = true`. Invalide le cache du client OIDC.
+
+**Body :**
+```json
+{
+  "sso_enabled": true,
+  "sso_provider_name": "Synology SSO",
+  "sso_issuer_url": "https://nas.local:5001/webman/sso",
+  "sso_client_id": "mon-app-client-id",
+  "sso_client_secret": "mon-client-secret",
+  "sso_redirect_uri": "",
+  "sso_tls_reject_unauthorized": true
+}
+```
+
+**Réponse 200 :** `{ "success": true }`
+
+---
+
+### POST /api/admin/sso/test
+
+Teste la connexion au serveur OIDC avec les paramètres fournis (ou ceux sauvegardés si non fournis). N'enregistre rien.
+
+> Requiert `is_admin = true`.
+
+**Body :** mêmes champs que `PUT /api/admin/sso/settings` (tous optionnels).
+
+**Réponse 200 (succès) :**
+```json
+{
+  "ok": true,
+  "message": "Connexion au serveur SSO réussie",
+  "issuer": "https://nas.local:5001/webman/sso",
+  "authEndpoint": "https://nas.local:5001/webman/sso/SSOOauth.cgi"
+}
+```
+
+**Réponse 200 (échec) :**
+```json
+{ "ok": false, "message": "connect ECONNREFUSED 192.168.1.10:5001" }
+```
 
 ---
 

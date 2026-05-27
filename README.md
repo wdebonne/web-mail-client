@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.23.0-blue)
+![Version](https://img.shields.io/badge/version-1.24.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -214,6 +214,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🔄 **Migration IMAP intégrée** (*Admin → Intégrations → Migration IMAP*) : wizard en 4 étapes pour transférer des boîtes mail d'un serveur IMAP vers un autre (ex. Microsoft 365 → O2switch) sans outil externe. Test de connexion des deux serveurs, sélection des dossiers à migrer avec comptage d'emails, exécution en arrière-plan avec progression en temps réel via WebSocket (barre dossiers + barre emails). Préservation des flags (lu/non-lu, étoilé) et des dates d'origine. Rapport final détaillé. Pré-configuré pour `outlook.office365.com`.
 
 - 🗂️ **Intégration LDAP / Active Directory** (*Admin → Intégrations → LDAP*) : authentification déléguée à un annuaire d'entreprise (OpenLDAP, Active Directory, Nextcloud LDAP…). L'application fonctionne en mode local par défaut ; la bascule LDAP se fait depuis l'interface admin sans redémarrage. **Auto-provisionnement** des utilisateurs à la première connexion. **Synchronisation automatique des groupes** à chaque connexion : création du groupe dans l'application si absent, liaison si déjà existant, retrait si l'utilisateur en est sorti côté LDAP. **Droits administrateur automatiques** basés sur le CN du groupe LDAP (liste configurable : `admin`, `administrateur`…) avec révocation immédiate à la prochaine connexion. Fallback sur mot de passe local configurable. Mot de passe du compte de service chiffré AES-256-GCM. Test de connexion intégré. Mappings manuels avancés pour les cas complexes (plusieurs OU à même CN). Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#ldap).
+
+- 🔐 **SSO / OpenID Connect** (*Admin → Intégrations → SSO / OpenID Connect*) : authentification unique via n'importe quel fournisseur OIDC — **Synology SSO Server**, Keycloak, Azure AD, etc. Un bouton « Se connecter avec SSO » apparaît sur la page de connexion ; si l'utilisateur a déjà une session active chez le fournisseur (ex. DSM ouvert dans le navigateur), la connexion se fait **sans aucune saisie**. Les autres méthodes (mot de passe, passkey) restent disponibles simultanément. **Auto-provisionnement** des utilisateurs à la première connexion SSO. Discovery OIDC automatique (`/.well-known/openid-configuration`). Support des certificats auto-signés. Client Secret chiffré AES-256-GCM. Test de connexion intégré. Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#sso--openid-connect).
 
 ### Intégration O2Switch (cPanel)
 - 🖥️ Gestion des comptes cPanel via UAPI v3

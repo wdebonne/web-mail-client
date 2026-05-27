@@ -485,3 +485,62 @@ Les utilisateurs membres d'un groupe LDAP dont le CN correspond à l'un des noms
 3. Activer **LDAP activé** et enregistrer.
 4. Les utilisateurs existants conservent leur compte ; à leur prochaine connexion via LDAP, leurs informations et groupes sont mis à jour automatiquement.
 5. Activer **Fallback local** pendant la période de transition si des comptes locaux de secours sont nécessaires.
+
+---
+
+## SSO / OpenID Connect
+
+L'authentification SSO se configure **entièrement depuis l'interface admin** (*Administration → Intégrations → SSO / OpenID Connect*). Aucune variable d'environnement n'est nécessaire. Le Client Secret est chiffré en base de données.
+
+### Paramètres disponibles
+
+| Paramètre | Description | Défaut |
+|-----------|-------------|--------|
+| SSO activé | Affiche le bouton SSO sur la page de connexion | `false` |
+| Libellé du bouton | Texte du bouton sur la page de login | `Synology SSO` |
+| URL du serveur OIDC | URL de base du fournisseur (discovery automatique) | — |
+| Client ID | Identifiant de l'application enregistré chez le fournisseur | — |
+| Client Secret | Chiffré AES-256-GCM en base | — |
+| URI de redirection | Laissez vide pour auto-détection | `(auto)` |
+| Vérifier certificat TLS | Désactivez pour les certificats auto-signés | `true` |
+
+### Configuration Synology SSO Server
+
+1. Sur le NAS, installer le package **SSO Server** (DSM → Centre de paquets).
+2. Ouvrir **SSO Server → Application → Ajouter**.
+3. Choisir le type **OIDC**, donner un nom à l'application.
+4. Dans *URI de redirection*, saisir : `https://<votre-domaine>/api/auth/sso/callback`
+5. Copier le **Client ID** et **Client Secret** générés.
+6. Dans l'admin WebMail → **SSO / OpenID Connect** :
+   - URL du serveur : `https://<ip-nas>:<port>/webman/sso` (ex. `https://192.168.1.10:5001/webman/sso`)
+   - Coller le Client ID et Client Secret.
+   - Si le NAS utilise un certificat auto-signé : désactiver *Vérifier le certificat TLS*.
+7. Cliquer **Tester la connexion** puis **Enregistrer**.
+
+### Flux de connexion
+
+```
+Utilisateur clique "Se connecter avec SSO"
+        ↓
+GET /api/auth/sso/login → redirection vers {authorization_endpoint}
+        ↓
+Si session SSO active chez le fournisseur → redirection immédiate (0 saisie)
+Si pas de session → page de login du fournisseur (1 fois par session navigateur)
+        ↓
+GET /api/auth/sso/callback → échange du code → provisionnement → session
+        ↓
+Redirection vers l'application → connexion automatique
+```
+
+### Compatibilité fournisseurs
+
+| Fournisseur | URL Issuer type | Notes |
+|------------|-----------------|-------|
+| Synology SSO Server | `https://nas:port/webman/sso` | Discovery OIDC supporté depuis DSM 7 |
+| Keycloak | `https://keycloak.example.com/realms/myrealm` | |
+| Azure AD | `https://login.microsoftonline.com/{tenant}/v2.0` | |
+| Google | `https://accounts.google.com` | |
+
+### Coexistence avec les autres méthodes
+
+Le SSO est **additif** : le bouton SSO s'ajoute à la page de login sans remplacer le formulaire mot de passe ni les passkeys. Chaque utilisateur peut utiliser la méthode de son choix indépendamment.
