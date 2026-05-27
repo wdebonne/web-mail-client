@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.22.0-blue)
+![Version](https://img.shields.io/badge/version-1.23.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -212,6 +212,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 💾 **Sauvegarde & restauration serveur** (*Admin → Système → Sauvegarde*) : sauvegarde complète de la base de données (utilisateurs, comptes mail, paramètres, calendriers, contacts, règles, listes de distribution, plugins, sécurité…) dans un fichier `.json.gz` chiffré. **Sauvegarde manuelle** à la demande avec label personnalisable. **Sauvegarde automatique planifiée** (quotidienne, hebdomadaire, mensuelle) avec heure configurable. **Rétention intelligente** entièrement paramétrable : conserver les N dernières, 1 par semaine sur M semaines, 1 par mois sur P mois, 1 par an sur Q ans. **Téléchargement et suppression** individuels avec confirmation. **Restauration** depuis un fichier uploadé avec option de **remplacement d'URL** automatique (migration vers un autre serveur) — les passkeys WebAuthn liées à l'ancien domaine sont supprimées automatiquement si le hostname change pour éviter tout blocage de connexion. Voir [docs/BACKUP.md](docs/BACKUP.md).
 
 - 🔄 **Migration IMAP intégrée** (*Admin → Intégrations → Migration IMAP*) : wizard en 4 étapes pour transférer des boîtes mail d'un serveur IMAP vers un autre (ex. Microsoft 365 → O2switch) sans outil externe. Test de connexion des deux serveurs, sélection des dossiers à migrer avec comptage d'emails, exécution en arrière-plan avec progression en temps réel via WebSocket (barre dossiers + barre emails). Préservation des flags (lu/non-lu, étoilé) et des dates d'origine. Rapport final détaillé. Pré-configuré pour `outlook.office365.com`.
+
+- 🗂️ **Intégration LDAP / Active Directory** (*Admin → Intégrations → LDAP*) : authentification déléguée à un annuaire d'entreprise (OpenLDAP, Active Directory, Nextcloud LDAP…). L'application fonctionne en mode local par défaut ; la bascule LDAP se fait depuis l'interface admin sans redémarrage. **Auto-provisionnement** des utilisateurs à la première connexion. **Synchronisation automatique des groupes** à chaque connexion : création du groupe dans l'application si absent, liaison si déjà existant, retrait si l'utilisateur en est sorti côté LDAP. **Droits administrateur automatiques** basés sur le CN du groupe LDAP (liste configurable : `admin`, `administrateur`…) avec révocation immédiate à la prochaine connexion. Fallback sur mot de passe local configurable. Mot de passe du compte de service chiffré AES-256-GCM. Test de connexion intégré. Mappings manuels avancés pour les cas complexes (plusieurs OU à même CN). Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#ldap).
 
 ### Intégration O2Switch (cPanel)
 - 🖥️ Gestion des comptes cPanel via UAPI v3

@@ -9,6 +9,40 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+---
+
+## [1.23.0] - 2026-05-27
+
+### Ajouté
+
+- **Intégration LDAP / Active Directory**
+  - Nouvelle section **Admin → Intégrations → LDAP** permettant de configurer et d'activer l'authentification LDAP (OpenLDAP, Active Directory, Nextcloud LDAP, etc.) sans redémarrage du serveur.
+  - L'application fonctionne **en mode local par défaut** ; la migration vers LDAP se fait depuis l'interface admin à tout moment.
+  - **Authentification par bind en deux étapes** : un compte de service recherche le DN de l'utilisateur, puis un second bind valide ses identifiants auprès du serveur LDAP.
+  - **Auto-provisionnement** : à la première connexion LDAP, le compte utilisateur est créé automatiquement en base avec son nom d'affichage et ses droits ; les connexions suivantes mettent à jour les informations.
+  - **Fallback local configurable** : si le serveur LDAP est inaccessible, les comptes peuvent se connecter avec leur mot de passe local (utile pour les comptes admin de secours pendant une migration).
+  - **Droits administrateur automatiques** : détection par le CN du groupe LDAP (`admin`, `administrateur`, `administrators`, `admins` par défaut, liste personnalisable) ou par DN complet exact. Les droits sont accordés et **révoqués** automatiquement à chaque connexion en fonction de l'appartenance aux groupes.
+  - **Synchronisation automatique des groupes** à chaque connexion LDAP :
+    - Si le groupe LDAP n'existe pas dans l'application → il est **créé automatiquement** (nom = CN du groupe).
+    - Si un groupe de même nom existe déjà → l'utilisateur y est **lié** et la colonne `ldap_dn` est attachée.
+    - Si l'utilisateur est retiré d'un groupe côté LDAP → il en est **retiré** dans l'application.
+    - Les groupes créés manuellement sans lien LDAP ne sont jamais modifiés.
+  - **Mappings manuels avancés** (optionnel) : table `ldap_group_mappings` permettant de lier un DN LDAP précis à un groupe applicatif existant ou à créer à la volée (utile quand plusieurs OU contiennent des groupes au même CN).
+  - **Test de connexion intégré** : bouton "Tester la connexion" dans l'UI vérifie la connexion au serveur et affiche le nombre d'utilisateurs trouvés dans l'annuaire.
+  - **Sécurité** : le mot de passe du compte de service est chiffré en AES-256-GCM en base de données et n'est jamais exposé en clair dans l'API.
+  - Support TLS/LDAPS avec option de désactivation de la vérification du certificat (développement).
+  - Filtre utilisateur configurable avec placeholder `{{email}}` (ex. `(mail={{email}})`, `(sAMAccountName={{email}})`).
+  - Attribut de nom d'affichage configurable (`displayName`, `cn`, etc.).
+  - 6 nouveaux endpoints API d'administration :
+    - `GET  /api/admin/ldap/settings` — lire la configuration LDAP
+    - `PUT  /api/admin/ldap/settings` — enregistrer la configuration LDAP
+    - `POST /api/admin/ldap/test` — tester la connexion au serveur LDAP
+    - `GET  /api/admin/ldap/group-mappings` — lister les mappings manuels
+    - `POST /api/admin/ldap/group-mappings` — créer un mapping (avec création de groupe à la volée)
+    - `DELETE /api/admin/ldap/group-mappings/:id` — supprimer un mapping
+  - Nouvelle table PostgreSQL `ldap_group_mappings` et colonne `ldap_dn` sur la table `groups`.
+  - Dépendance ajoutée : `ldapts` (client LDAP async/await pour Node.js).
+
 ### Corrigé
 
 - **Contacts Nextcloud : caractères `&#13;` dans les noms et e-mails**

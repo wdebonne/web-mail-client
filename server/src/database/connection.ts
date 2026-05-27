@@ -934,7 +934,7 @@ export async function initDatabase() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
-    // LDAP group mappings: LDAP DN <-> application group
+    // LDAP group mappings: LDAP DN <-> application group (manual overrides)
     await client.query(`
       CREATE TABLE IF NOT EXISTS ldap_group_mappings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -944,6 +944,10 @@ export async function initDatabase() {
         UNIQUE(ldap_dn, group_id)
       );
       CREATE INDEX IF NOT EXISTS idx_ldap_group_mappings_group ON ldap_group_mappings(group_id);
+
+      -- Link app groups back to their LDAP origin DN (auto-sync by CN)
+      ALTER TABLE groups ADD COLUMN IF NOT EXISTS ldap_dn TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_ldap_dn ON groups(ldap_dn) WHERE ldap_dn IS NOT NULL;
     `);
 
     logger.info('Database schema created/updated successfully');

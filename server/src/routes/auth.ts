@@ -192,7 +192,7 @@ authRouter.post('/login', async (req, res) => {
           `SELECT id FROM users WHERE email = $1`, [ldapUser.email]
         );
         if (provisionedUser.rows.length > 0) {
-          syncLdapGroups(provisionedUser.rows[0].id, ldapUser.memberOfDns).catch(() => {});
+          syncLdapGroups(provisionedUser.rows[0].id, ldapUser.memberOfDns, ldapCfg).catch(() => {});
         }
       }
       // If ldapError && fallbackLocal: fall through to local bcrypt below

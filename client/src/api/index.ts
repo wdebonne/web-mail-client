@@ -563,7 +563,7 @@ export const api = {
   testLdapConnection: (data: any) =>
     request<{ ok: boolean; message: string; userCount?: number }>('/admin/ldap/test', { method: 'POST', body: JSON.stringify(data) }),
   getLdapGroupMappings: () => request<any[]>('/admin/ldap/group-mappings'),
-  addLdapGroupMapping: (data: { ldapDn: string; groupId: string }) =>
+  addLdapGroupMapping: (data: { ldapDn: string; groupId?: string; groupName?: string }) =>
     request<any>('/admin/ldap/group-mappings', { method: 'POST', body: JSON.stringify(data) }),
   deleteLdapGroupMapping: (id: string) =>
     request<{ ok: boolean }>(`/admin/ldap/group-mappings/${id}`, { method: 'DELETE' }),

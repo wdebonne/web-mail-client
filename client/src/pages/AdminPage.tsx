@@ -4773,6 +4773,7 @@ function LdapSettings() {
   const [userFilter, setUserFilter] = useState('(mail={{email}})');
   const [displayNameAttr, setDisplayNameAttr] = useState('displayName');
   const [adminGroupDn, setAdminGroupDn] = useState('');
+  const [adminGroupNames, setAdminGroupNames] = useState('admin,administrateur,administrators,admins');
   const [tlsRejectUnauthorized, setTlsRejectUnauthorized] = useState(true);
   const [fallbackLocal, setFallbackLocal] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string; userCount?: number } | null>(null);
@@ -4793,6 +4794,7 @@ function LdapSettings() {
     setUserFilter(settings['ldap_user_filter'] ?? '(mail={{email}})');
     setDisplayNameAttr(settings['ldap_display_name_attr'] ?? 'displayName');
     setAdminGroupDn(settings['ldap_admin_group_dn'] ?? '');
+    setAdminGroupNames(settings['ldap_admin_group_names'] ?? 'admin,administrateur,administrators,admins');
     setTlsRejectUnauthorized(settings['ldap_tls_reject_unauthorized'] !== false);
     setFallbackLocal(!!settings['ldap_fallback_local']);
     setLoaded(true);
@@ -4817,6 +4819,7 @@ function LdapSettings() {
       ldap_user_filter: userFilter,
       ldap_display_name_attr: displayNameAttr,
       ldap_admin_group_dn: adminGroupDn,
+      ldap_admin_group_names: adminGroupNames,
       ldap_tls_reject_unauthorized: tlsRejectUnauthorized,
       ldap_fallback_local: fallbackLocal,
     });
@@ -4921,9 +4924,13 @@ function LdapSettings() {
           placeholder: 'displayName',
           help: 'Attribut LDAP utilisé comme nom affiché dans l\'application (ex. displayName, cn).',
         })}
-        {field('DN du groupe admin (optionnel)', adminGroupDn, setAdminGroupDn, {
-          placeholder: 'cn=admins,ou=groups,dc=example,dc=com',
-          help: 'Les membres de ce groupe LDAP reçoivent automatiquement les droits administrateur.',
+        {field('Noms des groupes admin (CN)', adminGroupNames, setAdminGroupNames, {
+          placeholder: 'admin,administrateur,administrators,admins',
+          help: 'Noms de groupes LDAP (CN) qui accordent automatiquement les droits admin, séparés par des virgules. Tout utilisateur membre d\'un de ces groupes devient admin — et perd ses droits s\'il en est retiré.',
+        })}
+        {field('DN du groupe admin spécifique (optionnel)', adminGroupDn, setAdminGroupDn, {
+          placeholder: 'cn=superadmins,ou=groups,dc=example,dc=com',
+          help: 'Alternative : correspondance exacte sur le DN complet du groupe. Utile si plusieurs groupes ont le même CN dans des OU différentes.',
         })}
       </div>
 
@@ -4964,10 +4971,13 @@ function LdapSettings() {
   );
 }
 
+const NEW_GROUP_SENTINEL = '__new__';
+
 function LdapGroupMappings() {
   const queryClient = useQueryClient();
   const [newDn, setNewDn] = useState('');
   const [newGroupId, setNewGroupId] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
 
   const { data: mappings = [], isLoading } = useQuery({
     queryKey: ['ldap-group-mappings'],
@@ -4980,11 +4990,12 @@ function LdapGroupMappings() {
   });
 
   const addMutation = useMutation({
-    mutationFn: (data: { ldapDn: string; groupId: string }) => api.addLdapGroupMapping(data),
-    onSuccess: () => {
+    mutationFn: (data: { ldapDn: string; groupId?: string; groupName?: string }) => api.addLdapGroupMapping(data as any),
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['ldap-group-mappings'] });
-      setNewDn(''); setNewGroupId('');
-      toast.success('Mapping ajouté');
+      queryClient.invalidateQueries({ queryKey: ['admin-groups'] });
+      setNewDn(''); setNewGroupId(''); setNewGroupName('');
+      toast.success(data?.created_group ? 'Groupe créé et mapping ajouté' : 'Mapping ajouté');
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -4998,71 +5009,119 @@ function LdapGroupMappings() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const isCreatingNew = newGroupId === NEW_GROUP_SENTINEL;
+
   const handleAdd = () => {
-    if (!newDn.trim() || !newGroupId) return;
-    addMutation.mutate({ ldapDn: newDn.trim(), groupId: newGroupId });
+    if (!newDn.trim()) return;
+    if (isCreatingNew) {
+      if (!newGroupName.trim()) return;
+      addMutation.mutate({ ldapDn: newDn.trim(), groupName: newGroupName.trim() });
+    } else {
+      if (!newGroupId) return;
+      addMutation.mutate({ ldapDn: newDn.trim(), groupId: newGroupId });
+    }
   };
 
+  const canAdd = newDn.trim() && (isCreatingNew ? newGroupName.trim() : newGroupId);
+
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   return (
-    <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Synchronisation des groupes</h3>
-        <p className="text-xs text-outlook-text-secondary mt-1">
-          À chaque connexion LDAP, les groupes de l'utilisateur sont synchronisés. Les groupes sans mapping LDAP restent inchangés.
-        </p>
+    <div className="space-y-4">
+      {/* Auto-sync info banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-1">
+        <p className="font-semibold flex items-center gap-2"><CheckCircle size={15} /> Synchronisation automatique activée</p>
+        <p>À chaque connexion LDAP, les groupes sont synchronisés sans configuration :</p>
+        <ul className="list-disc list-inside space-y-0.5 mt-1 text-blue-700">
+          <li>Si le groupe LDAP <strong>n'existe pas</strong> dans l'application → il est <strong>créé automatiquement</strong>.</li>
+          <li>Si le groupe <strong>existe déjà</strong> (même nom) → l'utilisateur y est <strong>lié</strong>.</li>
+          <li>Si l'utilisateur est <strong>retiré d'un groupe</strong> LDAP → il en est <strong>retiré</strong> dans l'application.</li>
+          <li>Les groupes créés manuellement sans lien LDAP ne sont <strong>jamais touchés</strong>.</li>
+        </ul>
       </div>
 
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={newDn}
-          onChange={e => setNewDn(e.target.value)}
-          placeholder="DN du groupe LDAP (ex: cn=editors,ou=groups,dc=example,dc=com)"
-          className="flex-1 border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue"
-        />
-        <select
-          value={newGroupId}
-          onChange={e => setNewGroupId(e.target.value)}
-          className="border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-white min-w-[180px]"
-        >
-          <option value="">— Groupe de l'app —</option>
-          {(groups as any[]).map((g: any) => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
+      {/* Advanced: manual DN overrides */}
+      <div className="bg-white border border-outlook-border rounded-lg">
         <button
-          onClick={handleAdd}
-          disabled={!newDn.trim() || !newGroupId || addMutation.isPending}
-          className="flex items-center gap-1 bg-outlook-blue text-white px-4 py-2 text-sm rounded font-medium disabled:opacity-50"
+          onClick={() => setShowAdvanced(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 text-sm font-medium text-outlook-text-primary hover:bg-outlook-bg-hover rounded-lg"
         >
-          <Plus size={15} /> Ajouter
+          <span>Mappings manuels avancés (optionnel)</span>
+          {showAdvanced ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
-      </div>
 
-      {isLoading ? (
-        <p className="text-sm text-outlook-text-secondary">Chargement…</p>
-      ) : mappings.length === 0 ? (
-        <p className="text-sm text-outlook-text-secondary italic">Aucun mapping configuré.</p>
-      ) : (
-        <div className="space-y-2">
-          {(mappings as any[]).map((m: any) => (
-            <div key={m.id} className="flex items-center justify-between bg-outlook-bg-secondary rounded px-3 py-2 text-sm">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.group_color || '#0078D4' }} />
-                <span className="font-medium text-outlook-text-primary shrink-0">{m.group_name}</span>
-                <span className="text-outlook-text-secondary truncate font-mono text-xs">{m.ldap_dn}</span>
-              </div>
-              <button
-                onClick={() => deleteMutation.mutate(m.id)}
-                disabled={deleteMutation.isPending}
-                className="ml-3 text-outlook-text-secondary hover:text-red-500 shrink-0"
+        {showAdvanced && (
+          <div className="px-5 pb-5 space-y-4 border-t border-outlook-border pt-4">
+            <p className="text-xs text-outlook-text-secondary">
+              Utile uniquement si plusieurs OU contiennent des groupes avec le même CN, ou si vous voulez lier un groupe LDAP à un groupe existant portant un nom différent.
+              Dans les autres cas, la synchronisation automatique ci-dessus suffit.
+            </p>
+
+            <div className="flex gap-2 flex-wrap">
+              <input
+                type="text"
+                value={newDn}
+                onChange={e => setNewDn(e.target.value)}
+                placeholder="DN complet du groupe LDAP"
+                className="flex-1 min-w-[260px] border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+              />
+              <select
+                value={newGroupId}
+                onChange={e => setNewGroupId(e.target.value)}
+                className="border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-white min-w-[200px]"
               >
-                <Trash2 size={15} />
+                <option value="">— Groupe de l'app —</option>
+                {(groups as any[]).map((g: any) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+                <option value={NEW_GROUP_SENTINEL}>+ Créer un nouveau groupe…</option>
+              </select>
+              {isCreatingNew && (
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={e => setNewGroupName(e.target.value)}
+                  placeholder="Nom du nouveau groupe"
+                  autoFocus
+                  className="border border-outlook-blue rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue min-w-[180px]"
+                />
+              )}
+              <button
+                onClick={handleAdd}
+                disabled={!canAdd || addMutation.isPending}
+                className="flex items-center gap-1 bg-outlook-blue text-white px-4 py-2 text-sm rounded font-medium disabled:opacity-50"
+              >
+                <Plus size={15} /> Ajouter
               </button>
             </div>
-          ))}
-        </div>
-      )}
+
+            {isLoading ? (
+              <p className="text-sm text-outlook-text-secondary">Chargement…</p>
+            ) : mappings.length === 0 ? (
+              <p className="text-sm text-outlook-text-secondary italic">Aucun mapping manuel configuré.</p>
+            ) : (
+              <div className="space-y-2">
+                {(mappings as any[]).map((m: any) => (
+                  <div key={m.id} className="flex items-center justify-between bg-outlook-bg-secondary rounded px-3 py-2 text-sm">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.group_color || '#0078D4' }} />
+                      <span className="font-medium text-outlook-text-primary shrink-0">{m.group_name}</span>
+                      <span className="text-outlook-text-secondary truncate font-mono text-xs">{m.ldap_dn}</span>
+                    </div>
+                    <button
+                      onClick={() => deleteMutation.mutate(m.id)}
+                      disabled={deleteMutation.isPending}
+                      className="ml-3 text-outlook-text-secondary hover:text-red-500 shrink-0"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -36,10 +36,11 @@ Vue d'ensemble de l'architecture technique de WebMail.
 │  │  │  │Service │ │ CalDAV/  │ │ cPanel │  │    │   │
 │  │  │  │ImapFlow│ │ CardDAV  │ │ UAPI   │  │    │   │
 │  │  │  └────────┘ └──────────┘ └────────┘  │    │   │
-│  │  │              ┌────────┐               │    │   │
-│  │  │              │ Plugin │               │    │   │
-│  │  │              │Executor│               │    │   │
-│  │  │              └────────┘               │    │   │
+│  │  │  ┌────────┐ ┌────────┐               │    │   │
+│  │  │  │  LDAP  │ │ Plugin │               │    │   │
+│  │  │  │Service │ │Executor│               │    │   │
+│  │  │  │ldapts  │ └────────┘               │    │   │
+│  │  │  └────────┘                          │    │   │
 │  │  └──────────────────────────────────────┘    │   │
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────┼───────────────────────────┘
@@ -64,15 +65,16 @@ Vue d'ensemble de l'architecture technique de WebMail.
 │ (o2switch)  │                        │  CalDAV/     │
 └─────────────┘                        │  CardDAV     │
                                        └──────────────┘
-           │
-    ┌──────┘
-    ▼
-┌─────────────┐
-│  O2Switch   │
-│  cPanel API │
-│  UAPI v3    │
-│  (port 2083)│
-└─────────────┘
+           │                                    │
+    ┌──────┘                         ┌──────────┘
+    ▼                                ▼
+┌─────────────┐              ┌──────────────────┐
+│  O2Switch   │              │  Serveur LDAP    │
+│  cPanel API │              │  (optionnel)     │
+│  UAPI v3    │              │  OpenLDAP / AD   │
+│  (port 2083)│              │  ldaps:// ou     │
+└─────────────┘              │  ldap://         │
+                             └──────────────────┘
 ```
 
 ---

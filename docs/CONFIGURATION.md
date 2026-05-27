@@ -429,3 +429,59 @@ Depuis **Administration > Logs** :
 - Filtrage par catégorie : auth, admin, mail, o2switch, system
 - Recherche par mot-clé
 - Informations : utilisateur, action, IP, date, détails
+
+---
+
+## LDAP
+
+L'intégration LDAP se configure **entièrement depuis l'interface admin** (*Administration → Intégrations → LDAP*). Aucune variable d'environnement n'est nécessaire. La configuration est chiffrée en base de données.
+
+### Paramètres disponibles
+
+| Paramètre | Description | Défaut |
+|-----------|-------------|--------|
+| LDAP activé | Bascule l'authentification LDAP | `false` |
+| URL du serveur | `ldap://host:389` ou `ldaps://host:636` | — |
+| Bind DN | DN du compte de service pour la recherche | — |
+| Mot de passe service | Chiffré AES-256-GCM en base | — |
+| Base DN | Racine de recherche des utilisateurs | — |
+| Filtre utilisateur | Filtre LDAP avec `{{email}}` comme placeholder | `(mail={{email}})` |
+| Attribut nom d'affichage | Attribut LDAP pour le nom affiché | `displayName` |
+| Noms groupes admin | CNs accordant les droits admin (virgule-séparé) | `admin,administrateur,administrators,admins` |
+| DN groupe admin (optionnel) | DN complet alternatif pour les droits admin | — |
+| Vérifier certificat TLS | Désactivez pour les certificats auto-signés | `true` |
+| Fallback local | Autoriser le mot de passe local si LDAP inaccessible | `false` |
+
+### Filtres courants
+
+| Annuaire | Filtre utilisateur |
+|----------|--------------------|
+| OpenLDAP | `(mail={{email}})` |
+| Active Directory | `(userPrincipalName={{email}})` |
+| Active Directory (login court) | `(sAMAccountName={{email}})` |
+| Nextcloud LDAP | `(mail={{email}})` |
+
+### Synchronisation des groupes
+
+À chaque connexion LDAP, les groupes de l'utilisateur sont synchronisés automatiquement :
+
+1. Les groupes LDAP de l'utilisateur (attribut `memberOf`) sont récupérés.
+2. Pour chaque groupe LDAP :
+   - Si un groupe applicatif portant le même nom (CN) existe → l'utilisateur y est lié.
+   - Sinon → le groupe est **créé automatiquement** dans l'application.
+3. Si l'utilisateur est retiré d'un groupe côté LDAP → il en est **retiré** dans l'application.
+4. Les groupes créés manuellement sans lien LDAP ne sont jamais modifiés.
+
+**Mappings manuels avancés** : disponibles dans l'onglet LDAP pour lier un DN LDAP précis à un groupe applicatif existant — utile quand deux OU contiennent des groupes au même CN.
+
+### Droits administrateur
+
+Les utilisateurs membres d'un groupe LDAP dont le CN correspond à l'un des noms configurés (`admin`, `administrateur`…) reçoivent automatiquement `is_admin = true`. Si retiré du groupe côté LDAP, les droits sont révoqués à la prochaine connexion.
+
+### Migration depuis le mode local
+
+1. Configurer les paramètres LDAP dans l'admin.
+2. Cliquer **Tester la connexion** pour valider.
+3. Activer **LDAP activé** et enregistrer.
+4. Les utilisateurs existants conservent leur compte ; à leur prochaine connexion via LDAP, leurs informations et groupes sont mis à jour automatiquement.
+5. Activer **Fallback local** pendant la période de transition si des comptes locaux de secours sont nécessaires.

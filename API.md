@@ -31,6 +31,7 @@ L'API utilise deux méthodes d'authentification :
 - [Recherche unifiée](#recherche)
 - [Sauvegarde & restauration](#sauvegarde--restauration-admin)
 - [Notifications push](#notifications-push)
+- [LDAP](#ldap-admin)
 - [Codes d'erreur](#codes-derreur)
 
 ---
@@ -2452,6 +2453,133 @@ Retourne le nombre de lignes par table et l'utilisation disque des sauvegardes.
   "backup_file_count": 8
 }
 ```
+
+---
+
+## LDAP *(admin)*
+
+Configuration et gestion de l'authentification LDAP. Tous les endpoints requièrent `is_admin = true`.
+
+### GET /api/admin/ldap/settings
+
+Retourne la configuration LDAP actuelle. Le mot de passe du compte de service est remplacé par `"__encrypted__"` s'il est enregistré.
+
+**Réponse 200 :**
+```json
+{
+  "ldap_enabled": false,
+  "ldap_url": "ldap://192.168.1.10:389",
+  "ldap_bind_dn": "cn=service,dc=example,dc=com",
+  "ldap_bind_password": "__encrypted__",
+  "ldap_base_dn": "dc=example,dc=com",
+  "ldap_user_filter": "(mail={{email}})",
+  "ldap_display_name_attr": "displayName",
+  "ldap_admin_group_dn": "",
+  "ldap_admin_group_names": "admin,administrateur,administrators,admins",
+  "ldap_tls_reject_unauthorized": true,
+  "ldap_fallback_local": false
+}
+```
+
+---
+
+### PUT /api/admin/ldap/settings
+
+Enregistre la configuration LDAP. Le mot de passe n'est mis à jour que si une valeur différente de `"__encrypted__"` est fournie.
+
+**Body :**
+```json
+{
+  "ldap_enabled": true,
+  "ldap_url": "ldaps://ldap.example.com:636",
+  "ldap_bind_dn": "cn=service,dc=example,dc=com",
+  "ldap_bind_password": "mot_de_passe_service",
+  "ldap_base_dn": "dc=example,dc=com",
+  "ldap_user_filter": "(mail={{email}})",
+  "ldap_display_name_attr": "displayName",
+  "ldap_admin_group_dn": "",
+  "ldap_admin_group_names": "admin,administrateur",
+  "ldap_tls_reject_unauthorized": true,
+  "ldap_fallback_local": false
+}
+```
+
+**Réponse 200 :** `{ "ok": true }`
+
+---
+
+### POST /api/admin/ldap/test
+
+Teste la connexion au serveur LDAP avec les paramètres fournis (ou ceux sauvegardés si non fournis). N'enregistre rien.
+
+**Body :** mêmes champs que `PUT /api/admin/ldap/settings` (tous optionnels, fusionnés avec la config sauvegardée).
+
+**Réponse 200 (succès) :**
+```json
+{ "ok": true, "message": "Connexion réussie", "userCount": 42 }
+```
+
+**Réponse 200 (échec) :**
+```json
+{ "ok": false, "message": "ECONNREFUSED 192.168.1.10:389" }
+```
+
+---
+
+### GET /api/admin/ldap/group-mappings
+
+Liste les mappings manuels DN LDAP → groupe applicatif.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "ldap_dn": "cn=superadmins,ou=groups,dc=example,dc=com",
+    "group_id": "uuid",
+    "group_name": "Super Admins",
+    "group_color": "#0078D4",
+    "created_at": "2026-05-27T10:00:00Z"
+  }
+]
+```
+
+---
+
+### POST /api/admin/ldap/group-mappings
+
+Crée un mapping manuel. Si `groupId` est absent et `groupName` est fourni, le groupe applicatif est créé à la volée.
+
+**Body :**
+```json
+{ "ldapDn": "cn=superadmins,ou=groups,dc=example,dc=com", "groupId": "uuid" }
+```
+ou (création à la volée) :
+```json
+{ "ldapDn": "cn=superadmins,ou=groups,dc=example,dc=com", "groupName": "Super Admins" }
+```
+
+**Réponse 201 :**
+```json
+{
+  "id": "uuid",
+  "ldap_dn": "cn=superadmins,ou=groups,dc=example,dc=com",
+  "group_id": "uuid",
+  "created_group": true
+}
+```
+
+**Erreurs :**
+- `400` — `ldapDn` manquant, ou ni `groupId` ni `groupName` fourni.
+- `409` — Ce mapping existe déjà.
+
+---
+
+### DELETE /api/admin/ldap/group-mappings/:id
+
+Supprime un mapping manuel.
+
+**Réponse 200 :** `{ "ok": true }`
 
 ---
 

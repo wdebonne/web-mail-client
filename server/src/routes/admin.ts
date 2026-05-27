@@ -2995,7 +2995,7 @@ adminRouter.put('/ldap/settings', async (req: AuthRequest, res) => {
     const allowed = [
       'ldap_enabled', 'ldap_url', 'ldap_bind_dn',
       'ldap_base_dn', 'ldap_user_filter', 'ldap_display_name_attr',
-      'ldap_admin_group_dn', 'ldap_tls_reject_unauthorized', 'ldap_fallback_local',
+      'ldap_admin_group_dn', 'ldap_admin_group_names', 'ldap_tls_reject_unauthorized', 'ldap_fallback_local',
     ];
     const body = req.body as Record<string, any>;
 
@@ -3040,14 +3040,27 @@ adminRouter.get('/ldap/group-mappings', async (_req: AuthRequest, res) => {
 
 adminRouter.post('/ldap/group-mappings', async (req: AuthRequest, res) => {
   try {
-    const { ldapDn, groupId } = req.body;
-    if (!ldapDn || !groupId) return res.status(400).json({ error: 'ldapDn et groupId sont requis' });
+    const { ldapDn, groupId, groupName } = req.body;
+    if (!ldapDn) return res.status(400).json({ error: 'ldapDn est requis' });
+    if (!groupId && !groupName) return res.status(400).json({ error: 'groupId ou groupName est requis' });
+
+    let resolvedGroupId = groupId;
+
+    // Create the group on the fly if only a name was provided
+    if (!resolvedGroupId && groupName) {
+      const created = await pool.query(
+        `INSERT INTO groups (name, description, color) VALUES ($1, $2, '#0078D4') RETURNING id`,
+        [groupName.trim(), 'Créé automatiquement depuis le mapping LDAP']
+      );
+      resolvedGroupId = created.rows[0].id;
+    }
+
     const result = await pool.query(
       `INSERT INTO ldap_group_mappings (ldap_dn, group_id) VALUES ($1, $2) RETURNING *`,
-      [ldapDn.trim(), groupId]
+      [ldapDn.trim(), resolvedGroupId]
     );
-    await addLog(req.userId, 'ldap.mapping_added', 'security', req, { ldapDn, groupId });
-    res.status(201).json(result.rows[0]);
+    await addLog(req.userId, 'ldap.mapping_added', 'security', req, { ldapDn, groupId: resolvedGroupId, groupName });
+    res.status(201).json({ ...result.rows[0], created_group: !groupId });
   } catch (e: any) {
     if ((e as any).code === '23505') return res.status(409).json({ error: 'Ce mapping existe déjà' });
     res.status(500).json({ error: e.message });
