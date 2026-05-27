@@ -2974,6 +2974,81 @@ adminRouter.get('/security/login-attempts', async (req: AuthRequest, res) => {
 });
 
 // ========================================
+// ---- LDAP Settings ----
+// ========================================
+
+adminRouter.get('/ldap/settings', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT key, value FROM admin_settings WHERE key LIKE 'ldap_%'`
+    );
+    const s: Record<string, any> = {};
+    for (const row of result.rows) s[row.key] = row.value;
+    // Never expose the encrypted password — send a placeholder
+    if (s['ldap_bind_password']) s['ldap_bind_password'] = '__encrypted__';
+    res.json(s);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.put('/ldap/settings', async (req: AuthRequest, res) => {
+  try {
+    const allowed = [
+      'ldap_enabled', 'ldap_url', 'ldap_bind_dn',
+      'ldap_base_dn', 'ldap_user_filter', 'ldap_display_name_attr',
+      'ldap_admin_group_dn', 'ldap_tls_reject_unauthorized', 'ldap_fallback_local',
+    ];
+    const body = req.body as Record<string, any>;
+
+    for (const key of allowed) {
+      if (key in body) {
+        await pool.query(
+          `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+          [key, JSON.stringify(body[key])]
+        );
+      }
+    }
+
+    // Password saved separately — only update when a real value is provided
+    if (body['ldap_bind_password'] && body['ldap_bind_password'] !== '__encrypted__') {
+      const { encrypt } = await import('../utils/encryption');
+      const encrypted = encrypt(body['ldap_bind_password']);
+      await pool.query(
+        `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+        ['ldap_bind_password', JSON.stringify(encrypted)]
+      );
+    }
+
+    await addLog(req.userId, 'ldap.settings_updated', 'security', req, {});
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.post('/ldap/test', async (req: AuthRequest, res) => {
+  try {
+    const { getLdapConfig, testLdapConnection } = await import('../services/ldap');
+    // Merge saved config with any overrides sent from the form
+    const saved = await getLdapConfig();
+    const body = req.body as Record<string, any>;
+    const cfg = {
+      ...saved,
+      url: body.ldap_url ?? saved.url,
+      bindDn: body.ldap_bind_dn ?? saved.bindDn,
+      bindPassword: (body.ldap_bind_password && body.ldap_bind_password !== '__encrypted__')
+        ? body.ldap_bind_password : saved.bindPassword,
+      baseDn: body.ldap_base_dn ?? saved.baseDn,
+      userFilter: body.ldap_user_filter ?? saved.userFilter,
+      displayNameAttr: body.ldap_display_name_attr ?? saved.displayNameAttr,
+      tlsRejectUnauthorized: body.ldap_tls_reject_unauthorized ?? saved.tlsRejectUnauthorized,
+    };
+    const result = await testLdapConnection(cfg);
+    await addLog(req.userId, 'ldap.test', 'security', req, { ok: result.ok });
+    res.json(result);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ========================================
 // ---- Migration IMAP ----
 // ========================================
 

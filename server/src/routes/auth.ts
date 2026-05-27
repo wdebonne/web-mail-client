@@ -137,6 +137,60 @@ authRouter.post('/login', async (req, res) => {
     );
     const isWhitelisted = whitelisted.rows.length > 0;
 
+    // ---- LDAP authentication (when enabled) ----
+    const { getLdapConfig, authenticateLdapUser } = await import('../services/ldap');
+    const ldapCfg = await getLdapConfig();
+    let usedLdap = false;
+
+    if (ldapCfg.enabled) {
+      let ldapUser: Awaited<ReturnType<typeof authenticateLdapUser>> = null;
+      let ldapError: Error | null = null;
+
+      try {
+        ldapUser = await authenticateLdapUser(ldapCfg, email, password);
+      } catch (err: any) {
+        ldapError = err;
+      }
+
+      if (ldapError && !ldapCfg.fallbackLocal) {
+        addLog(undefined, 'user.login_failed', 'auth', req, { email, reason: 'ldap_error', message: ldapError.message }).catch(() => {});
+        return res.status(503).json({ error: 'Le serveur LDAP est inaccessible. Contactez un administrateur.' });
+      }
+
+      if (!ldapError) {
+        if (!ldapUser) {
+          // Bad credentials against LDAP
+          await pool.query(
+            `INSERT INTO login_attempts (email, ip_address, user_agent, success, block_reason)
+             VALUES ($1, $2, $3, false, 'bad_password')`,
+            [email, ip, ua]
+          );
+          addLog(undefined, 'user.login_failed', 'auth', req, { email, reason: 'ldap_bad_credentials' }).catch(() => {});
+          return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+        }
+
+        // LDAP auth succeeded — auto-provision user in DB
+        await pool.query(
+          `INSERT INTO users (email, password_hash, display_name, is_admin, role, is_active)
+           VALUES ($1, '', $2, $3, $4, true)
+           ON CONFLICT (email) DO UPDATE
+             SET display_name = EXCLUDED.display_name,
+                 is_admin = EXCLUDED.is_admin,
+                 role = EXCLUDED.role,
+                 updated_at = NOW()`,
+          [
+            ldapUser.email,
+            ldapUser.displayName,
+            ldapUser.isAdmin,
+            ldapUser.isAdmin ? 'admin' : 'user',
+          ]
+        );
+        usedLdap = true;
+      }
+      // If ldapError && fallbackLocal: fall through to local bcrypt below
+    }
+
+    // ---- Load DB user (after possible LDAP provisioning) ----
     const result = await pool.query(
       `SELECT id, email, password_hash, display_name, avatar_url, role, is_admin, is_active,
               language, timezone, theme, failed_attempts, locked_until
@@ -172,56 +226,59 @@ authRouter.post('/login', async (req, res) => {
       });
     }
 
-    const validPassword = await bcrypt.compare(password, user.password_hash);
+    // ---- Password verification (local bcrypt — skipped when LDAP already validated) ----
+    if (!usedLdap) {
+      const validPassword = await bcrypt.compare(password, user.password_hash);
 
-    if (!validPassword) {
-      const newAttempts = (user.failed_attempts || 0) + 1;
-      let lockedUntil: Date | null = null;
+      if (!validPassword) {
+        const newAttempts = (user.failed_attempts || 0) + 1;
+        let lockedUntil: Date | null = null;
 
-      if (!isWhitelisted && newAttempts >= sec.maxAttempts) {
-        lockedUntil = sec.lockoutMinutes > 0
-          ? new Date(Date.now() + sec.lockoutMinutes * 60 * 1000)
-          : new Date('9999-12-31T23:59:59Z');
+        if (!isWhitelisted && newAttempts >= sec.maxAttempts) {
+          lockedUntil = sec.lockoutMinutes > 0
+            ? new Date(Date.now() + sec.lockoutMinutes * 60 * 1000)
+            : new Date('9999-12-31T23:59:59Z');
+          await pool.query(
+            'UPDATE users SET failed_attempts = $1, locked_until = $2 WHERE id = $3',
+            [newAttempts, lockedUntil, user.id]
+          );
+        } else {
+          await pool.query('UPDATE users SET failed_attempts = $1 WHERE id = $2', [newAttempts, user.id]);
+        }
+
         await pool.query(
-          'UPDATE users SET failed_attempts = $1, locked_until = $2 WHERE id = $3',
-          [newAttempts, lockedUntil, user.id]
+          `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success, block_reason)
+           VALUES ($1, $2, $3, $4, false, $5)`,
+          [user.id, email, ip, ua, lockedUntil ? 'locked' : null]
         );
-      } else {
-        await pool.query('UPDATE users SET failed_attempts = $1 WHERE id = $2', [newAttempts, user.id]);
-      }
+        addLog(user.id, lockedUntil ? 'user.login_blocked' : 'user.login_failed', 'auth', req, {
+          email,
+          reason: lockedUntil ? 'locked_now' : 'bad_password',
+          failedAttempts: newAttempts,
+        }).catch(() => {});
 
-      await pool.query(
-        `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success, block_reason)
-         VALUES ($1, $2, $3, $4, false, $5)`,
-        [user.id, email, ip, ua, lockedUntil ? 'locked' : null]
-      );
-      addLog(user.id, lockedUntil ? 'user.login_blocked' : 'user.login_failed', 'auth', req, {
-        email,
-        reason: lockedUntil ? 'locked_now' : 'bad_password',
-        failedAttempts: newAttempts,
-      }).catch(() => {});
+        const shouldAlert =
+          (sec.alertEnabled && newAttempts >= sec.alertThreshold) ||
+          (isWhitelisted && sec.whitelistAlertEnabled && newAttempts >= sec.alertThreshold);
+        if (shouldAlert && sec.alertRecipient) {
+          sendSecurityAlert(sec.alertRecipient, email, ip, newAttempts, isWhitelisted).catch(() => {});
+        }
 
-      const shouldAlert =
-        (sec.alertEnabled && newAttempts >= sec.alertThreshold) ||
-        (isWhitelisted && sec.whitelistAlertEnabled && newAttempts >= sec.alertThreshold);
-      if (shouldAlert && sec.alertRecipient) {
-        sendSecurityAlert(sec.alertRecipient, email, ip, newAttempts, isWhitelisted).catch(() => {});
-      }
-
-      const remaining = !isWhitelisted ? Math.max(0, sec.maxAttempts - newAttempts) : null;
-      if (lockedUntil) {
-        const minutesLeft = sec.lockoutMinutes > 0 ? sec.lockoutMinutes : null;
+        const remaining = !isWhitelisted ? Math.max(0, sec.maxAttempts - newAttempts) : null;
+        if (lockedUntil) {
+          const minutesLeft = sec.lockoutMinutes > 0 ? sec.lockoutMinutes : null;
+          return res.status(401).json({
+            error: minutesLeft
+              ? `Compte verrouillé pour ${minutesLeft} minute(s). Contactez un administrateur si nécessaire.`
+              : 'Compte verrouillé. Contactez un administrateur.',
+          });
+        }
         return res.status(401).json({
-          error: minutesLeft
-            ? `Compte verrouillé pour ${minutesLeft} minute(s). Contactez un administrateur si nécessaire.`
-            : 'Compte verrouillé. Contactez un administrateur.',
+          error: remaining !== null && remaining > 0
+            ? `Email ou mot de passe incorrect (${remaining} tentative(s) restante(s))`
+            : 'Email ou mot de passe incorrect',
         });
       }
-      return res.status(401).json({
-        error: remaining !== null && remaining > 0
-          ? `Email ou mot de passe incorrect (${remaining} tentative(s) restante(s))`
-          : 'Email ou mot de passe incorrect',
-      });
     }
 
     if (user.is_active === false) {
@@ -238,7 +295,7 @@ authRouter.post('/login', async (req, res) => {
        VALUES ($1, $2, $3, $4, true)`,
       [user.id, email, ip, ua]
     );
-    addLog(user.id, 'user.login', 'auth', req, { email, method: 'password' }).catch(() => {});
+    addLog(user.id, 'user.login', 'auth', req, { email, method: usedLdap ? 'ldap' : 'password' }).catch(() => {});
 
     // Step-up 2FA: if the user has registered at least one passkey, force
     // biometric proof before issuing a full session.

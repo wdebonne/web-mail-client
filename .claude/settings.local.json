@@ -42,7 +42,8 @@
       "Bash(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\" -Recurse -File -Name)",
       "Bash(Select-Object -First 50)",
       "PowerShell(Get-ChildItem -Path \"f:\\\\Visual Studio Code\\\\Web - Mail Client\" -Recurse -File | Where-Object { $_.Extension -in '.js', '.ts', '.tsx', '.jsx', '.html', '.json' } | Select-Object -First 100 | ForEach-Object { $_.FullName })",
-      "Bash(Select-String -Pattern \"CHANGE|change|Change|version|Version|RELEASE\")"
+      "Bash(Select-String -Pattern \"CHANGE|change|Change|version|Version|RELEASE\")",
+      "Bash(node -e \"require\\('ldapts'\\); console.log\\('ok'\\)\")"
     ]
   }
 }

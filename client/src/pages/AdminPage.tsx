@@ -32,7 +32,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'ldap';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -68,6 +68,7 @@ export default function AdminPage() {
     { id: 'plugins' as const,        icon: Plug,            label: t('admin.tab.plugins'),        group: t('admin.group.integrations') },
     { id: 'nextcloud' as const,      icon: Cloud,           label: t('admin.tab.nextcloud'),      group: t('admin.group.integrations') },
     { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
+    { id: 'ldap' as const,          icon: Database,        label: 'LDAP',                         group: t('admin.group.integrations') },
     // Système
     { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
     { id: 'backup' as const,          icon: HardDrive,      label: 'Sauvegarde',                  group: t('admin.group.system') },
@@ -166,6 +167,7 @@ export default function AdminPage() {
             {tab === 'backup' && <AdminBackup />}
             {tab === 'migration' && <AdminMigration />}
             {tab === 'bulksend' && <AdminBulkSend />}
+            {tab === 'ldap' && <LdapSettings />}
           </div>
         </div>
       </div>
@@ -4751,6 +4753,210 @@ function AdminDLShareModal({ list, onSave, onClose, isSaving }: {
             Enregistrer
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// LDAP Settings
+// ========================================
+
+function LdapSettings() {
+  const queryClient = useQueryClient();
+  const [loaded, setLoaded] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [url, setUrl] = useState('ldap://');
+  const [bindDn, setBindDn] = useState('');
+  const [bindPassword, setBindPassword] = useState('');
+  const [baseDn, setBaseDn] = useState('');
+  const [userFilter, setUserFilter] = useState('(mail={{email}})');
+  const [displayNameAttr, setDisplayNameAttr] = useState('displayName');
+  const [adminGroupDn, setAdminGroupDn] = useState('');
+  const [tlsRejectUnauthorized, setTlsRejectUnauthorized] = useState(true);
+  const [fallbackLocal, setFallbackLocal] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; userCount?: number } | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const { data: settings } = useQuery({
+    queryKey: ['ldap-settings'],
+    queryFn: api.getLdapSettings,
+  });
+
+  useEffect(() => {
+    if (!settings || loaded) return;
+    setEnabled(!!settings['ldap_enabled']);
+    setUrl(settings['ldap_url'] ?? 'ldap://');
+    setBindDn(settings['ldap_bind_dn'] ?? '');
+    setBindPassword(settings['ldap_bind_password'] === '__encrypted__' ? '__encrypted__' : '');
+    setBaseDn(settings['ldap_base_dn'] ?? '');
+    setUserFilter(settings['ldap_user_filter'] ?? '(mail={{email}})');
+    setDisplayNameAttr(settings['ldap_display_name_attr'] ?? 'displayName');
+    setAdminGroupDn(settings['ldap_admin_group_dn'] ?? '');
+    setTlsRejectUnauthorized(settings['ldap_tls_reject_unauthorized'] !== false);
+    setFallbackLocal(!!settings['ldap_fallback_local']);
+    setLoaded(true);
+  }, [settings, loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: (data: any) => api.updateLdapSettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ldap-settings'] });
+      toast.success('Configuration LDAP enregistrée');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleSave = () => {
+    saveMutation.mutate({
+      ldap_enabled: enabled,
+      ldap_url: url,
+      ldap_bind_dn: bindDn,
+      ldap_bind_password: bindPassword,
+      ldap_base_dn: baseDn,
+      ldap_user_filter: userFilter,
+      ldap_display_name_attr: displayNameAttr,
+      ldap_admin_group_dn: adminGroupDn,
+      ldap_tls_reject_unauthorized: tlsRejectUnauthorized,
+      ldap_fallback_local: fallbackLocal,
+    });
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.testLdapConnection({
+        ldap_url: url,
+        ldap_bind_dn: bindDn,
+        ldap_bind_password: bindPassword,
+        ldap_base_dn: baseDn,
+        ldap_user_filter: userFilter,
+        ldap_display_name_attr: displayNameAttr,
+        ldap_tls_reject_unauthorized: tlsRejectUnauthorized,
+      });
+      setTestResult(result);
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e.message ?? 'Erreur' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const field = (label: string, value: string, onChange: (v: string) => void, opts?: { type?: string; placeholder?: string; help?: string }) => (
+    <div>
+      <label className="block text-sm font-medium text-outlook-text-primary mb-1">{label}</label>
+      {opts?.help && <p className="text-xs text-outlook-text-secondary mb-1">{opts.help}</p>}
+      <input
+        type={opts?.type ?? 'text'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={opts?.placeholder}
+        className="w-full border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-white"
+      />
+    </div>
+  );
+
+  const toggle = (label: string, checked: boolean, onChange: (v: boolean) => void, help?: string) => (
+    <label className="flex items-start gap-3 cursor-pointer">
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="mt-0.5 w-4 h-4 accent-outlook-blue" />
+      <div>
+        <span className="text-sm font-medium text-outlook-text-primary">{label}</span>
+        {help && <p className="text-xs text-outlook-text-secondary mt-0.5">{help}</p>}
+      </div>
+    </label>
+  );
+
+  return (
+    <div className="p-6 max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-outlook-text-primary flex items-center gap-2">
+          <Database size={20} /> Authentification LDAP
+        </h2>
+        <p className="text-sm text-outlook-text-secondary mt-1">
+          L'application fonctionne en mode local par défaut. Activez LDAP pour déléguer l'authentification à votre annuaire (ex. OpenLDAP, Active Directory, Nextcloud LDAP).
+        </p>
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Activation</h3>
+        {toggle(
+          'Activer l\'authentification LDAP',
+          enabled,
+          setEnabled,
+          'Quand activé, les identifiants sont vérifiés contre le serveur LDAP. Les utilisateurs LDAP sont provisionnés automatiquement à leur première connexion.'
+        )}
+        {enabled && toggle(
+          'Fallback local si LDAP inaccessible',
+          fallbackLocal,
+          setFallbackLocal,
+          'Permet de se connecter avec le mot de passe local si le serveur LDAP ne répond pas. Utile en transition ou pour les comptes admin de secours.'
+        )}
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Connexion au serveur</h3>
+        {field('URL du serveur LDAP', url, setUrl, { placeholder: 'ldap://192.168.1.10:389 ou ldaps://ldap.example.com:636' })}
+        {field('DN du compte de service (Bind DN)', bindDn, setBindDn, { placeholder: 'cn=service,dc=example,dc=com' })}
+        {field('Mot de passe du compte de service', bindPassword === '__encrypted__' ? '' : bindPassword, v => setBindPassword(v), {
+          type: 'password',
+          placeholder: bindPassword === '__encrypted__' ? '(mot de passe enregistré — laisser vide pour ne pas modifier)' : '',
+        })}
+        {toggle(
+          'Vérifier le certificat TLS (recommandé)',
+          tlsRejectUnauthorized,
+          setTlsRejectUnauthorized,
+          'Désactivez uniquement pour les certificats auto-signés en développement.'
+        )}
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Recherche des utilisateurs</h3>
+        {field('Base DN', baseDn, setBaseDn, { placeholder: 'dc=example,dc=com' })}
+        {field('Filtre utilisateur', userFilter, setUserFilter, {
+          placeholder: '(mail={{email}})',
+          help: 'Utilisez {{email}} comme placeholder pour l\'adresse email saisie à la connexion.',
+        })}
+        {field('Attribut nom d\'affichage', displayNameAttr, setDisplayNameAttr, {
+          placeholder: 'displayName',
+          help: 'Attribut LDAP utilisé comme nom affiché dans l\'application (ex. displayName, cn).',
+        })}
+        {field('DN du groupe admin (optionnel)', adminGroupDn, setAdminGroupDn, {
+          placeholder: 'cn=admins,ou=groups,dc=example,dc=com',
+          help: 'Les membres de ce groupe LDAP reçoivent automatiquement les droits administrateur.',
+        })}
+      </div>
+
+      {testResult && (
+        <div className={`flex items-start gap-3 p-4 rounded-lg border text-sm ${testResult.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+          {testResult.ok ? <CheckCircle size={18} className="shrink-0 mt-0.5" /> : <XCircle size={18} className="shrink-0 mt-0.5" />}
+          <div>
+            <p className="font-medium">{testResult.ok ? 'Connexion réussie' : 'Échec de la connexion'}</p>
+            <p className="mt-0.5">{testResult.message}</p>
+            {testResult.ok && testResult.userCount !== undefined && (
+              <p className="mt-0.5 text-green-700">{testResult.userCount} utilisateur(s) trouvé(s) dans l'annuaire.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleTest}
+          disabled={testing || !url || !bindDn || !baseDn}
+          className="flex items-center gap-2 border border-outlook-border rounded px-4 py-2 text-sm font-medium text-outlook-text-primary hover:bg-outlook-bg-hover disabled:opacity-50"
+        >
+          {testing ? <div className="w-3 h-3 border-2 border-gray-400 border-t-gray-700 rounded-full animate-spin" /> : <TestTube size={15} />}
+          Tester la connexion
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saveMutation.isPending}
+          className="flex items-center gap-2 bg-outlook-blue text-white px-5 py-2 text-sm rounded font-medium disabled:opacity-50"
+        >
+          {saveMutation.isPending && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+          Enregistrer
+        </button>
       </div>
     </div>
   );

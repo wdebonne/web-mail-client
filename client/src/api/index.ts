@@ -556,6 +556,13 @@ export const api = {
   getLoginAttempts: (limit = 100) =>
     request<any[]>(`/admin/security/login-attempts?limit=${limit}`),
 
+  // LDAP settings
+  getLdapSettings: () => request<any>('/admin/ldap/settings'),
+  updateLdapSettings: (data: any) =>
+    request('/admin/ldap/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  testLdapConnection: (data: any) =>
+    request<{ ok: boolean; message: string; userCount?: number }>('/admin/ldap/test', { method: 'POST', body: JSON.stringify(data) }),
+
   getAdminGroups: () => request<any[]>('/admin/groups'),
   createAdminGroup: (data: any) =>
     request('/admin/groups', { method: 'POST', body: JSON.stringify(data) }),
