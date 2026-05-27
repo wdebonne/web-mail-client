@@ -556,6 +556,16 @@ export const api = {
   getLoginAttempts: (limit = 100) =>
     request<any[]>(`/admin/security/login-attempts?limit=${limit}`),
 
+  // SSO (OpenID Connect)
+  getSsoConfig: () => request<{ enabled: boolean; providerName: string }>('/auth/sso/config'),
+  getSsoSettings: () => request<any>('/admin/sso/settings'),
+  updateSsoSettings: (data: any) =>
+    request('/admin/sso/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  testSsoConnection: (data: any) =>
+    request<{ ok: boolean; message: string; issuer?: string; authEndpoint?: string }>(
+      '/admin/sso/test', { method: 'POST', body: JSON.stringify(data) }
+    ),
+
   // LDAP settings
   getLdapSettings: () => request<any>('/admin/ldap/settings'),
   updateLdapSettings: (data: any) =>

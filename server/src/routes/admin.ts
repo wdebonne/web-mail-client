@@ -3099,6 +3099,85 @@ adminRouter.post('/ldap/test', async (req: AuthRequest, res) => {
 });
 
 // ========================================
+// ---- SSO Settings (OpenID Connect) ----
+// ========================================
+
+adminRouter.get('/sso/settings', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT key, value FROM admin_settings WHERE key LIKE 'sso_%'`
+    );
+    const s: Record<string, any> = {};
+    for (const row of result.rows) s[row.key] = row.value;
+    if (s['sso_client_secret']) s['sso_client_secret'] = '__encrypted__';
+    res.json(s);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.put('/sso/settings', async (req: AuthRequest, res) => {
+  try {
+    const { encrypt } = await import('../utils/encryption');
+    const { invalidateSsoCache } = await import('../services/sso');
+    const body = req.body;
+    const allowed = [
+      'sso_enabled', 'sso_provider_name', 'sso_issuer_url',
+      'sso_client_id', 'sso_redirect_uri', 'sso_tls_reject_unauthorized',
+    ];
+    for (const key of allowed) {
+      if (key in body) {
+        await pool.query(
+          `INSERT INTO admin_settings (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [key, body[key]]
+        );
+      }
+    }
+    if (body['sso_client_secret'] && body['sso_client_secret'] !== '__encrypted__') {
+      const encrypted = encrypt(body['sso_client_secret']);
+      await pool.query(
+        `INSERT INTO admin_settings (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        ['sso_client_secret', JSON.stringify(encrypted)]
+      );
+    }
+    invalidateSsoCache();
+    await addLog(req.userId, 'sso.settings_updated', 'security', req, {});
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.post('/sso/test', async (req: AuthRequest, res) => {
+  try {
+    const { getSsoConfig, buildOidcClient } = await import('../services/sso');
+    const saved = await getSsoConfig();
+    const body = req.body;
+    const cfg = {
+      ...saved,
+      issuerUrl: body.sso_issuer_url ?? saved.issuerUrl,
+      clientId: body.sso_client_id ?? saved.clientId,
+      clientSecret: (body.sso_client_secret && body.sso_client_secret !== '__encrypted__')
+        ? body.sso_client_secret : saved.clientSecret,
+      redirectUri: body.sso_redirect_uri ?? saved.redirectUri,
+      tlsRejectUnauthorized: body.sso_tls_reject_unauthorized ?? saved.tlsRejectUnauthorized,
+    };
+    if (!cfg.issuerUrl || !cfg.clientId) {
+      return res.json({ ok: false, message: 'URL du serveur SSO et Client ID sont requis' });
+    }
+    const redirectUri = cfg.redirectUri || 'http://localhost/api/auth/sso/callback';
+    const client = await buildOidcClient({ ...cfg, redirectUri });
+    const issuer = (client as any).issuer;
+    res.json({
+      ok: true,
+      message: 'Connexion au serveur SSO réussie',
+      issuer: issuer.issuer,
+      authEndpoint: issuer.authorization_endpoint,
+    });
+  } catch (e: any) {
+    res.json({ ok: false, message: e.message ?? 'Erreur inconnue' });
+  }
+});
+
+// ========================================
 // ---- Migration IMAP ----
 // ========================================
 

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../api';
-import { Mail, Lock, User, AlertCircle, Fingerprint, KeyRound } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, Fingerprint, KeyRound, LogIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { startAuthentication } from '@simplewebauthn/browser';
 
@@ -34,9 +34,35 @@ export default function LoginPage() {
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
 
+  // SSO — detect redirect-back from provider and handle errors
+  const [ssoLoading, setSsoLoading] = useState(false);
+  const [ssoError, setSsoError] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errCode = params.get('sso_error');
+    if (errCode) {
+      const messages: Record<string, string> = {
+        discovery_failed: 'Impossible de joindre le serveur SSO.',
+        callback_failed: 'Erreur lors du retour SSO. Réessayez.',
+        no_email: 'Le serveur SSO n\'a pas fourni d\'adresse email.',
+        account_disabled: 'Votre compte est désactivé.',
+        disabled: 'Le SSO est désactivé.',
+      };
+      setSsoError(messages[errCode] ?? 'Erreur SSO inconnue.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   const { data: branding } = useQuery({
     queryKey: ['branding-public'],
     queryFn: api.getBranding,
+    staleTime: 60_000,
+  });
+
+  const { data: ssoData } = useQuery({
+    queryKey: ['sso-config'],
+    queryFn: api.getSsoConfig,
     staleTime: 60_000,
   });
 
@@ -119,6 +145,13 @@ export default function LoginPage() {
   const showPasskey = webauthnSupported && (appearance?.showPasskeyButton ?? true);
   const showRegister = appearance?.showRegister ?? true;
   const showForgotPassword = appearance?.showForgotPassword ?? false;
+  const showSso = ssoData?.enabled ?? false;
+  const ssoProviderName = ssoData?.providerName ?? 'SSO';
+
+  const handleSsoLogin = () => {
+    setSsoLoading(true);
+    window.location.href = '/api/auth/sso/login';
+  };
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,7 +284,7 @@ export default function LoginPage() {
         </div>
 
         <AnimatePresence>
-          {error && (
+          {(error || ssoError) && (
             <motion.div
               initial={{ opacity: 0, height: 0, marginBottom: 0 }}
               animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
@@ -260,7 +293,7 @@ export default function LoginPage() {
               className="bg-red-50 border border-red-200 rounded-md p-3 flex items-center gap-2 overflow-hidden"
             >
               <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-              <span className="text-red-700 text-sm">{error}</span>
+              <span className="text-red-700 text-sm">{error || ssoError}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -286,17 +319,30 @@ export default function LoginPage() {
           </div>
         )}
 
-        {showPasskey && !pendingToken && !isRegister && (
+        {(showPasskey || showSso) && !pendingToken && !isRegister && (
           <>
-            <button
-              type="button"
-              onClick={handlePasskeyLogin}
-              disabled={passkeyLoading}
-              className="w-full border border-outlook-border hover:border-outlook-blue hover:bg-outlook-bg-hover text-outlook-text-primary py-2.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mb-4"
-            >
-              <KeyRound size={18} />
-              {passkeyLoading ? t('login.passkey_detecting') : t('login.passkey_button')}
-            </button>
+            {showSso && (
+              <button
+                type="button"
+                onClick={handleSsoLogin}
+                disabled={ssoLoading}
+                className="w-full border border-outlook-border hover:border-outlook-blue hover:bg-outlook-bg-hover text-outlook-text-primary py-2.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mb-3"
+              >
+                <LogIn size={18} />
+                {ssoLoading ? 'Redirection…' : `Se connecter avec ${ssoProviderName}`}
+              </button>
+            )}
+            {showPasskey && (
+              <button
+                type="button"
+                onClick={handlePasskeyLogin}
+                disabled={passkeyLoading}
+                className="w-full border border-outlook-border hover:border-outlook-blue hover:bg-outlook-bg-hover text-outlook-text-primary py-2.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mb-4"
+              >
+                <KeyRound size={18} />
+                {passkeyLoading ? t('login.passkey_detecting') : t('login.passkey_button')}
+              </button>
+            )}
             <div className="flex items-center gap-3 mb-4">
               <div className="flex-1 h-px bg-outlook-border" />
               <span className="text-xs text-outlook-text-disabled uppercase tracking-wide">{t('login.divider_or')}</span>

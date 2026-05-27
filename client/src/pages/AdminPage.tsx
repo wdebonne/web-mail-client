@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
   Download, Send, AlertTriangle, Eye, EyeOff,
-  Lock, LockOpen, ShieldAlert, ListX, ListChecks,
+  Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -32,7 +32,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'ldap';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'ldap' | 'sso';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -69,6 +69,7 @@ export default function AdminPage() {
     { id: 'nextcloud' as const,      icon: Cloud,           label: t('admin.tab.nextcloud'),      group: t('admin.group.integrations') },
     { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
     { id: 'ldap' as const,          icon: Database,        label: 'LDAP',                         group: t('admin.group.integrations') },
+    { id: 'sso' as const,           icon: LogIn,           label: 'SSO / OpenID Connect',         group: t('admin.group.integrations') },
     // Système
     { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
     { id: 'backup' as const,          icon: HardDrive,      label: 'Sauvegarde',                  group: t('admin.group.system') },
@@ -168,6 +169,7 @@ export default function AdminPage() {
             {tab === 'migration' && <AdminMigration />}
             {tab === 'bulksend' && <AdminBulkSend />}
             {tab === 'ldap' && <LdapSettings />}
+            {tab === 'sso' && <SsoSettings />}
           </div>
         </div>
       </div>
@@ -5122,6 +5124,212 @@ function LdapGroupMappings() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SSO Settings (OpenID Connect)
+// ─────────────────────────────────────────────────────────────────────────────
+function SsoSettings() {
+  const queryClient = useQueryClient();
+
+  const [enabled, setEnabled] = useState(false);
+  const [providerName, setProviderName] = useState('Synology SSO');
+  const [issuerUrl, setIssuerUrl] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [redirectUri, setRedirectUri] = useState('');
+  const [tlsRejectUnauthorized, setTlsRejectUnauthorized] = useState(true);
+  const [showSecret, setShowSecret] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; issuer?: string; authEndpoint?: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  useQuery({
+    queryKey: ['sso-settings'],
+    queryFn: api.getSsoSettings,
+    onSuccess: (s: any) => {
+      setEnabled(!!s['sso_enabled']);
+      setProviderName(s['sso_provider_name'] ?? 'Synology SSO');
+      setIssuerUrl(s['sso_issuer_url'] ?? '');
+      setClientId(s['sso_client_id'] ?? '');
+      setClientSecret(s['sso_client_secret'] === '__encrypted__' ? '__encrypted__' : '');
+      setRedirectUri(s['sso_redirect_uri'] ?? '');
+      setTlsRejectUnauthorized(s['sso_tls_reject_unauthorized'] !== false);
+    },
+  } as any);
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.updateSsoSettings({
+      sso_enabled: enabled,
+      sso_provider_name: providerName,
+      sso_issuer_url: issuerUrl,
+      sso_client_id: clientId,
+      sso_client_secret: clientSecret,
+      sso_redirect_uri: redirectUri,
+      sso_tls_reject_unauthorized: tlsRejectUnauthorized,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sso-settings'] });
+      toast.success('Configuration SSO enregistrée');
+    },
+    onError: (e: any) => toast.error(e.message ?? 'Erreur'),
+  });
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.testSsoConnection({
+        sso_issuer_url: issuerUrl,
+        sso_client_id: clientId,
+        sso_client_secret: clientSecret,
+        sso_redirect_uri: redirectUri,
+        sso_tls_reject_unauthorized: tlsRejectUnauthorized,
+      });
+      setTestResult(result);
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e.message ?? 'Erreur' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const toggle = (label: string, value: boolean, setter: (v: boolean) => void, help: string) => (
+    <div className="flex items-start justify-between py-3 border-b border-outlook-border last:border-0">
+      <div className="flex-1 pr-4">
+        <div className="text-sm font-medium text-outlook-text-primary">{label}</div>
+        <div className="text-xs text-outlook-text-secondary mt-0.5">{help}</div>
+      </div>
+      <button
+        type="button"
+        onClick={() => setter(!value)}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${value ? 'bg-outlook-blue' : 'bg-gray-300'}`}
+      >
+        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  );
+
+  const field = (label: string, value: string, setter: (v: string) => void, opts?: { placeholder?: string; help?: string }) => (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-outlook-text-primary mb-1">{label}</label>
+      {opts?.help && <p className="text-xs text-outlook-text-secondary mb-1">{opts.help}</p>}
+      <input
+        type="text"
+        value={value}
+        onChange={e => setter(e.target.value)}
+        placeholder={opts?.placeholder}
+        className="w-full px-3 py-2 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
+      />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <LogIn size={20} />
+        <div>
+          <h2 className="text-lg font-semibold">SSO / OpenID Connect</h2>
+          <p className="text-sm text-outlook-text-secondary mt-0.5">
+            Connectez l'application à un fournisseur d'identité OIDC (Synology SSO Server, Keycloak, Azure AD…).
+            Les utilisateurs peuvent se connecter en un clic sans ressaisir leur mot de passe.
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs text-blue-700">
+        <strong>Synology SSO Server :</strong> installez le package <em>SSO Server</em> sur le DSM,
+        allez dans <em>SSO Server → Application → Ajouter</em>, créez une application de type OIDC,
+        copiez le Client ID et Secret ci-dessous. L'URL du serveur est généralement{' '}
+        <code className="bg-blue-100 px-1 rounded">https://&lt;ip-nas&gt;:&lt;port&gt;/webman/sso</code>.
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-4 space-y-1">
+        {toggle('Activer le SSO', enabled, setEnabled,
+          'Affiche le bouton SSO sur la page de connexion. Les autres méthodes (mot de passe, passkey) restent disponibles.')}
+        {toggle('Vérifier le certificat TLS', tlsRejectUnauthorized, setTlsRejectUnauthorized,
+          'Désactivez uniquement si votre serveur SSO utilise un certificat auto-signé non approuvé.')}
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-4">
+        {field('Libellé du bouton', providerName, setProviderName, {
+          placeholder: 'Synology SSO',
+          help: 'Texte affiché sur le bouton de connexion.',
+        })}
+        {field('URL du serveur OIDC (Issuer)', issuerUrl, setIssuerUrl, {
+          placeholder: 'https://nas.local:5001/webman/sso',
+          help: 'URL de base du serveur SSO. La découverte OIDC est automatique via <url>/.well-known/openid-configuration.',
+        })}
+        {field('Client ID', clientId, setClientId, {
+          placeholder: 'mon-app-client-id',
+        })}
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-outlook-text-primary mb-1">Client Secret</label>
+          <div className="relative">
+            <input
+              type={showSecret ? 'text' : 'password'}
+              value={clientSecret}
+              onChange={e => setClientSecret(e.target.value)}
+              placeholder={clientSecret === '__encrypted__' ? '(chiffré — laissez vide pour ne pas modifier)' : ''}
+              className="w-full px-3 py-2 pr-10 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
+            />
+            <button
+              type="button"
+              onClick={() => setShowSecret(!showSecret)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled hover:text-outlook-text-secondary"
+            >
+              {showSecret ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+        </div>
+
+        {field('URI de redirection (optionnel)', redirectUri, setRedirectUri, {
+          placeholder: '(auto-détection si vide)',
+          help: 'Laissez vide pour auto-détection. Si renseigné, doit correspondre exactement à la valeur configurée sur le serveur SSO.',
+        })}
+      </div>
+
+      {testResult && (
+        <div className={`flex items-start gap-2 p-3 rounded-md text-sm ${testResult.ok ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
+          {testResult.ok ? <CheckCircle size={16} className="mt-0.5 shrink-0" /> : <XCircle size={16} className="mt-0.5 shrink-0" />}
+          <div>
+            <div className="font-medium">{testResult.message}</div>
+            {testResult.ok && testResult.issuer && (
+              <div className="mt-1 text-xs opacity-80">Issuer découvert : {testResult.issuer}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testing || !issuerUrl || !clientId}
+          className="flex items-center gap-2 px-4 py-2 border border-outlook-border rounded-md text-sm hover:bg-outlook-bg-hover disabled:opacity-50"
+        >
+          <TestTube size={16} />
+          {testing ? 'Test en cours…' : 'Tester la connexion'}
+        </button>
+        <button
+          type="button"
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          className="flex items-center gap-2 px-4 py-2 bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md text-sm disabled:opacity-50"
+        >
+          <CheckCircle size={16} />
+          {saveMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+
+      {enabled && (
+        <div className="bg-gray-50 border border-outlook-border rounded-md p-3 text-xs text-outlook-text-secondary">
+          <strong>URI de redirection à configurer sur votre serveur SSO :</strong>{' '}
+          <code className="bg-gray-100 px-1 rounded">{window.location.origin}/api/auth/sso/callback</code>
+        </div>
+      )}
     </div>
   );
 }

@@ -950,6 +950,19 @@ export async function initDatabase() {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_ldap_dn ON groups(ldap_dn) WHERE ldap_dn IS NOT NULL;
     `);
 
+    // SSO (OpenID Connect) default settings
+    await client.query(`
+      INSERT INTO admin_settings (key, value, description) VALUES
+        ('sso_enabled',                false, 'SSO OpenID Connect activé'),
+        ('sso_provider_name',          'Synology SSO', 'Libellé du bouton SSO sur la page de connexion'),
+        ('sso_issuer_url',             '', 'URL du serveur OIDC (ex: https://nas.local/webman/sso)'),
+        ('sso_client_id',              '', 'Client ID enregistré sur le serveur SSO'),
+        ('sso_client_secret',          '', 'Client Secret (stocké chiffré)'),
+        ('sso_redirect_uri',           '', 'URI de redirection (vide = auto-détection)'),
+        ('sso_tls_reject_unauthorized', true, 'Vérifier le certificat TLS du serveur SSO')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

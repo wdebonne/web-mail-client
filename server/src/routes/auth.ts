@@ -753,6 +753,135 @@ authRouter.post('/webauthn/login/verify', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SSO — OpenID Connect (Synology SSO Server or any OIDC provider)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Public: returns { enabled, providerName } for the login page button. */
+authRouter.get('/sso/config', async (_req, res) => {
+  try {
+    const { getSsoConfig } = await import('../services/sso');
+    const cfg = await getSsoConfig();
+    res.json({ enabled: cfg.enabled, providerName: cfg.providerName });
+  } catch {
+    res.json({ enabled: false, providerName: 'SSO' });
+  }
+});
+
+/** Initiates the OIDC authorization code flow — redirects user to provider. */
+authRouter.get('/sso/login', async (req, res) => {
+  try {
+    const { getSsoConfig, buildOidcClient, generators } = await import('../services/sso');
+    const cfg = await getSsoConfig();
+
+    if (!cfg.enabled) return res.status(403).send('SSO non activé');
+    if (!cfg.issuerUrl || !cfg.clientId) return res.status(503).send('SSO mal configuré');
+
+    const redirectUri = cfg.redirectUri ||
+      `${req.protocol}://${req.headers.host}/api/auth/sso/callback`;
+
+    const client = await buildOidcClient({ ...cfg, redirectUri });
+
+    const state = generators.state();
+    const nonce = generators.nonce();
+
+    (req.session as any).ssoState = state;
+    (req.session as any).ssoNonce = nonce;
+    (req.session as any).ssoRedirectUri = redirectUri;
+
+    const authUrl = client.authorizationUrl({
+      scope: 'openid email profile',
+      state,
+      nonce,
+    });
+
+    res.redirect(authUrl);
+  } catch (err: any) {
+    console.error('SSO login error:', err);
+    res.redirect('/login?sso_error=discovery_failed');
+  }
+});
+
+/** OIDC callback — exchanges code, provisions user, issues session, redirects to app. */
+authRouter.get('/sso/callback', async (req, res) => {
+  try {
+    const { getSsoConfig, buildOidcClient } = await import('../services/sso');
+    const cfg = await getSsoConfig();
+
+    if (!cfg.enabled) return res.redirect('/login?sso_error=disabled');
+
+    const redirectUri = (req.session as any).ssoRedirectUri ||
+      cfg.redirectUri ||
+      `${req.protocol}://${req.headers.host}/api/auth/sso/callback`;
+
+    const client = await buildOidcClient({ ...cfg, redirectUri });
+
+    const expectedState = (req.session as any).ssoState;
+    const nonce = (req.session as any).ssoNonce;
+
+    delete (req.session as any).ssoState;
+    delete (req.session as any).ssoNonce;
+    delete (req.session as any).ssoRedirectUri;
+
+    const params = client.callbackParams(req);
+    const tokenSet = await client.callback(redirectUri, params, {
+      state: expectedState,
+      nonce,
+    });
+
+    const userInfo = await client.userinfo(tokenSet.access_token!);
+    const email = typeof userInfo.email === 'string' ? userInfo.email : null;
+
+    if (!email) return res.redirect('/login?sso_error=no_email');
+
+    const displayName =
+      (typeof userInfo.name === 'string' ? userInfo.name : null) ||
+      (typeof userInfo.preferred_username === 'string' ? userInfo.preferred_username : null) ||
+      email;
+
+    // Provision user — update display name on each login but never override admin/role
+    await pool.query(
+      `INSERT INTO users (email, password_hash, display_name, is_admin, role, is_active)
+       VALUES ($1, '', $2, false, 'user', true)
+       ON CONFLICT (email) DO UPDATE
+         SET display_name = EXCLUDED.display_name, updated_at = NOW()`,
+      [email, displayName]
+    );
+
+    const userRow = await pool.query<{ id: string; is_admin: boolean; is_active: boolean }>(
+      `SELECT id, is_admin, is_active FROM users WHERE email = $1`,
+      [email]
+    );
+
+    if (userRow.rows.length === 0 || userRow.rows[0].is_active === false) {
+      return res.redirect('/login?sso_error=account_disabled');
+    }
+
+    const user = userRow.rows[0];
+    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+    const ua = req.headers['user-agent'] || '';
+
+    await pool.query(
+      `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success)
+       VALUES ($1, $2, $3, $4, true)`,
+      [user.id, email, ip, ua]
+    );
+    addLog(user.id, 'user.login', 'auth', req, { email, method: 'sso' }).catch(() => {});
+
+    // Issue device session — sets the refresh cookie
+    req.session.userId = user.id;
+    req.session.isAdmin = user.is_admin;
+    await issueSession(req, res, user.id, user.is_admin);
+
+    // Redirect to frontend — the refresh cookie is now set.
+    // checkAuth() (called on app boot) will exchange it for an access token.
+    res.redirect('/?sso=1');
+  } catch (err: any) {
+    console.error('SSO callback error:', err);
+    res.redirect('/login?sso_error=callback_failed');
+  }
+});
+
 /**
  * PWA unlock — the authenticated user proves presence (biometric) to unlock
  * the app after a period of inactivity. Uses the current access token to
