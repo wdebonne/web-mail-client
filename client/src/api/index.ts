@@ -562,6 +562,11 @@ export const api = {
     request('/admin/ldap/settings', { method: 'PUT', body: JSON.stringify(data) }),
   testLdapConnection: (data: any) =>
     request<{ ok: boolean; message: string; userCount?: number }>('/admin/ldap/test', { method: 'POST', body: JSON.stringify(data) }),
+  getLdapGroupMappings: () => request<any[]>('/admin/ldap/group-mappings'),
+  addLdapGroupMapping: (data: { ldapDn: string; groupId: string }) =>
+    request<any>('/admin/ldap/group-mappings', { method: 'POST', body: JSON.stringify(data) }),
+  deleteLdapGroupMapping: (id: string) =>
+    request<{ ok: boolean }>(`/admin/ldap/group-mappings/${id}`, { method: 'DELETE' }),
 
   getAdminGroups: () => request<any[]>('/admin/groups'),
   createAdminGroup: (data: any) =>

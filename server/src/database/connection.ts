@@ -934,6 +934,18 @@ export async function initDatabase() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
+    // LDAP group mappings: LDAP DN <-> application group
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ldap_group_mappings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ldap_dn TEXT NOT NULL,
+        group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(ldap_dn, group_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ldap_group_mappings_group ON ldap_group_mappings(group_id);
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

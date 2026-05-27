@@ -4958,6 +4958,111 @@ function LdapSettings() {
           Enregistrer
         </button>
       </div>
+
+      <LdapGroupMappings />
+    </div>
+  );
+}
+
+function LdapGroupMappings() {
+  const queryClient = useQueryClient();
+  const [newDn, setNewDn] = useState('');
+  const [newGroupId, setNewGroupId] = useState('');
+
+  const { data: mappings = [], isLoading } = useQuery({
+    queryKey: ['ldap-group-mappings'],
+    queryFn: api.getLdapGroupMappings,
+  });
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ['admin-groups'],
+    queryFn: api.getAdminGroups,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (data: { ldapDn: string; groupId: string }) => api.addLdapGroupMapping(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ldap-group-mappings'] });
+      setNewDn(''); setNewGroupId('');
+      toast.success('Mapping ajouté');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteLdapGroupMapping(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ldap-group-mappings'] });
+      toast.success('Mapping supprimé');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleAdd = () => {
+    if (!newDn.trim() || !newGroupId) return;
+    addMutation.mutate({ ldapDn: newDn.trim(), groupId: newGroupId });
+  };
+
+  return (
+    <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Synchronisation des groupes</h3>
+        <p className="text-xs text-outlook-text-secondary mt-1">
+          À chaque connexion LDAP, les groupes de l'utilisateur sont synchronisés. Les groupes sans mapping LDAP restent inchangés.
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={newDn}
+          onChange={e => setNewDn(e.target.value)}
+          placeholder="DN du groupe LDAP (ex: cn=editors,ou=groups,dc=example,dc=com)"
+          className="flex-1 border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+        />
+        <select
+          value={newGroupId}
+          onChange={e => setNewGroupId(e.target.value)}
+          className="border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-white min-w-[180px]"
+        >
+          <option value="">— Groupe de l'app —</option>
+          {(groups as any[]).map((g: any) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+        <button
+          onClick={handleAdd}
+          disabled={!newDn.trim() || !newGroupId || addMutation.isPending}
+          className="flex items-center gap-1 bg-outlook-blue text-white px-4 py-2 text-sm rounded font-medium disabled:opacity-50"
+        >
+          <Plus size={15} /> Ajouter
+        </button>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-outlook-text-secondary">Chargement…</p>
+      ) : mappings.length === 0 ? (
+        <p className="text-sm text-outlook-text-secondary italic">Aucun mapping configuré.</p>
+      ) : (
+        <div className="space-y-2">
+          {(mappings as any[]).map((m: any) => (
+            <div key={m.id} className="flex items-center justify-between bg-outlook-bg-secondary rounded px-3 py-2 text-sm">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.group_color || '#0078D4' }} />
+                <span className="font-medium text-outlook-text-primary shrink-0">{m.group_name}</span>
+                <span className="text-outlook-text-secondary truncate font-mono text-xs">{m.ldap_dn}</span>
+              </div>
+              <button
+                onClick={() => deleteMutation.mutate(m.id)}
+                disabled={deleteMutation.isPending}
+                className="ml-3 text-outlook-text-secondary hover:text-red-500 shrink-0"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

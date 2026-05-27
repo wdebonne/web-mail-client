@@ -138,7 +138,7 @@ authRouter.post('/login', async (req, res) => {
     const isWhitelisted = whitelisted.rows.length > 0;
 
     // ---- LDAP authentication (when enabled) ----
-    const { getLdapConfig, authenticateLdapUser } = await import('../services/ldap');
+    const { getLdapConfig, authenticateLdapUser, syncLdapGroups } = await import('../services/ldap');
     const ldapCfg = await getLdapConfig();
     let usedLdap = false;
 
@@ -186,6 +186,14 @@ authRouter.post('/login', async (req, res) => {
           ]
         );
         usedLdap = true;
+
+        // Sync LDAP group memberships — resolve user id first
+        const provisionedUser = await pool.query<{ id: string }>(
+          `SELECT id FROM users WHERE email = $1`, [ldapUser.email]
+        );
+        if (provisionedUser.rows.length > 0) {
+          syncLdapGroups(provisionedUser.rows[0].id, ldapUser.memberOfDns).catch(() => {});
+        }
       }
       // If ldapError && fallbackLocal: fall through to local bcrypt below
     }

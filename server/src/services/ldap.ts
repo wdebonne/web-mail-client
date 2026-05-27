@@ -20,6 +20,7 @@ export interface LdapUser {
   email: string;
   displayName: string;
   isAdmin: boolean;
+  memberOfDns: string[];
 }
 
 export async function getLdapConfig(): Promise<LdapConfig> {
@@ -80,6 +81,40 @@ export async function testLdapConnection(cfg: LdapConfig): Promise<{ ok: boolean
   }
 }
 
+/**
+ * Sync the LDAP group memberships of a user to the application's user_groups table.
+ * - Adds the user to app groups whose LDAP DN is in their memberOf list.
+ * - Removes the user from app groups that have a LDAP mapping but whose DN is no longer present.
+ * - Groups without any LDAP mapping are left untouched.
+ */
+export async function syncLdapGroups(userId: string, memberOfDns: string[]): Promise<void> {
+  const normalised = memberOfDns.map(dn => dn.toLowerCase());
+
+  // Load all configured LDAP → group mappings
+  const mappings = await pool.query<{ id: string; ldap_dn: string; group_id: string }>(
+    `SELECT id, ldap_dn, group_id FROM ldap_group_mappings`
+  );
+
+  for (const row of mappings.rows) {
+    const dnLower = row.ldap_dn.toLowerCase();
+    const isMember = normalised.some(dn => dn === dnLower);
+
+    if (isMember) {
+      // Ensure membership
+      await pool.query(
+        `INSERT INTO user_groups (user_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [userId, row.group_id]
+      );
+    } else {
+      // Remove from this LDAP-mapped group only
+      await pool.query(
+        `DELETE FROM user_groups WHERE user_id = $1 AND group_id = $2`,
+        [userId, row.group_id]
+      );
+    }
+  }
+}
+
 export async function authenticateLdapUser(
   cfg: LdapConfig,
   email: string,
@@ -127,7 +162,10 @@ export async function authenticateLdapUser(
     const rawName = entry[cfg.displayNameAttr];
     const displayName = Array.isArray(rawName) ? rawName[0] : rawName ?? email;
 
-    return { dn: userDn, email, displayName: String(displayName), isAdmin };
+    const memberOf = entry['memberOf'];
+    const memberOfDns = (Array.isArray(memberOf) ? memberOf : memberOf ? [memberOf] : []).map(String);
+
+    return { dn: userDn, email, displayName: String(displayName), isAdmin, memberOfDns };
   } finally {
     await client.unbind().catch(() => {});
   }

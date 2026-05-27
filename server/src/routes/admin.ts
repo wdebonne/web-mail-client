@@ -3025,6 +3025,43 @@ adminRouter.put('/ldap/settings', async (req: AuthRequest, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// LDAP group mappings CRUD
+adminRouter.get('/ldap/group-mappings', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT lgm.id, lgm.ldap_dn, lgm.group_id, g.name as group_name, g.color as group_color, lgm.created_at
+       FROM ldap_group_mappings lgm
+       JOIN groups g ON g.id = lgm.group_id
+       ORDER BY g.name, lgm.ldap_dn`
+    );
+    res.json(result.rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.post('/ldap/group-mappings', async (req: AuthRequest, res) => {
+  try {
+    const { ldapDn, groupId } = req.body;
+    if (!ldapDn || !groupId) return res.status(400).json({ error: 'ldapDn et groupId sont requis' });
+    const result = await pool.query(
+      `INSERT INTO ldap_group_mappings (ldap_dn, group_id) VALUES ($1, $2) RETURNING *`,
+      [ldapDn.trim(), groupId]
+    );
+    await addLog(req.userId, 'ldap.mapping_added', 'security', req, { ldapDn, groupId });
+    res.status(201).json(result.rows[0]);
+  } catch (e: any) {
+    if ((e as any).code === '23505') return res.status(409).json({ error: 'Ce mapping existe déjà' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.delete('/ldap/group-mappings/:id', async (req: AuthRequest, res) => {
+  try {
+    await pool.query(`DELETE FROM ldap_group_mappings WHERE id = $1`, [req.params.id]);
+    await addLog(req.userId, 'ldap.mapping_deleted', 'security', req, { id: req.params.id });
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 adminRouter.post('/ldap/test', async (req: AuthRequest, res) => {
   try {
     const { getLdapConfig, testLdapConnection } = await import('../services/ldap');
