@@ -541,7 +541,7 @@ oauthCallbackRouter.get('/mail-accounts/oauth/:provider/callback', async (req: A
     res.send(`<!doctype html>
 <html><head><meta charset="utf-8"><title>OAuth</title></head>
 <body style="font-family:system-ui;padding:24px;">
-<script>
+<script nonce="${res.locals.cspNonce}">
   (function () {
     var payload = ${safe};
     try {

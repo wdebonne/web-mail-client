@@ -36,6 +36,7 @@ import { startBulkSendProcessor } from './services/bulkSendProcessor';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { authLimiter } from './middleware/rateLimit';
+import { cspMiddleware } from './middleware/csp';
 import { setupWebSocket } from './services/websocket';
 import { PluginManager } from './plugins/manager';
 import { initPushService } from './services/push';
@@ -78,21 +79,9 @@ app.use(helmet({
   hsts: false,
 }));
 
-// Manual CSP without upgrade-insecure-requests
-app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy',
-    "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline'; " +
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "img-src 'self' data: blob: https:; " +
-    "frame-src 'self' blob: data:; " +
-    "connect-src 'self' wss: ws:; " +
-    "font-src 'self' data: https://fonts.gstatic.com; " +
-    "worker-src 'self' blob:; " +
-    "manifest-src 'self'"
-  );
-  next();
-});
+// Manual CSP with a per-request nonce on script-src (no 'unsafe-inline') —
+// see middleware/csp.ts for the rationale and the res.locals.cspNonce contract.
+app.use(cspMiddleware);
 app.use(compression());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' ? false : ['http://localhost:5173'],
