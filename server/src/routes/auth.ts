@@ -194,7 +194,9 @@ authRouter.post('/login', credentialLimiter, async (req, res) => {
           `SELECT id FROM users WHERE email = $1`, [ldapUser.email]
         );
         if (provisionedUser.rows.length > 0) {
-          syncLdapGroups(provisionedUser.rows[0].id, ldapUser.memberOfDns, ldapCfg).catch(() => {});
+          syncLdapGroups(provisionedUser.rows[0].id, ldapUser.memberOfDns, ldapCfg).catch((err) => {
+            console.error('LDAP group sync failed for', ldapUser!.email, ':', err);
+          });
         }
       }
       // If ldapError && fallbackLocal: fall through to local bcrypt below
@@ -814,6 +816,24 @@ authRouter.get('/sso/callback', async (req, res) => {
 
     if (!cfg.enabled) return res.redirect('/login?sso_error=disabled');
 
+    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+    const ua = req.headers['user-agent'] || '';
+
+    // Check IP blacklist — same rule as the password login
+    const blacklisted = await pool.query(
+      `SELECT id FROM ip_security_list WHERE ip_address = $1 AND list_type = 'blacklist'`,
+      [ip]
+    );
+    if (blacklisted.rows.length > 0) {
+      await pool.query(
+        `INSERT INTO login_attempts (email, ip_address, user_agent, success, block_reason)
+         VALUES ($1, $2, $3, false, 'blacklist')`,
+        ['(sso)', ip, ua]
+      );
+      addLog(undefined, 'user.login_blocked', 'auth', req, { method: 'sso', reason: 'blacklist' }).catch(() => {});
+      return res.redirect('/login?sso_error=ip_blocked');
+    }
+
     const redirectUri = (req.session as any).ssoRedirectUri ||
       cfg.redirectUri ||
       `${req.protocol}://${req.headers.host}/api/auth/sso/callback`;
@@ -862,8 +882,6 @@ authRouter.get('/sso/callback', async (req, res) => {
     }
 
     const user = userRow.rows[0];
-    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
-    const ua = req.headers['user-agent'] || '';
 
     await pool.query(
       `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success)
