@@ -3129,7 +3129,7 @@ adminRouter.put('/sso/settings', async (req: AuthRequest, res) => {
         await pool.query(
           `INSERT INTO admin_settings (key, value) VALUES ($1, $2)
            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-          [key, body[key]]
+          [key, JSON.stringify(body[key])]
         );
       }
     }
