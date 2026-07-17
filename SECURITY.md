@@ -4,10 +4,10 @@
 
 | Version | Supportée |
 |---------|-----------|
-| 1.10.x  | ✅ Oui    |
-| 1.9.x   | ✅ Oui    |
-| 1.8.x   | ⚠️ Correctifs critiques uniquement |
-| < 1.8   | ❌ Non    |
+| 1.23.x  | ✅ Oui    |
+| 1.22.x  | ✅ Oui    |
+| 1.21.x  | ⚠️ Correctifs critiques uniquement |
+| < 1.21  | ❌ Non    |
 
 ## Signaler une vulnérabilité
 

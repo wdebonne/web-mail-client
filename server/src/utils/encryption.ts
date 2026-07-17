@@ -3,7 +3,14 @@ import crypto from 'crypto';
 const ALGORITHM = 'aes-256-gcm';
 
 function getKey(): Buffer {
-  const key = process.env.ENCRYPTION_KEY || 'change-me-32-chars-minimum-key!!';
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('ENCRYPTION_KEY must be set in production');
+    }
+    // Dev-only fallback — kept stable so local data stays decryptable.
+    return crypto.scryptSync('change-me-32-chars-minimum-key!!', 'salt', 32);
+  }
   return crypto.scryptSync(key, 'salt', 32);
 }
 

@@ -19,6 +19,7 @@ import { upsertAutoResponderForAccount } from './autoResponder';
 import { invalidateNotificationPrefsCache } from '../services/notificationPrefs';
 import { addLog } from '../services/auditLog';
 import { testConnection, listFolders, runMigration, MigrationSource, MigrationDestination } from '../services/migrationService';
+import { hashResetToken } from '../utils/resetToken';
 
 export const adminRouter = Router();
 
@@ -249,7 +250,7 @@ adminRouter.post('/users/:id/reset-link', async (req: AuthRequest, res) => {
     );
     await pool.query(
       'INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)',
-      [req.params.id, token, expiresAt]
+      [req.params.id, hashResetToken(token), expiresAt]
     );
 
     const origin = req.headers.origin || `${req.protocol}://${req.headers.host}`;
@@ -2971,6 +2972,210 @@ adminRouter.get('/security/login-attempts', async (req: AuthRequest, res) => {
     );
     res.json(result.rows);
   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ========================================
+// ---- LDAP Settings ----
+// ========================================
+
+adminRouter.get('/ldap/settings', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT key, value FROM admin_settings WHERE key LIKE 'ldap_%'`
+    );
+    const s: Record<string, any> = {};
+    for (const row of result.rows) s[row.key] = row.value;
+    // Never expose the encrypted password — send a placeholder
+    if (s['ldap_bind_password']) s['ldap_bind_password'] = '__encrypted__';
+    res.json(s);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.put('/ldap/settings', async (req: AuthRequest, res) => {
+  try {
+    const allowed = [
+      'ldap_enabled', 'ldap_url', 'ldap_bind_dn',
+      'ldap_base_dn', 'ldap_user_filter', 'ldap_display_name_attr',
+      'ldap_admin_group_dn', 'ldap_admin_group_names', 'ldap_tls_reject_unauthorized', 'ldap_fallback_local',
+    ];
+    const body = req.body as Record<string, any>;
+
+    for (const key of allowed) {
+      if (key in body) {
+        await pool.query(
+          `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+          [key, JSON.stringify(body[key])]
+        );
+      }
+    }
+
+    // Password saved separately — only update when a real value is provided
+    if (body['ldap_bind_password'] && body['ldap_bind_password'] !== '__encrypted__') {
+      const { encrypt } = await import('../utils/encryption');
+      const encrypted = encrypt(body['ldap_bind_password']);
+      await pool.query(
+        `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+        ['ldap_bind_password', JSON.stringify(encrypted)]
+      );
+    }
+
+    await addLog(req.userId, 'ldap.settings_updated', 'security', req, {});
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// LDAP group mappings CRUD
+adminRouter.get('/ldap/group-mappings', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT lgm.id, lgm.ldap_dn, lgm.group_id, g.name as group_name, g.color as group_color, lgm.created_at
+       FROM ldap_group_mappings lgm
+       JOIN groups g ON g.id = lgm.group_id
+       ORDER BY g.name, lgm.ldap_dn`
+    );
+    res.json(result.rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.post('/ldap/group-mappings', async (req: AuthRequest, res) => {
+  try {
+    const { ldapDn, groupId, groupName } = req.body;
+    if (!ldapDn) return res.status(400).json({ error: 'ldapDn est requis' });
+    if (!groupId && !groupName) return res.status(400).json({ error: 'groupId ou groupName est requis' });
+
+    let resolvedGroupId = groupId;
+
+    // Create the group on the fly if only a name was provided
+    if (!resolvedGroupId && groupName) {
+      const created = await pool.query(
+        `INSERT INTO groups (name, description, color) VALUES ($1, $2, '#0078D4') RETURNING id`,
+        [groupName.trim(), 'Créé automatiquement depuis le mapping LDAP']
+      );
+      resolvedGroupId = created.rows[0].id;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO ldap_group_mappings (ldap_dn, group_id) VALUES ($1, $2) RETURNING *`,
+      [ldapDn.trim(), resolvedGroupId]
+    );
+    await addLog(req.userId, 'ldap.mapping_added', 'security', req, { ldapDn, groupId: resolvedGroupId, groupName });
+    res.status(201).json({ ...result.rows[0], created_group: !groupId });
+  } catch (e: any) {
+    if ((e as any).code === '23505') return res.status(409).json({ error: 'Ce mapping existe déjà' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.delete('/ldap/group-mappings/:id', async (req: AuthRequest, res) => {
+  try {
+    await pool.query(`DELETE FROM ldap_group_mappings WHERE id = $1`, [req.params.id]);
+    await addLog(req.userId, 'ldap.mapping_deleted', 'security', req, { id: req.params.id });
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.post('/ldap/test', async (req: AuthRequest, res) => {
+  try {
+    const { getLdapConfig, testLdapConnection } = await import('../services/ldap');
+    // Merge saved config with any overrides sent from the form
+    const saved = await getLdapConfig();
+    const body = req.body as Record<string, any>;
+    const cfg = {
+      ...saved,
+      url: body.ldap_url ?? saved.url,
+      bindDn: body.ldap_bind_dn ?? saved.bindDn,
+      bindPassword: (body.ldap_bind_password && body.ldap_bind_password !== '__encrypted__')
+        ? body.ldap_bind_password : saved.bindPassword,
+      baseDn: body.ldap_base_dn ?? saved.baseDn,
+      userFilter: body.ldap_user_filter ?? saved.userFilter,
+      displayNameAttr: body.ldap_display_name_attr ?? saved.displayNameAttr,
+      tlsRejectUnauthorized: body.ldap_tls_reject_unauthorized ?? saved.tlsRejectUnauthorized,
+    };
+    const result = await testLdapConnection(cfg);
+    await addLog(req.userId, 'ldap.test', 'security', req, { ok: result.ok });
+    res.json(result);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ========================================
+// ---- SSO Settings (OpenID Connect) ----
+// ========================================
+
+adminRouter.get('/sso/settings', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT key, value FROM admin_settings WHERE key LIKE 'sso_%'`
+    );
+    const s: Record<string, any> = {};
+    for (const row of result.rows) s[row.key] = row.value;
+    if (s['sso_client_secret']) s['sso_client_secret'] = '__encrypted__';
+    res.json(s);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.put('/sso/settings', async (req: AuthRequest, res) => {
+  try {
+    const { encrypt } = await import('../utils/encryption');
+    const { invalidateSsoCache } = await import('../services/sso');
+    const body = req.body;
+    const allowed = [
+      'sso_enabled', 'sso_provider_name', 'sso_issuer_url',
+      'sso_client_id', 'sso_redirect_uri', 'sso_tls_reject_unauthorized',
+    ];
+    for (const key of allowed) {
+      if (key in body) {
+        await pool.query(
+          `INSERT INTO admin_settings (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [key, body[key]]
+        );
+      }
+    }
+    if (body['sso_client_secret'] && body['sso_client_secret'] !== '__encrypted__') {
+      const encrypted = encrypt(body['sso_client_secret']);
+      await pool.query(
+        `INSERT INTO admin_settings (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        ['sso_client_secret', JSON.stringify(encrypted)]
+      );
+    }
+    invalidateSsoCache();
+    await addLog(req.userId, 'sso.settings_updated', 'security', req, {});
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.post('/sso/test', async (req: AuthRequest, res) => {
+  try {
+    const { getSsoConfig, buildOidcClient } = await import('../services/sso');
+    const saved = await getSsoConfig();
+    const body = req.body;
+    const cfg = {
+      ...saved,
+      issuerUrl: body.sso_issuer_url ?? saved.issuerUrl,
+      clientId: body.sso_client_id ?? saved.clientId,
+      clientSecret: (body.sso_client_secret && body.sso_client_secret !== '__encrypted__')
+        ? body.sso_client_secret : saved.clientSecret,
+      redirectUri: body.sso_redirect_uri ?? saved.redirectUri,
+      tlsRejectUnauthorized: body.sso_tls_reject_unauthorized ?? saved.tlsRejectUnauthorized,
+    };
+    if (!cfg.issuerUrl || !cfg.clientId) {
+      return res.json({ ok: false, message: 'URL du serveur SSO et Client ID sont requis' });
+    }
+    const redirectUri = cfg.redirectUri || 'http://localhost/api/auth/sso/callback';
+    const client = await buildOidcClient({ ...cfg, redirectUri });
+    const issuer = (client as any).issuer;
+    res.json({
+      ok: true,
+      message: 'Connexion au serveur SSO réussie',
+      issuer: issuer.issuer,
+      authEndpoint: issuer.authorization_endpoint,
+    });
+  } catch (e: any) {
+    res.json({ ok: false, message: e.message ?? 'Erreur inconnue' });
+  }
 });
 
 // ========================================

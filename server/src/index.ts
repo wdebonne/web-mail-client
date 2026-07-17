@@ -35,6 +35,7 @@ import { bulkSendRouter, adminBulkSendRouter } from './routes/bulkSend';
 import { startBulkSendProcessor } from './services/bulkSendProcessor';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
+import { authLimiter } from './middleware/rateLimit';
 import { setupWebSocket } from './services/websocket';
 import { PluginManager } from './plugins/manager';
 import { initPushService } from './services/push';
@@ -46,6 +47,20 @@ import { getWebAuthnConfig } from './services/webauthn';
 const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 3000;
+
+// Refuse to start in production without explicit secrets: the fallbacks below
+// are public on GitHub, so sessions could be forged and every stored
+// IMAP/LDAP/SSO password would be encrypted with a known key.
+if (process.env.NODE_ENV === 'production') {
+  const missing = ['SESSION_SECRET', 'ENCRYPTION_KEY'].filter((name) => !process.env[name]);
+  if (missing.length > 0) {
+    logger.error(
+      `Missing required environment variable(s) in production: ${missing.join(', ')}. ` +
+      'Generate values with: openssl rand -hex 32'
+    );
+    process.exit(1);
+  }
+}
 
 // Trust the first proxy hop (Nginx Proxy Manager / Traefik / etc.) so that
 // Express honours X-Forwarded-Proto when deciding whether to set cookies
@@ -106,7 +121,9 @@ app.use(session({
 }));
 
 // API Routes
-app.use('/api/auth', authRouter);
+// Baseline IP rate limit on all auth endpoints (incl. /refresh, WebAuthn
+// options, SSO). Sensitive routes add stricter per-route limiters in auth.ts.
+app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/mail', authMiddleware, mailRouter);
 app.use('/api/contacts', authMiddleware, contactRouter);
 app.use('/api/calendar', authMiddleware, calendarRouter);
@@ -132,10 +149,21 @@ app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
 app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 app.use('/api/admin/backup', authMiddleware, backupRouter);
+// Proxy d'images des emails : monté sans authMiddleware global car les <img>
+// ne peuvent pas envoyer de Bearer token. Protections dans le router lui-même :
+// signature HMAC obligatoire sur GET (délivrée par POST /sign, authentifié) et
+// blocage anti-SSRF des adresses privées/loopback/link-local après résolution DNS.
 app.use('/api/proxy/image', imageProxyRouter);
 app.use('/api/translate', authMiddleware, translateRouter);
 app.use('/api/bulk-send', authMiddleware, bulkSendRouter);
 app.use('/api/admin/bulk-send', authMiddleware, adminBulkSendRouter);
+
+// 404 for any /api path not matched above — must stay after every API router.
+// Without it, the production SPA catch-all matched GET /api/* without ever
+// responding, leaving the request hanging until the client timed out.
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -154,13 +182,12 @@ for (const filename of Object.values(BRANDING_FILES)) {
   });
 }
 
-// Serve frontend in production
+// Serve frontend in production. /api/* never reaches this catch-all: the
+// JSON 404 handler above answers unmatched API paths first.
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'public')));
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api/')) {
-      res.sendFile(path.join(__dirname, 'public', 'index.html'));
-    }
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
   });
 }
 

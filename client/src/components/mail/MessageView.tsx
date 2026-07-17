@@ -55,29 +55,69 @@ const LANG_LABELS: Record<string, string> = {
   uk: 'ukrainien', he: 'hébreu', th: 'thaï', id: 'indonésien',
 };
 
-function sanitizeEmailHtml(raw: string): string {
+// Le proxy d'images exige une signature HMAC (anti-SSRF / anti open-proxy) :
+// les signatures sont délivrées par lot via POST /api/proxy/image/sign
+// (authentifié) puis mémorisées ici — elles sont déterministes côté serveur,
+// donc cachables sans expiration, et les URLs signées restent stables pour le
+// cache du service worker.
+const imageSigCache = new Map<string, string>();
+
+const STYLE_URL_RE = /url\(\s*['"]?(https?:\/\/[^'")\s]+)['"]?\s*\)/gi;
+
+async function fetchImageSignatures(urls: string[]): Promise<void> {
+  const missing = [...new Set(urls)].filter((u) => !imageSigCache.has(u));
+  if (missing.length === 0) return;
+  try {
+    const { signatures } = await api.signImageUrls(missing);
+    for (const [url, sig] of Object.entries(signatures)) imageSigCache.set(url, sig);
+  } catch {
+    // Échec silencieux : le corps du mail s'affiche quand même, seules les
+    // images externes non signées seront refusées par le proxy.
+  }
+}
+
+async function sanitizeEmailHtml(raw: string): Promise<string> {
   const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
   const clean = DOMPurify.sanitize(raw, DOMPURIFY_CONFIG);
   const doc = new DOMParser().parseFromString(clean, 'text/html');
 
+  const isExternal = (u: string) =>
+    (u.startsWith('http://') || u.startsWith('https://')) && !u.startsWith(proxyBase);
+
+  // Collecte des URLs externes (img src + url() dans style inline) pour signature.
+  const externalUrls: string[] = [];
+  doc.querySelectorAll('img[src]').forEach((el) => {
+    const src = el.getAttribute('src') ?? '';
+    if (isExternal(src)) externalUrls.push(src);
+  });
+  doc.querySelectorAll('[style]').forEach((el) => {
+    const style = el.getAttribute('style') ?? '';
+    for (const m of style.matchAll(STYLE_URL_RE)) {
+      if (isExternal(m[1])) externalUrls.push(m[1]);
+    }
+  });
+
+  if (externalUrls.length > 0) await fetchImageSignatures(externalUrls);
+
+  const proxied = (url: string) => {
+    const sig = imageSigCache.get(url);
+    return `${proxyBase}${encodeURIComponent(url)}${sig ? `&sig=${sig}` : ''}`;
+  };
+
   // Proxy <img src> attributes.
   doc.querySelectorAll('img[src]').forEach((el) => {
-    const img = el as HTMLImageElement;
-    const src = img.getAttribute('src') ?? '';
-    if ((src.startsWith('http://') || src.startsWith('https://')) && !src.startsWith(proxyBase)) {
-      img.setAttribute('src', `${proxyBase}${encodeURIComponent(src)}`);
-    }
+    const src = el.getAttribute('src') ?? '';
+    if (isExternal(src)) el.setAttribute('src', proxied(src));
   });
 
   // Proxy url() references in inline style="" attributes ONLY — NOT in <style>
   // tag content, to avoid proxying @import/font rules as images.
   doc.querySelectorAll('[style]').forEach((el) => {
     const style = el.getAttribute('style') ?? '';
-    const proxied = style.replace(
-      /url\(\s*['"]?(https?:\/\/[^'")\s]+)['"]?\s*\)/gi,
-      (_, url) => `url("${proxyBase}${encodeURIComponent(url)}")`
+    const next = style.replace(STYLE_URL_RE, (full, url) =>
+      isExternal(url) ? `url("${proxied(url)}")` : full,
     );
-    if (proxied !== style) el.setAttribute('style', proxied);
+    if (next !== style) el.setAttribute('style', next);
   });
 
   return doc.body.innerHTML;
@@ -251,7 +291,30 @@ export default function MessageView({
     });
   };
 
-  const sanitizedHtml = message?.bodyHtml ? sanitizeEmailHtml(message.bodyHtml) : '';
+  // Sanitisation asynchrone (la signature HMAC des images passe par l'API).
+  const [sanitizedHtml, setSanitizedHtml] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    const raw = message?.bodyHtml;
+    if (!raw) { setSanitizedHtml(''); return; }
+    sanitizeEmailHtml(raw).then((html) => { if (!cancelled) setSanitizedHtml(html); });
+    return () => { cancelled = true; };
+  }, [message?.bodyHtml]);
+
+  // Même chose pour chaque message du fil de discussion, indexé par threadKeyOf.
+  const [threadHtml, setThreadHtml] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!isThreadMode) { setThreadHtml({}); return; }
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(sortedThread.map(async (m) => {
+        const html = m.bodyHtml ? await sanitizeEmailHtml(m.bodyHtml) : '';
+        return [threadKeyOf(m), html] as const;
+      }));
+      if (!cancelled) setThreadHtml(Object.fromEntries(entries));
+    })();
+    return () => { cancelled = true; };
+  }, [sortedThread, isThreadMode]);
 
   // ───── Security pipeline — detect PGP armor in inbound message and verify/decrypt.
   // The verdict is re-evaluated whenever the viewed message changes or the unlocked-key
@@ -794,7 +857,7 @@ export default function MessageView({
               const key = threadKeyOf(m);
               const isOpen = expandedKeys.has(key);
               const isLast = idx === sortedThread.length - 1;
-              const bodyHtml = m.bodyHtml ? sanitizeEmailHtml(m.bodyHtml) : '';
+              const bodyHtml = threadHtml[key] ?? '';
               const cardAttachments = (m.attachments || []).filter(att => (att.size || 0) >= attachmentMinVisibleBytes);
               return (
                 <div

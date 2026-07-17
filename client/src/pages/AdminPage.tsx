@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
   Download, Send, AlertTriangle, Eye, EyeOff,
-  Lock, LockOpen, ShieldAlert, ListX, ListChecks,
+  Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -32,7 +32,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'ldap' | 'sso';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -68,6 +68,8 @@ export default function AdminPage() {
     { id: 'plugins' as const,        icon: Plug,            label: t('admin.tab.plugins'),        group: t('admin.group.integrations') },
     { id: 'nextcloud' as const,      icon: Cloud,           label: t('admin.tab.nextcloud'),      group: t('admin.group.integrations') },
     { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
+    { id: 'ldap' as const,          icon: Database,        label: 'LDAP',                         group: t('admin.group.integrations') },
+    { id: 'sso' as const,           icon: LogIn,           label: 'SSO / OpenID Connect',         group: t('admin.group.integrations') },
     // Système
     { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
     { id: 'backup' as const,          icon: HardDrive,      label: 'Sauvegarde',                  group: t('admin.group.system') },
@@ -166,6 +168,8 @@ export default function AdminPage() {
             {tab === 'backup' && <AdminBackup />}
             {tab === 'migration' && <AdminMigration />}
             {tab === 'bulksend' && <AdminBulkSend />}
+            {tab === 'ldap' && <LdapSettings />}
+            {tab === 'sso' && <SsoSettings />}
           </div>
         </div>
       </div>
@@ -4752,6 +4756,580 @@ function AdminDLShareModal({ list, onSave, onClose, isSaving }: {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ========================================
+// LDAP Settings
+// ========================================
+
+function LdapSettings() {
+  const queryClient = useQueryClient();
+  const [loaded, setLoaded] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [url, setUrl] = useState('ldap://');
+  const [bindDn, setBindDn] = useState('');
+  const [bindPassword, setBindPassword] = useState('');
+  const [baseDn, setBaseDn] = useState('');
+  const [userFilter, setUserFilter] = useState('(mail={{email}})');
+  const [displayNameAttr, setDisplayNameAttr] = useState('displayName');
+  const [adminGroupDn, setAdminGroupDn] = useState('');
+  const [adminGroupNames, setAdminGroupNames] = useState('admin,administrateur,administrators,admins');
+  const [tlsRejectUnauthorized, setTlsRejectUnauthorized] = useState(true);
+  const [fallbackLocal, setFallbackLocal] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; userCount?: number } | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const { data: settings } = useQuery({
+    queryKey: ['ldap-settings'],
+    queryFn: api.getLdapSettings,
+  });
+
+  useEffect(() => {
+    if (!settings || loaded) return;
+    setEnabled(!!settings['ldap_enabled']);
+    setUrl(settings['ldap_url'] ?? 'ldap://');
+    setBindDn(settings['ldap_bind_dn'] ?? '');
+    setBindPassword(settings['ldap_bind_password'] === '__encrypted__' ? '__encrypted__' : '');
+    setBaseDn(settings['ldap_base_dn'] ?? '');
+    setUserFilter(settings['ldap_user_filter'] ?? '(mail={{email}})');
+    setDisplayNameAttr(settings['ldap_display_name_attr'] ?? 'displayName');
+    setAdminGroupDn(settings['ldap_admin_group_dn'] ?? '');
+    setAdminGroupNames(settings['ldap_admin_group_names'] ?? 'admin,administrateur,administrators,admins');
+    setTlsRejectUnauthorized(settings['ldap_tls_reject_unauthorized'] !== false);
+    setFallbackLocal(!!settings['ldap_fallback_local']);
+    setLoaded(true);
+  }, [settings, loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: (data: any) => api.updateLdapSettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ldap-settings'] });
+      toast.success('Configuration LDAP enregistrée');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleSave = () => {
+    saveMutation.mutate({
+      ldap_enabled: enabled,
+      ldap_url: url,
+      ldap_bind_dn: bindDn,
+      ldap_bind_password: bindPassword,
+      ldap_base_dn: baseDn,
+      ldap_user_filter: userFilter,
+      ldap_display_name_attr: displayNameAttr,
+      ldap_admin_group_dn: adminGroupDn,
+      ldap_admin_group_names: adminGroupNames,
+      ldap_tls_reject_unauthorized: tlsRejectUnauthorized,
+      ldap_fallback_local: fallbackLocal,
+    });
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.testLdapConnection({
+        ldap_url: url,
+        ldap_bind_dn: bindDn,
+        ldap_bind_password: bindPassword,
+        ldap_base_dn: baseDn,
+        ldap_user_filter: userFilter,
+        ldap_display_name_attr: displayNameAttr,
+        ldap_tls_reject_unauthorized: tlsRejectUnauthorized,
+      });
+      setTestResult(result);
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e.message ?? 'Erreur' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const field = (label: string, value: string, onChange: (v: string) => void, opts?: { type?: string; placeholder?: string; help?: string }) => (
+    <div>
+      <label className="block text-sm font-medium text-outlook-text-primary mb-1">{label}</label>
+      {opts?.help && <p className="text-xs text-outlook-text-secondary mb-1">{opts.help}</p>}
+      <input
+        type={opts?.type ?? 'text'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={opts?.placeholder}
+        className="w-full border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-white"
+      />
+    </div>
+  );
+
+  const toggle = (label: string, checked: boolean, onChange: (v: boolean) => void, help?: string) => (
+    <label className="flex items-start gap-3 cursor-pointer">
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="mt-0.5 w-4 h-4 accent-outlook-blue" />
+      <div>
+        <span className="text-sm font-medium text-outlook-text-primary">{label}</span>
+        {help && <p className="text-xs text-outlook-text-secondary mt-0.5">{help}</p>}
+      </div>
+    </label>
+  );
+
+  return (
+    <div className="p-6 max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-outlook-text-primary flex items-center gap-2">
+          <Database size={20} /> Authentification LDAP
+        </h2>
+        <p className="text-sm text-outlook-text-secondary mt-1">
+          L'application fonctionne en mode local par défaut. Activez LDAP pour déléguer l'authentification à votre annuaire (ex. OpenLDAP, Active Directory, Nextcloud LDAP).
+        </p>
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Activation</h3>
+        {toggle(
+          'Activer l\'authentification LDAP',
+          enabled,
+          setEnabled,
+          'Quand activé, les identifiants sont vérifiés contre le serveur LDAP. Les utilisateurs LDAP sont provisionnés automatiquement à leur première connexion.'
+        )}
+        {enabled && toggle(
+          'Fallback local si LDAP inaccessible',
+          fallbackLocal,
+          setFallbackLocal,
+          'Permet de se connecter avec le mot de passe local si le serveur LDAP ne répond pas. Utile en transition ou pour les comptes admin de secours.'
+        )}
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Connexion au serveur</h3>
+        {field('URL du serveur LDAP', url, setUrl, { placeholder: 'ldap://192.168.1.10:389 ou ldaps://ldap.example.com:636' })}
+        {field('DN du compte de service (Bind DN)', bindDn, setBindDn, { placeholder: 'cn=service,dc=example,dc=com' })}
+        {field('Mot de passe du compte de service', bindPassword === '__encrypted__' ? '' : bindPassword, v => setBindPassword(v), {
+          type: 'password',
+          placeholder: bindPassword === '__encrypted__' ? '(mot de passe enregistré — laisser vide pour ne pas modifier)' : '',
+        })}
+        {toggle(
+          'Vérifier le certificat TLS (recommandé)',
+          tlsRejectUnauthorized,
+          setTlsRejectUnauthorized,
+          'Désactivez uniquement pour les certificats auto-signés en développement.'
+        )}
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Recherche des utilisateurs</h3>
+        {field('Base DN', baseDn, setBaseDn, { placeholder: 'dc=example,dc=com' })}
+        {field('Filtre utilisateur', userFilter, setUserFilter, {
+          placeholder: '(mail={{email}})',
+          help: 'Utilisez {{email}} comme placeholder pour l\'adresse email saisie à la connexion.',
+        })}
+        {field('Attribut nom d\'affichage', displayNameAttr, setDisplayNameAttr, {
+          placeholder: 'displayName',
+          help: 'Attribut LDAP utilisé comme nom affiché dans l\'application (ex. displayName, cn).',
+        })}
+        {field('Noms des groupes admin (CN)', adminGroupNames, setAdminGroupNames, {
+          placeholder: 'admin,administrateur,administrators,admins',
+          help: 'Noms de groupes LDAP (CN) qui accordent automatiquement les droits admin, séparés par des virgules. Tout utilisateur membre d\'un de ces groupes devient admin — et perd ses droits s\'il en est retiré.',
+        })}
+        {field('DN du groupe admin spécifique (optionnel)', adminGroupDn, setAdminGroupDn, {
+          placeholder: 'cn=superadmins,ou=groups,dc=example,dc=com',
+          help: 'Alternative : correspondance exacte sur le DN complet du groupe. Utile si plusieurs groupes ont le même CN dans des OU différentes.',
+        })}
+      </div>
+
+      {testResult && (
+        <div className={`flex items-start gap-3 p-4 rounded-lg border text-sm ${testResult.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+          {testResult.ok ? <CheckCircle size={18} className="shrink-0 mt-0.5" /> : <XCircle size={18} className="shrink-0 mt-0.5" />}
+          <div>
+            <p className="font-medium">{testResult.ok ? 'Connexion réussie' : 'Échec de la connexion'}</p>
+            <p className="mt-0.5">{testResult.message}</p>
+            {testResult.ok && testResult.userCount !== undefined && (
+              <p className="mt-0.5 text-green-700">{testResult.userCount} utilisateur(s) trouvé(s) dans l'annuaire.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleTest}
+          disabled={testing || !url || !bindDn || !baseDn}
+          className="flex items-center gap-2 border border-outlook-border rounded px-4 py-2 text-sm font-medium text-outlook-text-primary hover:bg-outlook-bg-hover disabled:opacity-50"
+        >
+          {testing ? <div className="w-3 h-3 border-2 border-gray-400 border-t-gray-700 rounded-full animate-spin" /> : <TestTube size={15} />}
+          Tester la connexion
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saveMutation.isPending}
+          className="flex items-center gap-2 bg-outlook-blue text-white px-5 py-2 text-sm rounded font-medium disabled:opacity-50"
+        >
+          {saveMutation.isPending && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+          Enregistrer
+        </button>
+      </div>
+
+      <LdapGroupMappings />
+    </div>
+  );
+}
+
+const NEW_GROUP_SENTINEL = '__new__';
+
+function LdapGroupMappings() {
+  const queryClient = useQueryClient();
+  const [newDn, setNewDn] = useState('');
+  const [newGroupId, setNewGroupId] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
+
+  const { data: mappings = [], isLoading } = useQuery({
+    queryKey: ['ldap-group-mappings'],
+    queryFn: api.getLdapGroupMappings,
+  });
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ['admin-groups'],
+    queryFn: api.getAdminGroups,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (data: { ldapDn: string; groupId?: string; groupName?: string }) => api.addLdapGroupMapping(data as any),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['ldap-group-mappings'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-groups'] });
+      setNewDn(''); setNewGroupId(''); setNewGroupName('');
+      toast.success(data?.created_group ? 'Groupe créé et mapping ajouté' : 'Mapping ajouté');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteLdapGroupMapping(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ldap-group-mappings'] });
+      toast.success('Mapping supprimé');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const isCreatingNew = newGroupId === NEW_GROUP_SENTINEL;
+
+  const handleAdd = () => {
+    if (!newDn.trim()) return;
+    if (isCreatingNew) {
+      if (!newGroupName.trim()) return;
+      addMutation.mutate({ ldapDn: newDn.trim(), groupName: newGroupName.trim() });
+    } else {
+      if (!newGroupId) return;
+      addMutation.mutate({ ldapDn: newDn.trim(), groupId: newGroupId });
+    }
+  };
+
+  const canAdd = newDn.trim() && (isCreatingNew ? newGroupName.trim() : newGroupId);
+
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      {/* Auto-sync info banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-1">
+        <p className="font-semibold flex items-center gap-2"><CheckCircle size={15} /> Synchronisation automatique activée</p>
+        <p>À chaque connexion LDAP, les groupes sont synchronisés sans configuration :</p>
+        <ul className="list-disc list-inside space-y-0.5 mt-1 text-blue-700">
+          <li>Si le groupe LDAP <strong>n'existe pas</strong> dans l'application → il est <strong>créé automatiquement</strong>.</li>
+          <li>Si le groupe <strong>existe déjà</strong> (même nom) → l'utilisateur y est <strong>lié</strong>.</li>
+          <li>Si l'utilisateur est <strong>retiré d'un groupe</strong> LDAP → il en est <strong>retiré</strong> dans l'application.</li>
+          <li>Les groupes créés manuellement sans lien LDAP ne sont <strong>jamais touchés</strong>.</li>
+        </ul>
+      </div>
+
+      {/* Advanced: manual DN overrides */}
+      <div className="bg-white border border-outlook-border rounded-lg">
+        <button
+          onClick={() => setShowAdvanced(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 text-sm font-medium text-outlook-text-primary hover:bg-outlook-bg-hover rounded-lg"
+        >
+          <span>Mappings manuels avancés (optionnel)</span>
+          {showAdvanced ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+
+        {showAdvanced && (
+          <div className="px-5 pb-5 space-y-4 border-t border-outlook-border pt-4">
+            <p className="text-xs text-outlook-text-secondary">
+              Utile uniquement si plusieurs OU contiennent des groupes avec le même CN, ou si vous voulez lier un groupe LDAP à un groupe existant portant un nom différent.
+              Dans les autres cas, la synchronisation automatique ci-dessus suffit.
+            </p>
+
+            <div className="flex gap-2 flex-wrap">
+              <input
+                type="text"
+                value={newDn}
+                onChange={e => setNewDn(e.target.value)}
+                placeholder="DN complet du groupe LDAP"
+                className="flex-1 min-w-[260px] border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue"
+              />
+              <select
+                value={newGroupId}
+                onChange={e => setNewGroupId(e.target.value)}
+                className="border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-white min-w-[200px]"
+              >
+                <option value="">— Groupe de l'app —</option>
+                {(groups as any[]).map((g: any) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+                <option value={NEW_GROUP_SENTINEL}>+ Créer un nouveau groupe…</option>
+              </select>
+              {isCreatingNew && (
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={e => setNewGroupName(e.target.value)}
+                  placeholder="Nom du nouveau groupe"
+                  autoFocus
+                  className="border border-outlook-blue rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue min-w-[180px]"
+                />
+              )}
+              <button
+                onClick={handleAdd}
+                disabled={!canAdd || addMutation.isPending}
+                className="flex items-center gap-1 bg-outlook-blue text-white px-4 py-2 text-sm rounded font-medium disabled:opacity-50"
+              >
+                <Plus size={15} /> Ajouter
+              </button>
+            </div>
+
+            {isLoading ? (
+              <p className="text-sm text-outlook-text-secondary">Chargement…</p>
+            ) : mappings.length === 0 ? (
+              <p className="text-sm text-outlook-text-secondary italic">Aucun mapping manuel configuré.</p>
+            ) : (
+              <div className="space-y-2">
+                {(mappings as any[]).map((m: any) => (
+                  <div key={m.id} className="flex items-center justify-between bg-outlook-bg-secondary rounded px-3 py-2 text-sm">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.group_color || '#0078D4' }} />
+                      <span className="font-medium text-outlook-text-primary shrink-0">{m.group_name}</span>
+                      <span className="text-outlook-text-secondary truncate font-mono text-xs">{m.ldap_dn}</span>
+                    </div>
+                    <button
+                      onClick={() => deleteMutation.mutate(m.id)}
+                      disabled={deleteMutation.isPending}
+                      className="ml-3 text-outlook-text-secondary hover:text-red-500 shrink-0"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SSO Settings (OpenID Connect)
+// ─────────────────────────────────────────────────────────────────────────────
+function SsoSettings() {
+  const queryClient = useQueryClient();
+
+  const [enabled, setEnabled] = useState(false);
+  const [providerName, setProviderName] = useState('Synology SSO');
+  const [issuerUrl, setIssuerUrl] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [redirectUri, setRedirectUri] = useState('');
+  const [tlsRejectUnauthorized, setTlsRejectUnauthorized] = useState(true);
+  const [showSecret, setShowSecret] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; issuer?: string; authEndpoint?: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  useQuery({
+    queryKey: ['sso-settings'],
+    queryFn: api.getSsoSettings,
+    onSuccess: (s: any) => {
+      setEnabled(!!s['sso_enabled']);
+      setProviderName(s['sso_provider_name'] ?? 'Synology SSO');
+      setIssuerUrl(s['sso_issuer_url'] ?? '');
+      setClientId(s['sso_client_id'] ?? '');
+      setClientSecret(s['sso_client_secret'] === '__encrypted__' ? '__encrypted__' : '');
+      setRedirectUri(s['sso_redirect_uri'] ?? '');
+      setTlsRejectUnauthorized(s['sso_tls_reject_unauthorized'] !== false);
+    },
+  } as any);
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.updateSsoSettings({
+      sso_enabled: enabled,
+      sso_provider_name: providerName,
+      sso_issuer_url: issuerUrl,
+      sso_client_id: clientId,
+      sso_client_secret: clientSecret,
+      sso_redirect_uri: redirectUri,
+      sso_tls_reject_unauthorized: tlsRejectUnauthorized,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sso-settings'] });
+      toast.success('Configuration SSO enregistrée');
+    },
+    onError: (e: any) => toast.error(e.message ?? 'Erreur'),
+  });
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.testSsoConnection({
+        sso_issuer_url: issuerUrl,
+        sso_client_id: clientId,
+        sso_client_secret: clientSecret,
+        sso_redirect_uri: redirectUri,
+        sso_tls_reject_unauthorized: tlsRejectUnauthorized,
+      });
+      setTestResult(result);
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e.message ?? 'Erreur' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const toggle = (label: string, value: boolean, setter: (v: boolean) => void, help: string) => (
+    <div className="flex items-start justify-between py-3 border-b border-outlook-border last:border-0">
+      <div className="flex-1 pr-4">
+        <div className="text-sm font-medium text-outlook-text-primary">{label}</div>
+        <div className="text-xs text-outlook-text-secondary mt-0.5">{help}</div>
+      </div>
+      <button
+        type="button"
+        onClick={() => setter(!value)}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${value ? 'bg-outlook-blue' : 'bg-gray-300'}`}
+      >
+        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  );
+
+  const field = (label: string, value: string, setter: (v: string) => void, opts?: { placeholder?: string; help?: string }) => (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-outlook-text-primary mb-1">{label}</label>
+      {opts?.help && <p className="text-xs text-outlook-text-secondary mb-1">{opts.help}</p>}
+      <input
+        type="text"
+        value={value}
+        onChange={e => setter(e.target.value)}
+        placeholder={opts?.placeholder}
+        className="w-full px-3 py-2 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
+      />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <LogIn size={20} />
+        <div>
+          <h2 className="text-lg font-semibold">SSO / OpenID Connect</h2>
+          <p className="text-sm text-outlook-text-secondary mt-0.5">
+            Connectez l'application à un fournisseur d'identité OIDC (Synology SSO Server, Keycloak, Azure AD…).
+            Les utilisateurs peuvent se connecter en un clic sans ressaisir leur mot de passe.
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs text-blue-700">
+        <strong>Synology SSO Server :</strong> installez le package <em>SSO Server</em> sur le DSM,
+        allez dans <em>SSO Server → Application → Ajouter</em>, créez une application de type OIDC,
+        copiez le Client ID et Secret ci-dessous. L'URL du serveur est généralement{' '}
+        <code className="bg-blue-100 px-1 rounded">https://&lt;ip-nas&gt;:&lt;port&gt;/webman/sso</code>.
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-4 space-y-1">
+        {toggle('Activer le SSO', enabled, setEnabled,
+          'Affiche le bouton SSO sur la page de connexion. Les autres méthodes (mot de passe, passkey) restent disponibles.')}
+        {toggle('Vérifier le certificat TLS', tlsRejectUnauthorized, setTlsRejectUnauthorized,
+          'Désactivez uniquement si votre serveur SSO utilise un certificat auto-signé non approuvé.')}
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-4">
+        {field('Libellé du bouton', providerName, setProviderName, {
+          placeholder: 'Synology SSO',
+          help: 'Texte affiché sur le bouton de connexion.',
+        })}
+        {field('URL du serveur OIDC (Issuer)', issuerUrl, setIssuerUrl, {
+          placeholder: 'https://nas.local:5001/webman/sso',
+          help: 'URL de base du serveur SSO. La découverte OIDC est automatique via <url>/.well-known/openid-configuration.',
+        })}
+        {field('Client ID', clientId, setClientId, {
+          placeholder: 'mon-app-client-id',
+        })}
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-outlook-text-primary mb-1">Client Secret</label>
+          <div className="relative">
+            <input
+              type={showSecret ? 'text' : 'password'}
+              value={clientSecret}
+              onChange={e => setClientSecret(e.target.value)}
+              placeholder={clientSecret === '__encrypted__' ? '(chiffré — laissez vide pour ne pas modifier)' : ''}
+              className="w-full px-3 py-2 pr-10 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
+            />
+            <button
+              type="button"
+              onClick={() => setShowSecret(!showSecret)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-outlook-text-disabled hover:text-outlook-text-secondary"
+            >
+              {showSecret ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+        </div>
+
+        {field('URI de redirection (optionnel)', redirectUri, setRedirectUri, {
+          placeholder: '(auto-détection si vide)',
+          help: 'Laissez vide pour auto-détection. Si renseigné, doit correspondre exactement à la valeur configurée sur le serveur SSO.',
+        })}
+      </div>
+
+      {testResult && (
+        <div className={`flex items-start gap-2 p-3 rounded-md text-sm ${testResult.ok ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
+          {testResult.ok ? <CheckCircle size={16} className="mt-0.5 shrink-0" /> : <XCircle size={16} className="mt-0.5 shrink-0" />}
+          <div>
+            <div className="font-medium">{testResult.message}</div>
+            {testResult.ok && testResult.issuer && (
+              <div className="mt-1 text-xs opacity-80">Issuer découvert : {testResult.issuer}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testing || !issuerUrl || !clientId}
+          className="flex items-center gap-2 px-4 py-2 border border-outlook-border rounded-md text-sm hover:bg-outlook-bg-hover disabled:opacity-50"
+        >
+          <TestTube size={16} />
+          {testing ? 'Test en cours…' : 'Tester la connexion'}
+        </button>
+        <button
+          type="button"
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          className="flex items-center gap-2 px-4 py-2 bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md text-sm disabled:opacity-50"
+        >
+          <CheckCircle size={16} />
+          {saveMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+
+      {enabled && (
+        <div className="bg-gray-50 border border-outlook-border rounded-md p-3 text-xs text-outlook-text-secondary">
+          <strong>URI de redirection à configurer sur votre serveur SSO :</strong>{' '}
+          <code className="bg-gray-100 px-1 rounded">{window.location.origin}/api/auth/sso/callback</code>
+        </div>
+      )}
     </div>
   );
 }

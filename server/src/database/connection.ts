@@ -934,6 +934,35 @@ export async function initDatabase() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
+    // LDAP group mappings: LDAP DN <-> application group (manual overrides)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ldap_group_mappings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ldap_dn TEXT NOT NULL,
+        group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(ldap_dn, group_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ldap_group_mappings_group ON ldap_group_mappings(group_id);
+
+      -- Link app groups back to their LDAP origin DN (auto-sync by CN)
+      ALTER TABLE groups ADD COLUMN IF NOT EXISTS ldap_dn TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_ldap_dn ON groups(ldap_dn) WHERE ldap_dn IS NOT NULL;
+    `);
+
+    // SSO (OpenID Connect) default settings
+    await client.query(`
+      INSERT INTO admin_settings (key, value, description) VALUES
+        ('sso_enabled',                false, 'SSO OpenID Connect activé'),
+        ('sso_provider_name',          'Synology SSO', 'Libellé du bouton SSO sur la page de connexion'),
+        ('sso_issuer_url',             '', 'URL du serveur OIDC (ex: https://nas.local/webman/sso)'),
+        ('sso_client_id',              '', 'Client ID enregistré sur le serveur SSO'),
+        ('sso_client_secret',          '', 'Client Secret (stocké chiffré)'),
+        ('sso_redirect_uri',           '', 'URI de redirection (vide = auto-détection)'),
+        ('sso_tls_reject_unauthorized', true, 'Vérifier le certificat TLS du serveur SSO')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

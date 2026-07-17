@@ -556,6 +556,28 @@ export const api = {
   getLoginAttempts: (limit = 100) =>
     request<any[]>(`/admin/security/login-attempts?limit=${limit}`),
 
+  // SSO (OpenID Connect)
+  getSsoConfig: () => request<{ enabled: boolean; providerName: string }>('/auth/sso/config'),
+  getSsoSettings: () => request<any>('/admin/sso/settings'),
+  updateSsoSettings: (data: any) =>
+    request('/admin/sso/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  testSsoConnection: (data: any) =>
+    request<{ ok: boolean; message: string; issuer?: string; authEndpoint?: string }>(
+      '/admin/sso/test', { method: 'POST', body: JSON.stringify(data) }
+    ),
+
+  // LDAP settings
+  getLdapSettings: () => request<any>('/admin/ldap/settings'),
+  updateLdapSettings: (data: any) =>
+    request('/admin/ldap/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  testLdapConnection: (data: any) =>
+    request<{ ok: boolean; message: string; userCount?: number }>('/admin/ldap/test', { method: 'POST', body: JSON.stringify(data) }),
+  getLdapGroupMappings: () => request<any[]>('/admin/ldap/group-mappings'),
+  addLdapGroupMapping: (data: { ldapDn: string; groupId?: string; groupName?: string }) =>
+    request<any>('/admin/ldap/group-mappings', { method: 'POST', body: JSON.stringify(data) }),
+  deleteLdapGroupMapping: (id: string) =>
+    request<{ ok: boolean }>(`/admin/ldap/group-mappings/${id}`, { method: 'DELETE' }),
+
   getAdminGroups: () => request<any[]>('/admin/groups'),
   createAdminGroup: (data: any) =>
     request('/admin/groups', { method: 'POST', body: JSON.stringify(data) }),
@@ -1138,6 +1160,13 @@ export const api = {
       users: Array<{ id: string; email: string; displayName: string | null; isAdmin: boolean }>;
       groups: Array<{ id: string; name: string }>;
     }>(`/admin/rules/directory`),
+
+  // Image proxy — signatures HMAC des URLs d'images externes des emails
+  signImageUrls: (urls: string[]) =>
+    request<{ signatures: Record<string, string> }>('/proxy/image/sign', {
+      method: 'POST',
+      body: JSON.stringify({ urls }),
+    }),
 
   // Translation
   translateText: (text: string, targetLang: string, sourceLang?: string) =>

@@ -31,6 +31,8 @@ L'API utilise deux méthodes d'authentification :
 - [Recherche unifiée](#recherche)
 - [Sauvegarde & restauration](#sauvegarde--restauration-admin)
 - [Notifications push](#notifications-push)
+- [LDAP](#ldap-admin)
+- [SSO / OpenID Connect](#sso--openid-connect-admin)
 - [Codes d'erreur](#codes-derreur)
 
 ---
@@ -2451,6 +2453,255 @@ Retourne le nombre de lignes par table et l'utilisation disque des sauvegardes.
   "disk_usage_bytes": 1048576,
   "backup_file_count": 8
 }
+```
+
+---
+
+## LDAP *(admin)*
+
+Configuration et gestion de l'authentification LDAP. Tous les endpoints requièrent `is_admin = true`.
+
+### GET /api/admin/ldap/settings
+
+Retourne la configuration LDAP actuelle. Le mot de passe du compte de service est remplacé par `"__encrypted__"` s'il est enregistré.
+
+**Réponse 200 :**
+```json
+{
+  "ldap_enabled": false,
+  "ldap_url": "ldap://192.168.1.10:389",
+  "ldap_bind_dn": "cn=service,dc=example,dc=com",
+  "ldap_bind_password": "__encrypted__",
+  "ldap_base_dn": "dc=example,dc=com",
+  "ldap_user_filter": "(mail={{email}})",
+  "ldap_display_name_attr": "displayName",
+  "ldap_admin_group_dn": "",
+  "ldap_admin_group_names": "admin,administrateur,administrators,admins",
+  "ldap_tls_reject_unauthorized": true,
+  "ldap_fallback_local": false
+}
+```
+
+---
+
+### PUT /api/admin/ldap/settings
+
+Enregistre la configuration LDAP. Le mot de passe n'est mis à jour que si une valeur différente de `"__encrypted__"` est fournie.
+
+**Body :**
+```json
+{
+  "ldap_enabled": true,
+  "ldap_url": "ldaps://ldap.example.com:636",
+  "ldap_bind_dn": "cn=service,dc=example,dc=com",
+  "ldap_bind_password": "mot_de_passe_service",
+  "ldap_base_dn": "dc=example,dc=com",
+  "ldap_user_filter": "(mail={{email}})",
+  "ldap_display_name_attr": "displayName",
+  "ldap_admin_group_dn": "",
+  "ldap_admin_group_names": "admin,administrateur",
+  "ldap_tls_reject_unauthorized": true,
+  "ldap_fallback_local": false
+}
+```
+
+**Réponse 200 :** `{ "ok": true }`
+
+---
+
+### POST /api/admin/ldap/test
+
+Teste la connexion au serveur LDAP avec les paramètres fournis (ou ceux sauvegardés si non fournis). N'enregistre rien.
+
+**Body :** mêmes champs que `PUT /api/admin/ldap/settings` (tous optionnels, fusionnés avec la config sauvegardée).
+
+**Réponse 200 (succès) :**
+```json
+{ "ok": true, "message": "Connexion réussie", "userCount": 42 }
+```
+
+**Réponse 200 (échec) :**
+```json
+{ "ok": false, "message": "ECONNREFUSED 192.168.1.10:389" }
+```
+
+---
+
+### GET /api/admin/ldap/group-mappings
+
+Liste les mappings manuels DN LDAP → groupe applicatif.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "ldap_dn": "cn=superadmins,ou=groups,dc=example,dc=com",
+    "group_id": "uuid",
+    "group_name": "Super Admins",
+    "group_color": "#0078D4",
+    "created_at": "2026-05-27T10:00:00Z"
+  }
+]
+```
+
+---
+
+### POST /api/admin/ldap/group-mappings
+
+Crée un mapping manuel. Si `groupId` est absent et `groupName` est fourni, le groupe applicatif est créé à la volée.
+
+**Body :**
+```json
+{ "ldapDn": "cn=superadmins,ou=groups,dc=example,dc=com", "groupId": "uuid" }
+```
+ou (création à la volée) :
+```json
+{ "ldapDn": "cn=superadmins,ou=groups,dc=example,dc=com", "groupName": "Super Admins" }
+```
+
+**Réponse 201 :**
+```json
+{
+  "id": "uuid",
+  "ldap_dn": "cn=superadmins,ou=groups,dc=example,dc=com",
+  "group_id": "uuid",
+  "created_group": true
+}
+```
+
+**Erreurs :**
+- `400` — `ldapDn` manquant, ou ni `groupId` ni `groupName` fourni.
+- `409` — Ce mapping existe déjà.
+
+---
+
+### DELETE /api/admin/ldap/group-mappings/:id
+
+Supprime un mapping manuel.
+
+**Réponse 200 :** `{ "ok": true }`
+
+---
+
+## SSO / OpenID Connect *(admin)*
+
+Configuration de l'authentification unique via un fournisseur OIDC (Synology SSO Server, Keycloak, Azure AD…).
+
+### GET /api/auth/sso/config
+
+Endpoint **public** — retourne la configuration minimale pour la page de connexion (bouton SSO affiché ou non).
+
+**Réponse 200 :**
+```json
+{ "enabled": true, "providerName": "Synology SSO" }
+```
+
+---
+
+### GET /api/auth/sso/login
+
+Démarre le flux OIDC Authorization Code. Redirige le navigateur vers la page d'authentification du fournisseur.
+
+> Stocke `state` et `nonce` en session serveur pour validation au callback.
+
+**Réponse :** `302 Redirect → {authorization_endpoint}?...`
+
+**Erreurs :**
+- `403` — SSO désactivé.
+- `503` — URL du serveur ou Client ID manquant.
+- `302 /login?sso_error=discovery_failed` — Serveur SSO inaccessible.
+
+---
+
+### GET /api/auth/sso/callback
+
+Callback OIDC. Reçoit le code d'autorisation du fournisseur, l'échange contre des tokens, provisionne l'utilisateur et émet une session.
+
+> Cet endpoint est appelé automatiquement par le fournisseur SSO — il ne doit pas être appelé manuellement.
+
+**Flux :**
+1. Vérifie `state` et `nonce` contre les valeurs de session.
+2. Échange le code contre `access_token` + `id_token`.
+3. Récupère les informations utilisateur (`email`, `name`) via `userinfo`.
+4. Crée ou met à jour l'utilisateur en base (`email`, `display_name`).
+5. Émet un device session + cookie `wm_refresh` (httpOnly).
+6. Redirige vers `/?sso=1` — le client appelle `/api/auth/refresh` pour obtenir le JWT.
+
+**Réponse succès :** `302 Redirect → /?sso=1`
+
+**Erreurs (redirections) :**
+- `302 /login?sso_error=callback_failed` — Erreur d'échange de code ou validation échouée.
+- `302 /login?sso_error=no_email` — Le fournisseur n'a pas retourné d'adresse email.
+- `302 /login?sso_error=account_disabled` — Le compte est désactivé dans l'application.
+
+---
+
+### GET /api/admin/sso/settings
+
+Retourne la configuration SSO. Le Client Secret est remplacé par `"__encrypted__"` s'il est enregistré.
+
+> Requiert `is_admin = true`.
+
+**Réponse 200 :**
+```json
+{
+  "sso_enabled": false,
+  "sso_provider_name": "Synology SSO",
+  "sso_issuer_url": "https://nas.local:5001/webman/sso",
+  "sso_client_id": "mon-app-client-id",
+  "sso_client_secret": "__encrypted__",
+  "sso_redirect_uri": "",
+  "sso_tls_reject_unauthorized": true
+}
+```
+
+---
+
+### PUT /api/admin/sso/settings
+
+Enregistre la configuration SSO. Le Client Secret n'est mis à jour que si une valeur différente de `"__encrypted__"` est fournie.
+
+> Requiert `is_admin = true`. Invalide le cache du client OIDC.
+
+**Body :**
+```json
+{
+  "sso_enabled": true,
+  "sso_provider_name": "Synology SSO",
+  "sso_issuer_url": "https://nas.local:5001/webman/sso",
+  "sso_client_id": "mon-app-client-id",
+  "sso_client_secret": "mon-client-secret",
+  "sso_redirect_uri": "",
+  "sso_tls_reject_unauthorized": true
+}
+```
+
+**Réponse 200 :** `{ "success": true }`
+
+---
+
+### POST /api/admin/sso/test
+
+Teste la connexion au serveur OIDC avec les paramètres fournis (ou ceux sauvegardés si non fournis). N'enregistre rien.
+
+> Requiert `is_admin = true`.
+
+**Body :** mêmes champs que `PUT /api/admin/sso/settings` (tous optionnels).
+
+**Réponse 200 (succès) :**
+```json
+{
+  "ok": true,
+  "message": "Connexion au serveur SSO réussie",
+  "issuer": "https://nas.local:5001/webman/sso",
+  "authEndpoint": "https://nas.local:5001/webman/sso/SSOOauth.cgi"
+}
+```
+
+**Réponse 200 (échec) :**
+```json
+{ "ok": false, "message": "connect ECONNREFUSED 192.168.1.10:5001" }
 ```
 
 ---

@@ -429,3 +429,118 @@ Depuis **Administration > Logs** :
 - Filtrage par catégorie : auth, admin, mail, o2switch, system
 - Recherche par mot-clé
 - Informations : utilisateur, action, IP, date, détails
+
+---
+
+## LDAP
+
+L'intégration LDAP se configure **entièrement depuis l'interface admin** (*Administration → Intégrations → LDAP*). Aucune variable d'environnement n'est nécessaire. La configuration est chiffrée en base de données.
+
+### Paramètres disponibles
+
+| Paramètre | Description | Défaut |
+|-----------|-------------|--------|
+| LDAP activé | Bascule l'authentification LDAP | `false` |
+| URL du serveur | `ldap://host:389` ou `ldaps://host:636` | — |
+| Bind DN | DN du compte de service pour la recherche | — |
+| Mot de passe service | Chiffré AES-256-GCM en base | — |
+| Base DN | Racine de recherche des utilisateurs | — |
+| Filtre utilisateur | Filtre LDAP avec `{{email}}` comme placeholder | `(mail={{email}})` |
+| Attribut nom d'affichage | Attribut LDAP pour le nom affiché | `displayName` |
+| Noms groupes admin | CNs accordant les droits admin (virgule-séparé) | `admin,administrateur,administrators,admins` |
+| DN groupe admin (optionnel) | DN complet alternatif pour les droits admin | — |
+| Vérifier certificat TLS | Désactivez pour les certificats auto-signés | `true` |
+| Fallback local | Autoriser le mot de passe local si LDAP inaccessible | `false` |
+
+### Filtres courants
+
+| Annuaire | Filtre utilisateur |
+|----------|--------------------|
+| OpenLDAP | `(mail={{email}})` |
+| Active Directory | `(userPrincipalName={{email}})` |
+| Active Directory (login court) | `(sAMAccountName={{email}})` |
+| Nextcloud LDAP | `(mail={{email}})` |
+
+### Synchronisation des groupes
+
+À chaque connexion LDAP, les groupes de l'utilisateur sont synchronisés automatiquement :
+
+1. Les groupes LDAP de l'utilisateur (attribut `memberOf`) sont récupérés.
+2. Pour chaque groupe LDAP :
+   - Si un groupe applicatif portant le même nom (CN) existe → l'utilisateur y est lié.
+   - Sinon → le groupe est **créé automatiquement** dans l'application.
+3. Si l'utilisateur est retiré d'un groupe côté LDAP → il en est **retiré** dans l'application.
+4. Les groupes créés manuellement sans lien LDAP ne sont jamais modifiés.
+
+**Mappings manuels avancés** : disponibles dans l'onglet LDAP pour lier un DN LDAP précis à un groupe applicatif existant — utile quand deux OU contiennent des groupes au même CN.
+
+### Droits administrateur
+
+Les utilisateurs membres d'un groupe LDAP dont le CN correspond à l'un des noms configurés (`admin`, `administrateur`…) reçoivent automatiquement `is_admin = true`. Si retiré du groupe côté LDAP, les droits sont révoqués à la prochaine connexion.
+
+### Migration depuis le mode local
+
+1. Configurer les paramètres LDAP dans l'admin.
+2. Cliquer **Tester la connexion** pour valider.
+3. Activer **LDAP activé** et enregistrer.
+4. Les utilisateurs existants conservent leur compte ; à leur prochaine connexion via LDAP, leurs informations et groupes sont mis à jour automatiquement.
+5. Activer **Fallback local** pendant la période de transition si des comptes locaux de secours sont nécessaires.
+
+---
+
+## SSO / OpenID Connect
+
+L'authentification SSO se configure **entièrement depuis l'interface admin** (*Administration → Intégrations → SSO / OpenID Connect*). Aucune variable d'environnement n'est nécessaire. Le Client Secret est chiffré en base de données.
+
+### Paramètres disponibles
+
+| Paramètre | Description | Défaut |
+|-----------|-------------|--------|
+| SSO activé | Affiche le bouton SSO sur la page de connexion | `false` |
+| Libellé du bouton | Texte du bouton sur la page de login | `Synology SSO` |
+| URL du serveur OIDC | URL de base du fournisseur (discovery automatique) | — |
+| Client ID | Identifiant de l'application enregistré chez le fournisseur | — |
+| Client Secret | Chiffré AES-256-GCM en base | — |
+| URI de redirection | Laissez vide pour auto-détection | `(auto)` |
+| Vérifier certificat TLS | Désactivez pour les certificats auto-signés | `true` |
+
+### Configuration Synology SSO Server
+
+1. Sur le NAS, installer le package **SSO Server** (DSM → Centre de paquets).
+2. Ouvrir **SSO Server → Application → Ajouter**.
+3. Choisir le type **OIDC**, donner un nom à l'application.
+4. Dans *URI de redirection*, saisir : `https://<votre-domaine>/api/auth/sso/callback`
+5. Copier le **Client ID** et **Client Secret** générés.
+6. Dans l'admin WebMail → **SSO / OpenID Connect** :
+   - URL du serveur : `https://<ip-nas>:<port>/webman/sso` (ex. `https://192.168.1.10:5001/webman/sso`)
+   - Coller le Client ID et Client Secret.
+   - Si le NAS utilise un certificat auto-signé : désactiver *Vérifier le certificat TLS*.
+7. Cliquer **Tester la connexion** puis **Enregistrer**.
+
+### Flux de connexion
+
+```
+Utilisateur clique "Se connecter avec SSO"
+        ↓
+GET /api/auth/sso/login → redirection vers {authorization_endpoint}
+        ↓
+Si session SSO active chez le fournisseur → redirection immédiate (0 saisie)
+Si pas de session → page de login du fournisseur (1 fois par session navigateur)
+        ↓
+GET /api/auth/sso/callback → échange du code → provisionnement → session
+        ↓
+Redirection vers l'application → connexion automatique
+```
+
+### Compatibilité fournisseurs
+
+| Fournisseur | URL Issuer type | Notes |
+|------------|-----------------|-------|
+| Synology SSO Server | `https://nas:port/webman/sso` | Discovery OIDC supporté depuis DSM 7 |
+| Keycloak | `https://keycloak.example.com/realms/myrealm` | |
+| Azure AD | `https://login.microsoftonline.com/{tenant}/v2.0` | |
+| Google | `https://accounts.google.com` | |
+
+### Coexistence avec les autres méthodes
+
+Le SSO est **additif** : le bouton SSO s'ajoute à la page de login sans remplacer le formulaire mot de passe ni les passkeys. Chaque utilisateur peut utiliser la méthode de son choix indépendamment.

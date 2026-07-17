@@ -13,8 +13,10 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=${PORT:-3000}
       - DATABASE_URL=${DATABASE_URL:-postgresql://webmail:${DB_PASSWORD:-webmail_secure_pwd}@db:5432/webmail}
-      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-32-chars-minimum-key!!}
+      # No defaults on purpose: `docker compose up` fails fast if unset.
+      # Generate values with: openssl rand -hex 32
+      - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET must be set — see .env.example}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set — see .env.example}
       - JWT_SECRET=${JWT_SECRET:-}
       - WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID:-localhost}
       - WEBAUTHN_RP_NAME=${WEBAUTHN_RP_NAME:-Web Mail}

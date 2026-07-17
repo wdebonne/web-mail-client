@@ -29,6 +29,8 @@ import {
 } from '../services/webauthn';
 import { z } from 'zod';
 import { addLog } from '../services/auditLog';
+import { credentialLimiter, forgotPasswordLimiter } from '../middleware/rateLimit';
+import { hashResetToken } from '../utils/resetToken';
 
 const PENDING_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'change-me';
 
@@ -106,7 +108,7 @@ async function sendSecurityAlert(recipient: string, email: string, ip: string, a
 }
 
 // Login
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', credentialLimiter, async (req, res) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
     const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
@@ -137,6 +139,68 @@ authRouter.post('/login', async (req, res) => {
     );
     const isWhitelisted = whitelisted.rows.length > 0;
 
+    // ---- LDAP authentication (when enabled) ----
+    const { getLdapConfig, authenticateLdapUser, syncLdapGroups } = await import('../services/ldap');
+    const ldapCfg = await getLdapConfig();
+    let usedLdap = false;
+
+    if (ldapCfg.enabled) {
+      let ldapUser: Awaited<ReturnType<typeof authenticateLdapUser>> = null;
+      let ldapError: Error | null = null;
+
+      try {
+        ldapUser = await authenticateLdapUser(ldapCfg, email, password);
+      } catch (err: any) {
+        ldapError = err;
+      }
+
+      if (ldapError && !ldapCfg.fallbackLocal) {
+        addLog(undefined, 'user.login_failed', 'auth', req, { email, reason: 'ldap_error', message: ldapError.message }).catch(() => {});
+        return res.status(503).json({ error: 'Le serveur LDAP est inaccessible. Contactez un administrateur.' });
+      }
+
+      if (!ldapError) {
+        if (!ldapUser) {
+          // Bad credentials against LDAP
+          await pool.query(
+            `INSERT INTO login_attempts (email, ip_address, user_agent, success, block_reason)
+             VALUES ($1, $2, $3, false, 'bad_password')`,
+            [email, ip, ua]
+          );
+          addLog(undefined, 'user.login_failed', 'auth', req, { email, reason: 'ldap_bad_credentials' }).catch(() => {});
+          return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+        }
+
+        // LDAP auth succeeded — auto-provision user in DB
+        await pool.query(
+          `INSERT INTO users (email, password_hash, display_name, is_admin, role, is_active)
+           VALUES ($1, '', $2, $3, $4, true)
+           ON CONFLICT (email) DO UPDATE
+             SET display_name = EXCLUDED.display_name,
+                 is_admin = EXCLUDED.is_admin,
+                 role = EXCLUDED.role,
+                 updated_at = NOW()`,
+          [
+            ldapUser.email,
+            ldapUser.displayName,
+            ldapUser.isAdmin,
+            ldapUser.isAdmin ? 'admin' : 'user',
+          ]
+        );
+        usedLdap = true;
+
+        // Sync LDAP group memberships — resolve user id first
+        const provisionedUser = await pool.query<{ id: string }>(
+          `SELECT id FROM users WHERE email = $1`, [ldapUser.email]
+        );
+        if (provisionedUser.rows.length > 0) {
+          syncLdapGroups(provisionedUser.rows[0].id, ldapUser.memberOfDns, ldapCfg).catch(() => {});
+        }
+      }
+      // If ldapError && fallbackLocal: fall through to local bcrypt below
+    }
+
+    // ---- Load DB user (after possible LDAP provisioning) ----
     const result = await pool.query(
       `SELECT id, email, password_hash, display_name, avatar_url, role, is_admin, is_active,
               language, timezone, theme, failed_attempts, locked_until
@@ -172,56 +236,59 @@ authRouter.post('/login', async (req, res) => {
       });
     }
 
-    const validPassword = await bcrypt.compare(password, user.password_hash);
+    // ---- Password verification (local bcrypt — skipped when LDAP already validated) ----
+    if (!usedLdap) {
+      const validPassword = await bcrypt.compare(password, user.password_hash);
 
-    if (!validPassword) {
-      const newAttempts = (user.failed_attempts || 0) + 1;
-      let lockedUntil: Date | null = null;
+      if (!validPassword) {
+        const newAttempts = (user.failed_attempts || 0) + 1;
+        let lockedUntil: Date | null = null;
 
-      if (!isWhitelisted && newAttempts >= sec.maxAttempts) {
-        lockedUntil = sec.lockoutMinutes > 0
-          ? new Date(Date.now() + sec.lockoutMinutes * 60 * 1000)
-          : new Date('9999-12-31T23:59:59Z');
+        if (!isWhitelisted && newAttempts >= sec.maxAttempts) {
+          lockedUntil = sec.lockoutMinutes > 0
+            ? new Date(Date.now() + sec.lockoutMinutes * 60 * 1000)
+            : new Date('9999-12-31T23:59:59Z');
+          await pool.query(
+            'UPDATE users SET failed_attempts = $1, locked_until = $2 WHERE id = $3',
+            [newAttempts, lockedUntil, user.id]
+          );
+        } else {
+          await pool.query('UPDATE users SET failed_attempts = $1 WHERE id = $2', [newAttempts, user.id]);
+        }
+
         await pool.query(
-          'UPDATE users SET failed_attempts = $1, locked_until = $2 WHERE id = $3',
-          [newAttempts, lockedUntil, user.id]
+          `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success, block_reason)
+           VALUES ($1, $2, $3, $4, false, $5)`,
+          [user.id, email, ip, ua, lockedUntil ? 'locked' : null]
         );
-      } else {
-        await pool.query('UPDATE users SET failed_attempts = $1 WHERE id = $2', [newAttempts, user.id]);
-      }
+        addLog(user.id, lockedUntil ? 'user.login_blocked' : 'user.login_failed', 'auth', req, {
+          email,
+          reason: lockedUntil ? 'locked_now' : 'bad_password',
+          failedAttempts: newAttempts,
+        }).catch(() => {});
 
-      await pool.query(
-        `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success, block_reason)
-         VALUES ($1, $2, $3, $4, false, $5)`,
-        [user.id, email, ip, ua, lockedUntil ? 'locked' : null]
-      );
-      addLog(user.id, lockedUntil ? 'user.login_blocked' : 'user.login_failed', 'auth', req, {
-        email,
-        reason: lockedUntil ? 'locked_now' : 'bad_password',
-        failedAttempts: newAttempts,
-      }).catch(() => {});
+        const shouldAlert =
+          (sec.alertEnabled && newAttempts >= sec.alertThreshold) ||
+          (isWhitelisted && sec.whitelistAlertEnabled && newAttempts >= sec.alertThreshold);
+        if (shouldAlert && sec.alertRecipient) {
+          sendSecurityAlert(sec.alertRecipient, email, ip, newAttempts, isWhitelisted).catch(() => {});
+        }
 
-      const shouldAlert =
-        (sec.alertEnabled && newAttempts >= sec.alertThreshold) ||
-        (isWhitelisted && sec.whitelistAlertEnabled && newAttempts >= sec.alertThreshold);
-      if (shouldAlert && sec.alertRecipient) {
-        sendSecurityAlert(sec.alertRecipient, email, ip, newAttempts, isWhitelisted).catch(() => {});
-      }
-
-      const remaining = !isWhitelisted ? Math.max(0, sec.maxAttempts - newAttempts) : null;
-      if (lockedUntil) {
-        const minutesLeft = sec.lockoutMinutes > 0 ? sec.lockoutMinutes : null;
+        const remaining = !isWhitelisted ? Math.max(0, sec.maxAttempts - newAttempts) : null;
+        if (lockedUntil) {
+          const minutesLeft = sec.lockoutMinutes > 0 ? sec.lockoutMinutes : null;
+          return res.status(401).json({
+            error: minutesLeft
+              ? `Compte verrouillé pour ${minutesLeft} minute(s). Contactez un administrateur si nécessaire.`
+              : 'Compte verrouillé. Contactez un administrateur.',
+          });
+        }
         return res.status(401).json({
-          error: minutesLeft
-            ? `Compte verrouillé pour ${minutesLeft} minute(s). Contactez un administrateur si nécessaire.`
-            : 'Compte verrouillé. Contactez un administrateur.',
+          error: remaining !== null && remaining > 0
+            ? `Email ou mot de passe incorrect (${remaining} tentative(s) restante(s))`
+            : 'Email ou mot de passe incorrect',
         });
       }
-      return res.status(401).json({
-        error: remaining !== null && remaining > 0
-          ? `Email ou mot de passe incorrect (${remaining} tentative(s) restante(s))`
-          : 'Email ou mot de passe incorrect',
-      });
     }
 
     if (user.is_active === false) {
@@ -238,7 +305,7 @@ authRouter.post('/login', async (req, res) => {
        VALUES ($1, $2, $3, $4, true)`,
       [user.id, email, ip, ua]
     );
-    addLog(user.id, 'user.login', 'auth', req, { email, method: 'password' }).catch(() => {});
+    addLog(user.id, 'user.login', 'auth', req, { email, method: usedLdap ? 'ldap' : 'password' }).catch(() => {});
 
     // Step-up 2FA: if the user has registered at least one passkey, force
     // biometric proof before issuing a full session.
@@ -282,7 +349,7 @@ authRouter.post('/login', async (req, res) => {
 });
 
 // Register (if allowed by admin settings)
-authRouter.post('/register', async (req, res) => {
+authRouter.post('/register', credentialLimiter, async (req, res) => {
   try {
     // Check if registration is allowed
     const settingResult = await pool.query(
@@ -368,7 +435,7 @@ authRouter.post('/register', async (req, res) => {
 });
 
 // Self-service forgot password — always returns the same generic message to prevent email enumeration
-authRouter.post('/forgot-password', async (req, res) => {
+authRouter.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   const GENERIC = { message: 'Si un compte existe avec cet email, un lien de réinitialisation vous a été envoyé. Vérifiez également vos courriers indésirables.' };
   try {
     const settingResult = await pool.query(
@@ -391,7 +458,7 @@ authRouter.post('/forgot-password', async (req, res) => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     await pool.query('DELETE FROM password_resets WHERE user_id = $1 AND used_at IS NULL', [user.id]);
-    await pool.query('INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)', [user.id, token, expiresAt]);
+    await pool.query('INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)', [user.id, hashResetToken(token), expiresAt]);
 
     const origin = req.headers.origin || `${req.protocol}://${req.headers.host}`;
     const resetUrl = `${origin}/reset-password?token=${token}`;
@@ -422,11 +489,12 @@ authRouter.post('/forgot-password', async (req, res) => {
   }
 });
 
-// Consume a password reset token (generated by admin)
-authRouter.post('/reset-password', async (req, res) => {
+// Consume a password reset token (self-service or generated by admin).
+// Tokens are stored hashed — the presented value is hashed before lookup.
+authRouter.post('/reset-password', credentialLimiter, async (req, res) => {
   try {
     const { token, password } = req.body;
-    if (!token || !password || password.length < 8) {
+    if (!token || typeof token !== 'string' || !password || typeof password !== 'string' || password.length < 8) {
       return res.status(400).json({ error: 'Token et mot de passe (8 caractères min.) requis' });
     }
 
@@ -434,7 +502,7 @@ authRouter.post('/reset-password', async (req, res) => {
       `SELECT pr.id, pr.user_id, pr.expires_at, pr.used_at
        FROM password_resets pr
        WHERE pr.token = $1`,
-      [token]
+      [hashResetToken(token)]
     );
 
     if (result.rows.length === 0) {
@@ -450,8 +518,9 @@ authRouter.post('/reset-password', async (req, res) => {
     await pool.query('UPDATE password_resets SET used_at = NOW() WHERE id = $1', [reset.id]);
 
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -647,7 +716,7 @@ authRouter.post('/webauthn/login/options', async (req, res) => {
   }
 });
 
-authRouter.post('/webauthn/login/verify', async (req, res) => {
+authRouter.post('/webauthn/login/verify', credentialLimiter, async (req, res) => {
   try {
     const pending = typeof req.body?.pendingToken === 'string' ? req.body.pendingToken : '';
     const ctx = verifyPendingToken(pending);
@@ -685,6 +754,135 @@ authRouter.post('/webauthn/login/verify', async (req, res) => {
   } catch (error: any) {
     console.error('WebAuthn login verify error:', error);
     res.status(400).json({ error: error?.message || 'Vérification échouée' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SSO — OpenID Connect (Synology SSO Server or any OIDC provider)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Public: returns { enabled, providerName } for the login page button. */
+authRouter.get('/sso/config', async (_req, res) => {
+  try {
+    const { getSsoConfig } = await import('../services/sso');
+    const cfg = await getSsoConfig();
+    res.json({ enabled: cfg.enabled, providerName: cfg.providerName });
+  } catch {
+    res.json({ enabled: false, providerName: 'SSO' });
+  }
+});
+
+/** Initiates the OIDC authorization code flow — redirects user to provider. */
+authRouter.get('/sso/login', async (req, res) => {
+  try {
+    const { getSsoConfig, buildOidcClient, generators } = await import('../services/sso');
+    const cfg = await getSsoConfig();
+
+    if (!cfg.enabled) return res.status(403).send('SSO non activé');
+    if (!cfg.issuerUrl || !cfg.clientId) return res.status(503).send('SSO mal configuré');
+
+    const redirectUri = cfg.redirectUri ||
+      `${req.protocol}://${req.headers.host}/api/auth/sso/callback`;
+
+    const client = await buildOidcClient({ ...cfg, redirectUri });
+
+    const state = generators.state();
+    const nonce = generators.nonce();
+
+    (req.session as any).ssoState = state;
+    (req.session as any).ssoNonce = nonce;
+    (req.session as any).ssoRedirectUri = redirectUri;
+
+    const authUrl = client.authorizationUrl({
+      scope: 'openid email profile',
+      state,
+      nonce,
+    });
+
+    res.redirect(authUrl);
+  } catch (err: any) {
+    console.error('SSO login error:', err);
+    res.redirect('/login?sso_error=discovery_failed');
+  }
+});
+
+/** OIDC callback — exchanges code, provisions user, issues session, redirects to app. */
+authRouter.get('/sso/callback', async (req, res) => {
+  try {
+    const { getSsoConfig, buildOidcClient } = await import('../services/sso');
+    const cfg = await getSsoConfig();
+
+    if (!cfg.enabled) return res.redirect('/login?sso_error=disabled');
+
+    const redirectUri = (req.session as any).ssoRedirectUri ||
+      cfg.redirectUri ||
+      `${req.protocol}://${req.headers.host}/api/auth/sso/callback`;
+
+    const client = await buildOidcClient({ ...cfg, redirectUri });
+
+    const expectedState = (req.session as any).ssoState;
+    const nonce = (req.session as any).ssoNonce;
+
+    delete (req.session as any).ssoState;
+    delete (req.session as any).ssoNonce;
+    delete (req.session as any).ssoRedirectUri;
+
+    const params = client.callbackParams(req);
+    const tokenSet = await client.callback(redirectUri, params, {
+      state: expectedState,
+      nonce,
+    });
+
+    const userInfo = await client.userinfo(tokenSet.access_token!);
+    const email = typeof userInfo.email === 'string' ? userInfo.email : null;
+
+    if (!email) return res.redirect('/login?sso_error=no_email');
+
+    const displayName =
+      (typeof userInfo.name === 'string' ? userInfo.name : null) ||
+      (typeof userInfo.preferred_username === 'string' ? userInfo.preferred_username : null) ||
+      email;
+
+    // Provision user — update display name on each login but never override admin/role
+    await pool.query(
+      `INSERT INTO users (email, password_hash, display_name, is_admin, role, is_active)
+       VALUES ($1, '', $2, false, 'user', true)
+       ON CONFLICT (email) DO UPDATE
+         SET display_name = EXCLUDED.display_name, updated_at = NOW()`,
+      [email, displayName]
+    );
+
+    const userRow = await pool.query<{ id: string; is_admin: boolean; is_active: boolean }>(
+      `SELECT id, is_admin, is_active FROM users WHERE email = $1`,
+      [email]
+    );
+
+    if (userRow.rows.length === 0 || userRow.rows[0].is_active === false) {
+      return res.redirect('/login?sso_error=account_disabled');
+    }
+
+    const user = userRow.rows[0];
+    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+    const ua = req.headers['user-agent'] || '';
+
+    await pool.query(
+      `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success)
+       VALUES ($1, $2, $3, $4, true)`,
+      [user.id, email, ip, ua]
+    );
+    addLog(user.id, 'user.login', 'auth', req, { email, method: 'sso' }).catch(() => {});
+
+    // Issue device session — sets the refresh cookie
+    req.session.userId = user.id;
+    req.session.isAdmin = user.is_admin;
+    await issueSession(req, res, user.id, user.is_admin);
+
+    // Redirect to frontend — the refresh cookie is now set.
+    // checkAuth() (called on app boot) will exchange it for an access token.
+    res.redirect('/?sso=1');
+  } catch (err: any) {
+    console.error('SSO callback error:', err);
+    res.redirect('/login?sso_error=callback_failed');
   }
 });
 
@@ -733,7 +931,7 @@ authRouter.post('/webauthn/passkey/options', async (_req, res) => {
   }
 });
 
-authRouter.post('/webauthn/passkey/verify', async (req, res) => {
+authRouter.post('/webauthn/passkey/verify', credentialLimiter, async (req, res) => {
   try {
     const response = req.body?.response;
     if (!response) return res.status(400).json({ error: 'Réponse manquante' });
