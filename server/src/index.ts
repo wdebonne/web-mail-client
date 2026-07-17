@@ -35,6 +35,7 @@ import { bulkSendRouter, adminBulkSendRouter } from './routes/bulkSend';
 import { startBulkSendProcessor } from './services/bulkSendProcessor';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
+import { authLimiter } from './middleware/rateLimit';
 import { setupWebSocket } from './services/websocket';
 import { PluginManager } from './plugins/manager';
 import { initPushService } from './services/push';
@@ -120,7 +121,9 @@ app.use(session({
 }));
 
 // API Routes
-app.use('/api/auth', authRouter);
+// Baseline IP rate limit on all auth endpoints (incl. /refresh, WebAuthn
+// options, SSO). Sensitive routes add stricter per-route limiters in auth.ts.
+app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/mail', authMiddleware, mailRouter);
 app.use('/api/contacts', authMiddleware, contactRouter);
 app.use('/api/calendar', authMiddleware, calendarRouter);

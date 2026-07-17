@@ -19,6 +19,7 @@ import { upsertAutoResponderForAccount } from './autoResponder';
 import { invalidateNotificationPrefsCache } from '../services/notificationPrefs';
 import { addLog } from '../services/auditLog';
 import { testConnection, listFolders, runMigration, MigrationSource, MigrationDestination } from '../services/migrationService';
+import { hashResetToken } from '../utils/resetToken';
 
 export const adminRouter = Router();
 
@@ -249,7 +250,7 @@ adminRouter.post('/users/:id/reset-link', async (req: AuthRequest, res) => {
     );
     await pool.query(
       'INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)',
-      [req.params.id, token, expiresAt]
+      [req.params.id, hashResetToken(token), expiresAt]
     );
 
     const origin = req.headers.origin || `${req.protocol}://${req.headers.host}`;
