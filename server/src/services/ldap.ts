@@ -66,6 +66,19 @@ export async function getLdapConfig(): Promise<LdapConfig> {
   };
 }
 
+/** RFC 4515 §3 — escape filter-special characters with their hex codes. */
+const LDAP_FILTER_ESCAPES: Record<string, string> = {
+  '\\': '\\5c',
+  '*': '\\2a',
+  '(': '\\28',
+  ')': '\\29',
+  '\x00': '\\00',
+};
+
+function escapeLdapFilterValue(value: string): string {
+  return value.replace(/[\\*()\x00]/g, (ch) => LDAP_FILTER_ESCAPES[ch]);
+}
+
 /** Extract the CN value from a DN string, e.g. "cn=admin,ou=groups,dc=example,dc=com" → "admin" */
 function extractCn(dn: string): string {
   const match = dn.match(/^cn=([^,]+)/i);
@@ -95,7 +108,7 @@ export async function testLdapConnection(cfg: LdapConfig): Promise<{ ok: boolean
   const client = buildClient(cfg);
   try {
     await client.bind(cfg.bindDn, cfg.bindPassword);
-    const filter = cfg.userFilter.replace('{{email}}', '*');
+    const filter = cfg.userFilter.replaceAll('{{email}}', '*');
     const { searchEntries } = await client.search(cfg.baseDn, {
       scope: 'sub',
       filter,
@@ -220,7 +233,7 @@ export async function authenticateLdapUser(
   try {
     await client.bind(cfg.bindDn, cfg.bindPassword);
 
-    const filter = cfg.userFilter.replace('{{email}}', email.replace(/[*()\\\x00]/g, '\\$&'));
+    const filter = cfg.userFilter.replaceAll('{{email}}', escapeLdapFilterValue(email));
     const { searchEntries } = await client.search(cfg.baseDn, {
       scope: 'sub',
       filter,
