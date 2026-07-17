@@ -132,6 +132,10 @@ app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
 app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 app.use('/api/admin/backup', authMiddleware, backupRouter);
+// Proxy d'images des emails : monté sans authMiddleware global car les <img>
+// ne peuvent pas envoyer de Bearer token. Protections dans le router lui-même :
+// signature HMAC obligatoire sur GET (délivrée par POST /sign, authentifié) et
+// blocage anti-SSRF des adresses privées/loopback/link-local après résolution DNS.
 app.use('/api/proxy/image', imageProxyRouter);
 app.use('/api/translate', authMiddleware, translateRouter);
 app.use('/api/bulk-send', authMiddleware, bulkSendRouter);

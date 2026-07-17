@@ -1161,6 +1161,13 @@ export const api = {
       groups: Array<{ id: string; name: string }>;
     }>(`/admin/rules/directory`),
 
+  // Image proxy — signatures HMAC des URLs d'images externes des emails
+  signImageUrls: (urls: string[]) =>
+    request<{ signatures: Record<string, string> }>('/proxy/image/sign', {
+      method: 'POST',
+      body: JSON.stringify({ urls }),
+    }),
+
   // Translation
   translateText: (text: string, targetLang: string, sourceLang?: string) =>
     request<{ translatedText: string; detectedLanguage: string | null }>('/translate', {
