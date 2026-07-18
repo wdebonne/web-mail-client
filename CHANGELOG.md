@@ -9,6 +9,44 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+- **Envoi programmé + « Annuler l'envoi »**
+  - Flèche accolée au bouton **Envoyer** de la fenêtre de composition → **Dans 1 heure / Ce soir 18h / Demain 8h / date libre**. L'identité d'expéditeur (y compris le cas *envoyer de la part de*) est figée au moment de la programmation.
+  - Réglage **« Annuler l'envoi »** (0 / 10 / 20 / 30 s, désactivé par défaut) dans **Paramètres → Messagerie** : après un envoi normal, un toast avec bouton **Annuler** rouvre la composition pendant le délai choisi.
+  - Entrée **« Programmés »** dans le volet des dossiers (visible uniquement s'il existe des messages en attente), avec annulation et **« annuler et modifier »**.
+  - Nouvelle table `scheduled_messages` + endpoints `POST /api/mail/schedule`, `GET /api/mail/scheduled`, `DELETE /api/mail/scheduled/:id`. Processeur de fond toutes les **10 s** : claim atomique (impossible d'annuler un message déjà pris), 3 tentatives, retry +2 min.
+  - Limites connues : indisponible avec S/MIME/PGP et hors-ligne ; les pièces jointes ne sont pas restaurées après une annulation (signalé par un toast).
+- **Alerte « connexion depuis un appareil inconnu »**
+  - Un e-mail est envoyé automatiquement lors d'une connexion depuis un appareil non reconnu — couvre mot de passe, LDAP, WebAuthn, passkey et SSO. Silencieux à la toute première connexion d'un compte.
+  - Modèle d'e-mail `new_device_alert` éditable dans **Admin → SMTP & Emails**, toggle d'activation dans **Admin → Sécurité** (activé par défaut), trace `user.login_new_device` dans les logs d'audit.
+  - L'envoi de l'e-mail est en tâche de fond et ne bloque jamais la connexion.
+- **Endpoint `/api/health` + healthcheck Docker + page « État du système »**
+  - `GET /api/health` (public, minimal) : 200 si le process tourne et que la base de données répond, 503 sinon.
+  - `HEALTHCHECK` ajouté au `Dockerfile` et au `docker-compose.yml` — un crash-loop au démarrage apparaît désormais comme `unhealthy` dans `docker-compose ps` au lieu de 502 opaques côté reverse proxy.
+  - Nouvelle page **Admin → Système → État du système** : uptime, mémoire, latence/taille de la base, dernière sauvegarde, files d'envoi, et tableau des 6 services de fond avec leur dernier cycle (statut Actif / En retard / Démarré).
+- **Rate limiting HTTP** (en complément du verrouillage par compte existant, v1.10.0)
+  - Base `/api/auth` : 300 requêtes / 15 min / IP.
+  - Routes d'identifiants (`/login`, `/register`, `/reset-password`, vérifications WebAuthn publiques) : 10 échecs / 15 min / IP, les requêtes réussies ne comptent pas.
+  - `/forgot-password` : 5 requêtes / heure / IP (anti-énumération : toutes les requêtes comptent, y compris les 200 génériques).
+
+### Sécurité
+
+- **Anti-SSRF sur le proxy d'images** (`/api/proxy/image`) : la résolution DNS est validée avant connexion (fonction `lookup` personnalisée) pour éliminer la fenêtre TOCTOU / DNS rebinding, et les IP littérales (`127.0.0.1`, `[::1]`, formes hexadécimales/décimales, `::ffff:`-mappées, etc.) sont désormais bloquées explicitement — un cas que Node ignore par défaut pour l'option `lookup`. Toutes les plages privées/loopback/link-local/metadata-cloud (IPv4 et IPv6) sont couvertes, y compris à travers les redirections (revalidées à chaque saut).
+  - Le endpoint exige désormais une **signature HMAC-SHA256** (`&sig=`) pour empêcher tout usage en proxy ouvert ; les URLs sont signées côté serveur au rendu du mail (`POST /api/proxy/image/sign`, authentifié).
+- **CSP durcie** : `script-src` passe de `'unsafe-inline'` à un **nonce aléatoire par requête** (`'self' 'nonce-…'`). Les deux scripts inline restants (fermeture du popup OAuth, bouton « Copier le lien » de la page calendrier public) portent désormais ce nonce.
+- **Secrets obligatoires en production** : le serveur refuse de démarrer (`process.exit(1)`) si `SESSION_SECRET` ou `ENCRYPTION_KEY` sont absents en `NODE_ENV=production` (message d'erreur explicite avec la commande `openssl rand -hex 32`). `docker-compose.yml` échoue immédiatement (`${VAR:?message}`) si les secrets ne sont pas fournis, au lieu de démarrer avec des valeurs par défaut publiques.
+- **Routes `/api` inconnues** : réponse `404 {"error":"Not found"}` explicite sur toutes les méthodes, au lieu de tomber silencieusement sur le catch-all SPA.
+- **Réinitialisation de mot de passe** : les tokens sont désormais **hachés en SHA-256** en base (au lieu d'être stockés en clair) ; le message d'erreur du endpoint est génériqué côté client, l'erreur détaillée n'est loguée que côté serveur.
+- **Injection LDAP** : les valeurs interpolées dans les filtres de recherche (`{{email}}`) sont désormais échappées selon **RFC 4515** (`\`, `*`, `(`, `)`, NUL), et toutes les occurrences du placeholder sont remplacées (`replaceAll` au lieu d'un simple `replace`), fermant une petite surface d'injection sur les filtres multi-attributs.
+- **Cache OIDC multi-domaines** : le cache mono-slot du client SSO (indexé sur `issuerUrl`+`clientId`) est remplacé par une Map bornée à 10 entrées incluant `clientSecret`, `redirectUri` et `tlsRejectUnauthorized` — corrige la mauvaise `redirect_uri` renvoyée lors d'un déploiement multi-domaines.
+- **Dépendances** : `npm audit fix` (sans `--force`) — serveur 17 → 9 vulnérabilités (`sanitize-html`, `ws`, `qs` corrigés), client 16 → 6 (`react-router`, `dompurify`, `serialize-javascript` corrigés). Restent des mises à jour majeures à planifier séparément (voir [SECURITY_AUDIT.md](SECURITY_AUDIT.md)).
+
+### Corrigé
+
+- **Crash au démarrage (502) causé par le seed SSO** : la colonne `admin_settings.value` est de type `JSONB` ; le seed SSO du panneau d'intégrations passait des booléens SQL bruts au lieu de chaînes JSON (`'false'`/`'true'`), provoquant une erreur de parse SQL à **chaque démarrage** (le `ON CONFLICT DO NOTHING` ne protégeait pas contre une requête qui ne parse même pas). Les valeurs sont désormais au format JSON valide, comme tous les autres seeds.
+- **File d'envoi en masse : authentification SMTP cassée** — le processeur de fond envoyait `passwordDecrypted` et `oauthRefreshToken`, deux champs que le service mail ne lit jamais (il attend `password` et `access_token`). Résultat : mot de passe `undefined` pour les comptes classiques, et aucun token frais utilisé pour l'OAuth. Corrigé pour utiliser les mêmes champs que l'envoi immédiat.
+
 ---
 
 ## [1.24.0] - 2026-05-27

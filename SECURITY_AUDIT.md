@@ -46,6 +46,8 @@ Tous utilisent un fallback du type `'dev-secret-change-me'` / `'change-me-32-cha
 - introduire un `JWT_SECRET` distinct du secret de session,
 - supprimer toute constante fallback sensible.
 
+> **✅ Résolu (juillet 2026)** — `getKey()` ([server/src/utils/encryption.ts](server/src/utils/encryption.ts)) lève désormais `ENCRYPTION_KEY must be set in production` si la variable manque en prod (le fallback dev est conservé à l'identique). Au démarrage, [server/src/index.ts](server/src/index.ts) vérifie `SESSION_SECRET` et `ENCRYPTION_KEY` en production : si l'une manque, le serveur logue la liste des variables absentes (avec la commande `openssl rand -hex 32` pour les générer) et fait `process.exit(1)` avant toute écoute réseau. Le `docker-compose.yml` remplace les valeurs par défaut par `${VAR:?message}` : `docker compose up` échoue immédiatement avec un message explicite si les secrets ne sont pas fournis. `JWT_SECRET` reste optionnel (fallback documenté sur `SESSION_SECRET`) — non couvert par ce correctif.
+
 ### C2. Chiffrement des secrets serveur — salt statique
 
 **Fichier :** [server/src/utils/encryption.ts](server/src/utils/encryption.ts#L5-L8)
@@ -135,7 +137,7 @@ Combiné avec `password.min(6)` côté login ([server/src/routes/auth.ts](server
 
 **Correctif :** `express-rate-limit` sur `/api/auth/*` (ex. 5/min/IP), sur endpoints coûteux, verrouillage progressif par compte après N échecs.
 
-> **✅ Partiellement résolu (mai 2026)** — verrouillage progressif par compte implémenté (v1.10.0) :
+> **✅ Résolu (mai–juillet 2026)** — verrouillage progressif par compte implémenté (v1.10.0) :
 > - Compteur `failed_attempts` et `locked_until` sur la table `users`.
 > - Verrouillage automatique après N tentatives (configurable, défaut 3), durée configurable (défaut 30 min, 0 = permanent).
 > - Liste noire d'IPs bloquant immédiatement toute tentative de connexion.
@@ -143,7 +145,13 @@ Combiné avec `password.min(6)` côté login ([server/src/routes/auth.ts](server
 > - Historique complet dans `login_attempts`.
 > - Déblocage admin depuis Admin → Utilisateurs.
 >
-> **Reste à faire** : `express-rate-limit` au niveau HTTP (contre les attaques par IP sur `/api/auth/register`, les endpoints coûteux et le DoS mémoire via `express.json({ limit: '25mb' })`). Le verrouillage applicatif par compte est en place, mais sans throttle HTTP un attaquant peut toujours saturer l'infrastructure avec de nombreux comptes différents.
+> Complété en juillet 2026 par `express-rate-limit` au niveau HTTP ([server/src/middleware/rateLimit.ts](server/src/middleware/rateLimit.ts)), à trois niveaux :
+> - Baseline sur tout `/api/auth` : 300 req / 15 min / IP.
+> - Routes d'identifiants (`/login`, `/register`, `/reset-password`, verify WebAuthn publics) : 10 échecs / 15 min / IP avec `skipSuccessfulRequests` (les requêtes réussies ne comptent pas).
+> - `/forgot-password` : 5 req / heure / IP, toutes requêtes comptées (anti-énumération, réponse toujours 200).
+> - Keying sur `req.ip`, qui honore `trust proxy: 1` (cf. M8).
+>
+> **Reste à faire** : `express.json({ limit: '25mb' })` reste global (cf. M6) — le DoS mémoire par gros payloads n'est couvert par aucun de ces limiteurs.
 
 ### H4. Politique de mot de passe trop faible
 
@@ -165,6 +173,8 @@ De nombreux handlers renvoient `res.status(500).json({ error: error.message })` 
 En cas d'erreur Postgres, cela expose le schéma, les noms de colonnes, les contraintes.
 
 **Correctif :** middleware d'erreur centralisé qui logge côté serveur (`logger.error`) et renvoie un message générique au client.
+
+> **🟡 Partiellement résolu (juillet 2026)** — `/api/auth/reset-password` ([server/src/routes/auth.ts](server/src/routes/auth.ts)) logue désormais l'erreur côté serveur et renvoie `{ error: 'Erreur serveur' }` générique, avec validation d'entrée durcie (`typeof token === 'string'`). Les autres handlers listés ci-dessus (`accounts.ts`, `branding.ts`, `plugins.ts`, etc.) exposent toujours `error.message` — le middleware d'erreur centralisé reste à faire.
 
 ### H6. WebSocket — JWT non borné, échec silencieux
 
@@ -245,6 +255,17 @@ Utilise `secure: true` mais aucun `tls: { rejectUnauthorized: true, servername: 
 
 **Correctif :** `app.set('trust proxy', 1)` en production.
 
+> **✅ Résolu (avril 2026)** — `app.set('trust proxy', 1)` dans [server/src/index.ts](server/src/index.ts), avant tout middleware de session. Documenté dans [DEPLOYMENT.md](DEPLOYMENT.md) (nécessite `X-Forwarded-Proto` côté reverse proxy).
+
+---
+
+## 🔵 Correctifs complémentaires (juillet 2026)
+
+Découverts et corrigés hors du périmètre initial de cet audit (fonctionnalités ajoutées après le 24 avril 2026) :
+
+- **SSRF sur le proxy d'images** ([server/src/routes/imageProxy.ts](server/src/routes/imageProxy.ts)) — `GET /api/proxy/image` allait chercher les images distantes des mails sans validation de la cible réelle. Corrigé : résolution DNS validée avant connexion via une fonction `lookup` injectée dans `http.get` (élimine la fenêtre TOCTOU / DNS rebinding), plages privées/loopback/link-local/metadata-cloud bloquées en IPv4 et IPv6 (y compris formes mappées/hex/décimales et à travers les redirections), et validation explicite des IP littérales (non couvertes par l'option `lookup` de Node). Le endpoint exige désormais une signature HMAC-SHA256 (`&sig=`), signée côté serveur uniquement pour un utilisateur authentifié (`POST /api/proxy/image/sign`) — empêche l'usage en proxy ouvert.
+- **Injection LDAP** ([server/src/services/ldap.ts](server/src/services/ldap.ts)) — le placeholder `{{email}}` des filtres de recherche n'était ni échappé (RFC 4515) ni remplacé sur toutes ses occurrences (`replace` au lieu de `replaceAll`), laissant une petite surface d'injection sur les filtres multi-attributs (ex. `(|(mail={{email}})(userPrincipalName={{email}}))`). Corrigé avec un helper d'échappement dédié et `replaceAll`.
+
 ---
 
 ## 🟢 Faibles / bonnes pratiques
@@ -259,24 +280,26 @@ Utilise `secure: true` mais aucun `tls: { rejectUnauthorized: true, servername: 
 
 ## Correctifs prioritaires recommandés
 
-1. **C1** — refuser le démarrage en prod sans secrets (`SESSION_SECRET`, `ENCRYPTION_KEY`, `JWT_SECRET`, `DATABASE_URL`).
+1. ~~**C1** — refuser le démarrage en prod sans secrets (`SESSION_SECRET`, `ENCRYPTION_KEY`, `JWT_SECRET`, `DATABASE_URL`).~~ ✅ Résolu pour `SESSION_SECRET`/`ENCRYPTION_KEY` (juillet 2026) — `JWT_SECRET`/`DATABASE_URL` non couverts.
 2. **C2** — migrer `encryption.ts` vers un salt aléatoire par secret (ou `libsodium`).
-3. **H3** — `express-rate-limit` sur `/api/auth/*` et `/api/plugins/*/execute`.
+3. ~~**H3** — `express-rate-limit` sur `/api/auth/*` et `/api/plugins/*/execute`.~~ ✅ Résolu pour `/api/auth/*` (juillet 2026) — `/api/plugins/*/execute` non couvert.
 4. **H1** — sanitize systématique des `signature_html` et `bodyHtml` côté compose.
-5. **C3 + C4** — bannir SVG, durcir CSP (retirer `unsafe-inline` sur `script-src`).
-6. **H5** — pipeline d'erreur centralisé qui masque `error.message`.
-7. **H2** — réduire TTL JWT + refresh token, ou cookie `httpOnly`.
-8. **M8** — `app.set('trust proxy', 1)` en prod.
+5. **C3 + C4** — bannir SVG ; ~~durcir CSP (retirer `unsafe-inline` sur `script-src`)~~ ✅ CSP résolu (juillet 2026), SVG (C3) non résolu.
+6. **H5** — pipeline d'erreur centralisé qui masque `error.message` (partiel : `reset-password` uniquement, juillet 2026).
+7. **H2** — réduire TTL JWT + refresh token, ou cookie `httpOnly`. ✅ Résolu (avril 2026).
+8. ~~**M8** — `app.set('trust proxy', 1)` en prod.~~ ✅ Résolu (avril 2026).
 
 ---
 
 ## Checklist de vérification après corrections
 
-- [ ] `NODE_ENV=production` + absence de `SESSION_SECRET` → serveur refuse de démarrer.
+- [x] `NODE_ENV=production` + absence de `SESSION_SECRET`/`ENCRYPTION_KEY` → serveur refuse de démarrer (vérifié juillet 2026).
 - [ ] Deux instances avec même `ENCRYPTION_KEY` et bases différentes produisent des ciphertexts **différents** pour la même valeur.
 - [ ] Upload d'un SVG avec `<script>` → rejeté ou servi avec `Content-Disposition: attachment`.
-- [ ] 10 tentatives `/api/auth/login` en < 1 min depuis une même IP → 429.
+- [x] 10 tentatives `/api/auth/login` en < 15 min depuis une même IP → 429 (vérifié juillet 2026 ; fenêtre réelle 15 min, pas < 1 min).
 - [ ] Compose preview avec signature contenant `<img src=x onerror=...>` → pas d'exécution JS.
-- [ ] Réponse 500 en cas d'erreur BDD → message générique, pas de détail Postgres.
-- [ ] Token JWT expiré après la durée configurée, révoqué lors du logout.
+- [ ] Réponse 500 en cas d'erreur BDD → message générique, pas de détail Postgres (fait pour `reset-password` uniquement).
+- [x] Token JWT expiré après la durée configurée, révoqué lors du logout (vérifié avril 2026).
 - [ ] WebSocket sans message `auth` pendant 10 s → socket fermée.
+- [x] Requête `GET /api/proxy/image` sans signature, ou vers une IP privée/loopback/metadata-cloud signée → 403 (vérifié juillet 2026).
+- [x] `app.set('trust proxy', 1)` actif en prod, cookie `Secure` posé derrière un reverse proxy HTTPS (vérifié avril 2026).
