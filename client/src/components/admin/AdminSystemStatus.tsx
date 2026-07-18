@@ -1,8 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity, Database, HardDrive, Clock, RefreshCw, CheckCircle2,
-  AlertTriangle, Send, Loader2, MemoryStick,
+  AlertTriangle, Send, Loader2, MemoryStick, BellRing,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { api } from '../../api';
 
 /**
@@ -11,6 +13,8 @@ import { api } from '../../api';
  * Complément détaillé du /api/health public (utilisé par le HEALTHCHECK
  * Docker) : services de fond avec leur dernier tick, dernière sauvegarde,
  * files d'envoi (masse + programmés), latence et taille de la base.
+ * Inclut aussi les réglages des alertes système par email (services en
+ * retard / échec de sauvegarde auto → email aux admins).
  */
 
 interface ServiceStatus {
@@ -58,6 +62,110 @@ function serviceHealth(s: ServiceStatus): 'ok' | 'late' | 'starting' {
   if (!s.lastTickAt) return 'starting';
   if (s.intervalMs && Date.now() - new Date(s.lastTickAt).getTime() > s.intervalMs * 3) return 'late';
   return 'ok';
+}
+
+/**
+ * Réglages des alertes système par email — persistés dans admin_settings
+ * (alerting_*), consommés par le vérificateur systemAlerts.ts côté serveur.
+ * Le modèle de l'email (`system_alert`) s'édite dans Admin > SMTP & Emails.
+ */
+function AlertingSettingsCard() {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['admin-settings'],
+    queryFn: api.getAdminSettings,
+  });
+
+  const [enabled, setEnabled] = useState(true);
+  const [recipients, setRecipients] = useState('');
+  const [missedTicks, setMissedTicks] = useState(3);
+  const [reminderHours, setReminderHours] = useState(6);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!settings || dirty) return;
+    setEnabled(settings.alerting_enabled === true || settings.alerting_enabled === 'true');
+    setRecipients(typeof settings.alerting_recipients === 'string' ? settings.alerting_recipients : '');
+    setMissedTicks(Number(settings.alerting_missed_ticks) || 3);
+    setReminderHours(Number(settings.alerting_reminder_hours) || 6);
+  }, [settings, dirty]);
+
+  const saveMut = useMutation({
+    mutationFn: () => api.updateAdminSettings({
+      alerting_enabled: enabled,
+      alerting_recipients: recipients.trim(),
+      alerting_missed_ticks: Math.max(2, missedTicks),
+      alerting_reminder_hours: Math.max(1, reminderHours),
+    }),
+    onSuccess: () => {
+      setDirty(false);
+      qc.invalidateQueries({ queryKey: ['admin-settings'] });
+      toast.success('Réglages des alertes enregistrés');
+    },
+    onError: (e: any) => toast.error(e?.message || 'Erreur d\'enregistrement'),
+  });
+
+  return (
+    <div className="bg-white border border-outlook-border rounded-lg p-4 mb-6">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <BellRing size={17} className="text-outlook-blue" />
+          <span className="text-sm font-semibold">Alertes par e-mail</span>
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => { setEnabled(e.target.checked); setDirty(true); }}
+            className="w-4 h-4 accent-outlook-blue"
+          />
+        </label>
+        <button
+          onClick={() => saveMut.mutate()}
+          disabled={!dirty || saveMut.isPending}
+          className="px-3 py-1.5 text-xs font-medium bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded disabled:opacity-50"
+        >
+          {saveMut.isPending ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+      <p className="text-xs text-outlook-text-secondary mt-1.5">
+        Envoie un e-mail (via le SMTP système) quand un service de fond manque plusieurs cycles ou
+        qu'une sauvegarde automatique échoue — puis un rappel tant que l'incident persiste et un
+        message de rétablissement. Modèle éditable dans Admin &gt; SMTP &amp; Emails.
+      </p>
+      {enabled && (
+        <div className="grid sm:grid-cols-3 gap-3 mt-3">
+          <div className="sm:col-span-3">
+            <label className="block text-xs text-outlook-text-secondary mb-1">Destinataires</label>
+            <input
+              type="text"
+              value={recipients}
+              onChange={(e) => { setRecipients(e.target.value); setDirty(true); }}
+              placeholder="Vide = tous les administrateurs actifs"
+              className="w-full border border-outlook-border rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+            />
+            <p className="text-xs text-outlook-text-disabled mt-0.5">Plusieurs adresses séparées par des virgules.</p>
+          </div>
+          <div>
+            <label className="block text-xs text-outlook-text-secondary mb-1">Cycles manqués avant alerte</label>
+            <input
+              type="number" min={2} max={20}
+              value={missedTicks}
+              onChange={(e) => { setMissedTicks(Number(e.target.value)); setDirty(true); }}
+              className="w-full border border-outlook-border rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-outlook-text-secondary mb-1">Rappel toutes les (heures)</label>
+            <input
+              type="number" min={1} max={168}
+              value={reminderHours}
+              onChange={(e) => { setReminderHours(Number(e.target.value)); setDirty(true); }}
+              className="w-full border border-outlook-border rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-outlook-blue"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Card({ icon: Icon, label, value, sub, color = 'bg-outlook-blue' }: {
@@ -131,9 +239,23 @@ export default function AdminSystemStatus() {
           label="Dernière sauvegarde"
           value={data.lastBackup ? timeAgo(data.lastBackup.created_at) : 'Aucune'}
           sub={data.lastBackup ? `${data.lastBackup.type === 'auto' ? 'auto' : 'manuelle'} · ${formatBytes(Number(data.lastBackup.size_bytes))}` : 'Admin > Système > Sauvegarde'}
-          color={data.lastBackup ? 'bg-teal-600' : 'bg-amber-600'}
+          color={data.lastAutoBackupError ? 'bg-red-600' : data.lastBackup ? 'bg-teal-600' : 'bg-amber-600'}
         />
       </div>
+
+      {data.lastAutoBackupError && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 mb-6">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <span>
+            La dernière sauvegarde automatique a échoué
+            {data.lastAutoBackupError.at ? ` (${timeAgo(data.lastAutoBackupError.at)})` : ''} :{' '}
+            {data.lastAutoBackupError.message}
+          </span>
+        </div>
+      )}
+
+      {/* Alertes système par email */}
+      <AlertingSettingsCard />
 
       {/* Files d'envoi */}
       <h4 className="text-sm font-semibold mb-3 text-outlook-text-secondary">Files d'envoi</h4>

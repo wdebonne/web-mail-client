@@ -70,6 +70,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - 👉 **Gestes de balayage sur mobile et tablette** : glissez un e-mail vers la **gauche** (Archiver par défaut) ou vers la **droite** (Corbeille par défaut) pour une action rapide à une main. Chaque direction est configurable indépendamment (Archiver, Corbeille, Déplacer, Copier, Drapeau, Lu/Non lu). Pour *Déplacer* / *Copier*, un **dossier par défaut par compte** peut être défini (avec création possible d'un dossier « À trier » depuis le sélecteur). La confirmation avant mise en corbeille peut être désactivée pour un nettoyage éclair. Réglages dans **Paramètres → Messagerie → Balayage**.
 - 🕘 **Dossiers récents pour Déplacer / Copier** : les sous-menus *Déplacer vers…* et *Copier vers…* du menu contextuel d'un message affichent en tête les **derniers dossiers utilisés** (icône horloge) pour un re-rangement quasi-instantané. Le nombre de raccourcis est paramétrable indépendamment pour chaque action — *Off / 1 / 2 / 3* — depuis le bouton **Dossiers récents** du ruban (onglet **Afficher**) ou depuis **Paramètres → Messagerie**.
 - 🔔 **Indicateurs de mails non lus dans la sidebar** : à côté de chaque dossier (et de chaque favori, ainsi que des boîtes unifiées), trois indicateurs **indépendants et combinables** — *(1)* le **nombre** entre parenthèses à la fin du nom (par défaut, façon Outlook), *(2)* le **nom du dossier en gras**, et *(3)* une **pastille rouge**. La portée est configurable : **boîte de réception uniquement**, **favoris uniquement**, **les deux**, ou **tous les dossiers**. Réglages depuis le bouton **Non lus** du ruban (onglet **Afficher**) ou depuis **Paramètres → Apparence**.
+- ⏰ **Envoi programmé + « Annuler l'envoi »** : flèche accolée au bouton *Envoyer* → *Dans 1 heure / Ce soir 18h / Demain 8h / date libre* (identité d'expéditeur figée à la programmation, y compris *envoyer de la part de*). Entrée **Programmés** dans le volet des dossiers avec annulation / « annuler et modifier ». Réglage optionnel **Annuler l'envoi** (0/10/20/30 s) dans *Paramètres → Messagerie* : un toast après envoi propose de rouvrir la composition pendant le délai choisi. Indisponible avec S/MIME/PGP et hors-ligne.
 
 ### Interface style messagerie professionnelle Web
 - 🧱 Disposition en blocs avec marges, coins arrondis et ombres
@@ -192,7 +193,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 📦 **Applications natives** : panneau dédié pour générer/distribuer les apps Desktop (Tauri) et installer la PWA, avec build Docker (Linux) et GitHub Actions (tous OS).
 - 📊 Dashboard temps réel (stats utilisateurs, mails, infra)
 - 👤 **Gestion avancée des utilisateurs** : modifier le profil, activer/désactiver un compte, changer le mot de passe, générer un lien de réinitialisation (valable 24 h) — en plus de la suppression. Les comptes verrouillés par trop de tentatives de connexion affichent une icône cadenas avec un bouton de déblocage direct.
-- 🔒 **Sécurité — protection des connexions** : verrouillage automatique après N tentatives échouées (seuil configurable, défaut 3), durée de verrou réglable (0 = permanent). **Liste noire** d'IPs bloquées immédiatement. **Liste blanche** d'IPs jamais verrouillées mais tracées. **Alertes email** configurables (destinataire + seuil). **Historique complet** des tentatives (email, IP, résultat, date). Déblocage d'un utilisateur directement depuis la page Utilisateurs.
+- 🔒 **Sécurité — protection des connexions** : verrouillage automatique après N tentatives échouées (seuil configurable, défaut 3), durée de verrou réglable (0 = permanent). **Liste noire** d'IPs bloquées immédiatement. **Liste blanche** d'IPs jamais verrouillées mais tracées. **Alertes email** configurables (destinataire + seuil). **Historique complet** des tentatives (email, IP, résultat, date). Déblocage d'un utilisateur directement depuis la page Utilisateurs. **Rate limiting HTTP** en complément (10 échecs/15 min/IP sur les routes d'identifiants, 300 req/15 min/IP sur `/api/auth`). **Alerte email automatique** lors d'une connexion depuis un appareil inconnu (toggle activé par défaut).
+- 📊 **État du système** (*Admin → Système → État du système*) : uptime, mémoire, latence/taille de la base de données, dernière sauvegarde, files d'envoi, et tableau des 6 services de fond avec leur dernier cycle (Actif / En retard / Démarré). Alimenté par `GET /api/health` (public, utilisable comme healthcheck Docker/Uptime Kuma/NPM) et `GET /api/admin/system-status`.
 - ⚙️ Paramètres globaux
 - 🎨 **Branding personnalisable** : téléversement à chaud du favicon et des icônes PWA (192×192, 512×512, Apple Touch) depuis l'onglet *Système*, sans rebuild ni redéploiement. Aperçu, réinitialisation et application immédiate au rafraîchissement.
 - 🪟 **Titre d'onglet dynamique** (style messagerie professionnelle) : l'onglet du navigateur affiche `<Nom du dossier> — <Nom de l'app>` (ex. *Boîte de réception — WebMail*).
@@ -571,11 +573,15 @@ Testé avec :
 ## Sécurité
 
 - Mots de passe mail chiffrés (AES-256-GCM)
-- Sessions sécurisées avec JWT
+- Sessions sécurisées avec JWT + refresh token httpOnly rotatif
 - Sanitisation HTML (DOMPurify)
-- Protection CSRF, XSS, injection
-- Helmet pour les en-têtes HTTP
+- Protection CSRF, XSS, injection (dont échappement RFC 4515 des filtres LDAP)
+- Helmet pour les en-têtes HTTP + CSP avec nonce par requête (pas de `unsafe-inline` sur `script-src`)
 - CORS configuré
+- **Rate limiting HTTP** sur les routes d'authentification (en complément du verrouillage par compte)
+- Secrets (`SESSION_SECRET`, `ENCRYPTION_KEY`) **obligatoires en production** — démarrage refusé sinon
+- **Proxy d'images anti-SSRF** : résolution DNS validée avant connexion, IP littérales et plages privées/loopback/metadata-cloud bloquées, URLs signées HMAC-SHA256
+- Voir [SECURITY_AUDIT.md](SECURITY_AUDIT.md) pour le détail de l'audit et son suivi
 
 ## Licence
 

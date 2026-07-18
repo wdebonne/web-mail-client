@@ -334,8 +334,9 @@ export default function ComposeModal({
     if (files && files.length > 0) addFiles(files);
   };
 
-  /** `scheduledAt` (ISO) = envoi différé « Envoyer plus tard » au lieu d'un envoi immédiat. */
-  const handleSend = async (scheduledAt?: string) => {
+  /** `scheduledAt` (ISO) = envoi différé « Envoyer plus tard » au lieu d'un envoi
+   *  immédiat ; `recurrence` = envoi récurrent (rapports périodiques). */
+  const handleSend = async (scheduledAt?: string, recurrence?: ScheduleRecurrence) => {
     // Auto-add pending recipients from input fields
     let finalTo = [...to];
     let finalCc = [...cc];
@@ -453,6 +454,9 @@ export default function ComposeModal({
       inReplyToUid: initialData.inReplyToUid,
       inReplyToFolder: initialData.inReplyToFolder,
       ...(scheduledAt ? { scheduledAt } : {}),
+      ...(scheduledAt && recurrence
+        ? { recurrence: recurrence.frequency, recurrenceEndAt: recurrence.endAt }
+        : {}),
     };
 
     onSend(data);
@@ -543,7 +547,7 @@ export default function ComposeModal({
             <ScheduleSendMenu
               disabled={isSending || (to.length === 0 && !toInput.trim())}
               direction="down"
-              onSchedule={(iso) => handleSend(iso)}
+              onSchedule={(iso, rec) => handleSend(iso, rec)}
             />
           </div>
 
@@ -769,7 +773,7 @@ export default function ComposeModal({
           <ScheduleSendMenu
             disabled={isSending || (to.length === 0 && !toInput.trim()) || !isOnline}
             direction="up"
-            onSchedule={(iso) => handleSend(iso)}
+            onSchedule={(iso, rec) => handleSend(iso, rec)}
           />
         </div>
 
@@ -818,17 +822,27 @@ export default function ComposeModal({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ScheduleSendMenu — flèche accolée au bouton Envoyer : « Envoyer plus tard ».
-// Propose des créneaux rapides + un choix date/heure libre, puis remonte la
-// date ISO à handleSend(scheduledAt) qui route vers POST /api/mail/schedule.
+// Propose des créneaux rapides + un choix date/heure libre (avec récurrence
+// quotidienne/hebdomadaire/mensuelle optionnelle pour les rapports
+// périodiques), puis remonte la date ISO à handleSend(scheduledAt, recurrence)
+// qui route vers POST /api/mail/schedule.
 // ─────────────────────────────────────────────────────────────────────────────
+export interface ScheduleRecurrence {
+  frequency: 'daily' | 'weekly' | 'monthly';
+  /** ISO — fin de série optionnelle (fin de journée de la date choisie). */
+  endAt?: string;
+}
+
 function ScheduleSendMenu({ disabled, direction, onSchedule }: {
   disabled: boolean;
   direction: 'up' | 'down';
-  onSchedule: (iso: string) => void;
+  onSchedule: (iso: string, recurrence?: ScheduleRecurrence) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const [customValue, setCustomValue] = useState('');
+  const [repeat, setRepeat] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  const [repeatUntil, setRepeatUntil] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -843,10 +857,10 @@ function ScheduleSendMenu({ disabled, direction, onSchedule }: {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [open]);
 
-  const pick = (date: Date) => {
+  const pick = (date: Date, recurrence?: ScheduleRecurrence) => {
     setOpen(false);
     setShowCustom(false);
-    onSchedule(date.toISOString());
+    onSchedule(date.toISOString(), recurrence);
   };
 
   const fmt = (d: Date) =>
@@ -874,7 +888,20 @@ function ScheduleSendMenu({ disabled, direction, onSchedule }: {
       toast.error('Choisissez une date dans le futur');
       return;
     }
-    pick(date);
+    let recurrence: ScheduleRecurrence | undefined;
+    if (repeat !== 'none') {
+      let endAt: string | undefined;
+      if (repeatUntil) {
+        const end = new Date(`${repeatUntil}T23:59:59`);
+        if (isNaN(end.getTime()) || end.getTime() <= date.getTime()) {
+          toast.error('La fin de récurrence doit être après le premier envoi');
+          return;
+        }
+        endAt = end.toISOString();
+      }
+      recurrence = { frequency: repeat, endAt };
+    }
+    pick(date, recurrence);
   };
 
   const presets: Array<{ label: string; date: Date }> = [
@@ -911,7 +938,12 @@ function ScheduleSendMenu({ disabled, direction, onSchedule }: {
           ))}
           {!showCustom ? (
             <button
-              onClick={() => { setShowCustom(true); setCustomValue(toLocalInput(new Date(Date.now() + 2 * 60 * 60 * 1000))); }}
+              onClick={() => {
+                setShowCustom(true);
+                setCustomValue(toLocalInput(new Date(Date.now() + 2 * 60 * 60 * 1000)));
+                setRepeat('none');
+                setRepeatUntil('');
+              }}
               className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover border-t border-outlook-border mt-1 pt-2"
             >
               Choisir la date et l'heure…
@@ -925,11 +957,36 @@ function ScheduleSendMenu({ disabled, direction, onSchedule }: {
                 onChange={(e) => setCustomValue(e.target.value)}
                 className="w-full border border-outlook-border rounded px-2 py-1 text-sm focus:outline-none focus:border-outlook-blue"
               />
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-outlook-text-secondary shrink-0">Répéter</label>
+                <select
+                  value={repeat}
+                  onChange={(e) => setRepeat(e.target.value as any)}
+                  className="flex-1 border border-outlook-border rounded px-2 py-1 text-sm focus:outline-none focus:border-outlook-blue"
+                >
+                  <option value="none">Jamais</option>
+                  <option value="daily">Tous les jours</option>
+                  <option value="weekly">Toutes les semaines</option>
+                  <option value="monthly">Tous les mois</option>
+                </select>
+              </div>
+              {repeat !== 'none' && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-outlook-text-secondary shrink-0">Jusqu'au</label>
+                  <input
+                    type="date"
+                    value={repeatUntil}
+                    onChange={(e) => setRepeatUntil(e.target.value)}
+                    className="flex-1 border border-outlook-border rounded px-2 py-1 text-sm focus:outline-none focus:border-outlook-blue"
+                    title="Optionnel — vide = sans fin"
+                  />
+                </div>
+              )}
               <button
                 onClick={handleCustomConfirm}
                 className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded text-sm font-medium"
               >
-                Programmer l'envoi
+                {repeat !== 'none' ? "Programmer l'envoi récurrent" : "Programmer l'envoi"}
               </button>
             </div>
           )}

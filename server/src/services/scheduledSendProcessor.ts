@@ -26,9 +26,14 @@ const TICK_MS = 10_000;
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 2 * 60_000; // 2 min avant nouvel essai
 const BATCH_SIZE = 10;
+const STUCK_SENDING_MAX_AGE_MS = 5 * 60_000; // 'sending' plus vieux = envoi interrompu
+const PURGE_INTERVAL_MS = 60 * 60_000; // purge horaire
+const PURGE_SENT_RETENTION_DAYS = 7;
+const PURGE_ERROR_RETENTION_DAYS = 30;
 
 let processorInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
+let lastPurgeAt = 0;
 
 const SERVICE_NAME = 'scheduledSendProcessor';
 
@@ -51,7 +56,12 @@ async function tick(): Promise<void> {
   if (isRunning) return;
   isRunning = true;
   try {
+    await recoverStuckMessages();
     await processDueMessages();
+    if (Date.now() - lastPurgeAt >= PURGE_INTERVAL_MS) {
+      await purgeOldMessages();
+      lastPurgeAt = Date.now();
+    }
     markServiceTick(SERVICE_NAME);
   } catch (err) {
     markServiceTick(SERVICE_NAME, err);
@@ -81,6 +91,50 @@ export async function loadAccount(accountId: string): Promise<any | null> {
     ...account,
     password: account.password_encrypted ? decrypt(account.password_encrypted) : '',
   };
+}
+
+/**
+ * Récupération des lignes bloquées en 'sending' : si le serveur s'arrête (ou
+ * qu'un envoi reste suspendu) pendant le traitement, la ligne resterait
+ * coincée pour toujours — le claim ne reprend que les 'scheduled' et
+ * l'annulation n'accepte que scheduled/error. On les passe en erreur plutôt
+ * que de les reprogrammer : l'envoi a pu partir juste avant l'interruption,
+ * une reprogrammation automatique risquerait un doublon.
+ */
+async function recoverStuckMessages(): Promise<void> {
+  const res = await pool.query(
+    `UPDATE scheduled_messages
+        SET status = 'error',
+            error = 'Envoi interrompu (redémarrage du serveur) — vérifiez le dossier Envoyés avant de renvoyer',
+            updated_at = NOW()
+      WHERE status = 'sending'
+        AND updated_at < NOW() - ($1 || ' milliseconds')::INTERVAL`,
+    [STUCK_SENDING_MAX_AGE_MS]
+  );
+  if (res.rowCount) {
+    logger.warn(`Scheduled send: ${res.rowCount} message(s) bloqué(s) en 'sending' passé(s) en erreur`);
+  }
+}
+
+/**
+ * Purge des lignes terminées : chaque envoi effectué avec « Annuler l'envoi »
+ * actif laisse une ligne contenant le corps complet et les pièces jointes en
+ * JSONB — sans nettoyage la table grossit indéfiniment. Les 'error' sont
+ * gardés plus longtemps car encore visibles et annulables dans le panneau
+ * « Programmés ».
+ */
+async function purgeOldMessages(): Promise<void> {
+  const res = await pool.query(
+    `DELETE FROM scheduled_messages
+      WHERE (status IN ('sent', 'cancelled')
+             AND updated_at < NOW() - ($1 || ' days')::INTERVAL)
+         OR (status = 'error'
+             AND updated_at < NOW() - ($2 || ' days')::INTERVAL)`,
+    [PURGE_SENT_RETENTION_DAYS, PURGE_ERROR_RETENTION_DAYS]
+  );
+  if (res.rowCount) {
+    logger.info(`Scheduled send: purge de ${res.rowCount} message(s) terminé(s)`);
+  }
 }
 
 async function processDueMessages(): Promise<void> {
@@ -130,12 +184,16 @@ async function sendOne(msg: any): Promise<void> {
       references: msg.references_header || undefined,
     });
 
-    await pool.query(
-      `UPDATE scheduled_messages
-          SET status = 'sent', sent_at = NOW(), error = NULL, updated_at = NOW()
-        WHERE id = $1`,
-      [msg.id]
-    );
+    if (msg.recurrence) {
+      await scheduleNextOccurrence(msg);
+    } else {
+      await pool.query(
+        `UPDATE scheduled_messages
+            SET status = 'sent', sent_at = NOW(), error = NULL, updated_at = NOW()
+          WHERE id = $1`,
+        [msg.id]
+      );
+    }
 
     // Réponse : poser le drapeau \Answered sur le message d'origine (best effort).
     if (msg.in_reply_to_uid && msg.in_reply_to_folder) {
@@ -149,6 +207,60 @@ async function sendOne(msg: any): Promise<void> {
     await markError(msg, String(err?.message ?? 'Erreur inconnue'), false);
     logger.warn({ err, messageId: msg.id }, 'Scheduled send: send failed');
   }
+}
+
+/**
+ * Récurrence : après un envoi réussi, la même ligne est replanifiée à
+ * l'occurrence suivante (statut → 'scheduled', redevient annulable) au lieu
+ * d'être close. Les occurrences manquées pendant un arrêt du serveur ne sont
+ * PAS rattrapées une à une : l'envoi en retard vient de partir une fois, et on
+ * avance jusqu'à la prochaine date future. La série se termine ('sent') quand
+ * `recurrence_end_at` est dépassé ; un échec définitif la met en 'error' et la
+ * suspend — visible et reprenable dans le panneau « Programmés ».
+ */
+function computeNextOccurrence(from: Date, recurrence: string, anchorDay: number | null): Date {
+  const next = new Date(from.getTime());
+  if (recurrence === 'daily') {
+    next.setDate(next.getDate() + 1);
+  } else if (recurrence === 'weekly') {
+    next.setDate(next.getDate() + 7);
+  } else {
+    // monthly — jour cloué sur recurrence_anchor_day, borné aux mois courts
+    const anchor = anchorDay ?? from.getDate();
+    next.setDate(1);
+    next.setMonth(next.getMonth() + 1);
+    const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(anchor, daysInMonth));
+  }
+  return next;
+}
+
+async function scheduleNextOccurrence(msg: any): Promise<void> {
+  let next = computeNextOccurrence(new Date(msg.scheduled_at), msg.recurrence, msg.recurrence_anchor_day);
+  for (let guard = 0; next.getTime() <= Date.now() && guard < 1000; guard++) {
+    next = computeNextOccurrence(next, msg.recurrence, msg.recurrence_anchor_day);
+  }
+
+  const endAt = msg.recurrence_end_at ? new Date(msg.recurrence_end_at) : null;
+  if (endAt && next.getTime() > endAt.getTime()) {
+    await pool.query(
+      `UPDATE scheduled_messages
+          SET status = 'sent', sent_at = NOW(), error = NULL,
+              recurrence_count = recurrence_count + 1, updated_at = NOW()
+        WHERE id = $1`,
+      [msg.id]
+    );
+    logger.info(`Scheduled send: recurring series ${msg.id} completed (${(msg.recurrence_count ?? 0) + 1} occurrence(s))`);
+    return;
+  }
+
+  await pool.query(
+    `UPDATE scheduled_messages
+        SET status = 'scheduled', scheduled_at = $2, sent_at = NOW(), error = NULL,
+            attempts = 0, recurrence_count = recurrence_count + 1, updated_at = NOW()
+      WHERE id = $1`,
+    [msg.id, next]
+  );
 }
 
 async function markError(msg: any, error: string, final: boolean): Promise<void> {

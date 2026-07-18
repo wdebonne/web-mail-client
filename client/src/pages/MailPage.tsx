@@ -1184,7 +1184,8 @@ export default function MailPage() {
         toast.success('Message enregistré dans la boîte d\'envoi (envoi au retour de la connexion)');
       } else if (result?.scheduled) {
         const when = new Date(result.scheduledAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
-        toast.success(`Envoi programmé le ${when}`);
+        const recLabel = ({ daily: 'tous les jours', weekly: 'toutes les semaines', monthly: 'tous les mois' } as Record<string, string>)[variables?.recurrence];
+        toast.success(recLabel ? `Envoi programmé le ${when}, puis répété ${recLabel}` : `Envoi programmé le ${when}`);
         queryClient.invalidateQueries({ queryKey: ['scheduled-messages'] });
       } else if (result?.undo) {
         // Toast « Annuler » pendant le délai de grâce. L'annulation rouvre la

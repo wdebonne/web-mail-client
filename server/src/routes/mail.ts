@@ -408,6 +408,10 @@ mailRouter.post('/schedule', async (req: AuthRequest, res) => {
       scheduledAt: z.string().datetime({ offset: true }),
       /** true = délai de grâce « Annuler l'envoi » (masqué de la liste des envois différés). */
       undoSend: z.boolean().optional(),
+      /** Récurrence (rapports périodiques) : après chaque envoi réussi, le
+       *  processeur replanifie la même ligne à l'occurrence suivante. */
+      recurrence: z.enum(['daily', 'weekly', 'monthly']).optional(),
+      recurrenceEndAt: z.string().datetime({ offset: true }).optional(),
     });
 
     const data = scheduleSchema.parse(req.body);
@@ -420,6 +424,20 @@ mailRouter.post('/schedule', async (req: AuthRequest, res) => {
     }
     if (scheduledAt.getTime() > now + 365 * 24 * 60 * 60 * 1000) {
       return res.status(400).json({ error: 'La date programmée est trop lointaine (max 1 an)' });
+    }
+
+    if (data.recurrence && data.undoSend) {
+      return res.status(400).json({ error: 'La récurrence n\'est pas compatible avec le délai « Annuler l\'envoi »' });
+    }
+    let recurrenceEndAt: Date | null = null;
+    if (data.recurrenceEndAt) {
+      if (!data.recurrence) {
+        return res.status(400).json({ error: 'Date de fin de récurrence sans récurrence' });
+      }
+      recurrenceEndAt = new Date(data.recurrenceEndAt);
+      if (recurrenceEndAt.getTime() <= scheduledAt.getTime()) {
+        return res.status(400).json({ error: 'La fin de récurrence doit être postérieure au premier envoi' });
+      }
     }
 
     const account = await getAccountForUser(data.accountId, req.userId!);
@@ -446,8 +464,8 @@ mailRouter.post('/schedule', async (req: AuthRequest, res) => {
          (user_id, account_id, to_addresses, cc_addresses, bcc_addresses, subject,
           body_html, body_text, attachments, from_options, sender_options, reply_to_options,
           in_reply_to, references_header, in_reply_to_uid, in_reply_to_folder,
-          scheduled_at, is_undo_send)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          scheduled_at, is_undo_send, recurrence, recurrence_end_at, recurrence_anchor_day)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING id, scheduled_at`,
       [
         req.userId, data.accountId,
@@ -460,6 +478,9 @@ mailRouter.post('/schedule', async (req: AuthRequest, res) => {
         data.inReplyTo || null, data.references || null,
         data.inReplyToUid ?? null, data.inReplyToFolder || null,
         scheduledAt, data.undoSend === true,
+        data.recurrence || null, recurrenceEndAt,
+        // Jour du mois d'origine, figé pour éviter la dérive 31 → 28 → 28…
+        data.recurrence === 'monthly' ? scheduledAt.getDate() : null,
       ]
     );
 
@@ -483,6 +504,7 @@ mailRouter.get('/scheduled', async (req: AuthRequest, res) => {
       `SELECT sm.id, sm.account_id, sm.to_addresses, sm.cc_addresses, sm.bcc_addresses,
               sm.subject, sm.scheduled_at, sm.status, sm.is_undo_send, sm.error,
               sm.attempts, sm.sent_at, sm.created_at,
+              sm.recurrence, sm.recurrence_end_at, sm.recurrence_count,
               ma.email AS account_email, ma.name AS account_name
          FROM scheduled_messages sm
          JOIN mail_accounts ma ON ma.id = sm.account_id
