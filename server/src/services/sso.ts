@@ -40,17 +40,21 @@ export async function getSsoConfig(): Promise<SsoConfig> {
   };
 }
 
-// Cache OIDC client to avoid re-discovering on every request
-let _cache: { client: Client; issuerUrl: string; clientId: string } | null = null;
+// Cache OIDC clients to avoid re-discovering on every request.
+// Keyed on every field that shapes the client (secret, redirectUri, TLS), so a
+// config change or a different Host (dynamic redirectUri) never reuses a stale
+// client. Bounded to avoid unbounded growth if Host headers vary wildly.
+const _cache = new Map<string, Client>();
+const CACHE_MAX = 10;
+
+function cacheKey(cfg: SsoConfig): string {
+  return [cfg.issuerUrl, cfg.clientId, cfg.clientSecret, cfg.redirectUri, String(cfg.tlsRejectUnauthorized)].join('\u0000');
+}
 
 export async function buildOidcClient(cfg: SsoConfig): Promise<Client> {
-  if (
-    _cache &&
-    _cache.issuerUrl === cfg.issuerUrl &&
-    _cache.clientId === cfg.clientId
-  ) {
-    return _cache.client;
-  }
+  const key = cacheKey(cfg);
+  const cached = _cache.get(key);
+  if (cached) return cached;
 
   const agent = new https.Agent({ rejectUnauthorized: cfg.tlsRejectUnauthorized });
 
@@ -69,13 +73,17 @@ export async function buildOidcClient(cfg: SsoConfig): Promise<Client> {
   // Apply agent to client requests too
   (client as any)[custom.http_options] = httpOptions;
 
-  _cache = { client, issuerUrl: cfg.issuerUrl, clientId: cfg.clientId };
+  if (_cache.size >= CACHE_MAX) {
+    const oldest = _cache.keys().next().value;
+    if (oldest !== undefined) _cache.delete(oldest);
+  }
+  _cache.set(key, client);
   return client;
 }
 
 /** Invalidate the OIDC client cache (call after config change). */
 export function invalidateSsoCache() {
-  _cache = null;
+  _cache.clear();
 }
 
 export { generators };

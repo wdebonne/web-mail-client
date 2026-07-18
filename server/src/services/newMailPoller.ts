@@ -8,6 +8,7 @@ import { applyRulesToIncoming } from './mailRules';
 import {
   loadUserNotificationPrefs, classifyPlatform, buildPlatformPayload,
 } from './notificationPrefs';
+import { markServiceStarted, markServiceStopped, markServiceTick } from './serviceStatus';
 
 /**
  * Periodically checks each mail account owned by users who have at least one
@@ -404,17 +405,27 @@ async function tick() {
 
 let timer: NodeJS.Timeout | null = null;
 
+const SERVICE_NAME = 'newMailPoller';
+
+function runTick() {
+  Promise.resolve(tick())
+    .then(() => markServiceTick(SERVICE_NAME))
+    .catch((err) => markServiceTick(SERVICE_NAME, err));
+}
+
 export function startNewMailPoller() {
   if (timer) return;
   logger.info(`New-mail poller started (base tick ${INTERVAL_MS}ms, default user interval ${FALLBACK_DEFAULT_MINUTES}min)`);
+  markServiceStarted(SERVICE_NAME, 'Relève des nouveaux mails (push)', INTERVAL_MS);
   // Delay first run slightly so the server finishes startup
-  setTimeout(() => { tick(); }, 10_000);
-  timer = setInterval(tick, INTERVAL_MS);
+  setTimeout(runTick, 10_000);
+  timer = setInterval(runTick, INTERVAL_MS);
 }
 
 export function stopNewMailPoller() {
   if (timer) {
     clearInterval(timer);
     timer = null;
+    markServiceStopped(SERVICE_NAME);
   }
 }

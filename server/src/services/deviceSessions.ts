@@ -79,7 +79,7 @@ function truncate(str: string | undefined | null, max: number): string | null {
 }
 
 /** Derive a friendly device name from the User-Agent string. */
-function deriveDeviceName(ua: string | undefined): string {
+export function deriveDeviceName(ua: string | undefined): string {
   if (!ua) return 'Appareil inconnu';
   const lower = ua.toLowerCase();
   let os = 'Unknown';
@@ -315,6 +315,33 @@ export async function adminRevokeDeviceSession(sessionId: string): Promise<boole
     [sessionId],
   );
   return (r.rowCount || 0) > 0;
+}
+
+/**
+ * « Cet appareil est-il déjà connu ? » — pour l'alerte de sécurité « nouvelle
+ * connexion depuis un appareil inconnu ». Un appareil est connu si l'utilisateur
+ * a déjà eu une session (même révoquée/expirée) portant le même nom d'appareil
+ * dérivé du User-Agent. À appeler AVANT createDeviceSession, sinon la session
+ * fraîchement créée rend l'appareil « connu ».
+ * Renvoie aussi le nombre total de sessions : 0 = première connexion de ce
+ * compte, où l'alerte serait du bruit.
+ */
+export async function checkDeviceKnown(
+  userId: string,
+  userAgent: string | undefined,
+): Promise<{ known: boolean; hasAnySession: boolean; deviceName: string }> {
+  const deviceName = deriveDeviceName(userAgent);
+  const r = await pool.query(
+    `SELECT
+       EXISTS(SELECT 1 FROM device_sessions WHERE user_id = $1 AND device_name = $2) AS known,
+       EXISTS(SELECT 1 FROM device_sessions WHERE user_id = $1) AS has_any`,
+    [userId, deviceName],
+  );
+  return {
+    known: r.rows[0].known === true,
+    hasAnySession: r.rows[0].has_any === true,
+    deviceName,
+  };
 }
 
 /** Look up a session id (used by the access-token middleware to verify it wasn't revoked). */

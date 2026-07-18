@@ -31,6 +31,7 @@ import {
   findInboxFolderPath, findSentFolderPath,
   findTrashFolderPath, isTrashFolderPath,
   getDeleteConfirmEnabled,
+  getUndoSendSeconds,
   getSwipePrefs, getSwipeMoveTarget, getSwipeCopyTarget, setSwipeMoveTarget, setSwipeCopyTarget,
   getAutoLoadAllEnabled,
   getMailDisplayMode, setMailDisplayMode, MAIL_DISPLAY_MODE_CHANGED_EVENT,
@@ -1154,7 +1155,23 @@ export default function MailPage() {
           inReplyToFolder: data.inReplyToFolder,
         });
       }
+      // Envoi différé explicite (« Envoyer plus tard » depuis la composition).
+      if (data?.scheduledAt && isOnline) {
+        const res: any = await api.scheduleMail(data);
+        return { ...res, scheduled: true, scheduledAt: data.scheduledAt };
+      }
       if (isOnline) {
+        // Délai de grâce « Annuler l'envoi » : le message part via la file
+        // programmée à now + N s, le toast ci-dessous permet de le rappeler.
+        const undoSec = getUndoSendSeconds();
+        if (undoSec > 0) {
+          const res: any = await api.scheduleMail({
+            ...data,
+            scheduledAt: new Date(Date.now() + undoSec * 1000).toISOString(),
+            undoSend: true,
+          });
+          return { ...res, undo: true, undoSec, composeData: data };
+        }
         return api.sendMail(data);
       } else {
         await offlineDB.addToOutbox(data);
@@ -1165,6 +1182,53 @@ export default function MailPage() {
       closeCompose();
       if (result?.offline) {
         toast.success('Message enregistré dans la boîte d\'envoi (envoi au retour de la connexion)');
+      } else if (result?.scheduled) {
+        const when = new Date(result.scheduledAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+        toast.success(`Envoi programmé le ${when}`);
+        queryClient.invalidateQueries({ queryKey: ['scheduled-messages'] });
+      } else if (result?.undo) {
+        // Toast « Annuler » pendant le délai de grâce. L'annulation rouvre la
+        // composition avec le contenu renvoyé par le serveur.
+        const undoData = result.composeData;
+        toast(
+          (tst) => (
+            <div className="flex items-center gap-3">
+              <span className="text-sm">Message envoyé</span>
+              <button
+                onClick={async () => {
+                  toast.dismiss(tst.id);
+                  try {
+                    await api.cancelScheduledMessage(result.id);
+                    toast.success('Envoi annulé');
+                    openCompose({
+                      accountId: undoData?.accountId,
+                      to: undoData?.to || [],
+                      cc: undoData?.cc || [],
+                      bcc: undoData?.bcc || [],
+                      subject: undoData?.subject || '',
+                      bodyHtml: undoData?.bodyHtml || '',
+                      inReplyTo: undoData?.inReplyTo,
+                      references: undoData?.references,
+                      inReplyToUid: undoData?.inReplyToUid,
+                      inReplyToFolder: undoData?.inReplyToFolder,
+                    });
+                    if (undoData?.attachments?.length) {
+                      toast('Les pièces jointes n\'ont pas été restaurées — rajoutez-les avant de renvoyer', { icon: '⚠️' });
+                    }
+                  } catch (e: any) {
+                    toast.error(e?.message || 'Trop tard : le message est déjà parti');
+                  }
+                }}
+                className="text-sm font-semibold text-outlook-blue hover:underline whitespace-nowrap"
+              >
+                Annuler
+              </button>
+            </div>
+          ),
+          { duration: result.undoSec * 1000, id: `undo-send-${result.id}` }
+        );
+        // Le drapeau « répondu » sera posé côté serveur à l'envoi effectif.
+        queryClient.invalidateQueries({ queryKey: ['scheduled-messages'] });
       } else {
         toast.success('Message envoyé');
         // Optimistic update: if this was a reply, reflect the \Answered flag locally so the

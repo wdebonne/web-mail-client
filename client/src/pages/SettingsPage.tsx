@@ -36,6 +36,7 @@ import {
   getRibbonMode, setRibbonMode,
   getRibbonCollapsed, setRibbonCollapsed,
   type RibbonMode,
+  getUndoSendSeconds, setUndoSendSeconds, UNDO_SEND_CHOICES,
 } from '../utils/mailPreferences';
 import type { MailAccount, MailFolder } from '../types';
 import {
@@ -276,8 +277,48 @@ function MailBehaviorSettings() {
         </div>
       </div>
 
+      <UndoSendSettings />
+
       <SwipeSettings />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Annulation d'envoi (délai de grâce à la Gmail)
+// ---------------------------------------------------------------------------
+function UndoSendSettings() {
+  const [seconds, setSecondsLocal] = useState(() => getUndoSendSeconds());
+
+  const update = (n: number) => {
+    setSecondsLocal(n);
+    setUndoSendSeconds(n);
+    toast.success(n > 0 ? `Délai d'annulation : ${n} secondes` : "Annulation d'envoi désactivée");
+  };
+
+  return (
+    <section className="border-t border-outlook-border pt-4 mt-6">
+      <h4 className="text-sm font-semibold mb-1">Annuler l'envoi</h4>
+      <p className="text-xs text-outlook-text-secondary mb-2">
+        Après un clic sur « Envoyer », le message est retenu pendant ce délai avec un bouton
+        « Annuler » — comme dans Gmail. Le message part réellement à la fin du délai
+        (il apparaît donc dans les éléments envoyés avec ce léger décalage).
+      </p>
+      <select
+        value={seconds}
+        onChange={(e) => update(parseInt(e.target.value, 10) || 0)}
+        className="border border-outlook-border rounded-md px-3 py-2 text-sm"
+      >
+        {UNDO_SEND_CHOICES.map((n) => (
+          <option key={n} value={n}>
+            {n === 0 ? 'Désactivé (envoi immédiat)' : `${n} secondes`}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs text-outlook-text-disabled mt-1">
+        Préférence propre à cet appareil. Ne s'applique pas aux messages signés/chiffrés ni au mode hors-ligne.
+      </p>
+    </section>
   );
 }
 

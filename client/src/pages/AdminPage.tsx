@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
   Download, Send, AlertTriangle, Eye, EyeOff,
-  Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn,
+  Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn, Activity,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -23,6 +23,7 @@ import AdminRulesManagement from '../components/admin/AdminRulesManagement';
 import AdminApplications from '../components/admin/AdminApplications';
 import AdminSmtpSettings from '../components/admin/AdminSmtpSettings';
 import AdminBackup from '../components/admin/AdminBackup';
+import AdminSystemStatus from '../components/admin/AdminSystemStatus';
 import AdminMigration from '../components/admin/AdminMigration';
 import AdminBulkSend from '../components/admin/AdminBulkSend';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
@@ -32,7 +33,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'ldap' | 'sso';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'ldap' | 'sso';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -71,6 +72,7 @@ export default function AdminPage() {
     { id: 'ldap' as const,          icon: Database,        label: 'LDAP',                         group: t('admin.group.integrations') },
     { id: 'sso' as const,           icon: LogIn,           label: 'SSO / OpenID Connect',         group: t('admin.group.integrations') },
     // Système
+    { id: 'systemstatus' as const,    icon: Activity,       label: 'État du système',             group: t('admin.group.system') },
     { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
     { id: 'backup' as const,          icon: HardDrive,      label: 'Sauvegarde',                  group: t('admin.group.system') },
     { id: 'loginAppearance' as const,icon: Palette,         label: t('admin.tab.loginAppearance'),group: t('admin.group.system') },
@@ -165,6 +167,7 @@ export default function AdminPage() {
             {tab === 'system' && <SystemSettings />}
             {tab === 'distributionlists' && <AdminDistributionLists />}
             {tab === 'security' && <SecurityPanel />}
+            {tab === 'systemstatus' && <AdminSystemStatus />}
             {tab === 'backup' && <AdminBackup />}
             {tab === 'migration' && <AdminMigration />}
             {tab === 'bulksend' && <AdminBulkSend />}
@@ -3888,6 +3891,7 @@ function SecurityPanel() {
   const [alertThreshold, setAlertThreshold] = useState(3);
   const [alertRecipient, setAlertRecipient] = useState('');
   const [whitelistAlertEnabled, setWhitelistAlertEnabled] = useState(false);
+  const [newDeviceAlertEnabled, setNewDeviceAlertEnabled] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // IP list state
@@ -3911,6 +3915,9 @@ function SecurityPanel() {
     setAlertThreshold(Number(settings['security_email_alert_threshold'] ?? 3));
     setAlertRecipient(settings['security_email_alert_recipient'] ?? '');
     setWhitelistAlertEnabled(!!settings['security_whitelist_alert_enabled']);
+    setNewDeviceAlertEnabled(
+      settings['security_new_device_alert_enabled'] === true || settings['security_new_device_alert_enabled'] === 'true'
+    );
     setSettingsLoaded(true);
   }, [settings, settingsLoaded]);
 
@@ -3961,6 +3968,7 @@ function SecurityPanel() {
       security_email_alert_threshold: alertThreshold,
       security_email_alert_recipient: alertRecipient,
       security_whitelist_alert_enabled: whitelistAlertEnabled,
+      security_new_device_alert_enabled: newDeviceAlertEnabled,
     });
   };
 
@@ -4066,6 +4074,21 @@ function SecurityPanel() {
             />
             <span className="text-sm">Alertes aussi pour les IPs en liste blanche (compte non verrouillé, mais alerté)</span>
           </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox" checked={newDeviceAlertEnabled}
+              onChange={e => setNewDeviceAlertEnabled(e.target.checked)}
+              className="rounded border-outlook-border text-outlook-blue"
+            />
+            <span className="text-sm">
+              Prévenir l'utilisateur par email lors d'une connexion depuis un <strong>nouvel appareil</strong>
+            </span>
+          </label>
+          <p className="ml-6 text-xs text-outlook-text-disabled">
+            L'email est envoyé à l'utilisateur concerné (pas au destinataire des alertes ci-dessus), via le
+            modèle « Connexion depuis un nouvel appareil » de l'onglet SMTP &amp; Emails. Aucune alerte à la
+            toute première connexion d'un compte.
+          </p>
         </div>
         <div className="mt-3">
           <button

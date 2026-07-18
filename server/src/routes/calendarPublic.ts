@@ -198,7 +198,7 @@ calendarPublicRouter.get('/:token', async (req, res) => {
     <div class="toolbar">
       <a class="btn primary" href="${htmlEscape(icsUrl)}" download>📥 Télécharger (.ics)</a>
       <a class="btn" href="webcal://${htmlEscape(host + '/api/public/calendar/' + req.params.token + '.ics')}">📅 S'abonner</a>
-      <button class="btn" onclick="navigator.clipboard.writeText('${htmlEscape(icsUrl)}'); this.textContent='✔ Copié';">🔗 Copier le lien</button>
+      <button class="btn" id="copy-ics">🔗 Copier le lien</button>
     </div>
     ${visible.length === 0
       ? '<div class="empty">Aucun évènement à venir.</div>'
@@ -206,6 +206,12 @@ calendarPublicRouter.get('/:token', async (req, res) => {
   </div>
   <footer>Calendrier servi par votre messagerie · ${visible.length} évènement(s)</footer>
 </main>
+<script nonce="${res.locals.cspNonce}">
+  document.getElementById('copy-ics').addEventListener('click', function () {
+    navigator.clipboard.writeText(${JSON.stringify(icsUrl).replace(/</g, '\\u003c')});
+    this.textContent = '✔ Copié';
+  });
+</script>
 </body></html>`;
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');

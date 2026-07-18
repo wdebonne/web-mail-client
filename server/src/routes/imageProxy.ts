@@ -15,6 +15,12 @@ const MAX_REDIRECTS = 5;
 const TIMEOUT_MS = 10_000;
 const MAX_SIGN_BATCH = 500;
 const MAX_URL_LENGTH = 4096;
+// Plafond de taille de la réponse upstream — 15 Mo par défaut, largement
+// au-dessus de toute image d'email légitime. Surchargable via IMAGE_PROXY_MAX_BYTES.
+const MAX_RESPONSE_BYTES =
+  Number(process.env.IMAGE_PROXY_MAX_BYTES) > 0
+    ? Number(process.env.IMAGE_PROXY_MAX_BYTES)
+    : 15 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Signature HMAC des URLs (anti « open proxy »)
@@ -326,6 +332,14 @@ function fetchImage(urlStr: string, redirectsLeft: number, res: Response): void 
         return;
       }
 
+      // Plafond de taille : refus immédiat si l'upstream annonce trop gros
+      const declaredLength = Number(proxyRes.headers['content-length']);
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
+        req.destroy();
+        res.status(413).send('Image too large');
+        return;
+      }
+
       // Utilise le content-type upstream ou déduit de l'extension
       let outContentType = contentType.split(';')[0].trim();
       if (!outContentType) {
@@ -345,7 +359,28 @@ function fetchImage(urlStr: string, redirectsLeft: number, res: Response): void 
       res.setHeader('Content-Type', outContentType);
       res.setHeader('Cache-Control', 'public, max-age=86400');
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      proxyRes.pipe(res);
+
+      // Streaming plafonné : Content-Length peut mentir (ou être absent en
+      // chunked), donc on compte les octets réellement reçus. Backpressure
+      // manuelle puisqu'on n'utilise plus pipe().
+      let sent = 0;
+      proxyRes.on('data', (chunk: Buffer) => {
+        sent += chunk.length;
+        if (sent > MAX_RESPONSE_BYTES) {
+          req.destroy();
+          res.destroy();
+          return;
+        }
+        if (!res.write(chunk)) {
+          proxyRes.pause();
+          res.once('drain', () => proxyRes.resume());
+        }
+      });
+      proxyRes.on('end', () => res.end());
+      proxyRes.on('error', () => res.destroy());
+      res.on('close', () => {
+        if (!res.writableEnded) req.destroy();
+      });
     },
   );
 
@@ -389,6 +424,11 @@ router.post('/sign', authMiddleware, (req: Request, res: Response) => {
 });
 
 router.get('/', (req: Request, res: Response) => {
+  // CSP sandbox dédié (même modèle que le proxy camo de GitHub) : un SVG
+  // malveillant ouvert en navigation directe s'exécute dans une origine opaque
+  // sans scripts, indépendamment du CSP global de l'application.
+  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+
   const urlParam = req.query.url;
   const sigParam = req.query.sig;
   if (typeof urlParam !== 'string' || !urlParam || urlParam.length > MAX_URL_LENGTH) {

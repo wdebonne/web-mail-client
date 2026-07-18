@@ -1,6 +1,6 @@
 {
   "name": "web-mail-client",
-  "version": "1.22.0",
+  "version": "1.24.0",
   "description": "Client mail web type Outlook avec support NextCloud, PWA offline, et système de plugins",
   "private": true,
   "scripts": {
@@ -23,10 +23,5 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
-  },
-  "dependencies": {
-    "i18next": "^26.0.10",
-    "i18next-browser-languagedetector": "^8.2.1",
-    "react-i18next": "^17.0.7"
   }
 }

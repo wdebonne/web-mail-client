@@ -1,6 +1,7 @@
 import { pool } from '../database/connection';
 import { logger } from '../utils/logger';
 import { getNextCloudConfig, getUserClient } from './nextcloudHelper';
+import { markServiceStarted, markServiceStopped, markServiceTick } from './serviceStatus';
 
 /**
  * Periodic NextCloud → DB sync.
@@ -51,20 +52,30 @@ async function tick() {
   }
 }
 
+const SERVICE_NAME = 'nextcloudSyncPoller';
+
+function runTick() {
+  Promise.resolve(tick())
+    .then(() => markServiceTick(SERVICE_NAME))
+    .catch((err) => markServiceTick(SERVICE_NAME, err));
+}
+
 export async function startNextCloudSyncPoller() {
   if (timer) return;
   const cfg = await getNextCloudConfig(false).catch(() => null);
   const intervalMin = Math.max(5, cfg?.syncIntervalMinutes || 15);
   const intervalMs = intervalMin * 60_000;
   logger.info(`NextCloud sync poller started (interval ${intervalMin}min)`);
-  setTimeout(() => { tick(); }, 30_000); // wait 30s after boot
-  timer = setInterval(tick, intervalMs);
+  markServiceStarted(SERVICE_NAME, 'Synchronisation NextCloud', intervalMs);
+  setTimeout(runTick, 30_000); // wait 30s after boot
+  timer = setInterval(runTick, intervalMs);
 }
 
 export function stopNextCloudSyncPoller() {
   if (timer) {
     clearInterval(timer);
     timer = null;
+    markServiceStopped(SERVICE_NAME);
   }
 }
 

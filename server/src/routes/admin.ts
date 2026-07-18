@@ -541,7 +541,7 @@ oauthCallbackRouter.get('/mail-accounts/oauth/:provider/callback', async (req: A
     res.send(`<!doctype html>
 <html><head><meta charset="utf-8"><title>OAuth</title></head>
 <body style="font-family:system-ui;padding:24px;">
-<script>
+<script nonce="${res.locals.cspNonce}">
   (function () {
     var payload = ${safe};
     try {
@@ -1075,6 +1075,67 @@ adminRouter.get('/dashboard', async (req: AuthRequest, res) => {
       databaseSize: parseInt(dbSizeResult.rows[0].size),
       docker: dockerStats,
       o2switch: o2switchSummary,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---- État du système ----
+// Vue d'ensemble santé : services de fond (pollers/processeurs), dernière
+// sauvegarde, files d'envoi, base de données. Complète le /api/health public
+// (minimal, pour Docker) avec le détail réservé aux admins.
+adminRouter.get('/system-status', async (_req: AuthRequest, res) => {
+  try {
+    const { getServicesStatus } = await import('../services/serviceStatus');
+
+    const dbStart = Date.now();
+    await pool.query('SELECT 1');
+    const dbLatencyMs = Date.now() - dbStart;
+
+    const [dbSizeResult, lastBackupResult, bulkQueueResult, scheduledResult] = await Promise.all([
+      pool.query('SELECT pg_database_size(current_database()) as size'),
+      pool.query(
+        `SELECT filename, size_bytes, type, created_at
+           FROM backup_records ORDER BY created_at DESC LIMIT 1`
+      ),
+      pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE j.status IN ('pending','running')) AS active_jobs,
+           (SELECT COUNT(*) FROM bulk_send_recipients r
+             JOIN bulk_send_jobs j2 ON j2.id = r.job_id
+            WHERE r.status = 'pending' AND j2.status IN ('pending','running')) AS pending_recipients
+         FROM bulk_send_jobs j`
+      ),
+      pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status = 'scheduled') AS scheduled,
+           COUNT(*) FILTER (WHERE status = 'error') AS errors,
+           COUNT(*) FILTER (WHERE status = 'sent' AND sent_at > NOW() - INTERVAL '24 hours') AS sent_24h
+         FROM scheduled_messages`
+      ),
+    ]);
+
+    res.json({
+      uptime: process.uptime(),
+      nodeVersion: process.version,
+      memory: process.memoryUsage().rss,
+      db: {
+        ok: true,
+        latencyMs: dbLatencyMs,
+        size: parseInt(dbSizeResult.rows[0].size),
+      },
+      services: getServicesStatus(),
+      lastBackup: lastBackupResult.rows[0] || null,
+      bulkSendQueue: {
+        activeJobs: parseInt(bulkQueueResult.rows[0].active_jobs) || 0,
+        pendingRecipients: parseInt(bulkQueueResult.rows[0].pending_recipients) || 0,
+      },
+      scheduledMessages: {
+        scheduled: parseInt(scheduledResult.rows[0].scheduled) || 0,
+        errors: parseInt(scheduledResult.rows[0].errors) || 0,
+        sent24h: parseInt(scheduledResult.rows[0].sent_24h) || 0,
+      },
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -2903,6 +2964,7 @@ adminRouter.put('/security/settings', async (req: AuthRequest, res) => {
       'security_email_alert_threshold',
       'security_email_alert_recipient',
       'security_whitelist_alert_enabled',
+      'security_new_device_alert_enabled',
     ];
     for (const key of allowed) {
       if (key in req.body) {

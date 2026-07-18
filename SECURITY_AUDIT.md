@@ -81,6 +81,8 @@ Le filtre MIME accepte `image/svg+xml`. Un admin (ou un admin compromis) peut d�
 
 **Correctif :** passer à un nonce/hash par build, retirer `unsafe-inline` sur `script-src`. `style-src 'unsafe-inline'` peut rester pour Tailwind runtime mais devrait idéalement aussi disparaître.
 
+> **✅ Résolu (juillet 2026)** — `script-src` est passé à `'self' 'nonce-…'` avec un nonce aléatoire par requête ([server/src/middleware/csp.ts](server/src/middleware/csp.ts)). Les deux seuls scripts inline servis par l'application portent désormais le nonce : la page de fermeture du popup OAuth ([server/src/routes/admin.ts](server/src/routes/admin.ts)) et la page calendrier public, dont le `onclick` inline (non couvert par les nonces) a été remplacé par un `addEventListener` dans un `<script nonce>` ([server/src/routes/calendarPublic.ts](server/src/routes/calendarPublic.ts)). Le bundle SPA généré par Vite ne contient aucun script inline. `style-src 'unsafe-inline'` est conservé (attributs `style` React, Quill, Coloris).
+
 ---
 
 ## 🟠 Élevées

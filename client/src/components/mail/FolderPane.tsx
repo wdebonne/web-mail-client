@@ -48,6 +48,7 @@ import {
   type UnreadIndicatorPrefs,
 } from '../../utils/mailPreferences';
 import { useMailStore, VirtualFolder } from '../../stores/mailStore';
+import { ScheduledMessagesEntry } from './ScheduledMessagesPanel';
 
 type DropPosition = 'before' | 'after';
 
@@ -417,6 +418,9 @@ export default function FolderPane({
             }}
           />
         )}
+
+        {/* Envois différés en attente — masqué quand il n'y en a aucun. */}
+        {!searchOpen && <ScheduledMessagesEntry />}
 
         {visibleAccounts.map((account) => {
           const isExpanded = expandedAccounts.has(account.id);

@@ -1,14 +1,24 @@
 import { pool } from '../database/connection';
 import { createBackupFile, applyRetentionPolicy, getBackupSettings } from './backupService';
 import { logger } from '../utils/logger';
+import { markServiceStarted, markServiceStopped, markServiceTick } from './serviceStatus';
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
 
+const SERVICE_NAME = 'backupScheduler';
+
+function runCheck() {
+  Promise.resolve(checkAndRunAutoBackup())
+    .then(() => markServiceTick(SERVICE_NAME))
+    .catch((err) => markServiceTick(SERVICE_NAME, err));
+}
+
 export function startBackupScheduler(): void {
   if (schedulerInterval) return;
   // Check every minute whether an auto backup is due
-  schedulerInterval = setInterval(checkAndRunAutoBackup, 60 * 1000);
+  schedulerInterval = setInterval(runCheck, 60 * 1000);
+  markServiceStarted(SERVICE_NAME, 'Sauvegarde automatique', 60 * 1000);
   logger.info('Backup scheduler started');
 }
 
@@ -16,6 +26,7 @@ export function stopBackupScheduler(): void {
   if (schedulerInterval) {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
+    markServiceStopped(SERVICE_NAME);
   }
 }
 

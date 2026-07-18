@@ -963,6 +963,66 @@ export async function initDatabase() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
+    // Messages programmés (envoi différé + délai de grâce « Annuler l'envoi »).
+    // L'identité d'expéditeur (from/sender/replyTo) est figée à l'enregistrement.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        account_id UUID NOT NULL REFERENCES mail_accounts(id) ON DELETE CASCADE,
+        to_addresses JSONB NOT NULL DEFAULT '[]'::jsonb,
+        cc_addresses JSONB NOT NULL DEFAULT '[]'::jsonb,
+        bcc_addresses JSONB NOT NULL DEFAULT '[]'::jsonb,
+        subject TEXT NOT NULL DEFAULT '',
+        body_html TEXT NOT NULL DEFAULT '',
+        body_text TEXT,
+        attachments JSONB,
+        from_options JSONB NOT NULL,
+        sender_options JSONB,
+        reply_to_options JSONB,
+        in_reply_to TEXT,
+        references_header TEXT,
+        in_reply_to_uid INTEGER,
+        in_reply_to_folder TEXT,
+        scheduled_at TIMESTAMPTZ NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'scheduled'
+          CHECK (status IN ('scheduled','sending','sent','cancelled','error')),
+        -- true = délai de grâce « Annuler l'envoi » (pas un envoi différé volontaire)
+        is_undo_send BOOLEAN NOT NULL DEFAULT false,
+        error TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        sent_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_scheduled_messages_due
+        ON scheduled_messages(scheduled_at) WHERE status = 'scheduled';
+      CREATE INDEX IF NOT EXISTS idx_scheduled_messages_user
+        ON scheduled_messages(user_id, created_at DESC);
+    `);
+
+    // Alerte « nouvelle connexion depuis un appareil inconnu » : réglage +
+    // modèle d'email envoyé à l'utilisateur concerné.
+    await client.query(`
+      INSERT INTO admin_settings (key, value, description) VALUES
+        ('security_new_device_alert_enabled', 'true', 'Alerter l''utilisateur par email lors d''une connexion depuis un nouvel appareil')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
+    await client.query(`
+      INSERT INTO system_email_templates (slug, name, description, subject, body_html, body_text, variables) VALUES
+        (
+          'new_device_alert',
+          'Connexion depuis un nouvel appareil',
+          'Envoyé à l''utilisateur lorsqu''une connexion réussie provient d''un appareil inconnu',
+          'Nouvelle connexion à votre compte depuis {{device_name}}',
+          '<div style="font-family:sans-serif;max-width:600px;margin:0 auto"><h2 style="color:#1a73e8">Nouvelle connexion détectée</h2><p>Bonjour {{user_name}},</p><p>Votre compte vient d''être utilisé pour se connecter depuis un appareil que nous n''avions encore jamais vu&nbsp;:</p><table style="width:100%;border-collapse:collapse"><tr><td style="padding:6px;font-weight:bold">Appareil</td><td style="padding:6px">{{device_name}}</td></tr><tr style="background:#f5f5f5"><td style="padding:6px;font-weight:bold">Adresse IP</td><td style="padding:6px">{{ip}}</td></tr><tr><td style="padding:6px;font-weight:bold">Date</td><td style="padding:6px">{{date}}</td></tr></table><p>Si c''était bien vous, vous pouvez ignorer ce message.</p><p style="color:#e53935"><strong>Si ce n''était pas vous</strong>, changez votre mot de passe immédiatement puis déconnectez cet appareil depuis Paramètres &gt; Mes appareils.</p></div>',
+          'Bonjour {{user_name}},\n\nNouvelle connexion à votre compte depuis un appareil inconnu :\nAppareil : {{device_name}}\nIP : {{ip}}\nDate : {{date}}\n\nSi c''était bien vous, ignorez ce message. Sinon, changez votre mot de passe immédiatement puis déconnectez cet appareil depuis Paramètres > Mes appareils.',
+          '[{"key":"user_name","label":"Nom utilisateur","example":"Jean Dupont"},{"key":"user_email","label":"Email utilisateur","example":"jean@example.com"},{"key":"device_name","label":"Appareil","example":"Chrome · Windows"},{"key":"ip","label":"Adresse IP","example":"192.168.1.50"},{"key":"date","label":"Date","example":"17/07/2026 09:15"}]'
+        )
+      ON CONFLICT (slug) DO NOTHING;
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

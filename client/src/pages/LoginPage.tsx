@@ -48,6 +48,7 @@ export default function LoginPage() {
         no_email: 'Le serveur SSO n\'a pas fourni d\'adresse email.',
         account_disabled: 'Votre compte est désactivé.',
         disabled: 'Le SSO est désactivé.',
+        ip_blocked: 'Accès refusé depuis cette adresse IP.',
       };
       setSsoError(messages[errCode] ?? 'Erreur SSO inconnue.');
       window.history.replaceState({}, '', window.location.pathname);
