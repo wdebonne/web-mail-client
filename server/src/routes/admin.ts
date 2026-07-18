@@ -1093,7 +1093,7 @@ adminRouter.get('/system-status', async (_req: AuthRequest, res) => {
     await pool.query('SELECT 1');
     const dbLatencyMs = Date.now() - dbStart;
 
-    const [dbSizeResult, lastBackupResult, bulkQueueResult, scheduledResult] = await Promise.all([
+    const [dbSizeResult, lastBackupResult, bulkQueueResult, scheduledResult, backupErrorResult] = await Promise.all([
       pool.query('SELECT pg_database_size(current_database()) as size'),
       pool.query(
         `SELECT filename, size_bytes, type, created_at
@@ -1114,6 +1114,7 @@ adminRouter.get('/system-status', async (_req: AuthRequest, res) => {
            COUNT(*) FILTER (WHERE status = 'sent' AND sent_at > NOW() - INTERVAL '24 hours') AS sent_24h
          FROM scheduled_messages`
       ),
+      pool.query(`SELECT value FROM admin_settings WHERE key = 'backup_last_auto_error'`),
     ]);
 
     res.json({
@@ -1127,6 +1128,8 @@ adminRouter.get('/system-status', async (_req: AuthRequest, res) => {
       },
       services: getServicesStatus(),
       lastBackup: lastBackupResult.rows[0] || null,
+      // Dernier échec de sauvegarde auto (effacé au prochain succès).
+      lastAutoBackupError: backupErrorResult.rows[0]?.value || null,
       bulkSendQueue: {
         activeJobs: parseInt(bulkQueueResult.rows[0].active_jobs) || 0,
         pendingRecipients: parseInt(bulkQueueResult.rows[0].pending_recipients) || 0,

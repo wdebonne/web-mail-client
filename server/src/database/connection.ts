@@ -1001,6 +1001,16 @@ export async function initDatabase() {
         ON scheduled_messages(user_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_scheduled_messages_sending
         ON scheduled_messages(updated_at) WHERE status = 'sending';
+
+      -- Récurrence (rapports périodiques) : après un envoi réussi, le processeur
+      -- replanifie la même ligne à l'occurrence suivante au lieu de la clore.
+      -- recurrence_anchor_day fige le jour du mois d'origine pour éviter la
+      -- dérive 31 → 28 → 28… des mois courts.
+      ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS recurrence VARCHAR(10)
+        CHECK (recurrence IN ('daily','weekly','monthly'));
+      ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS recurrence_end_at TIMESTAMPTZ;
+      ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS recurrence_anchor_day INTEGER;
+      ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS recurrence_count INTEGER NOT NULL DEFAULT 0;
     `);
 
     // Alerte « nouvelle connexion depuis un appareil inconnu » : réglage +
@@ -1021,6 +1031,31 @@ export async function initDatabase() {
           '<div style="font-family:sans-serif;max-width:600px;margin:0 auto"><h2 style="color:#1a73e8">Nouvelle connexion détectée</h2><p>Bonjour {{user_name}},</p><p>Votre compte vient d''être utilisé pour se connecter depuis un appareil que nous n''avions encore jamais vu&nbsp;:</p><table style="width:100%;border-collapse:collapse"><tr><td style="padding:6px;font-weight:bold">Appareil</td><td style="padding:6px">{{device_name}}</td></tr><tr style="background:#f5f5f5"><td style="padding:6px;font-weight:bold">Adresse IP</td><td style="padding:6px">{{ip}}</td></tr><tr><td style="padding:6px;font-weight:bold">Date</td><td style="padding:6px">{{date}}</td></tr></table><p>Si c''était bien vous, vous pouvez ignorer ce message.</p><p style="color:#e53935"><strong>Si ce n''était pas vous</strong>, changez votre mot de passe immédiatement puis déconnectez cet appareil depuis Paramètres &gt; Mes appareils.</p></div>',
           'Bonjour {{user_name}},\n\nNouvelle connexion à votre compte depuis un appareil inconnu :\nAppareil : {{device_name}}\nIP : {{ip}}\nDate : {{date}}\n\nSi c''était bien vous, ignorez ce message. Sinon, changez votre mot de passe immédiatement puis déconnectez cet appareil depuis Paramètres > Mes appareils.',
           '[{"key":"user_name","label":"Nom utilisateur","example":"Jean Dupont"},{"key":"user_email","label":"Email utilisateur","example":"jean@example.com"},{"key":"device_name","label":"Appareil","example":"Chrome · Windows"},{"key":"ip","label":"Adresse IP","example":"192.168.1.50"},{"key":"date","label":"Date","example":"17/07/2026 09:15"}]'
+        )
+      ON CONFLICT (slug) DO NOTHING;
+    `);
+
+    // Alertes système : le vérificateur (systemAlerts.ts) email l'admin quand
+    // un service de fond manque N ticks ou que la sauvegarde auto a échoué.
+    await client.query(`
+      INSERT INTO admin_settings (key, value, description) VALUES
+        ('alerting_enabled',        'true', 'Envoyer un email aux admins quand un service de fond est en retard ou qu''une sauvegarde auto échoue'),
+        ('alerting_recipients',     '""',   'Destinataires des alertes système (emails séparés par des virgules ; vide = tous les administrateurs actifs)'),
+        ('alerting_missed_ticks',   '3',    'Nombre de cycles manqués avant de considérer un service en retard'),
+        ('alerting_reminder_hours', '6',    'Heures entre deux rappels tant qu''un incident persiste')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
+    await client.query(`
+      INSERT INTO system_email_templates (slug, name, description, subject, body_html, body_text, variables) VALUES
+        (
+          'system_alert',
+          'Alerte système',
+          'Envoyé aux administrateurs quand un service de fond est en retard, qu''une sauvegarde automatique a échoué, ou qu''un incident est rétabli',
+          'Alerte système — {{alert_title}}',
+          '<div style="font-family:sans-serif;max-width:600px;margin:0 auto"><h2 style="color:#e53935">Alerte système</h2><p><strong>{{alert_title}}</strong></p>{{alert_details_html}}<p style="color:#666;font-size:13px">Détail complet dans Admin &gt; Système &gt; État du système.</p><p style="color:#999;font-size:12px">{{date}}</p></div>',
+          'Alerte système — {{alert_title}}\n\n{{alert_details}}\n\nDétail complet : Admin > Système > État du système.\n{{date}}',
+          '[{"key":"alert_title","label":"Titre de l''alerte","example":"Service « Envois programmés » en retard"},{"key":"alert_details","label":"Détails (texte)","example":"- Service « Envois programmés » en retard : dernier cycle il y a 12 min"},{"key":"alert_details_html","label":"Détails (HTML)","example":"<ul><li>…</li></ul>"},{"key":"date","label":"Date","example":"18/07/2026 03:12"}]'
         )
       ON CONFLICT (slug) DO NOTHING;
     `);

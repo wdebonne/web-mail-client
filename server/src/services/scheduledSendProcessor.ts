@@ -184,12 +184,16 @@ async function sendOne(msg: any): Promise<void> {
       references: msg.references_header || undefined,
     });
 
-    await pool.query(
-      `UPDATE scheduled_messages
-          SET status = 'sent', sent_at = NOW(), error = NULL, updated_at = NOW()
-        WHERE id = $1`,
-      [msg.id]
-    );
+    if (msg.recurrence) {
+      await scheduleNextOccurrence(msg);
+    } else {
+      await pool.query(
+        `UPDATE scheduled_messages
+            SET status = 'sent', sent_at = NOW(), error = NULL, updated_at = NOW()
+          WHERE id = $1`,
+        [msg.id]
+      );
+    }
 
     // Réponse : poser le drapeau \Answered sur le message d'origine (best effort).
     if (msg.in_reply_to_uid && msg.in_reply_to_folder) {
@@ -203,6 +207,60 @@ async function sendOne(msg: any): Promise<void> {
     await markError(msg, String(err?.message ?? 'Erreur inconnue'), false);
     logger.warn({ err, messageId: msg.id }, 'Scheduled send: send failed');
   }
+}
+
+/**
+ * Récurrence : après un envoi réussi, la même ligne est replanifiée à
+ * l'occurrence suivante (statut → 'scheduled', redevient annulable) au lieu
+ * d'être close. Les occurrences manquées pendant un arrêt du serveur ne sont
+ * PAS rattrapées une à une : l'envoi en retard vient de partir une fois, et on
+ * avance jusqu'à la prochaine date future. La série se termine ('sent') quand
+ * `recurrence_end_at` est dépassé ; un échec définitif la met en 'error' et la
+ * suspend — visible et reprenable dans le panneau « Programmés ».
+ */
+function computeNextOccurrence(from: Date, recurrence: string, anchorDay: number | null): Date {
+  const next = new Date(from.getTime());
+  if (recurrence === 'daily') {
+    next.setDate(next.getDate() + 1);
+  } else if (recurrence === 'weekly') {
+    next.setDate(next.getDate() + 7);
+  } else {
+    // monthly — jour cloué sur recurrence_anchor_day, borné aux mois courts
+    const anchor = anchorDay ?? from.getDate();
+    next.setDate(1);
+    next.setMonth(next.getMonth() + 1);
+    const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(anchor, daysInMonth));
+  }
+  return next;
+}
+
+async function scheduleNextOccurrence(msg: any): Promise<void> {
+  let next = computeNextOccurrence(new Date(msg.scheduled_at), msg.recurrence, msg.recurrence_anchor_day);
+  for (let guard = 0; next.getTime() <= Date.now() && guard < 1000; guard++) {
+    next = computeNextOccurrence(next, msg.recurrence, msg.recurrence_anchor_day);
+  }
+
+  const endAt = msg.recurrence_end_at ? new Date(msg.recurrence_end_at) : null;
+  if (endAt && next.getTime() > endAt.getTime()) {
+    await pool.query(
+      `UPDATE scheduled_messages
+          SET status = 'sent', sent_at = NOW(), error = NULL,
+              recurrence_count = recurrence_count + 1, updated_at = NOW()
+        WHERE id = $1`,
+      [msg.id]
+    );
+    logger.info(`Scheduled send: recurring series ${msg.id} completed (${(msg.recurrence_count ?? 0) + 1} occurrence(s))`);
+    return;
+  }
+
+  await pool.query(
+    `UPDATE scheduled_messages
+        SET status = 'scheduled', scheduled_at = $2, sent_at = NOW(), error = NULL,
+            attempts = 0, recurrence_count = recurrence_count + 1, updated_at = NOW()
+      WHERE id = $1`,
+    [msg.id, next]
+  );
 }
 
 async function markError(msg: any, error: string, final: boolean): Promise<void> {

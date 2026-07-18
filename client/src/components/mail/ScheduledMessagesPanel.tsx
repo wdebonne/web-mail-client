@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Clock, X, Loader2, AlertTriangle, CheckCircle2, Ban, PencilLine,
+  Clock, X, Loader2, AlertTriangle, CheckCircle2, Ban, PencilLine, Repeat,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../../api';
@@ -27,9 +27,18 @@ interface ScheduledMessage {
   error: string | null;
   attempts: number;
   sent_at: string | null;
+  recurrence: 'daily' | 'weekly' | 'monthly' | null;
+  recurrence_end_at: string | null;
+  recurrence_count: number;
   account_email: string;
   account_name: string;
 }
+
+const RECURRENCE_LABELS: Record<string, string> = {
+  daily: 'Quotidien',
+  weekly: 'Hebdomadaire',
+  monthly: 'Mensuel',
+};
 
 function fmt(date: string) {
   return new Date(date).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
@@ -136,6 +145,11 @@ function ScheduledMessagesModal({ onClose }: { onClose: () => void }) {
                           {m.subject || '(sans objet)'}
                         </span>
                         <StatusBadge status={m.status} />
+                        {m.recurrence && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700" title={m.recurrence_end_at ? `Jusqu'au ${fmt(m.recurrence_end_at)}` : 'Sans date de fin'}>
+                            <Repeat size={10} /> {RECURRENCE_LABELS[m.recurrence]}
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5 truncate">
                         À : {(m.to_addresses || []).map((r) => r.name || r.email).join(', ')}
@@ -143,6 +157,8 @@ function ScheduledMessagesModal({ onClose }: { onClose: () => void }) {
                       <p className="text-xs text-gray-400 mt-0.5">
                         {m.status === 'sent' && m.sent_at
                           ? `Envoyé le ${fmt(m.sent_at)}`
+                          : m.recurrence
+                          ? `Prochain envoi le ${fmt(m.scheduled_at)}${m.recurrence_count > 0 && m.sent_at ? ` · dernier le ${fmt(m.sent_at)}` : ''}`
                           : `Envoi prévu le ${fmt(m.scheduled_at)}`}
                         {' · '}{m.account_email}
                       </p>
@@ -165,7 +181,7 @@ function ScheduledMessagesModal({ onClose }: { onClose: () => void }) {
                           onClick={() => cancelMut.mutate(m.id)}
                           disabled={cancelMut.isPending}
                           className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                          title={m.status === 'error' ? 'Abandonner ce message' : "Annuler l'envoi"}
+                          title={m.status === 'error' ? 'Abandonner ce message' : m.recurrence ? 'Arrêter la récurrence' : "Annuler l'envoi"}
                         >
                           <Ban size={15} />
                         </button>

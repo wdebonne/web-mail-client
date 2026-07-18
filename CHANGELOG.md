@@ -11,6 +11,17 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- **Alertes système par e-mail** — le chaînon entre la page « État du système » (passive) et une vraie supervision
+  - Un vérificateur de fond (toutes les 60 s) envoie un e-mail aux administrateurs quand un **service de fond manque N cycles** (N configurable, plancher de 5 min pour ignorer un simple cycle long) ou quand la **sauvegarde automatique a échoué** (échec tracé en base par le planificateur, effacé au succès suivant).
+  - Un seul e-mail par lot d'incidents, **rappel** configurable tant qu'un incident persiste (6 h par défaut), et e-mail de **rétablissement** quand il disparaît. Nouvel essai automatique ~10 min après un échec d'envoi SMTP.
+  - Réglages dans **Admin → Système → État du système** : activation, destinataires (vide = tous les administrateurs actifs), cycles manqués avant alerte, fréquence des rappels. Modèle d'e-mail `system_alert` éditable dans **Admin → SMTP & Emails**.
+  - La page « État du système » affiche aussi le dernier échec de sauvegarde automatique (bandeau rouge), et le vérificateur apparaît lui-même dans le tableau des services.
+  - Limite assumée de l'auto-supervision : si le processus entier est arrêté, aucune alerte ne part — ce cas reste couvert par le `HEALTHCHECK` Docker.
+- **Envois récurrents (rapports périodiques)**
+  - Dans la fenêtre de composition, **« Choisir la date et l'heure… »** propose désormais **Répéter : tous les jours / toutes les semaines / tous les mois**, avec une date de fin optionnelle.
+  - Après chaque envoi réussi, le processeur replanifie le même message à l'occurrence suivante (la ligne redevient annulable entre deux envois). Le **mensuel est cloué au jour d'origine** (un rapport du 31 tombe le dernier jour des mois courts, sans dérive définitive). Les occurrences manquées pendant un arrêt du serveur ne sont **pas rattrapées une à une** : l'envoi en retard part une fois, puis la série reprend à la prochaine date future.
+  - Le panneau **« Programmés »** affiche un badge de récurrence (quotidien/hebdomadaire/mensuel), la prochaine et la dernière occurrence ; l'annulation arrête toute la série. Un échec définitif (3 tentatives) suspend la série en erreur, visible et reprenable dans le panneau.
+  - API : `POST /api/mail/schedule` accepte `recurrence` + `recurrenceEndAt` (incompatible avec le délai « Annuler l'envoi ») ; colonnes `recurrence`, `recurrence_end_at`, `recurrence_anchor_day`, `recurrence_count` sur `scheduled_messages`.
 - **Envoi programmé + « Annuler l'envoi »**
   - Flèche accolée au bouton **Envoyer** de la fenêtre de composition → **Dans 1 heure / Ce soir 18h / Demain 8h / date libre**. L'identité d'expéditeur (y compris le cas *envoyer de la part de*) est figée au moment de la programmation.
   - Réglage **« Annuler l'envoi »** (0 / 10 / 20 / 30 s, désactivé par défaut) dans **Paramètres → Messagerie** : après un envoi normal, un toast avec bouton **Annuler** rouvre la composition pendant le délai choisi.

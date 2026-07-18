@@ -34,6 +34,7 @@ import { startBackupScheduler } from './services/backupScheduler';
 import { bulkSendRouter, adminBulkSendRouter } from './routes/bulkSend';
 import { startBulkSendProcessor } from './services/bulkSendProcessor';
 import { startScheduledSendProcessor } from './services/scheduledSendProcessor';
+import { startSystemAlertChecker } from './services/systemAlerts';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { authLimiter } from './middleware/rateLimit';
@@ -226,6 +227,9 @@ async function start() {
     startBackupScheduler();
     startBulkSendProcessor();
     startScheduledSendProcessor();
+    // Surveille les services ci-dessus + la sauvegarde auto, et alerte les
+    // admins par email en cas d'incident (voir services/systemAlerts.ts).
+    startSystemAlertChecker();
 
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);

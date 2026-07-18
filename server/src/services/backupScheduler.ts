@@ -70,9 +70,38 @@ async function checkAndRunAutoBackup(): Promise<void> {
     await createBackupFile('Sauvegarde automatique', 'auto');
     await applyRetentionPolicy(settings);
     logger.info('Auto backup completed');
+    await clearAutoBackupError();
   } catch (err) {
     logger.error(err, 'Auto backup failed');
+    await recordAutoBackupError(err);
   } finally {
     isRunning = false;
+  }
+}
+
+// Trace persistée du dernier échec de sauvegarde auto — lue par le vérificateur
+// d'alertes (systemAlerts.ts) et par la page « État du système ». Effacée au
+// prochain succès.
+async function recordAutoBackupError(err: unknown): Promise<void> {
+  try {
+    const payload = {
+      at: new Date().toISOString(),
+      message: String((err as any)?.message ?? err).slice(0, 300),
+    };
+    await pool.query(
+      `INSERT INTO admin_settings (key, value, updated_at) VALUES ('backup_last_auto_error', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+      [JSON.stringify(payload)]
+    );
+  } catch (e) {
+    logger.warn(e, 'Unable to record auto backup error');
+  }
+}
+
+async function clearAutoBackupError(): Promise<void> {
+  try {
+    await pool.query(`DELETE FROM admin_settings WHERE key = 'backup_last_auto_error'`);
+  } catch (e) {
+    logger.warn(e, 'Unable to clear auto backup error');
   }
 }
