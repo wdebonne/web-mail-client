@@ -279,6 +279,37 @@ export const api = {
     return request('/mail/send-raw', { method: 'POST', body: JSON.stringify(data) });
   },
 
+  /** Programme un envoi différé (ou un délai de grâce « Annuler l'envoi » avec undoSend=true).
+   *  Même payload que sendMail + scheduledAt (ISO). */
+  scheduleMail: (data: any) => {
+    const normalizeRecipients = (list?: any[]) =>
+      (list || [])
+        .map((item) => ({
+          email: item?.email || item?.address || '',
+          name: item?.name,
+        }))
+        .filter((item) => item.email);
+
+    const payload = {
+      ...data,
+      to: normalizeRecipients(data?.to),
+      cc: normalizeRecipients(data?.cc),
+      bcc: normalizeRecipients(data?.bcc),
+    };
+
+    return request<{ success: boolean; id: string; scheduledAt: string }>(
+      '/mail/schedule',
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
+  getScheduledMessages: (includeUndo = false) =>
+    request<any[]>(`/mail/scheduled${includeUndo ? '?includeUndo=1' : ''}`),
+
+  /** Annule un message programmé. Renvoie le contenu du message pour rouvrir la composition. */
+  cancelScheduledMessage: (id: string) =>
+    request<{ success: boolean; message: any }>(`/mail/scheduled/${id}`, { method: 'DELETE' }),
+
   saveToOutbox: (data: any) =>
     request('/mail/outbox', { method: 'POST', body: JSON.stringify(data) }),
 
@@ -860,6 +891,9 @@ export const api = {
 
   // Admin Dashboard
   getAdminDashboard: () => request<any>('/admin/dashboard'),
+
+  /** État du système : services de fond, dernière sauvegarde, files d'envoi, BDD. */
+  getSystemStatus: () => request<any>('/admin/system-status'),
 
   // Admin Logs
   getAdminLogs: (params?: { category?: string; action?: string; userId?: string; from?: string; to?: string; page?: number; limit?: number; search?: string }) => {

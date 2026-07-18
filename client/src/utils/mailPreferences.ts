@@ -364,6 +364,25 @@ export function setDeleteConfirmEnabled(enabled: boolean) {
   localStorage.setItem(KEY_DELETE_CONFIRM, String(enabled));
 }
 
+// --- Undo send (délai d'annulation d'envoi) ---
+//
+// Quand > 0, « Envoyer » ne part pas immédiatement : le message est programmé
+// à now + N secondes côté serveur et un toast « Annuler » s'affiche pendant le
+// délai de grâce. 0 (défaut) = envoi immédiat, comportement historique.
+const KEY_UNDO_SEND_SECONDS = 'mail.undoSendSeconds';
+
+export const UNDO_SEND_CHOICES = [0, 10, 20, 30] as const;
+
+export function getUndoSendSeconds(): number {
+  const raw = localStorage.getItem(KEY_UNDO_SEND_SECONDS);
+  const n = raw === null ? 0 : parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 60) : 0;
+}
+
+export function setUndoSendSeconds(seconds: number) {
+  localStorage.setItem(KEY_UNDO_SEND_SECONDS, String(seconds));
+}
+
 // --- Auto-load all messages preference ---
 //
 // When enabled, every folder (and unified view) automatically pages through

@@ -2,6 +2,7 @@ import { pool } from '../database/connection';
 import { MailService } from './mail';
 import { decrypt } from '../utils/encryption';
 import { logger } from '../utils/logger';
+import { markServiceStarted, markServiceStopped, markServiceTick } from './serviceStatus';
 
 const TICK_MS = 30_000; // check every 30 seconds
 const MAX_ATTEMPTS = 3;
@@ -10,9 +11,12 @@ const RETRY_DELAY_MS = 5 * 60_000; // 5 min before retry
 let processorInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
 
+const SERVICE_NAME = 'bulkSendProcessor';
+
 export function startBulkSendProcessor(): void {
   if (processorInterval) return;
   processorInterval = setInterval(tick, TICK_MS);
+  markServiceStarted(SERVICE_NAME, "File d'envoi en masse", TICK_MS);
   logger.info('Bulk send processor started');
 }
 
@@ -20,6 +24,7 @@ export function stopBulkSendProcessor(): void {
   if (processorInterval) {
     clearInterval(processorInterval);
     processorInterval = null;
+    markServiceStopped(SERVICE_NAME);
   }
 }
 
@@ -28,7 +33,9 @@ async function tick(): Promise<void> {
   isRunning = true;
   try {
     await processAllUsers();
+    markServiceTick(SERVICE_NAME);
   } catch (err) {
+    markServiceTick(SERVICE_NAME, err);
     logger.error(err, 'Bulk send processor tick error');
   } finally {
     isRunning = false;

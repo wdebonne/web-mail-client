@@ -5,6 +5,7 @@ import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link as LinkIcon, Image, Palette, Type, Indent, Outdent,
   Users, Check, ShieldCheck, MoreHorizontal, FileText, BookOpen, Plus,
+  Clock,
 } from 'lucide-react';
 import { HoverCard } from './ContactHoverCard';
 import { toAvatarSrc } from '../../utils/avatar';
@@ -333,7 +334,8 @@ export default function ComposeModal({
     if (files && files.length > 0) addFiles(files);
   };
 
-  const handleSend = async () => {
+  /** `scheduledAt` (ISO) = envoi différé « Envoyer plus tard » au lieu d'un envoi immédiat. */
+  const handleSend = async (scheduledAt?: string) => {
     // Auto-add pending recipients from input fields
     let finalTo = [...to];
     let finalCc = [...cc];
@@ -369,6 +371,13 @@ export default function ComposeModal({
     const selectedAccount = accounts.find(a => a.id === accountId);
     const senderEmail = selectedAccount?.email || '';
     const senderName = (selectedAccount as any)?.assigned_display_name || selectedAccount?.name;
+
+    // L'envoi programmé stocke le message en clair côté serveur — incompatible
+    // avec le pipeline S/MIME / PGP qui chiffre côté client au moment T.
+    if (scheduledAt && securityMode !== 'none') {
+      toast.error("L'envoi programmé n'est pas disponible avec un message signé ou chiffré");
+      return;
+    }
 
     // When a security mode is active, route through the crypto pipeline before dispatching.
     if (securityMode !== 'none') {
@@ -443,6 +452,7 @@ export default function ComposeModal({
       references: initialData.references,
       inReplyToUid: initialData.inReplyToUid,
       inReplyToFolder: initialData.inReplyToFolder,
+      ...(scheduledAt ? { scheduledAt } : {}),
     };
 
     onSend(data);
@@ -521,14 +531,21 @@ export default function ComposeModal({
       {/* Top toolbar — inline: send button + from + actions / modal: title bar */}
       {inline ? (
         <div className="flex items-center gap-2 px-4 py-2 border-b border-outlook-border flex-shrink-0 bg-outlook-bg-primary/30">
-          <button
-            onClick={handleSend}
-            disabled={isSending || (to.length === 0 && !toInput.trim())}
-            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
-          >
-            <Send size={14} />
-            {isSending ? 'Envoi...' : 'Envoyer'}
-          </button>
+          <div className="flex items-stretch">
+            <button
+              onClick={() => handleSend()}
+              disabled={isSending || (to.length === 0 && !toInput.trim())}
+              className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-4 py-1.5 rounded-l text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
+            >
+              <Send size={14} />
+              {isSending ? 'Envoi...' : 'Envoyer'}
+            </button>
+            <ScheduleSendMenu
+              disabled={isSending || (to.length === 0 && !toInput.trim())}
+              direction="down"
+              onSchedule={(iso) => handleSend(iso)}
+            />
+          </div>
 
           <AccountSelector
             accounts={sendableAccounts}
@@ -740,14 +757,21 @@ export default function ComposeModal({
       {/* Bottom toolbar — hidden in inline mode (actions are in top toolbar) */}
       {!inline && (
       <div className="flex items-center justify-between px-4 py-2 border-t border-outlook-border flex-shrink-0">
-        <button
-          onClick={handleSend}
-          disabled={isSending || (to.length === 0 && !toInput.trim())}
-          className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 rounded font-medium flex items-center gap-2 disabled:opacity-50 transition-colors shadow-sm hover:shadow-md"
-        >
-          <Send size={16} />
-          {isSending ? 'Envoi...' : isOnline ? 'Envoyer' : 'Envoyer (hors-ligne)'}
-        </button>
+        <div className="flex items-stretch">
+          <button
+            onClick={() => handleSend()}
+            disabled={isSending || (to.length === 0 && !toInput.trim())}
+            className="bg-outlook-blue hover:bg-outlook-blue-hover text-white px-5 py-2 rounded-l font-medium flex items-center gap-2 disabled:opacity-50 transition-colors shadow-sm hover:shadow-md"
+          >
+            <Send size={16} />
+            {isSending ? 'Envoi...' : isOnline ? 'Envoyer' : 'Envoyer (hors-ligne)'}
+          </button>
+          <ScheduleSendMenu
+            disabled={isSending || (to.length === 0 && !toInput.trim()) || !isOnline}
+            direction="up"
+            onSchedule={(iso) => handleSend(iso)}
+          />
+        </div>
 
         <div className="flex items-center gap-1">
           <input
@@ -791,6 +815,129 @@ export default function ComposeModal({
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ScheduleSendMenu — flèche accolée au bouton Envoyer : « Envoyer plus tard ».
+// Propose des créneaux rapides + un choix date/heure libre, puis remonte la
+// date ISO à handleSend(scheduledAt) qui route vers POST /api/mail/schedule.
+// ─────────────────────────────────────────────────────────────────────────────
+function ScheduleSendMenu({ disabled, direction, onSchedule }: {
+  disabled: boolean;
+  direction: 'up' | 'down';
+  onSchedule: (iso: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
+  const [customValue, setCustomValue] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setShowCustom(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  const pick = (date: Date) => {
+    setOpen(false);
+    setShowCustom(false);
+    onSchedule(date.toISOString());
+  };
+
+  const fmt = (d: Date) =>
+    d.toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+  const inOneHour = new Date(Date.now() + 60 * 60 * 1000);
+  const tonight = new Date();
+  tonight.setHours(18, 0, 0, 0);
+  if (tonight.getTime() <= Date.now()) tonight.setDate(tonight.getDate() + 1);
+  const tomorrowMorning = new Date();
+  tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
+  tomorrowMorning.setHours(8, 0, 0, 0);
+
+  // datetime-local attend un format local sans fuseau (YYYY-MM-DDTHH:mm).
+  const toLocalInput = (d: Date) => {
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+
+  const handleCustomConfirm = () => {
+    if (!customValue) return;
+    const date = new Date(customValue);
+    if (isNaN(date.getTime())) return;
+    if (date.getTime() <= Date.now()) {
+      toast.error('Choisissez une date dans le futur');
+      return;
+    }
+    pick(date);
+  };
+
+  const presets: Array<{ label: string; date: Date }> = [
+    { label: 'Dans 1 heure', date: inOneHour },
+    { label: tonight.getDate() === new Date().getDate() ? 'Ce soir à 18h' : 'Demain soir à 18h', date: tonight },
+    { label: 'Demain matin à 8h', date: tomorrowMorning },
+  ];
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        onClick={() => { setOpen(v => !v); setShowCustom(false); }}
+        disabled={disabled}
+        className="h-full bg-outlook-blue hover:bg-outlook-blue-hover text-white px-1.5 rounded-r border-l border-white/25 flex items-center disabled:opacity-50 transition-colors"
+        title="Envoyer plus tard"
+        aria-label="Envoyer plus tard"
+      >
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className={`absolute ${direction === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'} left-0 w-64 bg-white border border-outlook-border rounded-md shadow-lg z-50 py-1`}>
+          <div className="px-3 py-1.5 text-xs font-semibold text-outlook-text-secondary flex items-center gap-1.5">
+            <Clock size={12} /> Envoyer plus tard
+          </div>
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              onClick={() => pick(p.date)}
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center justify-between gap-2"
+            >
+              <span>{p.label}</span>
+              <span className="text-xs text-outlook-text-disabled">{fmt(p.date)}</span>
+            </button>
+          ))}
+          {!showCustom ? (
+            <button
+              onClick={() => { setShowCustom(true); setCustomValue(toLocalInput(new Date(Date.now() + 2 * 60 * 60 * 1000))); }}
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover border-t border-outlook-border mt-1 pt-2"
+            >
+              Choisir la date et l'heure…
+            </button>
+          ) : (
+            <div className="px-3 py-2 border-t border-outlook-border mt-1 space-y-2">
+              <input
+                type="datetime-local"
+                value={customValue}
+                min={toLocalInput(new Date())}
+                onChange={(e) => setCustomValue(e.target.value)}
+                className="w-full border border-outlook-border rounded px-2 py-1 text-sm focus:outline-none focus:border-outlook-blue"
+              />
+              <button
+                onClick={handleCustomConfirm}
+                className="w-full bg-outlook-blue hover:bg-outlook-blue-hover text-white px-3 py-1.5 rounded text-sm font-medium"
+              >
+                Programmer l'envoi
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SecurityMenu — pick the signing/encryption mode for this outgoing message.

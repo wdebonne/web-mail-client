@@ -1,6 +1,7 @@
 import { pool } from '../database/connection';
 import { notifyWithPush } from './websocket';
 import { logger } from '../utils/logger';
+import { markServiceStarted, markServiceStopped, markServiceTick } from './serviceStatus';
 
 /**
  * Periodically scans calendar_events for upcoming reminders (VALARM) and
@@ -151,17 +152,27 @@ async function tick() {
 
 let timer: NodeJS.Timeout | null = null;
 
+const SERVICE_NAME = 'calendarReminderPoller';
+
+function runTick() {
+  Promise.resolve(tick())
+    .then(() => markServiceTick(SERVICE_NAME))
+    .catch((err) => markServiceTick(SERVICE_NAME, err));
+}
+
 export function startCalendarReminderPoller() {
   if (timer) return;
   logger.info(`Calendar reminder poller started (interval ${INTERVAL_MS}ms, grace ${GRACE_MS}ms)`);
+  markServiceStarted(SERVICE_NAME, 'Rappels de calendrier', INTERVAL_MS);
   // Slight delay so DB migrations complete before first tick.
-  setTimeout(() => { tick(); }, 15_000);
-  timer = setInterval(tick, INTERVAL_MS);
+  setTimeout(runTick, 15_000);
+  timer = setInterval(runTick, INTERVAL_MS);
 }
 
 export function stopCalendarReminderPoller() {
   if (timer) {
     clearInterval(timer);
     timer = null;
+    markServiceStopped(SERVICE_NAME);
   }
 }

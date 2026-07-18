@@ -43,4 +43,10 @@ EXPOSE 3000
 
 ENV NODE_ENV=production
 
+# Marque le conteneur unhealthy si l'app ne répond plus (ex : crash-loop au
+# démarrage) au lieu de laisser le reverse proxy renvoyer des 502 opaques.
+# start-period large : initDatabase (migrations) peut prendre du temps au boot.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-3000}/api/health" || exit 1
+
 CMD ["node", "server/dist/index.js"]

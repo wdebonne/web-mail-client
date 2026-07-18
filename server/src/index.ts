@@ -9,7 +9,7 @@ import { createServer } from 'http';
 import path from 'path';
 import { WebSocketServer } from 'ws';
 import { logger } from './utils/logger';
-import { db, initDatabase } from './database/connection';
+import { db, pool, initDatabase } from './database/connection';
 import { authRouter } from './routes/auth';
 import { mailRouter } from './routes/mail';
 import { contactRouter } from './routes/contacts';
@@ -33,6 +33,7 @@ import { translateRouter } from './routes/translate';
 import { startBackupScheduler } from './services/backupScheduler';
 import { bulkSendRouter, adminBulkSendRouter } from './routes/bulkSend';
 import { startBulkSendProcessor } from './services/bulkSendProcessor';
+import { startScheduledSendProcessor } from './services/scheduledSendProcessor';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { authLimiter } from './middleware/rateLimit';
@@ -108,6 +109,20 @@ app.use(session({
     sameSite: 'lax',
   },
 }));
+
+// Healthcheck — public et volontairement minimal (aucune info sensible).
+// Utilisé par le HEALTHCHECK Docker et les sondes du reverse proxy : un
+// conteneur en crash-loop (ex : initDatabase qui plante) est ainsi signalé
+// `unhealthy` au lieu de produire des 502 mystérieux. 200 = process vivant
+// et base de données joignable ; 503 = base injoignable.
+app.get('/api/health', async (_req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok' });
+  } catch {
+    res.status(503).json({ status: 'error' });
+  }
+});
 
 // API Routes
 // Baseline IP rate limit on all auth endpoints (incl. /refresh, WebAuthn
@@ -210,6 +225,7 @@ async function start() {
     // Start automatic backup scheduler
     startBackupScheduler();
     startBulkSendProcessor();
+    startScheduledSendProcessor();
 
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);

@@ -354,6 +354,200 @@ mailRouter.post('/send-raw', async (req: AuthRequest, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Envoi programmé — POST /schedule enregistre le message dans
+// `scheduled_messages` ; le processeur de fond (scheduledSendProcessor)
+// l'envoie quand `scheduled_at` est atteint. Sert aussi au délai de grâce
+// « Annuler l'envoi » (le client programme l'envoi à now + N secondes avec
+// undoSend=true). Tant que le message est en statut 'scheduled', DELETE
+// /scheduled/:id l'annule.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Fige l'identité d'expéditeur (mêmes règles que /send, y compris send_on_behalf). */
+async function buildSenderIdentity(account: any, userId: string): Promise<{
+  fromOptions: { email: string; name: string };
+  senderOptions?: { email: string; name: string };
+  replyToOptions?: { email: string; name?: string };
+}> {
+  if (account.send_permission !== 'send_on_behalf') {
+    return { fromOptions: { email: account.email, name: account.assigned_display_name || account.name } };
+  }
+  const userResult = await pool.query('SELECT display_name, email FROM users WHERE id = $1', [userId]);
+  const user = userResult.rows[0];
+  const userName = user?.display_name || user?.email || '';
+  const userEmail = user?.email || '';
+  const fromDomain = (account.email.split('@')[1] || '').toLowerCase();
+  const userDomain = (userEmail.split('@')[1] || '').toLowerCase();
+  const sameDomain = !!fromDomain && fromDomain === userDomain;
+
+  const fromOptions = { email: account.email, name: userName || account.assigned_display_name || account.name };
+  if (sameDomain && userEmail) {
+    return { fromOptions, senderOptions: { email: userEmail, name: userName } };
+  }
+  if (userEmail && userEmail !== account.email) {
+    return { fromOptions, replyToOptions: { email: userEmail, name: userName } };
+  }
+  return { fromOptions };
+}
+
+mailRouter.post('/schedule', async (req: AuthRequest, res) => {
+  try {
+    const scheduleSchema = z.object({
+      accountId: z.string().uuid(),
+      to: z.array(z.object({ email: z.string().email(), name: z.string().optional() })).min(1),
+      cc: z.array(z.object({ email: z.string().email(), name: z.string().optional() })).optional(),
+      bcc: z.array(z.object({ email: z.string().email(), name: z.string().optional() })).optional(),
+      subject: z.string(),
+      bodyHtml: z.string(),
+      bodyText: z.string().optional(),
+      attachments: z.array(z.any()).optional(),
+      inReplyTo: z.string().optional(),
+      references: z.string().optional(),
+      inReplyToUid: z.number().int().optional(),
+      inReplyToFolder: z.string().optional(),
+      scheduledAt: z.string().datetime({ offset: true }),
+      /** true = délai de grâce « Annuler l'envoi » (masqué de la liste des envois différés). */
+      undoSend: z.boolean().optional(),
+    });
+
+    const data = scheduleSchema.parse(req.body);
+
+    const scheduledAt = new Date(data.scheduledAt);
+    const now = Date.now();
+    // Tolérance 60 s dans le passé (horloge client) ; plafond 1 an.
+    if (scheduledAt.getTime() < now - 60_000) {
+      return res.status(400).json({ error: 'La date programmée est déjà passée' });
+    }
+    if (scheduledAt.getTime() > now + 365 * 24 * 60 * 60 * 1000) {
+      return res.status(400).json({ error: 'La date programmée est trop lointaine (max 1 an)' });
+    }
+
+    const account = await getAccountForUser(data.accountId, req.userId!);
+    if (!account) return res.status(404).json({ error: 'Compte non trouvé' });
+    if (account.send_permission === 'none') {
+      return res.status(403).json({ error: 'Vous n\'avez pas la permission d\'envoyer depuis ce compte' });
+    }
+
+    // Même sanitisation que /send — le corps est stocké prêt à l'envoi.
+    const cleanHtml = sanitizeHtml(data.bodyHtml, {
+      allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'style', 'span', 'div', 'br', 'hr', 'table', 'thead', 'tbody', 'tr', 'td', 'th']),
+      allowedAttributes: {
+        ...sanitizeHtml.defaults.allowedAttributes,
+        '*': ['style', 'class'],
+        img: ['src', 'alt', 'width', 'height'],
+        a: ['href', 'target', 'rel'],
+      },
+    });
+
+    const { fromOptions, senderOptions, replyToOptions } = await buildSenderIdentity(account, req.userId!);
+
+    const result = await pool.query(
+      `INSERT INTO scheduled_messages
+         (user_id, account_id, to_addresses, cc_addresses, bcc_addresses, subject,
+          body_html, body_text, attachments, from_options, sender_options, reply_to_options,
+          in_reply_to, references_header, in_reply_to_uid, in_reply_to_folder,
+          scheduled_at, is_undo_send)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       RETURNING id, scheduled_at`,
+      [
+        req.userId, data.accountId,
+        JSON.stringify(data.to), JSON.stringify(data.cc || []), JSON.stringify(data.bcc || []),
+        data.subject, cleanHtml, data.bodyText || null,
+        data.attachments ? JSON.stringify(data.attachments) : null,
+        JSON.stringify(fromOptions),
+        senderOptions ? JSON.stringify(senderOptions) : null,
+        replyToOptions ? JSON.stringify(replyToOptions) : null,
+        data.inReplyTo || null, data.references || null,
+        data.inReplyToUid ?? null, data.inReplyToFolder || null,
+        scheduledAt, data.undoSend === true,
+      ]
+    );
+
+    res.json({ success: true, id: result.rows[0].id, scheduledAt: result.rows[0].scheduled_at });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Données invalides', details: error.errors });
+    }
+    console.error('Schedule mail error:', error);
+    res.status(500).json({ error: error.message || 'Erreur de programmation de l\'envoi' });
+  }
+});
+
+// Liste des messages programmés de l'utilisateur. Par défaut, les délais de
+// grâce « Annuler l'envoi » (is_undo_send) sont exclus : seuls les vrais
+// envois différés apparaissent dans le panneau « Programmés ».
+mailRouter.get('/scheduled', async (req: AuthRequest, res) => {
+  try {
+    const includeUndo = String(req.query.includeUndo || '') === '1';
+    const result = await pool.query(
+      `SELECT sm.id, sm.account_id, sm.to_addresses, sm.cc_addresses, sm.bcc_addresses,
+              sm.subject, sm.scheduled_at, sm.status, sm.is_undo_send, sm.error,
+              sm.attempts, sm.sent_at, sm.created_at,
+              ma.email AS account_email, ma.name AS account_name
+         FROM scheduled_messages sm
+         JOIN mail_accounts ma ON ma.id = sm.account_id
+        WHERE sm.user_id = $1
+          AND ($2 OR sm.is_undo_send = false)
+          AND (sm.status IN ('scheduled','sending','error')
+               OR (sm.status = 'sent' AND sm.sent_at > NOW() - INTERVAL '24 hours'))
+        ORDER BY (sm.status IN ('scheduled','sending')) DESC, sm.scheduled_at ASC
+        LIMIT 100`,
+      [req.userId, includeUndo]
+    );
+    res.json(result.rows);
+  } catch (error: any) {
+    console.error('List scheduled messages error:', error);
+    res.status(500).json({ error: error.message || 'Erreur de récupération des messages programmés' });
+  }
+});
+
+// Annulation d'un message programmé (ou d'un envoi en délai de grâce).
+// Les messages en erreur sont aussi annulables (= abandonnés / repris en
+// composition). 409 si le processeur l'a déjà pris en charge — trop tard.
+mailRouter.delete('/scheduled/:id', async (req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE scheduled_messages
+          SET status = 'cancelled', updated_at = NOW()
+        WHERE id = $1 AND user_id = $2 AND status IN ('scheduled', 'error')
+        RETURNING id, account_id, to_addresses, cc_addresses, bcc_addresses,
+                  subject, body_html, body_text, attachments,
+                  in_reply_to, references_header, in_reply_to_uid, in_reply_to_folder`,
+      [req.params.id, req.userId]
+    );
+    if (result.rows.length === 0) {
+      const existing = await pool.query(
+        'SELECT status FROM scheduled_messages WHERE id = $1 AND user_id = $2',
+        [req.params.id, req.userId]
+      );
+      if (existing.rows.length === 0) return res.status(404).json({ error: 'Message introuvable' });
+      return res.status(409).json({ error: 'Trop tard : le message est déjà parti ou a déjà été annulé', status: existing.rows[0].status });
+    }
+    const m = result.rows[0];
+    // Renvoie le contenu pour que le client puisse rouvrir la composition.
+    res.json({
+      success: true,
+      message: {
+        accountId: m.account_id,
+        to: m.to_addresses,
+        cc: m.cc_addresses,
+        bcc: m.bcc_addresses,
+        subject: m.subject,
+        bodyHtml: m.body_html,
+        bodyText: m.body_text,
+        attachments: m.attachments,
+        inReplyTo: m.in_reply_to,
+        references: m.references_header,
+        inReplyToUid: m.in_reply_to_uid,
+        inReplyToFolder: m.in_reply_to_folder,
+      },
+    });
+  } catch (error: any) {
+    console.error('Cancel scheduled message error:', error);
+    res.status(500).json({ error: error.message || 'Erreur d\'annulation' });
+  }
+});
+
 // Save to outbox (for offline sending)
 mailRouter.post('/outbox', async (req: AuthRequest, res) => {
   try {

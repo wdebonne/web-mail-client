@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { addLog } from '../services/auditLog';
 import { credentialLimiter, forgotPasswordLimiter } from '../middleware/rateLimit';
 import { hashResetToken } from '../utils/resetToken';
+import { checkAndNotifyNewDevice } from '../services/newDeviceAlert';
 
 const PENDING_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'change-me';
 
@@ -55,6 +56,9 @@ export const authRouter = Router();
 async function issueSession(req: Request, res: Response, userId: string, isAdmin: boolean) {
   const ua = req.headers['user-agent'] || '';
   const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+  // Alerte « appareil inconnu » — la détection doit précéder createDeviceSession
+  // (la nouvelle session rendrait l'appareil « connu ») ; l'email part en fond.
+  await checkAndNotifyNewDevice(req, userId, ua, ip);
   const session = await createDeviceSession(userId, ua, ip);
   res.cookie(REFRESH_COOKIE_NAME, session.refreshToken, refreshCookieOptions());
   const accessToken = generateAccessToken({ userId, isAdmin, sid: session.sessionId });

@@ -96,6 +96,14 @@ docker-compose ps
 docker-compose logs -f app
 ```
 
+> **Healthcheck** : le conteneur expose `GET /api/health` (200 = application
+> démarrée et base de données joignable, 503 sinon). Docker l'interroge toutes
+> les 30 s : `docker-compose ps` affiche `healthy`/`unhealthy`, ce qui permet de
+> détecter immédiatement un crash-loop au démarrage au lieu de 502 opaques du
+> reverse proxy. Vous pouvez aussi brancher vos sondes (Uptime Kuma, NPM, etc.)
+> sur cette URL. Le détail (services de fond, dernière sauvegarde, files
+> d'envoi) est visible dans **Administration > Système > État du système**.
+
 ### 4. Premier accès
 
 1. Accédez à `http://votre-ip:3000`
