@@ -61,8 +61,9 @@ async function tick(): Promise<void> {
   }
 }
 
-/** Charge un compte mail prêt à l'emploi (mot de passe déchiffré ou token OAuth frais). */
-async function loadAccount(accountId: string): Promise<any | null> {
+/** Charge un compte mail prêt à l'emploi (mot de passe déchiffré ou token OAuth frais).
+ *  Également utilisé par bulkSendProcessor. */
+export async function loadAccount(accountId: string): Promise<any | null> {
   const res = await pool.query('SELECT * FROM mail_accounts WHERE id = $1', [accountId]);
   if (!res.rows.length) return null;
   const account = res.rows[0];

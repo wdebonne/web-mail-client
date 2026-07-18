@@ -1,6 +1,6 @@
 import { pool } from '../database/connection';
 import { MailService } from './mail';
-import { decrypt } from '../utils/encryption';
+import { loadAccount } from './scheduledSendProcessor';
 import { logger } from '../utils/logger';
 import { markServiceStarted, markServiceStopped, markServiceTick } from './serviceStatus';
 
@@ -140,24 +140,13 @@ async function processUser(userId: string): Promise<void> {
       continue;
     }
 
-    // Load mail account
-    const accRes = await pool.query(
-      `SELECT * FROM mail_accounts WHERE id = $1`,
-      [account_id]
-    );
-    if (!accRes.rows.length) continue;
-    const accountRow = accRes.rows[0];
-
-    const account = {
-      ...accountRow,
-      id: accountRow.id,
-      passwordDecrypted: accountRow.password_encrypted ? decrypt(accountRow.password_encrypted) : undefined,
-      oauthRefreshToken: accountRow.oauth_refresh_token_encrypted ? decrypt(accountRow.oauth_refresh_token_encrypted) : undefined,
-    };
-
+    // Load mail account (mot de passe déchiffré ou token OAuth frais)
+    let account: any;
     let mailService: MailService | null = null;
     try {
-      mailService = new MailService(account as any);
+      account = await loadAccount(account_id);
+      if (!account) continue;
+      mailService = new MailService(account);
     } catch (err) {
       logger.error({ err, accountId: account_id }, 'Bulk send: cannot create MailService');
       continue;
@@ -181,10 +170,8 @@ async function sendOneRecipient(
 ): Promise<void> {
   try {
     await mailService.sendMail({
-      from: account.email,
-      to: recipient.display_name
-        ? [{ name: recipient.display_name, address: recipient.email }]
-        : [recipient.email],
+      from: { email: account.email, name: account.name || account.email },
+      to: [{ email: recipient.email, name: recipient.display_name || undefined }],
       subject: recipient.subject ?? '',
       html: recipient.body_html ?? '',
       text: recipient.body_text ?? undefined,
