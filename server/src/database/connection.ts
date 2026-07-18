@@ -999,6 +999,8 @@ export async function initDatabase() {
         ON scheduled_messages(scheduled_at) WHERE status = 'scheduled';
       CREATE INDEX IF NOT EXISTS idx_scheduled_messages_user
         ON scheduled_messages(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_messages_sending
+        ON scheduled_messages(updated_at) WHERE status = 'sending';
     `);
 
     // Alerte « nouvelle connexion depuis un appareil inconnu » : réglage +

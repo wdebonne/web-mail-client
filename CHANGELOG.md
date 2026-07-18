@@ -16,6 +16,7 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
   - Réglage **« Annuler l'envoi »** (0 / 10 / 20 / 30 s, désactivé par défaut) dans **Paramètres → Messagerie** : après un envoi normal, un toast avec bouton **Annuler** rouvre la composition pendant le délai choisi.
   - Entrée **« Programmés »** dans le volet des dossiers (visible uniquement s'il existe des messages en attente), avec annulation et **« annuler et modifier »**.
   - Nouvelle table `scheduled_messages` + endpoints `POST /api/mail/schedule`, `GET /api/mail/scheduled`, `DELETE /api/mail/scheduled/:id`. Processeur de fond toutes les **10 s** : claim atomique (impossible d'annuler un message déjà pris), 3 tentatives, retry +2 min.
+  - Robustesse : les messages restés bloqués en cours d'envoi après un arrêt du serveur sont automatiquement passés en erreur après 5 min (plutôt que reprogrammés, pour exclure tout doublon) ; purge horaire des lignes terminées (envoyés/annulés après 7 jours, erreurs après 30 jours) pour que la table ne grossisse pas indéfiniment.
   - Limites connues : indisponible avec S/MIME/PGP et hors-ligne ; les pièces jointes ne sont pas restaurées après une annulation (signalé par un toast).
 - **Alerte « connexion depuis un appareil inconnu »**
   - Un e-mail est envoyé automatiquement lors d'une connexion depuis un appareil non reconnu — couvre mot de passe, LDAP, WebAuthn, passkey et SSO. Silencieux à la toute première connexion d'un compte.

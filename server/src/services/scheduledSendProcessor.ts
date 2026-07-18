@@ -26,9 +26,14 @@ const TICK_MS = 10_000;
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 2 * 60_000; // 2 min avant nouvel essai
 const BATCH_SIZE = 10;
+const STUCK_SENDING_MAX_AGE_MS = 5 * 60_000; // 'sending' plus vieux = envoi interrompu
+const PURGE_INTERVAL_MS = 60 * 60_000; // purge horaire
+const PURGE_SENT_RETENTION_DAYS = 7;
+const PURGE_ERROR_RETENTION_DAYS = 30;
 
 let processorInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
+let lastPurgeAt = 0;
 
 const SERVICE_NAME = 'scheduledSendProcessor';
 
@@ -51,7 +56,12 @@ async function tick(): Promise<void> {
   if (isRunning) return;
   isRunning = true;
   try {
+    await recoverStuckMessages();
     await processDueMessages();
+    if (Date.now() - lastPurgeAt >= PURGE_INTERVAL_MS) {
+      await purgeOldMessages();
+      lastPurgeAt = Date.now();
+    }
     markServiceTick(SERVICE_NAME);
   } catch (err) {
     markServiceTick(SERVICE_NAME, err);
@@ -81,6 +91,50 @@ export async function loadAccount(accountId: string): Promise<any | null> {
     ...account,
     password: account.password_encrypted ? decrypt(account.password_encrypted) : '',
   };
+}
+
+/**
+ * Récupération des lignes bloquées en 'sending' : si le serveur s'arrête (ou
+ * qu'un envoi reste suspendu) pendant le traitement, la ligne resterait
+ * coincée pour toujours — le claim ne reprend que les 'scheduled' et
+ * l'annulation n'accepte que scheduled/error. On les passe en erreur plutôt
+ * que de les reprogrammer : l'envoi a pu partir juste avant l'interruption,
+ * une reprogrammation automatique risquerait un doublon.
+ */
+async function recoverStuckMessages(): Promise<void> {
+  const res = await pool.query(
+    `UPDATE scheduled_messages
+        SET status = 'error',
+            error = 'Envoi interrompu (redémarrage du serveur) — vérifiez le dossier Envoyés avant de renvoyer',
+            updated_at = NOW()
+      WHERE status = 'sending'
+        AND updated_at < NOW() - ($1 || ' milliseconds')::INTERVAL`,
+    [STUCK_SENDING_MAX_AGE_MS]
+  );
+  if (res.rowCount) {
+    logger.warn(`Scheduled send: ${res.rowCount} message(s) bloqué(s) en 'sending' passé(s) en erreur`);
+  }
+}
+
+/**
+ * Purge des lignes terminées : chaque envoi effectué avec « Annuler l'envoi »
+ * actif laisse une ligne contenant le corps complet et les pièces jointes en
+ * JSONB — sans nettoyage la table grossit indéfiniment. Les 'error' sont
+ * gardés plus longtemps car encore visibles et annulables dans le panneau
+ * « Programmés ».
+ */
+async function purgeOldMessages(): Promise<void> {
+  const res = await pool.query(
+    `DELETE FROM scheduled_messages
+      WHERE (status IN ('sent', 'cancelled')
+             AND updated_at < NOW() - ($1 || ' days')::INTERVAL)
+         OR (status = 'error'
+             AND updated_at < NOW() - ($2 || ' days')::INTERVAL)`,
+    [PURGE_SENT_RETENTION_DAYS, PURGE_ERROR_RETENTION_DAYS]
+  );
+  if (res.rowCount) {
+    logger.info(`Scheduled send: purge de ${res.rowCount} message(s) terminé(s)`);
+  }
 }
 
 async function processDueMessages(): Promise<void> {
