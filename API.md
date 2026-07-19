@@ -104,7 +104,7 @@ Connexion avec email et mot de passe.
   "token": "eyJhbGciOi..."
 }
 ```
-Un cookie `wm_refresh` (httpOnly, SameSite=Strict, scope `/api/auth`, TTL 90 j glissant) est également posé.
+Un cookie `wm_refresh` (httpOnly, SameSite=Strict, scope `/api/auth`, TTL 90 j glissant) est également posé, ainsi qu'un cookie d'identité d'appareil `wm_device` (httpOnly, SameSite=Lax, scope `/api/auth`, TTL 1 an, prolongé à chaque login/refresh, jamais effacé au logout) qui sert à l'alerte « connexion depuis un appareil inconnu » : appareil connu = cookie enregistré pour l'utilisateur (table `known_devices`, hash SHA-256), sinon repli nom d'appareil + même sous-réseau IP.
 
 **Réponse 200 (compte avec passkey enrôlée — 2FA obligatoire) :**
 ```json
@@ -123,7 +123,7 @@ Aucun cookie n'est posé à ce stade. Le client doit poursuivre avec `/api/auth/
 
 ### POST /api/auth/logout
 
-Déconnexion — révoque le refresh token du device courant, détruit la session legacy et efface les cookies.
+Déconnexion — révoque le refresh token du device courant, détruit la session legacy et efface les cookies de session (`wm_refresh`, `connect.sid`). Le cookie d'identité d'appareil `wm_device` est volontairement conservé : l'appareil reste « connu » entre deux sessions.
 
 **Réponse 200 :** `{ "message": "Déconnecté" }`
 
