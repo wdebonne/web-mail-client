@@ -1,7 +1,7 @@
 import { Request } from 'express';
 import { pool } from '../database/connection';
 import { logger } from '../utils/logger';
-import { checkDeviceKnown } from './deviceSessions';
+import { checkDeviceKnown, parseCookie, DEVICE_COOKIE_NAME } from './deviceSessions';
 import { sendSystemEmail } from './systemEmail';
 
 /**
@@ -21,9 +21,12 @@ import { sendSystemEmail } from './systemEmail';
  *  - désactivable globalement (admin_settings.security_new_device_alert_enabled)
  *    et via le flag enabled du modèle d'email ;
  *  - silencieuse à la première connexion du compte (aucune session existante) ;
- *  - un appareil est « connu » dès qu'une session (même révoquée) a porté le
- *    même nom dérivé du User-Agent — les montées de version de navigateur ne
- *    déclenchent donc pas de fausses alertes.
+ *  - un appareil est « connu » si le cookie longue durée wm_device correspond
+ *    à un appareil enregistré de l'utilisateur, ou à défaut (migration, cookies
+ *    effacés) si le même nom dérivé du User-Agent a déjà été vu depuis le même
+ *    sous-réseau IP — les montées de version de navigateur ne déclenchent donc
+ *    pas de fausses alertes, mais un attaquant sous « Chrome · Windows » depuis
+ *    un autre réseau, si.
  */
 export async function checkAndNotifyNewDevice(
   req: Request,
@@ -32,7 +35,8 @@ export async function checkAndNotifyNewDevice(
   ip: string,
 ): Promise<void> {
   try {
-    const { known, hasAnySession, deviceName } = await checkDeviceKnown(userId, userAgent);
+    const deviceToken = parseCookie(req.headers.cookie, DEVICE_COOKIE_NAME);
+    const { known, hasAnySession, deviceName } = await checkDeviceKnown(userId, userAgent, deviceToken, ip);
     if (known || !hasAnySession) return;
     // Envoi en tâche de fond — jamais bloquant pour le login.
     sendNewDeviceAlert(req, userId, deviceName, ip).catch((err) => {

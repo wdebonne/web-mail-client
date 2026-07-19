@@ -586,6 +586,20 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_device_sessions_hash ON device_sessions(refresh_token_hash);
       CREATE INDEX IF NOT EXISTS idx_device_sessions_expires ON device_sessions(expires_at);
 
+      -- Known devices for the new-device alert: one row per (user, browser),
+      -- keyed by the SHA-256 hash of the long-lived wm_device cookie token.
+      CREATE TABLE IF NOT EXISTS known_devices (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL,
+        device_name TEXT,
+        ip_last_seen VARCHAR(45),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (user_id, token_hash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_known_devices_user ON known_devices(user_id);
+
       -- WebAuthn credentials (passkeys / biometric)
       CREATE TABLE IF NOT EXISTS webauthn_credentials (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

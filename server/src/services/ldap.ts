@@ -12,6 +12,8 @@ export interface LdapConfig {
   displayNameAttr: string;
   adminGroupDn: string;           // explicit full DN (optional)
   adminGroupNames: string[];      // auto-detect by CN (default: admin, administrateur…)
+  groupFilterMode: 'all' | 'prefix' | 'regex' | 'ou';  // restrict which memberOf groups are auto-synced
+  groupFilterValue: string;
   tlsRejectUnauthorized: boolean;
   fallbackLocal: boolean;
 }
@@ -51,6 +53,10 @@ export async function getLdapConfig(): Promise<LdapConfig> {
     if (parsed.length > 0) adminGroupNames = parsed;
   }
 
+  const rawFilterMode = s['ldap_group_filter_mode'];
+  const groupFilterMode: LdapConfig['groupFilterMode'] =
+    rawFilterMode === 'prefix' || rawFilterMode === 'regex' || rawFilterMode === 'ou' ? rawFilterMode : 'all';
+
   return {
     enabled: s['ldap_enabled'] === true || s['ldap_enabled'] === 'true',
     url: s['ldap_url'] ?? '',
@@ -61,6 +67,8 @@ export async function getLdapConfig(): Promise<LdapConfig> {
     displayNameAttr: s['ldap_display_name_attr'] ?? 'displayName',
     adminGroupDn: s['ldap_admin_group_dn'] ?? '',
     adminGroupNames,
+    groupFilterMode,
+    groupFilterValue: typeof s['ldap_group_filter_value'] === 'string' ? s['ldap_group_filter_value'] : '',
     tlsRejectUnauthorized: s['ldap_tls_reject_unauthorized'] !== false && s['ldap_tls_reject_unauthorized'] !== 'false',
     fallbackLocal: s['ldap_fallback_local'] === true || s['ldap_fallback_local'] === 'true',
   };
@@ -83,6 +91,30 @@ function escapeLdapFilterValue(value: string): string {
 function extractCn(dn: string): string {
   const match = dn.match(/^cn=([^,]+)/i);
   return match ? match[1].toLowerCase() : '';
+}
+
+/** Lowercase a DN and strip spaces around RDN separators, for suffix comparisons. */
+function normalizeDn(dn: string): string {
+  return dn.toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Group filter applied before auto-sync (phase 2 of syncLdapGroups). A DN
+ * that does not match is invisible to the auto-sync: no group creation, no
+ * membership add, and treated as "not a member" for the removal step.
+ * Manual mappings (phase 1) and admin detection (phase 3) always see the
+ * full memberOf list. An invalid regex matches nothing (fail closed).
+ */
+export function ldapGroupMatchesFilter(dn: string, cfg: LdapConfig): boolean {
+  const value = cfg.groupFilterValue.trim();
+  if (cfg.groupFilterMode === 'all' || !value) return true;
+  if (cfg.groupFilterMode === 'prefix') return extractCn(dn).startsWith(value.toLowerCase());
+  if (cfg.groupFilterMode === 'ou') return normalizeDn(dn).endsWith(',' + normalizeDn(value));
+  try {
+    return new RegExp(value, 'i').test(extractCn(dn));
+  } catch {
+    return false;
+  }
 }
 
 /** Returns true if any of the group DNs matches the configured admin group (by full DN or by CN name). */
@@ -130,6 +162,8 @@ export async function testLdapConnection(cfg: LdapConfig): Promise<{ ok: boolean
  *   Add/remove based on explicit DN → group_id entries.
  *
  * Phase 2 — Auto-sync by CN:
+ *   Only groups passing the configured filter (prefix / regex / base OU) are
+ *   considered; excluded DNs are treated as if the user were not a member.
  *   For every LDAP group the user belongs to:
  *     - Find app group by ldap_dn match first, then by name (case-insensitive).
  *     - If found and ldap_dn not set yet: attach ldap_dn to that group.
@@ -166,7 +200,10 @@ export async function syncLdapGroups(userId: string, memberOfDns: string[], cfg:
   }
 
   // ── Phase 2: auto-sync by CN ──────────────────────────────────────────────
-  for (const dn of memberOfDns) {
+  const autoSyncDns = memberOfDns.filter(dn => ldapGroupMatchesFilter(dn, cfg));
+  const normalisedAutoSyncDns = autoSyncDns.map(dn => dn.toLowerCase());
+
+  for (const dn of autoSyncDns) {
     const cn = extractCn(dn);
     if (!cn) continue;
 
@@ -200,7 +237,9 @@ export async function syncLdapGroups(userId: string, memberOfDns: string[], cfg:
   }
 
   // Remove user from LDAP-sourced groups they are no longer a member of
-  // (only groups with ldap_dn set, not covered by a manual mapping)
+  // (only groups with ldap_dn set, not covered by a manual mapping).
+  // Filtered-out DNs count as "not a member": enabling a filter empties the
+  // previously auto-created groups it excludes as users log back in.
   await pool.query(
     `DELETE FROM user_groups ug
      USING groups g
@@ -211,7 +250,7 @@ export async function syncLdapGroups(userId: string, memberOfDns: string[], cfg:
        AND g.id <> ALL($3::uuid[])`,
     [
       userId,
-      normalisedDns,
+      normalisedAutoSyncDns,
       manualGroupIds.size > 0 ? [...manualGroupIds] : ['00000000-0000-0000-0000-000000000000'],
     ]
   );

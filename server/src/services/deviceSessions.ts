@@ -23,14 +23,17 @@
  *   - Admins can list and revoke individual devices.
  */
 import crypto from 'crypto';
+import net from 'net';
 import jwt from 'jsonwebtoken';
 import { pool } from '../database/connection';
 
 const REFRESH_TOKEN_BYTES = 32; // 256 bits of entropy
 const REFRESH_TTL_DAYS = 90;
 const ACCESS_TTL = '15m';
+const DEVICE_COOKIE_DAYS = 365; // Chrome plafonne à 400 jours ; prolongé à chaque login/refresh
 
 export const REFRESH_COOKIE_NAME = 'wm_refresh';
+export const DEVICE_COOKIE_NAME = 'wm_device';
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET || process.env.SESSION_SECRET;
@@ -317,31 +320,119 @@ export async function adminRevokeDeviceSession(sessionId: string): Promise<boole
   return (r.rowCount || 0) > 0;
 }
 
+/** Token de cookie d'appareil bien formé (base64url, 32 octets → 43 caractères). */
+export function isValidDeviceToken(token: string | undefined): token is string {
+  return !!token && /^[A-Za-z0-9_-]{20,64}$/.test(token);
+}
+
+/**
+ * Clé de sous-réseau pour la comparaison « même réseau » : /24 en IPv4,
+ * /64 en IPv6 (les FAI attribuent généralement un /64 ou plus large par
+ * client). Les adresses IPv4-mapped (::ffff:a.b.c.d) sont ramenées à l'IPv4.
+ */
+function subnetKey(ip: string | undefined | null): string | null {
+  if (!ip) return null;
+  let v = ip.trim();
+  const pct = v.indexOf('%'); // zone IPv6 (fe80::1%eth0)
+  if (pct >= 0) v = v.slice(0, pct);
+  if (v.toLowerCase().startsWith('::ffff:') && v.includes('.')) v = v.slice(7);
+  if (net.isIPv4(v)) {
+    const parts = v.split('.');
+    return `v4:${parts[0]}.${parts[1]}.${parts[2]}`;
+  }
+  if (net.isIPv6(v)) {
+    const halves = v.split('::');
+    if (halves.length > 2) return null;
+    const head = halves[0] ? halves[0].split(':') : [];
+    const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+    let groups: string[];
+    if (halves.length === 1) {
+      if (head.length !== 8) return null;
+      groups = head;
+    } else {
+      const missing = 8 - head.length - tail.length;
+      if (missing < 0) return null;
+      groups = [...head, ...Array(missing).fill('0'), ...tail];
+    }
+    return `v6:${groups.slice(0, 4).map((g) => parseInt(g || '0', 16).toString(16)).join(':')}`;
+  }
+  return null;
+}
+
+function sameSubnet(a: string | undefined | null, b: string | undefined | null): boolean {
+  const ka = subnetKey(a);
+  return ka !== null && ka === subnetKey(b);
+}
+
 /**
  * « Cet appareil est-il déjà connu ? » — pour l'alerte de sécurité « nouvelle
- * connexion depuis un appareil inconnu ». Un appareil est connu si l'utilisateur
- * a déjà eu une session (même révoquée/expirée) portant le même nom d'appareil
- * dérivé du User-Agent. À appeler AVANT createDeviceSession, sinon la session
+ * connexion depuis un appareil inconnu ». Deux signaux, du plus fort au plus
+ * faible :
+ *  1. le cookie longue durée wm_device correspond à une ligne known_devices
+ *     de cet utilisateur — identité du navigateur, insensible au User-Agent ;
+ *  2. à défaut (migration depuis l'ancien schéma, cookies effacés) : le même
+ *     nom d'appareil dérivé du User-Agent a déjà été vu depuis le même
+ *     sous-réseau IP (/24 IPv4, /64 IPv6). Le nom seul ne suffit plus — un
+ *     attaquant sous « Chrome · Windows » ne passe pas inaperçu pour autant.
+ * À appeler AVANT createDeviceSession/registerKnownDevice, sinon la session
  * fraîchement créée rend l'appareil « connu ».
- * Renvoie aussi le nombre total de sessions : 0 = première connexion de ce
- * compte, où l'alerte serait du bruit.
+ * Renvoie aussi hasAnySession : false = première connexion de ce compte, où
+ * l'alerte serait du bruit.
  */
 export async function checkDeviceKnown(
   userId: string,
   userAgent: string | undefined,
+  deviceToken: string | undefined,
+  ip: string | undefined,
 ): Promise<{ known: boolean; hasAnySession: boolean; deviceName: string }> {
   const deviceName = deriveDeviceName(userAgent);
-  const r = await pool.query(
+
+  const flags = await pool.query(
     `SELECT
-       EXISTS(SELECT 1 FROM device_sessions WHERE user_id = $1 AND device_name = $2) AS known,
-       EXISTS(SELECT 1 FROM device_sessions WHERE user_id = $1) AS has_any`,
+       EXISTS(SELECT 1 FROM device_sessions WHERE user_id = $1) AS has_any,
+       EXISTS(SELECT 1 FROM known_devices WHERE user_id = $1 AND token_hash = $2) AS cookie_known`,
+    [userId, isValidDeviceToken(deviceToken) ? hashToken(deviceToken) : ''],
+  );
+  const hasAnySession = flags.rows[0].has_any === true;
+  if (flags.rows[0].cookie_known === true) {
+    return { known: true, hasAnySession, deviceName };
+  }
+
+  const ips = await pool.query(
+    `SELECT DISTINCT ip_last_seen FROM device_sessions
+      WHERE user_id = $1 AND device_name = $2 AND ip_last_seen IS NOT NULL`,
     [userId, deviceName],
   );
-  return {
-    known: r.rows[0].known === true,
-    hasAnySession: r.rows[0].has_any === true,
-    deviceName,
-  };
+  const known = ips.rows.some((row) => sameSubnet(ip, row.ip_last_seen));
+  return { known, hasAnySession, deviceName };
+}
+
+/**
+ * Enregistre (ou rafraîchit) l'appareil courant comme connu, après un login
+ * réussi. Réutilise le token présenté s'il est bien formé — il identifie le
+ * navigateur, pas l'utilisateur : sur un poste partagé, chaque compte
+ * enregistre le même token et personne ne reçoit de fausse alerte en
+ * alternance. Renvoie le token à (re)poser en cookie wm_device.
+ */
+export async function registerKnownDevice(
+  userId: string,
+  presentedToken: string | undefined,
+  userAgent: string | undefined,
+  ip: string | undefined,
+): Promise<string> {
+  const token = isValidDeviceToken(presentedToken)
+    ? presentedToken
+    : crypto.randomBytes(REFRESH_TOKEN_BYTES).toString('base64url');
+  await pool.query(
+    `INSERT INTO known_devices (user_id, token_hash, device_name, ip_last_seen)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id, token_hash) DO UPDATE
+       SET last_seen_at = NOW(),
+           device_name = EXCLUDED.device_name,
+           ip_last_seen = COALESCE(EXCLUDED.ip_last_seen, known_devices.ip_last_seen)`,
+    [userId, hashToken(token), deriveDeviceName(userAgent), truncate(ip, 45)],
+  );
+  return token;
 }
 
 /** Look up a session id (used by the access-token middleware to verify it wasn't revoked). */
@@ -381,5 +472,21 @@ export function refreshCookieOptions() {
     sameSite: 'strict' as const,
     path: '/api/auth',
     maxAge: REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
+  };
+}
+
+/**
+ * Options du cookie d'identité d'appareil (wm_device). Lax et non Strict :
+ * le callback SSO est une navigation top-level venant de l'IdP — en Strict le
+ * cookie ne serait pas envoyé et chaque login SSO déclencherait une fausse
+ * alerte. Jamais effacé au logout : l'appareil reste connu entre deux sessions.
+ */
+export function deviceCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/api/auth',
+    maxAge: DEVICE_COOKIE_DAYS * 24 * 60 * 60 * 1000,
   };
 }

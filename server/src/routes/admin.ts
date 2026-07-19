@@ -3062,8 +3062,20 @@ adminRouter.put('/ldap/settings', async (req: AuthRequest, res) => {
       'ldap_enabled', 'ldap_url', 'ldap_bind_dn',
       'ldap_base_dn', 'ldap_user_filter', 'ldap_display_name_attr',
       'ldap_admin_group_dn', 'ldap_admin_group_names', 'ldap_tls_reject_unauthorized', 'ldap_fallback_local',
+      'ldap_group_filter_mode', 'ldap_group_filter_value',
     ];
     const body = req.body as Record<string, any>;
+
+    if ('ldap_group_filter_mode' in body && !['all', 'prefix', 'regex', 'ou'].includes(body['ldap_group_filter_mode'])) {
+      return res.status(400).json({ error: 'Mode de filtre de groupes invalide' });
+    }
+    if (body['ldap_group_filter_mode'] === 'regex' && body['ldap_group_filter_value']) {
+      try {
+        new RegExp(body['ldap_group_filter_value']);
+      } catch {
+        return res.status(400).json({ error: 'Expression régulière invalide pour le filtre de groupes' });
+      }
+    }
 
     for (const key of allowed) {
       if (key in body) {

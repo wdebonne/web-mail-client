@@ -15,6 +15,10 @@ import {
   parseCookie,
   refreshCookieOptions,
   REFRESH_COOKIE_NAME,
+  registerKnownDevice,
+  deviceCookieOptions,
+  isValidDeviceToken,
+  DEVICE_COOKIE_NAME,
 } from '../services/deviceSessions';
 import {
   beginRegistration,
@@ -57,9 +61,19 @@ async function issueSession(req: Request, res: Response, userId: string, isAdmin
   const ua = req.headers['user-agent'] || '';
   const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
   // Alerte « appareil inconnu » — la détection doit précéder createDeviceSession
-  // (la nouvelle session rendrait l'appareil « connu ») ; l'email part en fond.
+  // et registerKnownDevice (l'enregistrement rendrait l'appareil « connu ») ;
+  // l'email part en fond.
   await checkAndNotifyNewDevice(req, userId, ua, ip);
   const session = await createDeviceSession(userId, ua, ip);
+  try {
+    const presented = parseCookie(req.headers.cookie, DEVICE_COOKIE_NAME);
+    const deviceToken = await registerKnownDevice(userId, presented, ua, ip);
+    res.cookie(DEVICE_COOKIE_NAME, deviceToken, deviceCookieOptions());
+  } catch (err) {
+    // L'identité d'appareil ne doit jamais bloquer le login — au pire, la
+    // prochaine connexion retombera sur le repli nom + sous-réseau.
+    console.error('registerKnownDevice failed:', err);
+  }
   res.cookie(REFRESH_COOKIE_NAME, session.refreshToken, refreshCookieOptions());
   const accessToken = generateAccessToken({ userId, isAdmin, sid: session.sessionId });
   return { accessToken, sessionId: session.sessionId };
@@ -566,6 +580,12 @@ authRouter.post('/refresh', async (req, res) => {
       return res.status(401).json({ error: 'Session expirée', code: 'refresh_invalid' });
     }
     res.cookie(REFRESH_COOKIE_NAME, rotated.refreshToken, refreshCookieOptions());
+    // Prolonge le cookie d'identité d'appareil : un utilisateur qui reste
+    // connecté des mois via le refresh ne doit pas le voir expirer.
+    const deviceToken = parseCookie(req.headers.cookie, DEVICE_COOKIE_NAME);
+    if (isValidDeviceToken(deviceToken)) {
+      res.cookie(DEVICE_COOKIE_NAME, deviceToken, deviceCookieOptions());
+    }
     const accessToken = generateAccessToken({
       userId: rotated.userId,
       isAdmin: rotated.isAdmin,
