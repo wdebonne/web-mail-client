@@ -4799,6 +4799,8 @@ function LdapSettings() {
   const [displayNameAttr, setDisplayNameAttr] = useState('displayName');
   const [adminGroupDn, setAdminGroupDn] = useState('');
   const [adminGroupNames, setAdminGroupNames] = useState('admin,administrateur,administrators,admins');
+  const [groupFilterMode, setGroupFilterMode] = useState<'all' | 'prefix' | 'regex' | 'ou'>('all');
+  const [groupFilterValue, setGroupFilterValue] = useState('');
   const [tlsRejectUnauthorized, setTlsRejectUnauthorized] = useState(true);
   const [fallbackLocal, setFallbackLocal] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string; userCount?: number } | null>(null);
@@ -4820,6 +4822,9 @@ function LdapSettings() {
     setDisplayNameAttr(settings['ldap_display_name_attr'] ?? 'displayName');
     setAdminGroupDn(settings['ldap_admin_group_dn'] ?? '');
     setAdminGroupNames(settings['ldap_admin_group_names'] ?? 'admin,administrateur,administrators,admins');
+    const rawFilterMode = settings['ldap_group_filter_mode'];
+    setGroupFilterMode(rawFilterMode === 'prefix' || rawFilterMode === 'regex' || rawFilterMode === 'ou' ? rawFilterMode : 'all');
+    setGroupFilterValue(settings['ldap_group_filter_value'] ?? '');
     setTlsRejectUnauthorized(settings['ldap_tls_reject_unauthorized'] !== false);
     setFallbackLocal(!!settings['ldap_fallback_local']);
     setLoaded(true);
@@ -4845,6 +4850,8 @@ function LdapSettings() {
       ldap_display_name_attr: displayNameAttr,
       ldap_admin_group_dn: adminGroupDn,
       ldap_admin_group_names: adminGroupNames,
+      ldap_group_filter_mode: groupFilterMode,
+      ldap_group_filter_value: groupFilterValue,
       ldap_tls_reject_unauthorized: tlsRejectUnauthorized,
       ldap_fallback_local: fallbackLocal,
     });
@@ -4959,6 +4966,41 @@ function LdapSettings() {
         })}
       </div>
 
+      <div className="bg-white border border-outlook-border rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-outlook-text-primary uppercase tracking-wide">Synchronisation des groupes</h3>
+        <div>
+          <label className="block text-sm font-medium text-outlook-text-primary mb-1">Filtre des groupes synchronisés</label>
+          <p className="text-xs text-outlook-text-secondary mb-1">
+            Limite les groupes LDAP créés et synchronisés automatiquement à la connexion — utile pour écarter les groupes techniques
+            (distribution, sécurité, licences…) d'un annuaire d'entreprise. Un groupe exclu n'est plus créé, et l'utilisateur en est
+            retiré à sa prochaine connexion. Les mappings manuels ci-dessous et la détection des groupes admin ne sont pas concernés.
+          </p>
+          <select
+            value={groupFilterMode}
+            onChange={e => setGroupFilterMode(e.target.value as 'all' | 'prefix' | 'regex' | 'ou')}
+            className="w-full border border-outlook-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-outlook-blue bg-white"
+          >
+            <option value="all">Tous les groupes (aucun filtre)</option>
+            <option value="prefix">Préfixe du nom (CN)</option>
+            <option value="regex">Expression régulière sur le nom (CN)</option>
+            <option value="ou">OU de base (emplacement du groupe)</option>
+          </select>
+        </div>
+        {groupFilterMode !== 'all' && field(
+          groupFilterMode === 'prefix' ? 'Préfixe' : groupFilterMode === 'regex' ? 'Expression régulière' : 'DN de l\'OU de base',
+          groupFilterValue,
+          setGroupFilterValue,
+          {
+            placeholder: groupFilterMode === 'prefix' ? 'app-' : groupFilterMode === 'regex' ? '^(app|mail)-' : 'ou=appgroups,dc=example,dc=com',
+            help: groupFilterMode === 'prefix'
+              ? 'Seuls les groupes dont le nom (CN) commence par ce préfixe sont synchronisés (insensible à la casse). Vide = aucun filtre.'
+              : groupFilterMode === 'regex'
+                ? 'Seuls les groupes dont le nom (CN) correspond à cette expression sont synchronisés (insensible à la casse). Une expression invalide ne synchronise aucun groupe. Vide = aucun filtre.'
+                : 'Seuls les groupes situés sous cette OU (comparaison sur la fin du DN) sont synchronisés. Vide = aucun filtre.',
+          }
+        )}
+      </div>
+
       {testResult && (
         <div className={`flex items-start gap-3 p-4 rounded-lg border text-sm ${testResult.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
           {testResult.ok ? <CheckCircle size={18} className="shrink-0 mt-0.5" /> : <XCircle size={18} className="shrink-0 mt-0.5" />}
@@ -5062,6 +5104,7 @@ function LdapGroupMappings() {
           <li>Si le groupe <strong>existe déjà</strong> (même nom) → l'utilisateur y est <strong>lié</strong>.</li>
           <li>Si l'utilisateur est <strong>retiré d'un groupe</strong> LDAP → il en est <strong>retiré</strong> dans l'application.</li>
           <li>Les groupes créés manuellement sans lien LDAP ne sont <strong>jamais touchés</strong>.</li>
+          <li>Le <strong>filtre</strong> de la section « Synchronisation des groupes » ci-dessus peut restreindre les groupes concernés.</li>
         </ul>
       </div>
 

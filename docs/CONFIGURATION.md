@@ -449,6 +449,8 @@ L'intégration LDAP se configure **entièrement depuis l'interface admin** (*Adm
 | Attribut nom d'affichage | Attribut LDAP pour le nom affiché | `displayName` |
 | Noms groupes admin | CNs accordant les droits admin (virgule-séparé) | `admin,administrateur,administrators,admins` |
 | DN groupe admin (optionnel) | DN complet alternatif pour les droits admin | — |
+| Filtre des groupes synchronisés | Aucun filtre, préfixe de CN, regex sur le CN ou OU de base | Aucun filtre |
+| Valeur du filtre | Préfixe, expression régulière ou DN de l'OU selon le mode | — |
 | Vérifier certificat TLS | Désactivez pour les certificats auto-signés | `true` |
 | Fallback local | Autoriser le mot de passe local si LDAP inaccessible | `false` |
 
@@ -471,6 +473,14 @@ L'intégration LDAP se configure **entièrement depuis l'interface admin** (*Adm
    - Sinon → le groupe est **créé automatiquement** dans l'application.
 3. Si l'utilisateur est retiré d'un groupe côté LDAP → il en est **retiré** dans l'application.
 4. Les groupes créés manuellement sans lien LDAP ne sont jamais modifiés.
+
+**Filtre des groupes synchronisés** : sur un annuaire d'entreprise, le `memberOf` contient souvent des groupes techniques (listes de distribution, groupes de sécurité, licences…) qui pollueraient la liste des groupes de l'application. La section **Synchronisation des groupes** de l'onglet LDAP permet de restreindre l'auto-sync :
+
+- **Préfixe du nom (CN)** — seuls les groupes dont le CN commence par le préfixe sont synchronisés (insensible à la casse).
+- **Expression régulière sur le nom (CN)** — le CN doit correspondre à la regex (insensible à la casse). Une regex invalide est refusée à l'enregistrement et, par prudence, ne synchronise aucun groupe.
+- **OU de base** — le DN du groupe doit se trouver sous l'OU indiquée (comparaison sur la fin du DN).
+
+Un groupe exclu par le filtre est invisible pour l'auto-sync : il n'est plus créé, et l'utilisateur en est retiré à sa prochaine connexion (activer un filtre après coup vide donc progressivement les groupes indésirables déjà créés). Les **mappings manuels** et la **détection des groupes admin** ne sont pas concernés par le filtre.
 
 **Mappings manuels avancés** : disponibles dans l'onglet LDAP pour lier un DN LDAP précis à un groupe applicatif existant — utile quand deux OU contiennent des groupes au même CN.
 
