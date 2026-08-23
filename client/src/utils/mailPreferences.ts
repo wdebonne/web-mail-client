@@ -808,3 +808,24 @@ export function setRibbonCollapsed(collapsed: boolean) {
     window.dispatchEvent(new CustomEvent(RIBBON_COLLAPSED_CHANGED_EVENT, { detail: { collapsed } }));
   } catch { /* noop */ }
 }
+// --- Raccourci « Notes » dans la barre du haut ---
+//
+// Bouton bloc-notes affiché à gauche de l'indicateur de cache. Activé par
+// défaut ; le désactiver ne retire pas la fonctionnalité, qui reste
+// accessible depuis le ruban « Insérer » d'une composition.
+const KEY_NOTES_SHORTCUT = 'ui.notesShortcut'; // boolean (default true)
+const NOTES_SHORTCUT_EVENT = 'notes-shortcut-changed';
+
+export function getNotesShortcutEnabled(): boolean {
+  const raw = localStorage.getItem(KEY_NOTES_SHORTCUT);
+  return raw === null ? true : raw === 'true';
+}
+
+export function setNotesShortcutEnabled(enabled: boolean) {
+  localStorage.setItem(KEY_NOTES_SHORTCUT, String(enabled));
+  try {
+    window.dispatchEvent(new CustomEvent(NOTES_SHORTCUT_EVENT, { detail: { enabled } }));
+  } catch { /* noop */ }
+}
+
+export const NOTES_SHORTCUT_CHANGED_EVENT = NOTES_SHORTCUT_EVENT;

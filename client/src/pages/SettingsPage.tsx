@@ -24,6 +24,7 @@ import {
   setSwipeMoveTarget, setSwipeCopyTarget, type SwipeAction,
   getFabPosition, setFabPosition, type FabPosition,
   getFabLongPressAction, setFabLongPressAction, type FabLongPressAction,
+  getNotesShortcutEnabled, setNotesShortcutEnabled,
   getFolderPaneFontSize, setFolderPaneFontSize,
   type FolderPaneFontSize, FOLDER_PANE_FONT_SIZE_LABELS, FOLDER_PANE_FONT_SIZE_PX,
   getNewMailPollMinutes, setNewMailPollMinutes, type NewMailPollMinutes,
@@ -1106,11 +1107,41 @@ function AppearanceSettings() {
           </div>
         </div>
 
+        {/* Barre du haut */}
+        <div className="border-t border-outlook-border pt-4">
+          <label className="text-sm font-medium text-outlook-text-primary block mb-1">Barre du haut</label>
+          <p className="text-xs text-outlook-text-disabled mb-3">Raccourcis affichés à côté de votre avatar.</p>
+          <NotesShortcutToggle />
+        </div>
+
         {/* Ruban d'actions */}
         <RibbonDefaultPicker />
 
       </div>
     </div>
+  );
+}
+
+// Affiche (ou masque) le bouton bloc-notes placé à gauche de l'indicateur de
+// cache. Masqué, la fonctionnalité reste joignable par le ruban « Insérer »
+// d'une composition.
+function NotesShortcutToggle() {
+  const [enabled, setEnabled] = useState(() => getNotesShortcutEnabled());
+  return (
+    <label className="flex items-start justify-between gap-3 p-3 rounded border border-outlook-border bg-outlook-bg-primary cursor-pointer">
+      <span className="min-w-0">
+        <span className="text-sm font-medium block">Raccourci « Notes &amp; fichiers »</span>
+        <span className="text-xs text-outlook-text-disabled block mt-0.5">
+          Ouvre le bloc-notes et la recherche dans vos fichiers Nextcloud depuis n'importe quelle page.
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={(e) => { setEnabled(e.target.checked); setNotesShortcutEnabled(e.target.checked); }}
+        className="rounded mt-0.5 flex-shrink-0"
+      />
+    </label>
   );
 }
 

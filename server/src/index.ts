@@ -25,6 +25,7 @@ import { autoResponderRouter } from './routes/autoResponder';
 import { mailTemplateRouter, adminMailTemplateRouter } from './routes/mailTemplates';
 import { rulesRouter, adminRulesRouter } from './routes/rules';
 import { nextcloudFilesRouter } from './routes/nextcloudFiles';
+import { notesRouter } from './routes/notes';
 import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES } from './routes/branding';
 import { applicationsRouter } from './routes/applications';
 import { backupRouter } from './routes/backup';
@@ -153,6 +154,7 @@ app.use('/api/admin/mail-templates', authMiddleware, adminMailTemplateRouter);
 app.use('/api/rules', authMiddleware, rulesRouter);
 app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
+app.use('/api/notes', authMiddleware, notesRouter);
 app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 app.use('/api/admin/backup', authMiddleware, backupRouter);
 // Proxy d'images des emails : monté sans authMiddleware global car les <img>

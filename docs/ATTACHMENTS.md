@@ -79,6 +79,19 @@ Voir la section `Nextcloud Files (par utilisateur)` dans `API.md` :
 - DOCX : rendu HTML simplifie
 - XLSX : rendu HTML simplifie (feuille principale)
 
+### Reutilisation par le panneau « Notes & fichiers »
+
+Le meme pipeline de conversion (mammoth pour DOCX, xlsx pour XLSX, DOMPurify a la sortie)
+est reutilise par l'onglet *Fichiers* du panneau **Insérer → Notes & fichiers**, cette fois
+sur des fichiers du drive Nextcloud et non sur des pieces jointes. La difference : le HTML
+produit n'est pas seulement affiche, il peut etre **insere au curseur** dans le corps du
+message. Les memes limites de fidelite s'appliquent donc au contenu colle.
+
+Le PDF fait exception : il reste affiche en iframe (texte selectionnable et copiable) mais
+son texte n'est **pas extrait automatiquement**, faute de bibliotheque PDF cote client.
+
+Voir [NEXTCLOUD.md](NEXTCLOUD.md#lire-le-contenu-dun-fichier-et-le-coller-dans-un-message).
+
 ---
 
 ## Limites connues (etat actuel)

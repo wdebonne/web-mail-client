@@ -431,7 +431,23 @@ mail_templates                       mail_template_shares
 ├── is_global (bool)                 ├── group_id (FK, nullable) ─┘
 ├── created_at / updated_at          └── created_at
 └── CHECK (is_global XOR owner)
+
+notes
+├── id (UUID, PK)
+├── user_id (FK → users)             ← strictement privé, jamais partagé
+├── title
+├── content_html                     ← assaini (liste blanche « composition »)
+├── content_text                     ← projection texte, recalculée à l'écriture
+├── color, tags (JSONB), is_pinned
+├── source_path (nullable)           ← chemin NC si créée depuis un fichier
+└── created_at / updated_at
+    + index GIN to_tsvector('french', title || content_text)
 ```
+
+**`notes`** alimente le panneau « Notes & fichiers » du ruban *Insérer* et sa grande
+modale. Le corps est stocké deux fois volontairement : `content_html` est ce qui est
+réinjecté au curseur dans la fenêtre de composition, `content_text` sert à la recherche
+plein texte et à l'extrait de liste — de sorte que SQL n'ait jamais à parser du HTML.
 
 ---
 

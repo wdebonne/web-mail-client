@@ -51,6 +51,7 @@ export const BACKUP_KEYS: string[] = [
   // Personnalisation interface
   'ui.fabPosition',
   'ui.folderPaneFontSize',
+  'ui.notesShortcut',
   // Vues / mise en page
   'readingPaneMode',
   'listDensity',

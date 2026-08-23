@@ -1088,6 +1088,34 @@ export async function initDatabase() {
       ON CONFLICT (slug) DO NOTHING;
     `);
 
+    // Notes personnelles — bloc-notes intégré, insérable dans le corps d'un
+    // message depuis le panneau « Notes » du ruban Insérer (même mécanique que
+    // le panneau emoji) ou depuis la grande modale ouverte via la barre du haut.
+    // content_text est la projection texte de content_html : elle sert à la
+    // recherche plein texte (l'index GIN ci-dessous) et à l'aperçu en liste,
+    // pour ne jamais avoir à parser du HTML côté SQL.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS notes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL DEFAULT '',
+        content_html TEXT NOT NULL DEFAULT '',
+        content_text TEXT NOT NULL DEFAULT '',
+        color VARCHAR(20) NOT NULL DEFAULT 'default',
+        tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+        is_pinned BOOLEAN NOT NULL DEFAULT false,
+        -- Chemin Nextcloud d'origine quand la note a été créée depuis un fichier
+        -- (« Enregistrer comme note »), pour pouvoir rouvrir la source.
+        source_path TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_notes_user
+        ON notes(user_id, is_pinned DESC, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_notes_search
+        ON notes USING GIN(to_tsvector('french', coalesce(title,'') || ' ' || coalesce(content_text,'')));
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

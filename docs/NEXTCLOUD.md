@@ -184,6 +184,30 @@ Sur chaque pièce jointe reçue, un bouton **CloudUpload** permet d'enregistrer 
 
 **Mode d'ouverture « Nextcloud »** : dans **Afficher → Pièce jointe** ou **Paramètres → Messagerie**, l'option *Nextcloud* déclenche directement l'enregistrement NC au clic sur une pièce jointe (sans passer par le menu). Nécessite un compte NC lié.
 
+### Lire le contenu d'un fichier et le coller dans un message
+
+Depuis le ruban **Insérer → Notes & fichiers** (ou le bouton bloc-notes de la barre du haut), l'onglet **Fichiers** ne sert pas à joindre un document mais à **en récupérer le contenu** pour le réutiliser dans le corps du message. L'onglet n'apparaît que si le compte NC est lié.
+
+1. Naviguer dans l'arborescence ou **rechercher** dans tout le drive (≥ 2 caractères, debounce 300 ms)
+2. Cliquer sur un fichier — son contenu est téléchargé puis converti **côté navigateur** :
+
+   | Type | Conversion |
+   |------|-----------|
+   | `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.log`… | Décodé en UTF-8 et mis en paragraphes |
+   | `.html` | Assaini (DOMPurify) au lieu d'être échappé |
+   | `.docx` | Converti en HTML via *mammoth* |
+   | `.xlsx`, `.ods` | Première feuille rendue en tableau HTML bordé, via *xlsx* |
+   | Images | Insérées en `<img>` data URI |
+   | PDF | **Pas d'extraction de texte** — aperçu dans la visionneuse native du navigateur, où le texte reste sélectionnable et copiable |
+
+3. Choisir l'action : **Insérer le contenu** (au curseur), **Copier le texte**, **Joindre le fichier**, ou **Enregistrer comme note** (le chemin NC d'origine est conservé sur la note, champ `sourcePath`)
+
+**Points d'attention :**
+
+- Le serveur ne fait **aucune conversion** : il ne fait que servir le fichier via `GET /api/nextcloud/files/get`. Toute l'extraction se déroule dans l'onglet.
+- L'extraction est donc plafonnée à **8 Mo** côté client (au-delà, le fichier reste joignable au message).
+- La recherche s'appuie sur `GET /api/nextcloud/files/search`, c'est-à-dire l'API OCS Unified Search : **sans l'application *Full text search* installée sur le serveur Nextcloud, elle porte sur les noms de fichiers**, pas sur leur contenu.
+
 **Endpoints utilisés :**
 
 | Méthode | URL | Description |

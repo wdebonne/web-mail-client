@@ -19,6 +19,7 @@ import AutoResponderModal from '../components/mail/AutoResponderModal';
 import RulesModal from '../components/mail/RulesModal';
 import EmojiPanel from '../components/mail/EmojiPanel';
 import GifPanel from '../components/mail/GifPanel';
+import NotesPanel from '../components/notes/NotesPanel';
 import { MailTemplatePickerModal, MailTemplatesManagerModal } from '../components/mail/MailTemplates';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
@@ -1417,6 +1418,8 @@ export default function MailPage() {
   const mobileSidebarSignal = useUIStore((s) => s.mobileSidebarSignal);
   const setMobilePageTitle = useUIStore((s) => s.setMobilePageTitle);
   const setMobileReadingView = useUIStore((s) => s.setMobileReadingView);
+  const openNotesModal = useUIStore((s) => s.openNotesModal);
+  const setNotesInsertTarget = useUIStore((s) => s.setNotesInsertTarget);
 
   useEffect(() => {
     const title = virtualFolder === 'unified-inbox'
@@ -1767,6 +1770,10 @@ export default function MailPage() {
   const savedEmojiRangeRef = useRef<Range | null>(null);
   // GIF side panel (opened from the Insérer tab)
   const [showGifPanel, setShowGifPanel] = useState(false);
+  // Notes side panel (opened from the Insérer tab). Sa version plein écran est
+  // montée dans Layout (accessible depuis toutes les pages) et pilotée ici via
+  // le store UI.
+  const [showNotesPanel, setShowNotesPanel] = useState(false);
 
   // Mail templates modals (Insérer > Modèles)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
@@ -1777,8 +1784,9 @@ export default function MailPage() {
     if (!isComposing) {
       if (showEmojiPanel) setShowEmojiPanel(false);
       if (showGifPanel) setShowGifPanel(false);
+      if (showNotesPanel) setShowNotesPanel(false);
     }
-  }, [isComposing, showEmojiPanel, showGifPanel]);
+  }, [isComposing, showEmojiPanel, showGifPanel, showNotesPanel]);
 
   const saveComposeSelection = useCallback(() => {
     const sel = window.getSelection();
@@ -1823,6 +1831,30 @@ export default function MailPage() {
       savedEmojiRangeRef.current = newSel.getRangeAt(0).cloneRange();
     }
   }, [restoreComposeSelection]);
+
+  // Insertion d'un bloc HTML arbitraire (note, contenu de fichier Nextcloud)
+  // au point d'insertion mémorisé — même mécanique que l'emoji et le GIF.
+  const insertHtmlIntoCompose = useCallback((html: string) => {
+    if (!html) return;
+    restoreComposeSelection();
+    document.execCommand('insertHTML', false, html);
+    const newSel = window.getSelection();
+    if (newSel && newSel.rangeCount > 0) {
+      savedEmojiRangeRef.current = newSel.getRangeAt(0).cloneRange();
+    }
+  }, [restoreComposeSelection]);
+
+  useEffect(() => {
+    if (!isComposing) {
+      setNotesInsertTarget(null);
+      return;
+    }
+    setNotesInsertTarget({
+      insertHtml: insertHtmlIntoCompose,
+      attachFiles: (files) => composeApiRef.current?.addFiles(files),
+    });
+    return () => setNotesInsertTarget(null);
+  }, [isComposing, insertHtmlIntoCompose, setNotesInsertTarget]);
 
   // Resizable message list pane
   const [listWidth, setListWidth] = useState(() => {
@@ -2354,6 +2386,11 @@ export default function MailPage() {
             setShowGifPanel(v => !v);
           }}
           isGifPanelOpen={showGifPanel}
+          onToggleNotesPanel={() => {
+            saveComposeSelection();
+            setShowNotesPanel(v => !v);
+          }}
+          isNotesPanelOpen={showNotesPanel}
           accounts={accounts}
           onFavoritesChanged={() => {
             bumpPrefs();
@@ -2912,6 +2949,16 @@ export default function MailPage() {
               open={showGifPanel}
               onClose={() => setShowGifPanel(false)}
               onSelect={insertGifIntoCompose}
+            />
+          )}
+          {/* Notes & fichiers side panel — only while composing */}
+          {isComposing && (
+            <NotesPanel
+              open={showNotesPanel}
+              onClose={() => setShowNotesPanel(false)}
+              onInsertHtml={insertHtmlIntoCompose}
+              onAttachFiles={(files) => composeApiRef.current?.addFiles(files)}
+              onOpenFull={() => { setShowNotesPanel(false); openNotesModal(); }}
             />
           )}
 

@@ -9,9 +9,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Mail, Calendar, Users, Settings, Shield, Search, KeyRound,
   LogOut, Menu, Sun, Moon, Monitor, Check, RefreshCw,
-  X, ChevronRight,
+  X, ChevronRight, StickyNote,
 } from 'lucide-react';
 import CacheIndicator from './CacheIndicator';
+import NotesModal from './notes/NotesModal';
+import { getNotesShortcutEnabled, NOTES_SHORTCUT_CHANGED_EVENT } from '../utils/mailPreferences';
 import { api } from '../api';
 import { toAvatarSrc } from '../utils/avatar';
 
@@ -47,6 +49,17 @@ export default function Layout({ children }: LayoutProps) {
   const toggleMobileSidebar = useUIStore((s) => s.toggleMobileSidebar);
   const mobilePageTitle = useUIStore((s) => s.mobilePageTitle);
   const mobileReadingView = useUIStore((s) => s.mobileReadingView);
+  const notesModalOpen = useUIStore((s) => s.notesModalOpen);
+  const openNotesModal = useUIStore((s) => s.openNotesModal);
+  const closeNotesModal = useUIStore((s) => s.closeNotesModal);
+  // Publiée par la fenêtre de composition ouverte (MailPage) ; null ailleurs.
+  const notesInsertTarget = useUIStore((s) => s.notesInsertTarget);
+  const [notesShortcut, setNotesShortcut] = useState(() => getNotesShortcutEnabled());
+  useEffect(() => {
+    const handler = () => setNotesShortcut(getNotesShortcutEnabled());
+    window.addEventListener(NOTES_SHORTCUT_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(NOTES_SHORTCUT_CHANGED_EVENT, handler);
+  }, []);
   const queryClient = useQueryClient();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -475,6 +488,17 @@ export default function Layout({ children }: LayoutProps) {
         </div>
 
         <div className="ml-auto flex items-center gap-1">
+          {notesShortcut && (
+            <button
+              type="button"
+              onClick={openNotesModal}
+              className="w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center transition-colors text-white/85 hover:text-white"
+              aria-label="Notes et fichiers"
+              title="Notes & fichiers"
+            >
+              <StickyNote size={17} />
+            </button>
+          )}
           <CacheIndicator />
           <div className="relative" ref={userMenuRef}>
             <button
@@ -674,6 +698,16 @@ export default function Layout({ children }: LayoutProps) {
         })}
 
       </nav>
+
+      {/* Montée une seule fois ici pour être joignable depuis toutes les pages.
+          Les actions d'insertion n'apparaissent que si une composition a publié
+          sa cible dans le store (voir MailPage). */}
+      <NotesModal
+        open={notesModalOpen}
+        onClose={closeNotesModal}
+        onInsertHtml={notesInsertTarget?.insertHtml}
+        onAttachFiles={notesInsertTarget?.attachFiles}
+      />
     </div>
   );
 }
