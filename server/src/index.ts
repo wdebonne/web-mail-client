@@ -35,6 +35,7 @@ import { bulkSendRouter, adminBulkSendRouter } from './routes/bulkSend';
 import { startBulkSendProcessor } from './services/bulkSendProcessor';
 import { startScheduledSendProcessor } from './services/scheduledSendProcessor';
 import { startSystemAlertChecker } from './services/systemAlerts';
+import { startOAuthTokenRefresher } from './services/oauthTokenRefresher';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { authLimiter } from './middleware/rateLimit';
@@ -227,6 +228,9 @@ async function start() {
     startBackupScheduler();
     startBulkSendProcessor();
     startScheduledSendProcessor();
+    // Renouvelle les jetons OAuth (Outlook/M365) avant leur expiration, seul et
+    // en série, pour que les requêtes HTTP n’aient jamais à le faire en rafale.
+    startOAuthTokenRefresher();
     // Surveille les services ci-dessus + la sauvegarde auto, et alerte les
     // admins par email en cas d'incident (voir services/systemAlerts.ts).
     startSystemAlertChecker();

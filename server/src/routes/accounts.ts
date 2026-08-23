@@ -43,6 +43,7 @@ accountRouter.get('/', async (req: AuthRequest, res) => {
       `SELECT ma.id, ma.name, ma.email, ma.imap_host, ma.imap_port, ma.smtp_host, ma.smtp_port,
               ma.is_default, ma.is_shared, ma.signature_html, ma.signature_text, ma.color,
               ma.sync_interval, ma.last_sync, ma.created_at,
+              ma.oauth_provider, COALESCE(ma.oauth_status, 'ok') as oauth_status,
               mba.display_name as assigned_display_name, mba.send_permission, mba.is_default as assigned_default
        FROM mail_accounts ma
        JOIN mailbox_assignments mba ON mba.mail_account_id = ma.id
@@ -51,6 +52,7 @@ accountRouter.get('/', async (req: AuthRequest, res) => {
        SELECT ma.id, ma.name, ma.email, ma.imap_host, ma.imap_port, ma.smtp_host, ma.smtp_port,
               ma.is_default, ma.is_shared, ma.signature_html, ma.signature_text, ma.color,
               ma.sync_interval, ma.last_sync, ma.created_at,
+              ma.oauth_provider, COALESCE(ma.oauth_status, 'ok') as oauth_status,
               NULL as assigned_display_name, 'send_as' as send_permission, ma.is_default as assigned_default
        FROM mail_accounts ma
        WHERE ma.user_id = $1

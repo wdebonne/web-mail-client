@@ -611,7 +611,8 @@ adminRouter.get('/mail-accounts', async (req: AuthRequest, res) => {
       `SELECT ma.id, ma.name, ma.email, ma.imap_host, ma.imap_port, ma.imap_secure,
               ma.smtp_host, ma.smtp_port, ma.smtp_secure, ma.username,
               ma.is_shared, ma.signature_html, ma.signature_text, ma.color, ma.created_at,
-              ma.oauth_provider,
+              ma.oauth_provider, ma.oauth_status, ma.oauth_last_error,
+              ma.oauth_last_error_at, ma.oauth_token_expires_at, ma.oauth_last_refresh_at,
               COUNT(mba.id) as assignment_count
        FROM mail_accounts ma
        LEFT JOIN mailbox_assignments mba ON mba.mail_account_id = ma.id
@@ -663,9 +664,9 @@ adminRouter.post('/mail-accounts', async (req: AuthRequest, res) => {
          smtp_host, smtp_port, smtp_secure, username, password_encrypted,
          is_shared, signature_html, signature_text, color,
          oauth_provider, oauth_refresh_token_encrypted, oauth_access_token_encrypted,
-         oauth_token_expires_at, oauth_scope)
+         oauth_token_expires_at, oauth_scope, oauth_status, oauth_refresh_failures)
        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               $15, $16, $17, $18, $19)
+               $15, $16, $17, $18, $19, 'ok', 0)
        RETURNING id, name, email, imap_host, imap_port, smtp_host, smtp_port, is_shared, color`,
       [
         data.name, data.email, data.imapHost, data.imapPort, data.imapSecure,
@@ -752,6 +753,14 @@ adminRouter.put('/mail-accounts/:id', async (req: AuthRequest, res) => {
       updates.push(`oauth_scope = $${paramIndex++}`);
       values.push(pending.scope);
       updates.push(`password_encrypted = NULL`);
+      // Le compte repart d'un état sain : sans ça, un ancien `needs_reauth`
+      // aurait empêché tout rafraîchissement avec le jeton tout neuf.
+      updates.push(`oauth_status = 'ok'`);
+      updates.push(`oauth_last_error = NULL`);
+      updates.push(`oauth_last_error_at = NULL`);
+      updates.push(`oauth_refresh_failures = 0`);
+      const { resetOAuthFailureState } = await import('../services/oauth');
+      resetOAuthFailureState(id);
     }
 
     if (updates.length === 0) return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });

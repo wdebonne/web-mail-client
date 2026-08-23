@@ -58,6 +58,23 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- **Boîtes Outlook / Microsoft 365 qui se déconnectaient à chaque mise à jour** — la cause était un rafraîchissement de jeton concurrent
+  - `ensureFreshAccessToken` n'avait aucun verrou : appelé depuis cinq endroits (routes mail, comptes, admin, relève des nouveaux mails, envois programmés), il partait en autant d'appels `/token` simultanés avec le **même refresh token**. Microsoft fait tourner ces jetons et traite un rejeu comme une compromission : il révoque toute la famille, et la boîte doit être reliée à la main. Le redémarrage du serveur déclenchait précisément cette rafale — caches mémoire vidés, tous les onglets qui rechargent en même temps, jeton souvent expiré pendant l'arrêt du conteneur.
+  - **Verrou par compte** : un seul rafraîchissement à la fois, les appelants concurrents attendent le même résultat. La ligne du compte est **relue** dans le verrou (celle reçue par l'appelant pouvait dater d'avant une rotation), et l'écriture est **gardée** sur le refresh token utilisé — un écrivain en retard ne peut plus écraser un jeton plus récent par un plus ancien.
+  - **Nouveau service de fond `oauthTokenRefresher`** (toutes les 5 min, en série) : renouvelle les jetons qui expirent dans moins de 20 min, pour que les requêtes HTTP n'aient plus jamais à le faire elles-mêmes. Il apparaît dans **Admin → Système → État du système**.
+  - **Coupe-circuit de 20 s** sur l'appel `/token` : une requête bloquée ne retient plus le verrou du compte.
+- **Panne réseau passagère prise pour un compte cassé** — toute erreur de rafraîchissement remontait à l'identique, y compris un simple « `login.microsoftonline.com` injoignable » au démarrage du conteneur. Les erreurs sont désormais classées et l'état est persisté dans `mail_accounts.oauth_status` :
+  - `degraded` (réseau, HTTP 5xx, throttling) → jetons conservés, nouvelle tentative après un temps de repos exponentiel (1 min → 30 min) ; l'access token encore valide continue d'être servi entre-temps ;
+  - `needs_reauth` (`invalid_grant`, AADSTS 50173/700082/65001…) → on **arrête de rejouer** le jeton révoqué, ce qui évitait d'aggraver la révocation, et le compte est signalé comme à reconnecter ;
+  - `config_error` (`invalid_client`, AADSTS 7000215…) → pointe le **secret client Azure** (qui expire au bout de 24 mois au maximum) plutôt que d'envoyer relier vingt comptes pour rien ;
+  - par prudence, tout ce qui n'est pas formellement définitif reste `degraded`, avec escalade en `needs_reauth` après 8 échecs consécutifs.
+- **Un lien OAuth cassé ne se voyait nulle part** — il fallait qu'un utilisateur signale sa boîte vide.
+  - Badge **« À reconnecter »** / **« Config OAuth en défaut »** dans **Admin → Comptes mail**, cliquable : il ouvre directement le formulaire de reconnexion. Badge discret « Jeton instable » pour l'état passager, sans appel à l'action puisqu'il se rétablit seul.
+  - Pastille d'avertissement sur la boîte concernée dans le volet des dossiers, côté utilisateur.
+  - **Alerte e-mail aux administrateurs** via le vérificateur d'alertes système, avec rappel et e-mail de rétablissement : un incident par boîte à reconnecter, un seul incident groupé pour une configuration OAuth en défaut (la cause est commune à tous les comptes).
+  - Une reconnexion réussie remet le compte à l'état sain, en base et en mémoire — sans quoi un ancien `needs_reauth` aurait bloqué tout rafraîchissement avec le jeton tout neuf.
+  - Colonnes `oauth_status`, `oauth_last_error`, `oauth_last_error_at`, `oauth_last_refresh_at`, `oauth_refresh_failures` sur `mail_accounts`.
+
 - **Crash au démarrage (502) causé par le seed SSO** : la colonne `admin_settings.value` est de type `JSONB` ; le seed SSO du panneau d'intégrations passait des booléens SQL bruts au lieu de chaînes JSON (`'false'`/`'true'`), provoquant une erreur de parse SQL à **chaque démarrage** (le `ON CONFLICT DO NOTHING` ne protégeait pas contre une requête qui ne parse même pas). Les valeurs sont désormais au format JSON valide, comme tous les autres seeds.
 - **File d'envoi en masse : authentification SMTP cassée** — le processeur de fond envoyait `passwordDecrypted` et `oauthRefreshToken`, deux champs que le service mail ne lit jamais (il attend `password` et `access_token`). Résultat : mot de passe `undefined` pour les comptes classiques, et aucun token frais utilisé pour l'OAuth. Corrigé pour utiliser les mêmes champs que l'envoi immédiat.
 

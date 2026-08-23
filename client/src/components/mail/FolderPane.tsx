@@ -479,6 +479,22 @@ export default function FolderPane({
                   style={{ backgroundColor: getAccountColor(account) }}
                 />
                 <span className="truncate flex-1 text-left">{getAccountDisplayName(account)}</span>
+                {/* Lien OAuth cassé : la boîte ne se synchronise plus tant qu'un
+                    administrateur ne l'a pas reconnectée. On ignore volontairement
+                    l'état « degraded », passager et qui se rétablit seul. */}
+                {(account.oauth_status === 'needs_reauth' || account.oauth_status === 'config_error') && (
+                  <span
+                    className="flex-shrink-0 text-outlook-danger"
+                    aria-label="Connexion à renouveler"
+                    title={
+                      account.oauth_status === 'needs_reauth'
+                        ? "La connexion Microsoft de cette boîte a expiré — demandez à un administrateur de la reconnecter."
+                        : "La configuration OAuth Microsoft est en défaut — contactez un administrateur."
+                    }
+                  >
+                    <AlertTriangle size={13} />
+                  </span>
+                )}
               </div>
 
               {(isExpanded || (searchOpen && searchQuery.trim())) && (

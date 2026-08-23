@@ -352,6 +352,20 @@ export async function initDatabase() {
       ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_scope TEXT;
       ALTER TABLE IF EXISTS mail_accounts ALTER COLUMN password_encrypted DROP NOT NULL;
 
+      -- Santé du lien OAuth, entretenue par services/oauth.ts. Sans état
+      -- persistant, un jeton révoqué ne se voyait qu'au moment où l'IMAP
+      -- échouait, sans distinguer une panne réseau passagère d'un compte à
+      -- reconnecter. La colonne oauth_status vaut 'ok' | 'degraded' | 'needs_reauth'
+      -- | 'config_error' (voir OAuthAccountStatus).
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_status VARCHAR(16) DEFAULT 'ok';
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_last_error TEXT;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_last_error_at TIMESTAMPTZ;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_last_refresh_at TIMESTAMPTZ;
+      ALTER TABLE IF EXISTS mail_accounts ADD COLUMN IF NOT EXISTS oauth_refresh_failures INTEGER NOT NULL DEFAULT 0;
+      -- Index de travail du rafraîchisseur de fond (services/oauthTokenRefresher.ts).
+      CREATE INDEX IF NOT EXISTS idx_mail_accounts_oauth_expiry
+        ON mail_accounts(oauth_token_expires_at) WHERE oauth_provider IS NOT NULL;
+
       -- Shared calendar access (internal sharing between app users)
       CREATE TABLE IF NOT EXISTS shared_calendar_access (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

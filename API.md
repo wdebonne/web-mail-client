@@ -1468,10 +1468,18 @@ Liste tous les comptes mail gérés par l'administration.
     "signature_text": "Cordialement",
     "color": "#0078D4",
     "assignment_count": 3,
+    "oauth_provider": null,
+    "oauth_status": "ok",
+    "oauth_last_error": null,
+    "oauth_last_error_at": null,
+    "oauth_token_expires_at": null,
+    "oauth_last_refresh_at": null,
     "created_at": "2026-04-21T10:00:00Z"
   }
 ]
 ```
+
+Les champs `oauth_*` ne sont renseignés que pour les boîtes liées en OAuth (Microsoft 365). `oauth_status` vaut `ok`, `degraded` (échec passager, nouvelle tentative automatique), `needs_reauth` (jeton révoqué — la boîte doit être reconnectée) ou `config_error` (secret client Azure refusé — la cause est commune à tous les comptes). Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#fiabilité-du-lien-oauth).
 
 ### POST /api/admin/mail-accounts
 

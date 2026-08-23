@@ -1542,6 +1542,7 @@ function MailAccountManagement() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
+                <OAuthHealthBadge account={account} onReconnect={() => { setEditing(account); setShowForm(true); }} />
                 {account.is_shared && (
                   <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded mr-2">Partagé</span>
                 )}
@@ -1946,6 +1947,53 @@ function detectProviderFromAccount(account: any): MailProviderPreset {
     (p) => p.imapHost && imap === p.imapHost.toLowerCase(),
   );
   return match || MAIL_PROVIDERS[MAIL_PROVIDERS.length - 1];
+}
+
+/**
+ * Santé du lien OAuth d'une boîte, telle que la tient `mail_accounts.oauth_status`.
+ *
+ * `degraded` est affiché mais sans appel à l'action : c'est un échec passager
+ * (réseau, throttling Microsoft) que le rafraîchisseur de fond rattrape seul.
+ * `needs_reauth` et `config_error`, eux, demandent une intervention et le badge
+ * devient le raccourci vers l'écran qui la permet.
+ */
+function OAuthHealthBadge({ account, onReconnect }: { account: any; onReconnect: () => void }) {
+  const status = account.oauth_status as string | undefined;
+  if (!account.oauth_provider || !status || status === 'ok') return null;
+
+  const since = account.oauth_last_error_at
+    ? new Date(account.oauth_last_error_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+    : null;
+  const detail = [account.oauth_last_error, since && `depuis le ${since}`].filter(Boolean).join(' — ');
+
+  if (status === 'degraded') {
+    return (
+      <span
+        className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded mr-2 cursor-help"
+        title={`Dernier renouvellement de jeton en échec, nouvelle tentative automatique.\n${detail}`}
+      >
+        Jeton instable
+      </span>
+    );
+  }
+
+  const isConfig = status === 'config_error';
+  return (
+    <button
+      type="button"
+      onClick={onReconnect}
+      className="flex items-center gap-1 text-xs bg-red-50 text-outlook-danger hover:bg-red-100 px-2 py-0.5 rounded mr-2"
+      title={
+        (isConfig
+          ? "Le secret client Azure est refusé (il expire au bout de 24 mois au maximum) — corrigez la configuration OAuth Microsoft."
+          : "Le jeton OAuth de cette boîte n'est plus valide — reconnectez-la via « Se connecter avec Microsoft ».")
+        + (detail ? `\n${detail}` : '')
+      }
+    >
+      <AlertTriangle size={12} />
+      {isConfig ? 'Config OAuth en défaut' : 'À reconnecter'}
+    </button>
+  );
 }
 
 function AdminMailAccountForm({ account, onClose }: { account: any; onClose: () => void }) {
