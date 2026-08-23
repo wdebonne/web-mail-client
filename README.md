@@ -72,6 +72,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🔔 **Indicateurs de mails non lus dans la sidebar** : à côté de chaque dossier (et de chaque favori, ainsi que des boîtes unifiées), trois indicateurs **indépendants et combinables** — *(1)* le **nombre** entre parenthèses à la fin du nom (par défaut, façon Outlook), *(2)* le **nom du dossier en gras**, et *(3)* une **pastille rouge**. La portée est configurable : **boîte de réception uniquement**, **favoris uniquement**, **les deux**, ou **tous les dossiers**. Réglages depuis le bouton **Non lus** du ruban (onglet **Afficher**) ou depuis **Paramètres → Apparence**.
 - ⏰ **Envoi programmé + « Annuler l'envoi »** : flèche accolée au bouton *Envoyer* → *Dans 1 heure / Ce soir 18h / Demain 8h / date libre* (identité d'expéditeur figée à la programmation, y compris *envoyer de la part de*). Entrée **Programmés** dans le volet des dossiers avec annulation / « annuler et modifier ». Réglage optionnel **Annuler l'envoi** (0/10/20/30 s) dans *Paramètres → Messagerie* : un toast après envoi propose de rouvrir la composition pendant le délai choisi. Indisponible avec S/MIME/PGP et hors-ligne.
 - 🔁 **Envois récurrents (rapports périodiques)** : via *Choisir la date et l'heure…*, option **Répéter** *tous les jours / toutes les semaines / tous les mois* avec date de fin optionnelle. Le mensuel reste cloué au jour d'origine (un rapport du 31 tombe le dernier jour des mois courts), les occurrences manquées pendant un arrêt du serveur ne sont pas rattrapées en rafale, et le panneau **Programmés** affiche le badge de récurrence, la prochaine et la dernière occurrence (annulation = arrêt de la série).
+- 🚫 **Courrier indésirable** : **Bloquer l'expéditeur** en deux clics (cet expéditeur ou tout le domaine, avec option *déplacer aussi les messages déjà reçus*) depuis le menu *Plus* ou le clic droit, et le geste symétrique **« Ce n'est pas indésirable »** qui débloque, autorise et remet le message en boîte de réception. **Filtre serveur** en trois niveaux (*Désactivé / Normal / Strict*) s'appuyant sur les en-têtes `X-Spam-*` posés par SpamAssassin, Rspamd ou Exchange — aucun apprentissage local. La **liste des autorisés prime toujours**, avec l'option *Toujours faire confiance à mes contacts*. **Désabonnement en un clic** quand le message annonce un `List-Unsubscribe` (POST one-click RFC 8058, sinon e-mail `mailto:`, sinon ouverture de la page). Réglages dans **Paramètres → Courrier indésirable** (dont le vidage automatique du dossier et un bouton *Nettoyer maintenant*), valeurs par défaut et listes globales dans **Admin → Courrier indésirable**. Le tri automatique ne concerne que les **nouveaux** messages : rien n'est déplacé rétroactivement sans action explicite.
 - 🗒️ **Bloc-notes intégré + lecture des fichiers Nextcloud** : panneau latéral **Notes & fichiers** ouvert depuis l'onglet **Insérer** du ruban (même comportement que le panneau Emojis, insertion au curseur). Onglet *Notes* — recherche, création rapide, insertion en un clic, copie, épinglage. Onglet *Fichiers* (si un compte Nextcloud est lié) — navigation et recherche dans le drive, puis **récupération du contenu** pour le coller dans le message : texte / Markdown / CSV / JSON, **.docx** (via *mammoth*), **.xlsx / .ods** en tableau, images en data URI ; plus *Copier le texte*, *Joindre le fichier* et *Enregistrer comme note*. Une **grande modale** (bouton bloc-notes dans la barre du haut, à gauche de l'indicateur de cache) offre la même chose en plein écran avec un éditeur de note complet, depuis n'importe quelle page ; hors composition, elle propose *Nouveau message avec cette note*. Le raccourci de la barre du haut se masque depuis **Paramètres → Apparence → Barre du haut**. Le texte des PDF n'est pas extrait (aperçu natif du navigateur, texte sélectionnable, fichier joignable).
 
 ### Interface style messagerie professionnelle Web
@@ -498,6 +499,19 @@ webmail/
 | POST | `/api/notes` | Créer une note (titre déduit du contenu si omis) |
 | PUT | `/api/notes/:id` | Modifier une note (mise à jour partielle) |
 | DELETE | `/api/notes/:id` | Supprimer une note |
+
+### Courrier indésirable
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/junk/settings` | Réglages effectifs + valeurs par défaut de l'admin |
+| PUT | `/api/junk/settings` | Modifier ses réglages |
+| GET | `/api/junk/senders` | Listes bloqués / autorisés (`?type=blocked\|safe`) |
+| POST | `/api/junk/senders` | Ajouter une adresse ou un domaine |
+| DELETE | `/api/junk/senders/:id` | Retirer une entrée personnelle |
+| POST | `/api/junk/block` | Bloquer un expéditeur (+ balayage optionnel) |
+| POST | `/api/junk/not-junk` | Débloquer, autoriser et remettre en boîte de réception |
+| POST | `/api/junk/unsubscribe` | Désabonnement `List-Unsubscribe` |
+| POST | `/api/junk/sweep` | Appliquer le filtre aux messages déjà reçus |
 
 ### Calendrier
 | Méthode | Route | Description |

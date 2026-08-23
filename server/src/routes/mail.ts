@@ -1091,7 +1091,7 @@ mailRouter.get('/badge', async (req: AuthRequest, res) => {
 });
 
 // Helper functions
-async function getAccountForUser(accountId: string, userId: string) {
+export async function getAccountForUser(accountId: string, userId: string) {
   // Check via mailbox_assignments first
   let result = await pool.query(
     `SELECT ma.*, mba.send_permission, mba.display_name as assigned_display_name

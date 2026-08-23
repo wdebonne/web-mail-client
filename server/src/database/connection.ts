@@ -1116,6 +1116,76 @@ export async function initDatabase() {
         ON notes USING GIN(to_tsvector('french', coalesce(title,'') || ' ' || coalesce(content_text,'')));
     `);
 
+    // ─── Courrier indésirable ────────────────────────────────────────────
+    // Listes d'expéditeurs bloqués / autorisés. user_id NULL = liste globale
+    // gérée par un administrateur, appliquée à tous les utilisateurs.
+    // `pattern` est toujours normalisé en minuscules : adresse complète pour
+    // kind='address', domaine sans '@' pour kind='domain'.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS junk_senders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        list_type VARCHAR(10) NOT NULL CHECK (list_type IN ('blocked', 'safe')),
+        kind VARCHAR(10) NOT NULL CHECK (kind IN ('address', 'domain')),
+        pattern VARCHAR(320) NOT NULL,
+        note TEXT,
+        hit_count INTEGER NOT NULL DEFAULT 0,
+        last_hit_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      -- Deux index partiels plutôt qu'un COALESCE : ils permettent au ON CONFLICT
+      -- de cibler l'un ou l'autre selon qu'on insère une entrée perso ou globale.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_junk_senders_user_unique
+        ON junk_senders(user_id, list_type, pattern) WHERE user_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_junk_senders_global_unique
+        ON junk_senders(list_type, pattern) WHERE user_id IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_junk_senders_lookup
+        ON junk_senders(user_id, list_type);
+    `);
+
+    // Réglages « courrier indésirable » par utilisateur. Une ligne n'est créée
+    // qu'au premier réglage explicite : en son absence, les valeurs par défaut
+    // configurées par l'admin (admin_settings ci-dessous) s'appliquent.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS junk_settings (
+        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        -- Interrupteur général du classement automatique. Les listes restent
+        -- enregistrées quand il est à false, mais plus rien n'est déplacé tout seul.
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        -- Exploitation des en-têtes du filtre du serveur (SpamAssassin/Rspamd) :
+        -- 'off' = ignorés, 'normal' = score >= 5 ou X-Spam-Flag: YES, 'strict' = score >= 3.
+        server_filter VARCHAR(10) NOT NULL DEFAULT 'normal'
+          CHECK (server_filter IN ('off', 'normal', 'strict')),
+        -- Ne jamais classer en indésirable un expéditeur présent dans les contacts.
+        trust_contacts BOOLEAN NOT NULL DEFAULT true,
+        -- Vidage automatique du dossier Indésirables (0 = jamais).
+        purge_days INTEGER NOT NULL DEFAULT 30,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    // Curseur de balayage du filtre indésirable, par compte mail. Persisté (et
+    // non gardé en mémoire comme le poller de nouveaux mails) pour qu'un
+    // redémarrage ne rejoue pas — ni ne saute — les messages déjà examinés.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS junk_scan_state (
+        account_id UUID PRIMARY KEY REFERENCES mail_accounts(id) ON DELETE CASCADE,
+        last_uid INTEGER NOT NULL DEFAULT 0,
+        last_purge_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    await client.query(`
+      INSERT INTO admin_settings (key, value, description) VALUES
+        ('junk_enabled',              'true',     'Activer la gestion du courrier indésirable'),
+        ('junk_default_enabled',      'true',     'Classement automatique actif par défaut pour un nouvel utilisateur'),
+        ('junk_default_server_filter','"normal"', 'Niveau par défaut du filtre serveur (off/normal/strict)'),
+        ('junk_default_trust_contacts','true',    'Par défaut, ne jamais classer en indésirable un expéditeur présent dans les contacts'),
+        ('junk_default_purge_days',   '30',       'Vidage automatique du dossier Indésirables après N jours (0 = jamais)')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
     logger.info('Database schema created/updated successfully');
   } finally {
     client.release();

@@ -8,7 +8,7 @@ import {
   Flag, FolderInput, Copy, Archive, ChevronDown, ChevronRight,
   ArrowUpDown, ListFilter, Calendar, CheckSquare, FolderIcon,
   Check, MailCheck, PanelLeftOpen, PanelLeftClose,
-  Tag, MessagesSquare, Clock, X,
+  Tag, MessagesSquare, Clock, X, Ban, Inbox,
 } from 'lucide-react';
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Email, MailFolder } from '../../types';
@@ -134,6 +134,12 @@ interface MessageListProps {
   isVirtualFolder?: boolean;
   /** Called when the user confirms bulk deletion of the currently selected messages. */
   onBulkDelete?: (messages: Email[]) => void;
+  /** Ouvre le dialogue de blocage de l'expéditeur (menu contextuel). */
+  onBlockSender?: (message: Email) => void;
+  /** « Ce n'est pas indésirable » — proposé quand la liste affiche le dossier indésirable. */
+  onNotJunk?: (message: Email) => void;
+  /** La liste affiche-t-elle le dossier Courrier indésirable ? */
+  isJunkFolder?: boolean;
 }
 
 interface MessageGroup {
@@ -188,6 +194,7 @@ export default function MessageList({
   onFavoritesChanged,
   isVirtualFolder = false,
   onBulkDelete,
+  onBlockSender, onNotJunk, isJunkFolder = false,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -1395,6 +1402,24 @@ export default function MessageList({
           onClick: () => onMove(message.uid, archiveFolder.path, message._accountId, message._folder),
         });
       }
+    }
+
+    // Courrier indésirable : bloquer depuis la liste (le geste le plus direct)
+    // ou, dans le dossier indésirable, ramener un message légitime.
+    if (isJunkFolder && onNotJunk) {
+      items.push({ label: '', separator: true, onClick: () => {} });
+      items.push({
+        label: "Ce n'est pas indésirable",
+        icon: <Inbox size={14} />,
+        onClick: () => onNotJunk(message),
+      });
+    } else if (onBlockSender && message.from?.address) {
+      items.push({ label: '', separator: true, onClick: () => {} });
+      items.push({
+        label: "Bloquer l'expéditeur…",
+        icon: <Ban size={14} />,
+        onClick: () => onBlockSender(message),
+      });
     }
 
     items.push({ label: '', separator: true, onClick: () => {} });

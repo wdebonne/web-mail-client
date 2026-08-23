@@ -6,6 +6,7 @@ import {
   Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown,
   ChevronRight, MessagesSquare, Lock, ShieldCheck, ShieldAlert, ShieldX, KeyRound,
   Maximize2, Minimize2, CloudUpload, Languages, Loader2,
+  Ban, MailX, Inbox, Check,
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -210,14 +211,29 @@ interface MessageViewProps {
   conversationMessages?: Email[];
   /** Called when the user clicks on another message from the conversation strip. */
   onSelectThreadMessage?: (message: Email) => void;
+  /** Ouvre le dialogue de blocage de l'expéditeur du message affiché. */
+  onBlockSender?: (message: Email) => void;
+  /** « Ce n'est pas indésirable » : débloque l'expéditeur et remet en boîte de réception. */
+  onNotJunk?: (message: Email) => void;
+  /** Désabonnement d'une lettre d'information (en-tête List-Unsubscribe).
+   *  Renvoie true quand la démarche a été menée à bien côté serveur. */
+  onUnsubscribe?: (message: Email) => Promise<boolean>;
+  /** Le message affiché est-il dans le dossier Courrier indésirable ? */
+  isJunkFolder?: boolean;
+  /** Chemin IMAP réel du dossier indésirable du compte (peut être « INBOX.Junk », « Spam »…). */
+  junkFolderPath?: string | null;
 }
 
 export default function MessageView({
   message, onReply, onReplyAll, onForward, onDelete, onToggleFlag, onMove, onArchive, attachmentMinVisibleKb = 0, attachmentActionMode = 'preview',
   mailDisplayMode = 'native',
   conversationMessages, onSelectThreadMessage,
+  onBlockSender, onNotJunk, onUnsubscribe, isJunkFolder = false, junkFolderPath,
 }: MessageViewProps) {
   const [showMore, setShowMore] = useState(false);
+  // Bandeau de désabonnement : 'idle' | 'busy' | 'done' | 'error'. Repassé à
+  // 'idle' à chaque changement de message (voir l'effet plus bas).
+  const [unsubState, setUnsubState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachmentState | null>(null);
   const [previewLoadingName, setPreviewLoadingName] = useState<string | null>(null);
   const [activeAttachmentMenuIndex, setActiveAttachmentMenuIndex] = useState<number | null>(null);
@@ -231,6 +247,7 @@ export default function MessageView({
   // sender row to expand and reveal the full address/recipients/cc/date.
   const [mobileSenderExpanded, setMobileSenderExpanded] = useState(false);
   useEffect(() => { setMobileSenderExpanded(false); }, [message?.uid, message?._accountId]);
+  useEffect(() => { setUnsubState('idle'); }, [message?.uid, message?._accountId]);
 
   // Per-message override of the global mailDisplayMode. `null` means « follow the
   // global preference »; once the user toggles the local button, this stores the
@@ -747,9 +764,22 @@ export default function MessageView({
                       <button onClick={() => { (onArchive ? onArchive() : onMove('Archive')); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
                         <Archive size={14} /> Archiver
                       </button>
-                      <button onClick={() => { onMove('Junk'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
-                        <Flag size={14} /> Marquer comme indésirable
-                      </button>
+                      {isJunkFolder ? (
+                        <button onClick={() => { onNotJunk?.(message); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                          <Inbox size={14} /> Ce n'est pas indésirable
+                        </button>
+                      ) : (
+                        <>
+                          <button onClick={() => { onMove(junkFolderPath || 'Junk'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
+                            <Flag size={14} /> Marquer comme indésirable
+                          </button>
+                          {onBlockSender && message.from?.address && (
+                            <button onClick={() => { onBlockSender(message); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2 text-red-600">
+                              <Ban size={14} /> Bloquer l'expéditeur…
+                            </button>
+                          )}
+                        </>
+                      )}
                       <button onClick={() => { onMove('INBOX'); setShowMore(false); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2">
                         <FolderInput size={14} /> Déplacer vers...
                       </button>
@@ -765,6 +795,61 @@ export default function MessageView({
         </div>
 
       </div>
+      )}
+
+      {/* Message rangé dans les indésirables : retour en un clic, toujours visible.
+          Sans cette sortie évidente, un utilisateur qui trouve un message légitime
+          ici n'a aucun moyen de comprendre comment le récupérer durablement. */}
+      {isJunkFolder && onNotJunk && (
+        <div className="px-6 py-2.5 border-b border-outlook-border bg-amber-50 flex-shrink-0 flex items-center gap-3 flex-wrap">
+          <Flag size={15} className="text-amber-600 flex-shrink-0" />
+          <p className="text-xs text-amber-900 flex-1 min-w-[12rem]">
+            Ce message est dans <strong>Courrier indésirable</strong>. Les images et les liens
+            externes y sont à traiter avec prudence.
+          </p>
+          <button
+            onClick={() => onNotJunk(message)}
+            className="px-3 py-1.5 text-xs font-medium rounded bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 flex items-center gap-1.5"
+          >
+            <Inbox size={13} /> Ce n'est pas indésirable
+          </button>
+        </div>
+      )}
+
+      {/* Désabonnement : l'expéditeur annonce lui-même un mécanisme (List-Unsubscribe).
+          C'est le geste qui réduit le volume à la source, plutôt que de le déplacer. */}
+      {!isJunkFolder && onUnsubscribe && message.headers?.listUnsubscribe && (
+        <div className="px-6 py-2.5 border-b border-outlook-border bg-blue-50/70 flex-shrink-0 flex items-center gap-3 flex-wrap">
+          <MailX size={15} className="text-outlook-blue flex-shrink-0" />
+          <p className="text-xs text-outlook-text-primary flex-1 min-w-[12rem]">
+            {unsubState === 'done'
+              ? 'Demande de désabonnement envoyée. Le retrait peut prendre quelques jours.'
+              : unsubState === 'error'
+                ? "Le désabonnement automatique a échoué. Cherchez le lien « Se désabonner » en bas du message."
+                : 'Cette lettre d\'information propose un désabonnement.'}
+          </p>
+          {unsubState === 'done' ? (
+            <span className="px-3 py-1.5 text-xs font-medium rounded bg-green-100 text-green-800 flex items-center gap-1.5">
+              <Check size={13} /> Désabonné
+            </span>
+          ) : (
+            <button
+              onClick={async () => {
+                setUnsubState('busy');
+                try {
+                  setUnsubState(await onUnsubscribe(message) ? 'done' : 'error');
+                } catch {
+                  setUnsubState('error');
+                }
+              }}
+              disabled={unsubState === 'busy'}
+              className="px-3 py-1.5 text-xs font-medium rounded bg-white border border-outlook-border text-outlook-text-primary hover:bg-outlook-bg-hover disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {unsubState === 'busy' ? <Loader2 size={13} className="animate-spin" /> : <MailX size={13} />}
+              Se désabonner
+            </button>
+          )}
+        </div>
       )}
 
       {/* Attachments (single-message mode only — in thread mode, each card has its own) */}
@@ -1208,12 +1293,31 @@ export default function MessageView({
                   >
                     <Archive size={16} className="text-outlook-text-secondary" /> Archiver
                   </button>
-                  <button
-                    onClick={() => { onMove('Junk'); setShowMore(false); }}
-                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-3 text-outlook-text-primary"
-                  >
-                    <Flag size={16} className="text-outlook-text-secondary" /> Marquer comme indésirable
-                  </button>
+                  {isJunkFolder ? (
+                    <button
+                      onClick={() => { onNotJunk?.(message); setShowMore(false); }}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-3 text-outlook-text-primary"
+                    >
+                      <Inbox size={16} className="text-outlook-text-secondary" /> Ce n'est pas indésirable
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { onMove(junkFolderPath || 'Junk'); setShowMore(false); }}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-3 text-outlook-text-primary"
+                      >
+                        <Flag size={16} className="text-outlook-text-secondary" /> Marquer comme indésirable
+                      </button>
+                      {onBlockSender && message.from?.address && (
+                        <button
+                          onClick={() => { onBlockSender(message); setShowMore(false); }}
+                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-3 text-red-600"
+                        >
+                          <Ban size={16} /> Bloquer l'expéditeur…
+                        </button>
+                      )}
+                    </>
+                  )}
                   <button
                     onClick={() => { onMove('INBOX'); setShowMore(false); }}
                     className="w-full text-left px-4 py-2.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-3 text-outlook-text-primary"

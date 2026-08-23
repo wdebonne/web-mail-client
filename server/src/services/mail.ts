@@ -416,6 +416,14 @@ export class MailService {
             xAutoResponseSuppress: (parsed.headers as any)?.get?.('x-auto-response-suppress') as string | undefined,
             xAutorespond: (parsed.headers as any)?.get?.('x-autorespond') as string | undefined,
             xLoop: (parsed.headers as any)?.get?.('x-loop') as string | undefined,
+            // En-tetes poses par le filtre du serveur (SpamAssassin, Rspamd,
+            // Exchange...). Exploites par junkFilter, et affiches dans l'UI pour
+            // expliquer pourquoi un message a ete classe indesirable.
+            listUnsubscribePost: (parsed.headers as any)?.get?.('list-unsubscribe-post') as string | undefined,
+            xSpamFlag: (parsed.headers as any)?.get?.('x-spam-flag') as string | undefined,
+            xSpamStatus: (parsed.headers as any)?.get?.('x-spam-status') as string | undefined,
+            xSpamLevel: (parsed.headers as any)?.get?.('x-spam-level') as string | undefined,
+            xSpamScore: (parsed.headers as any)?.get?.('x-spam-score') as string | undefined,
           },
           size: message.size,
         };
@@ -1028,6 +1036,149 @@ export class MailService {
       await client.logout();
     }
   }
+
+  /**
+   * Métadonnées minimales nécessaires au filtre indésirable, pour un lot d'UID
+   * et sur **une seule connexion IMAP** : expéditeur, sujet, date, et les
+   * en-têtes posés par le filtre antispam du serveur.
+   *
+   * Volontairement distinct de `getMessage` : celui-ci télécharge et parse le
+   * corps complet + les pièces jointes, ce qui serait ruineux pour un simple
+   * examen d'expéditeur sur chaque nouveau message de chaque compte.
+   */
+  async fetchJunkMeta(folder: string, uids: number[]): Promise<JunkMeta[]> {
+    if (uids.length === 0) return [];
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const out: JunkMeta[] = [];
+        for await (const msg of client.fetch(
+          uids.join(','),
+          {
+            uid: true,
+            envelope: true,
+            headers: ['x-spam-flag', 'x-spam-status', 'x-spam-level', 'x-spam-score', 'list-unsubscribe'],
+          } as any,
+          { uid: true },
+        )) {
+          const envelope: any = (msg as any).envelope || {};
+          const from = pickFirstAddress(envelope.from)
+            || pickFirstAddress(envelope.sender)
+            || pickFirstAddress(envelope.replyTo);
+          const raw = (msg as any).headers;
+          const headerText = raw
+            ? (Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw))
+            : '';
+          out.push({
+            uid: msg.uid,
+            from: from ? { address: from.address || '', name: from.name } : null,
+            subject: envelope.subject || '',
+            date: envelope.date ? new Date(envelope.date) : null,
+            headers: parseHeaderBlock(headerText),
+          });
+        }
+        return out;
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * UIDs des messages d'un dossier dont l'expéditeur correspond à l'une des
+   * adresses / l'un des domaines fournis. Sert au « déplacer aussi les
+   * messages déjà reçus » proposé au moment du blocage.
+   *
+   * La recherche IMAP `HEADER FROM` est faite côté serveur pour chaque motif,
+   * puis re-vérifiée localement sur l'enveloppe : `HEADER FROM "exemple.fr"`
+   * matcherait aussi un nom d'affichage contenant la chaîne.
+   */
+  async findUidsFromSenders(folder: string, patterns: string[]): Promise<number[]> {
+    const cleaned = [...new Set(patterns.map((p) => p.trim().toLowerCase()).filter(Boolean))];
+    if (cleaned.length === 0) return [];
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const candidates = new Set<number>();
+        for (const pattern of cleaned) {
+          const found = await client.search({ header: { from: pattern } }, { uid: true })
+            .catch(() => [] as number[]);
+          for (const u of found || []) candidates.add(Number(u));
+        }
+        if (candidates.size === 0) return [];
+
+        const matched: number[] = [];
+        for await (const msg of client.fetch(
+          [...candidates].join(','),
+          { uid: true, envelope: true } as any,
+          { uid: true },
+        )) {
+          const envelope: any = (msg as any).envelope || {};
+          const from = pickFirstAddress(envelope.from) || pickFirstAddress(envelope.sender);
+          const addr = String(from?.address || '').toLowerCase();
+          if (!addr) continue;
+          const domain = addr.slice(addr.lastIndexOf('@') + 1);
+          if (cleaned.includes(addr) || cleaned.includes(domain)) matched.push(msg.uid);
+        }
+        return matched;
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * UIDs d'un dossier reçus avant une date donnée — vidage automatique du
+   * dossier Indésirables.
+   */
+  async listFolderUidsBefore(folder: string, before: Date): Promise<number[]> {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const uids = await client.search({ before }, { uid: true });
+        return Array.isArray(uids) ? uids.map((u) => Number(u)) : [];
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+}
+
+export interface JunkMeta {
+  uid: number;
+  from: { address: string; name?: string } | null;
+  subject: string;
+  date: Date | null;
+  headers: Record<string, string>;
+}
+
+/** Découpe un bloc d'en-têtes RFC 822 bruts en dictionnaire « minuscule → valeur ». */
+function parseHeaderBlock(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!text) return out;
+  // Dépliage des en-têtes multi-lignes (continuation = ligne commençant par un blanc).
+  const unfolded = text.replace(/\r?\n[ \t]+/g, ' ');
+  for (const line of unfolded.split(/\r?\n/)) {
+    const idx = line.indexOf(':');
+    if (idx <= 0) continue;
+    const name = line.slice(0, idx).trim().toLowerCase();
+    const value = line.slice(idx + 1).trim();
+    if (!name) continue;
+    out[name] = out[name] ? out[name] + ' ' + value : value;
+  }
+  return out;
 }
 
 // French month names used by the archive subfolder pattern.

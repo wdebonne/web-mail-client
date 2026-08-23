@@ -177,6 +177,39 @@ Serveur IMAP ──► MailService (ImapFlow)
               UI mise à jour
 ```
 
+### Filtrage du courrier indésirable
+
+```
+                    ┌──────────────────────────────┐
+                    │  junkFilter (service, 2 min) │
+                    │  curseur junk_scan_state     │
+                    └──────────────┬───────────────┘
+                                   │ nouveaux UID INBOX
+                                   ▼
+                      fetchJunkMeta (1 connexion IMAP)
+                      enveloppe + en-têtes X-Spam-* only
+                                   │
+                                   ▼
+    ┌──────────────────────────────────────────────────────┐
+    │ 1. autorisés (junk_senders 'safe' + contacts) ──► NON │
+    │ 2. bloqués   (junk_senders 'blocked')         ──► OUI │
+    │ 3. X-Spam-Flag / score ≥ seuil du niveau      ──► OUI │
+    └──────────────────────────────┬───────────────────────┘
+                                   ▼
+                  moveMessage ──► dossier \Junk du compte
+                                   │
+                                   ▼
+                    WebSocket 'mail-moved' (reason: junk)
+```
+
+Le service est **volontairement indépendant de `newMailPoller`** : celui-ci ne traite que les utilisateurs ayant une souscription push active ou un répondeur automatique, et plafonne à 5 messages par cycle — un filtre greffé dessus aurait été silencieusement inopérant pour la majorité des comptes. Le poller appelle malgré tout `applyJunkFilter` en ligne avant le moteur de règles, pour qu'un message classé indésirable ne déclenche ni notification ni réponse automatique (répondre à un spam confirme l'adresse à l'expéditeur). Les deux chemins partagent le même verrou par compte et le même curseur.
+
+Le curseur `junk_scan_state.last_uid` est **persisté** (et non gardé en mémoire comme celui du poller) pour qu'un redémarrage ne rejoue ni ne saute les messages déjà examinés. Au premier passage sur un compte, seul le repère est posé : déplacer rétroactivement toute une boîte de réception serait la pire des surprises. Un `last_uid` supérieur au plus grand UID observé signale une boîte recréée côté serveur (UIDVALIDITY neuf) et remet le curseur à zéro, sans quoi le compte ne serait plus jamais filtré.
+
+Le chemin du dossier indésirable est résolu par l'attribut IMAP SPECIAL-USE `\Junk`, à défaut par les noms usuels (`Junk`, `Spam`, `Courrier indésirable`, `Pourriel`…), et mis en cache 30 min par compte — un `LIST` complet par message classé serait ruineux. `moveMessage` crée de toute façon la destination manquante.
+
+**Tables** : `junk_senders` (listes bloqués/autorisés, `user_id NULL` = entrée globale de l'admin, deux index uniques partiels selon la portée), `junk_settings` (réglages par utilisateur ; l'absence de ligne = héritage des valeurs par défaut de l'admin), `junk_scan_state` (curseur et date du dernier vidage, par compte).
+
 ### Notifications push natives (Web Push)
 
 ```

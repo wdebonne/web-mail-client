@@ -1344,7 +1344,107 @@ export const api = {
     request<{ pending: string; running: string; paused: string; completed: string; cancelled: string; total_sent: string; total_errors: string }>(
       '/admin/bulk-send/stats'
     ),
+  // ─── Courrier indésirable ──────────────────────────────────────────────
+  getJunkSettings: () => request<JunkSettingsResponse>('/junk/settings'),
+
+  updateJunkSettings: (data: JunkSettings) =>
+    request<{ success: boolean; settings: JunkSettings }>('/junk/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  listJunkSenders: (type?: 'blocked' | 'safe') =>
+    request<JunkSender[]>(`/junk/senders${type ? `?type=${type}` : ''}`),
+
+  addJunkSender: (data: { listType: 'blocked' | 'safe'; value: string; note?: string }) =>
+    request<JunkSender>('/junk/senders', { method: 'POST', body: JSON.stringify(data) }),
+
+  deleteJunkSender: (id: string) =>
+    request<{ success: boolean }>(`/junk/senders/${id}`, { method: 'DELETE' }),
+
+  blockSender: (data: {
+    accountId: string; address: string; scope: 'address' | 'domain';
+    sweep?: boolean; folder?: string;
+  }) =>
+    request<{ success: boolean; entry: JunkSender; moved: number; junkFolder: string | null }>(
+      '/junk/block', { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  markNotJunk: (data: {
+    accountId: string; address?: string; uid?: number; folder?: string; addToSafe?: boolean;
+  }) =>
+    request<{ success: boolean; unblocked: number; restored: boolean; address: string | null }>(
+      '/junk/not-junk', { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  unsubscribeFromMailingList: (data: { accountId: string; uid: number; folder: string }) =>
+    request<{ outcome: 'done' | 'open' | 'none'; method?: string; url?: string; address?: string }>(
+      '/junk/unsubscribe', { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  sweepJunk: (data: { accountId: string; limit?: number }) =>
+    request<{ success: boolean; examined: number; moved: number }>(
+      '/junk/sweep', { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  adminGetJunkSettings: () => request<AdminJunkSettingsResponse>('/admin/junk/settings'),
+
+  adminUpdateJunkSettings: (data: { featureEnabled: boolean; defaults: JunkSettings }) =>
+    request<{ success: boolean }>('/admin/junk/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  adminListJunkSenders: () => request<JunkSender[]>('/admin/junk/senders'),
+
+  adminAddJunkSender: (data: { listType: 'blocked' | 'safe'; value: string; note?: string }) =>
+    request<JunkSender>('/admin/junk/senders', { method: 'POST', body: JSON.stringify(data) }),
+
+  adminDeleteJunkSender: (id: string) =>
+    request<{ success: boolean }>(`/admin/junk/senders/${id}`, { method: 'DELETE' }),
 };
+
+// ─── Courrier indésirable (miroir de server/src/services/junkFilter.ts) ──
+export type JunkServerFilterLevel = 'off' | 'normal' | 'strict';
+
+export interface JunkSettings {
+  /** Classement automatique actif. false = les listes restent, plus rien ne bouge seul. */
+  enabled: boolean;
+  /** Exploitation des en-têtes antispam du serveur. */
+  serverFilter: JunkServerFilterLevel;
+  /** Ne jamais classer en indésirable un expéditeur présent dans les contacts. */
+  trustContacts: boolean;
+  /** Vidage automatique du dossier Indésirables, en jours (0 = jamais). */
+  purgeDays: number;
+}
+
+export interface JunkSettingsResponse {
+  featureEnabled: boolean;
+  /** false = réglages hérités des valeurs par défaut de l'administrateur. */
+  customized: boolean;
+  settings: JunkSettings;
+  defaults: JunkSettings;
+}
+
+export interface AdminJunkSettingsResponse {
+  featureEnabled: boolean;
+  defaults: JunkSettings;
+  globalCounts: { blocked: number; safe: number };
+}
+
+export interface JunkSender {
+  id: string;
+  listType: 'blocked' | 'safe';
+  kind: 'address' | 'domain';
+  pattern: string;
+  /** Entrée posée par un administrateur : non supprimable par l'utilisateur. */
+  global: boolean;
+  note: string | null;
+  hitCount: number;
+  lastHitAt: string | null;
+  createdAt: string;
+}
+
 
 // ─── Mail rules types (mirrors server/src/services/mailRules.ts) ───────
 export type MailRuleConditionType =

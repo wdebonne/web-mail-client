@@ -5,6 +5,7 @@ import { notifyWithPush, hasActiveWebSocket, notifyUser } from './websocket';
 import { logger } from '../utils/logger';
 import { maybeSendAutoReply } from './autoResponderService';
 import { applyRulesToIncoming } from './mailRules';
+import { applyJunkFilter, metaFromParsedMessage } from './junkFilter';
 import {
   loadUserNotificationPrefs, classifyPlatform, buildPlatformPayload,
 } from './notificationPrefs';
@@ -206,6 +207,30 @@ async function checkAccount(row: any) {
   for (const uid of toNotify) {
     try {
       const msg = await service.getMessage('INBOX', uid);
+
+      // Filtre « courrier indésirable » AVANT tout le reste : un message
+      // classé indésirable ne doit ni notifier, ni déclencher le répondeur
+      // automatique (répondre à un spam confirme l'adresse à l'expéditeur).
+      // Le service junkFilter repassera de toute façon sur ce compte, mais
+      // trop tard pour empêcher la notification — d'où ce doublon assumé,
+      // rendu sûr par le verrou par compte et le curseur partagés.
+      const junkMoved = await applyJunkFilter(
+        { id: row.id, user_id: row.user_id, email: row.email },
+        [metaFromParsedMessage(uid, msg)],
+        service,
+      ).catch((err) => {
+        logger.debug({ err, accountId: row.id }, 'junk filter apply failed');
+        return [] as number[];
+      });
+      if (junkMoved.length > 0) {
+        notifyUser(row.user_id, 'mail-moved', {
+          accountId: row.id,
+          uid,
+          srcFolder: 'INBOX',
+          reason: 'junk',
+        });
+        continue;
+      }
 
       // Apply Outlook-style rules BEFORE notifying / responding so a rule
       // that moves or deletes the message also silences the badge.

@@ -23,6 +23,7 @@ import NotesPanel from '../components/notes/NotesPanel';
 import { MailTemplatePickerModal, MailTemplatesManagerModal } from '../components/mail/MailTemplates';
 import ContextMenu, { ContextMenuItem } from '../components/ui/ContextMenu';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import BlockSenderDialog from '../components/mail/BlockSenderDialog';
 import FloatingActionButton from '../components/ui/FloatingActionButton';
 import toast from 'react-hot-toast';
 import { ArrowLeft, PanelLeftOpen, PanelLeftClose, Mail, X, Pencil, Columns2, Plus, Search } from 'lucide-react';
@@ -31,6 +32,7 @@ import {
   getUnifiedAccountIds, getUnifiedInboxEnabled, getUnifiedSentEnabled,
   findInboxFolderPath, findSentFolderPath,
   findTrashFolderPath, isTrashFolderPath,
+  findJunkFolderPath,
   getDeleteConfirmEnabled,
   getUndoSendSeconds,
   getSwipePrefs, getSwipeMoveTarget, getSwipeCopyTarget, setSwipeMoveTarget, setSwipeCopyTarget,
@@ -1003,6 +1005,129 @@ export default function MailPage() {
       toast.error(err?.message || 'Erreur lors du déplacement');
     },
   });
+
+  // ─── Courrier indésirable ───────────────────────────────────────────
+  // Chemin réel du dossier indésirable du compte : « Junk », « INBOX.Junk »,
+  // « Spam »… selon le serveur. Jamais codé en dur, sinon l'action échoue
+  // silencieusement sur la moitié des serveurs IMAP.
+  const junkPath = useMemo(() => findJunkFolderPath(folders), [folders]);
+  const isJunkFolderPath = useCallback(
+    (path?: string | null) => !!junkPath && !!path && path === junkPath,
+    [junkPath],
+  );
+
+  const [blockTarget, setBlockTarget] = useState<any | null>(null);
+  const [blockBusy, setBlockBusy] = useState(false);
+
+  /** Nombre de messages du même expéditeur visibles dans la liste courante. */
+  const blockTargetCount = useMemo(() => {
+    const addr = blockTarget?.from?.address?.toLowerCase();
+    if (!addr) return 0;
+    return messages.filter((m) => m.from?.address?.toLowerCase() === addr).length;
+  }, [blockTarget, messages]);
+
+  const confirmBlockSender = useCallback(async ({ scope, sweep }: { scope: 'address' | 'domain'; sweep: boolean }) => {
+    if (!blockTarget?.from?.address) return;
+    const origin = originOf(blockTarget);
+    if (!origin.accountId) {
+      toast.error('Compte introuvable pour ce message');
+      return;
+    }
+    setBlockBusy(true);
+    try {
+      const result = await api.blockSender({
+        accountId: origin.accountId,
+        address: blockTarget.from.address,
+        scope,
+        sweep,
+        folder: origin.folder,
+      });
+      setBlockTarget(null);
+      if (selectedMessage?.uid === blockTarget.uid) selectMessage(null);
+      removeMessage(blockTarget.uid, origin.accountId, origin.folder);
+      removeMessageFromVirtualCaches(blockTarget.uid, origin.accountId, origin.folder);
+      if (sweep) {
+        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+        queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+      }
+      queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
+      const label = scope === 'domain' ? `@${result.entry.pattern}` : result.entry.pattern;
+      toast.success(
+        result.moved > 0
+          ? `${label} bloqué — ${result.moved} message${result.moved > 1 ? 's' : ''} déplacé${result.moved > 1 ? 's' : ''}`
+          : `${label} bloqué`,
+      );
+    } catch (err: any) {
+      toast.error(err?.message || 'Le blocage a échoué');
+    } finally {
+      setBlockBusy(false);
+    }
+  }, [blockTarget, originOf, selectedMessage, selectMessage, removeMessage, removeMessageFromVirtualCaches, queryClient]);
+
+  /** « Ce n'est pas indésirable » : débloque, met en liste sûre, et remonte le message. */
+  const handleNotJunk = useCallback(async (message: any) => {
+    const origin = originOf(message);
+    if (!origin.accountId) {
+      toast.error('Compte introuvable pour ce message');
+      return;
+    }
+    try {
+      await api.markNotJunk({
+        accountId: origin.accountId,
+        address: message?.from?.address,
+        uid: message.uid,
+        folder: origin.folder,
+        addToSafe: true,
+      });
+      if (selectedMessage?.uid === message.uid) selectMessage(null);
+      removeMessage(message.uid, origin.accountId, origin.folder);
+      removeMessageFromVirtualCaches(message.uid, origin.accountId, origin.folder);
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
+      toast.success('Message remis dans la boîte de réception');
+    } catch (err: any) {
+      toast.error(err?.message || 'La restauration a échoué');
+    }
+  }, [originOf, selectedMessage, selectMessage, removeMessage, removeMessageFromVirtualCaches, queryClient]);
+
+  /**
+   * Désabonnement d'une lettre d'information. Renvoie true quand la démarche a
+   * abouti côté serveur ; quand seule une page web est proposée, on l'ouvre et
+   * on considère la main rendue à l'utilisateur (donc pas un succès automatique).
+   */
+  const handleUnsubscribe = useCallback(async (message: any): Promise<boolean> => {
+    const origin = originOf(message);
+    if (!origin.accountId) return false;
+    const result = await api.unsubscribeFromMailingList({
+      accountId: origin.accountId,
+      uid: message.uid,
+      folder: origin.folder,
+    });
+    if (result.outcome === 'done') return true;
+    if (result.outcome === 'open' && result.url) {
+      window.open(result.url, '_blank', 'noopener,noreferrer');
+      toast('Page de désabonnement ouverte dans un nouvel onglet');
+      return true;
+    }
+    toast.error("Ce message ne propose pas de désabonnement automatique");
+    return false;
+  }, [originOf]);
+
+  /** Props communes aux instances de MessageView. */
+  const junkViewProps = useCallback((msg: any) => ({
+    onBlockSender: (m: any) => setBlockTarget(m),
+    onNotJunk: handleNotJunk,
+    onUnsubscribe: handleUnsubscribe,
+    isJunkFolder: isJunkFolderPath(originOf(msg).folder),
+    junkFolderPath: junkPath,
+  }), [handleNotJunk, handleUnsubscribe, isJunkFolderPath, originOf, junkPath]);
+
+  /** Props communes aux instances de MessageList. */
+  const junkListProps = useMemo(() => ({
+    onBlockSender: (m: any) => setBlockTarget(m),
+    onNotJunk: handleNotJunk,
+    isJunkFolder: isJunkFolderPath(selectedFolder),
+  }), [handleNotJunk, isJunkFolderPath, selectedFolder]);
 
   // Archive mutation — server-side builds Archives/{year}/{month} tree
   // (configurable by admin) using the message's reception date.
@@ -2555,6 +2680,7 @@ export default function MailPage() {
             selectedMessage={selectedMessage}
             loading={loadingMessages}
             onSelectMessage={handleSelectMessageMobile}
+            {...junkListProps}
             onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
             onToggleFlag={(uid, flagged, aId, fld) => { const o = resolveOrigin(uid, aId, fld); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
             onDelete={(uid, aId, fld) => { const o = resolveOrigin(uid, aId, fld); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
@@ -2620,6 +2746,7 @@ export default function MailPage() {
                   </button>
                   <MessageView
                     message={selectedMessage}
+                    {...junkViewProps(selectedMessage)}
                     onReply={() => handleReply(selectedMessage)}
                     onReplyAll={() => handleReply(selectedMessage, true)}
                     onForward={() => handleForward(selectedMessage)}
@@ -2664,6 +2791,7 @@ export default function MailPage() {
                   selectedMessage={selectedMessage}
                   loading={loadingMessages || (isSearchMode && searchLoading)}
                   onSelectMessage={handleSelectMessageMobile}
+                  {...junkListProps}
                   onOpenCategoryPicker={(message, x, y) => setContextCategoryPicker({ message, x, y })}
                   onToggleFlag={(uid, flagged, aId, fld) => { const o = resolveOrigin(uid, aId, fld); flagMutation.mutate({ uid, isFlagged: flagged, accountId: o.accountId, folder: o.folder }); }}
                   onDelete={(uid, aId, fld) => { const o = resolveOrigin(uid, aId, fld); requestDelete({ uid, accountId: o.accountId, folder: o.folder }); }}
@@ -2765,6 +2893,7 @@ export default function MailPage() {
                   </button>
                   <MessageView
                     message={composeAlongsideMessage}
+                    {...junkViewProps(composeAlongsideMessage)}
                     onReply={() => handleReply(composeAlongsideMessage)}
                     onReplyAll={() => handleReply(composeAlongsideMessage, true)}
                     onForward={() => handleForward(composeAlongsideMessage)}
@@ -2834,6 +2963,7 @@ export default function MailPage() {
                 <div className="h-full min-w-0 overflow-hidden" style={{ width: `${splitRatio * 100}%` }}>
                   <MessageView
                     message={selectedMessage}
+                    {...junkViewProps(selectedMessage)}
                     onReply={() => selectedMessage && handleReply(selectedMessage)}
                     onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
                     onForward={() => selectedMessage && handleForward(selectedMessage)}
@@ -2875,6 +3005,7 @@ export default function MailPage() {
                 <div className="h-full flex-1 min-w-0 overflow-hidden border-l border-outlook-border">
                   <MessageView
                     message={splitMessage!}
+                    {...junkViewProps(splitMessage!)}
                     onReply={() => handleReply(splitMessage!)}
                     onReplyAll={() => handleReply(splitMessage!, true)}
                     onForward={() => handleForward(splitMessage!)}
@@ -2903,6 +3034,7 @@ export default function MailPage() {
             ) : (
               <MessageView
                 message={selectedMessage}
+                {...junkViewProps(selectedMessage)}
                 onReply={() => selectedMessage && handleReply(selectedMessage)}
                 onReplyAll={() => selectedMessage && handleReply(selectedMessage, true)}
                 onForward={() => selectedMessage && handleForward(selectedMessage)}
@@ -3117,6 +3249,16 @@ export default function MailPage() {
       })()}
 
       {/* Delete confirmation dialog — bypassable via the "Afficher" ribbon tab. */}
+      <BlockSenderDialog
+        open={!!blockTarget}
+        address={blockTarget?.from?.address || ''}
+        displayName={blockTarget?.from?.name}
+        knownCount={blockTargetCount}
+        busy={blockBusy}
+        onConfirm={confirmBlockSender}
+        onCancel={() => { if (!blockBusy) setBlockTarget(null); }}
+      />
+
       <ConfirmDialog
         open={!!deleteConfirm}
         title={deleteConfirm?.title || ''}

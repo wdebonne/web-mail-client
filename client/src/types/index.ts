@@ -78,6 +78,16 @@ export interface Email {
   headers?: {
     inReplyTo?: string;
     references?: string;
+    /** Mécanisme de désabonnement annoncé par l'expéditeur (RFC 2369). */
+    listUnsubscribe?: string;
+    /** `List-Unsubscribe=One-Click` quand l'expéditeur gère le RFC 8058. */
+    listUnsubscribePost?: string;
+    listId?: string;
+    /** Verdict du filtre antispam du serveur (SpamAssassin, Rspamd…). */
+    xSpamFlag?: string;
+    xSpamStatus?: string;
+    xSpamLevel?: string;
+    xSpamScore?: string;
   };
   fromCache?: boolean;
   /** Origin account id — set when message is displayed in a virtual/unified view. */

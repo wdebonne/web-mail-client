@@ -10,13 +10,14 @@ import {
   Eye, EyeOff, Save, SlidersHorizontal, HardDrive, Download, Upload,
   FolderOpen, CheckCircle2, AlertCircle, RefreshCw, Monitor, Smartphone, Tablet, Trash2,
   Fingerprint, ShieldCheck, Database, ArrowLeftRight, Folder,
-  Coffee, Camera, Cloud,
+  Coffee, Camera, Cloud, Ban,
 } from 'lucide-react';
 import { toAvatarSrc } from '../utils/avatar';
 import toast from 'react-hot-toast';
 import CacheSettings from '../components/CacheSettings';
 import { APP_VERSION } from '../utils/version';
 import AutoResponderForm from '../components/mail/AutoResponderForm';
+import JunkSettings from '../components/mail/JunkSettings';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import {
   getSwipePrefs, setSwipePrefs, getDeleteConfirmEnabled, setDeleteConfirmEnabled,
@@ -94,7 +95,7 @@ export function getUserTimezone(): string {
   catch { return 'Europe/Paris'; }
 }
 
-type Tab = 'profile' | 'accounts' | 'mail' | 'autoresponder' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
+type Tab = 'profile' | 'accounts' | 'mail' | 'autoresponder' | 'junk' | 'appearance' | 'notifications' | 'backup' | 'devices' | 'security' | 'cache';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -120,12 +121,25 @@ export default function SettingsPage() {
   });
   const autoResponderFeatureEnabled = arFeature?.enabled !== false;
 
+  // Même clé que le composant JunkSettings : react-query dédoublonne, cette
+  // lecture ne coûte donc pas de requête supplémentaire.
+  const { data: junkFeature } = useQuery({
+    queryKey: ['junk-settings'],
+    queryFn: api.getJunkSettings,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  });
+  const junkFeatureEnabled = junkFeature?.featureEnabled !== false;
+
   const tabs = [
     { id: 'profile' as const,      icon: User,              label: t('settings.tab.profile'),      group: t('settings.group.account') },
     { id: 'accounts' as const,     icon: Mail,              label: t('settings.tab.accounts'),     group: t('settings.group.account') },
     { id: 'mail' as const,         icon: SlidersHorizontal, label: t('settings.tab.mail'),         group: t('settings.group.mail') },
     ...(autoResponderFeatureEnabled
       ? [{ id: 'autoresponder' as const, icon: Coffee, label: t('settings.tab.autoresponder'), group: t('settings.group.mail') }]
+      : []),
+    ...(junkFeatureEnabled
+      ? [{ id: 'junk' as const, icon: Ban, label: t('settings.tab.junk'), group: t('settings.group.mail') }]
       : []),
     { id: 'appearance' as const,   icon: Palette,           label: t('settings.tab.appearance'),   group: t('settings.group.interface') },
     { id: 'notifications' as const,icon: Bell,              label: t('settings.tab.notifications'),group: t('settings.group.interface') },
@@ -211,6 +225,7 @@ export default function SettingsPage() {
             {tab === 'accounts' && <AccountSettings />}
             {tab === 'mail' && <MailBehaviorSettings />}
             {tab === 'autoresponder' && <AutoResponderSettings />}
+            {tab === 'junk' && <JunkSettings />}
             {tab === 'appearance' && <AppearanceSettings />}
             {tab === 'notifications' && <NotificationSettings />}
             {tab === 'cache' && <CacheSettings />}

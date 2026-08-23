@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
   Download, Send, AlertTriangle, Eye, EyeOff,
-  Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn, Activity,
+  Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn, Activity, Ban,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -20,6 +20,7 @@ import AdminCalendarManagement from '../components/admin/AdminCalendarManagement
 import AdminAutoResponders from '../components/admin/AdminAutoResponders';
 import AdminMailTemplates from '../components/admin/AdminMailTemplates';
 import AdminRulesManagement from '../components/admin/AdminRulesManagement';
+import AdminJunkPanel from '../components/admin/AdminJunkPanel';
 import AdminApplications from '../components/admin/AdminApplications';
 import AdminSmtpSettings from '../components/admin/AdminSmtpSettings';
 import AdminBackup from '../components/admin/AdminBackup';
@@ -33,7 +34,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'ldap' | 'sso';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'junk' | 'ldap' | 'sso';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -61,6 +62,7 @@ export default function AdminPage() {
     { id: 'rules' as const,             icon: Filter,     label: t('admin.tab.rules'),               group: t('admin.group.mail') },
     { id: 'distributionlists' as const, icon: BookOpen,   label: 'Listes de distribution',           group: t('admin.group.mail') },
     { id: 'bulksend' as const,          icon: Send,       label: 'Envoi en masse',                   group: t('admin.group.mail') },
+    { id: 'junk' as const,              icon: Ban,        label: 'Courrier indésirable',             group: t('admin.group.mail') },
     // Calendrier
     { id: 'calendars' as const,      icon: Calendar,        label: t('admin.tab.calendars'),      group: t('admin.group.calendar') },
     // Intégrations
@@ -171,6 +173,7 @@ export default function AdminPage() {
             {tab === 'backup' && <AdminBackup />}
             {tab === 'migration' && <AdminMigration />}
             {tab === 'bulksend' && <AdminBulkSend />}
+            {tab === 'junk' && <AdminJunkPanel />}
             {tab === 'ldap' && <LdapSettings />}
             {tab === 'sso' && <SsoSettings />}
           </div>
