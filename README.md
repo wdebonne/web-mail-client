@@ -72,6 +72,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🔔 **Indicateurs de mails non lus dans la sidebar** : à côté de chaque dossier (et de chaque favori, ainsi que des boîtes unifiées), trois indicateurs **indépendants et combinables** — *(1)* le **nombre** entre parenthèses à la fin du nom (par défaut, façon Outlook), *(2)* le **nom du dossier en gras**, et *(3)* une **pastille rouge**. La portée est configurable : **boîte de réception uniquement**, **favoris uniquement**, **les deux**, ou **tous les dossiers**. Réglages depuis le bouton **Non lus** du ruban (onglet **Afficher**) ou depuis **Paramètres → Apparence**.
 - ⏰ **Envoi programmé + « Annuler l'envoi »** : flèche accolée au bouton *Envoyer* → *Dans 1 heure / Ce soir 18h / Demain 8h / date libre* (identité d'expéditeur figée à la programmation, y compris *envoyer de la part de*). Entrée **Programmés** dans le volet des dossiers avec annulation / « annuler et modifier ». Réglage optionnel **Annuler l'envoi** (0/10/20/30 s) dans *Paramètres → Messagerie* : un toast après envoi propose de rouvrir la composition pendant le délai choisi. Indisponible avec S/MIME/PGP et hors-ligne.
 - 🔁 **Envois récurrents (rapports périodiques)** : via *Choisir la date et l'heure…*, option **Répéter** *tous les jours / toutes les semaines / tous les mois* avec date de fin optionnelle. Le mensuel reste cloué au jour d'origine (un rapport du 31 tombe le dernier jour des mois courts), les occurrences manquées pendant un arrêt du serveur ne sont pas rattrapées en rafale, et le panneau **Programmés** affiche le badge de récurrence, la prochaine et la dernière occurrence (annulation = arrêt de la série).
+- 🗒️ **Bloc-notes intégré + lecture des fichiers Nextcloud** : panneau latéral **Notes & fichiers** ouvert depuis l'onglet **Insérer** du ruban (même comportement que le panneau Emojis, insertion au curseur). Onglet *Notes* — recherche, création rapide, insertion en un clic, copie, épinglage. Onglet *Fichiers* (si un compte Nextcloud est lié) — navigation et recherche dans le drive, puis **récupération du contenu** pour le coller dans le message : texte / Markdown / CSV / JSON, **.docx** (via *mammoth*), **.xlsx / .ods** en tableau, images en data URI ; plus *Copier le texte*, *Joindre le fichier* et *Enregistrer comme note*. Une **grande modale** (bouton bloc-notes dans la barre du haut, à gauche de l'indicateur de cache) offre la même chose en plein écran avec un éditeur de note complet, depuis n'importe quelle page ; hors composition, elle propose *Nouveau message avec cette note*. Le raccourci de la barre du haut se masque depuis **Paramètres → Apparence → Barre du haut**. Le texte des PDF n'est pas extrait (aperçu natif du navigateur, texte sélectionnable, fichier joignable).
 
 ### Interface style messagerie professionnelle Web
 - 🧱 Disposition en blocs avec marges, coins arrondis et ombres
@@ -208,6 +209,7 @@ La langue affichée est choisie selon l’ordre suivant :
 - 📋 **Modèles de mail (admin)** : page dédiée listant tous les modèles de la plateforme (personnels par utilisateur + globaux), avec filtre texte sur nom / objet / propriétaire, badge de type, et actions modifier / partager / supprimer pour chaque ligne. Création d'un modèle pour le compte de n'importe quel utilisateur, ou en tant que **modèle global** automatiquement visible par tous les utilisateurs.
 - 📋 **Listes de distribution (admin)** : tableau listant toutes les listes de la plateforme avec recherche/filtre par nom ou propriétaire, affichage des listes archivées (supprimées par l'utilisateur), actions modifier / partager / restaurer / supprimer définitivement. Bouton **+ Créer une liste** en haut à droite pour créer une liste directement depuis le panneau admin sans quitter la page.
 - 📧 **Comptes mail (admin)** : liste de tous les comptes IMAP/SMTP configurés avec **champ de recherche filtrant** (nom, email, serveur IMAP/SMTP) visible dès 4 comptes enregistrés — compteur `filtré/total` et message adapté si aucun résultat.
+- 🔗 **Santé du lien OAuth Microsoft 365** : les jetons sont renouvelés par un service de fond avant leur expiration, avec un verrou par compte — Microsoft révoque toute la famille de jetons si un `refresh_token` est rejoué, ce qui obligeait à relier les boîtes après chaque redémarrage. Les échecs sont classés (panne passagère / compte à reconnecter / configuration Azure en défaut) et remontent par un **badge cliquable** dans *Admin → Comptes mail*, une pastille sur la boîte côté utilisateur et une **alerte e-mail** aux administrateurs. Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#fiabilité-du-lien-oauth).
 - ⚙️ **Règles — gestion centralisée (admin)** : page dédiée visualisant toutes les règles de filtrage de tous les utilisateurs et groupes, avec vue globale / par utilisateur / par groupe, recherche avec autocomplétion. Bouton **+ Nouvelle règle** en haut à droite pour créer une règle directement depuis l'admin via le wizard 3-étapes.
 - 📋 **Journaux d'activité avancés** : filtrage multi-critères (catégorie, action, utilisateur, plage de dates, recherche texte), lignes détaillables au clic (ID, User-Agent, JSON détails), export **CSV** et **JSON** en un clic, **envoi par email** d'un rapport filtré. Onglet **Alertes** : règles d'alerte email automatiques déclenchées sur des catégories/actions définies, avec anti-spam (throttle en minutes) et déclenchement asynchrone sans impact sur les performances.
 - 📧 **SMTP & Emails système** : configuration SMTP centralisée (hôte, port, chiffrement STARTTLS/SSL, identifiant, mot de passe chiffré, expéditeur), test de connexion avec envoi optionnel. **Gestionnaire de templates d'emails système** (Bienvenue, Réinitialisation de mot de passe, Alerte log…) avec éditeur plein écran : onglets HTML / Texte brut / **Aperçu live** (iframe sandboxée, substitution en temps réel), système de **variables** cliquables (`{{user_name}}`, `{{reset_link}}`…), panel de valeurs de test et bouton **Envoyer un test**.
@@ -419,6 +421,10 @@ webmail/
 │   │   │   │   ├── MessageList.tsx    # Liste des messages
 │   │   │   │   ├── MessageView.tsx    # Lecture d'un message
 │   │   │   │   └── Ribbon.tsx         # Ruban classique/simplifié (+ onglets Recherche/Publipostage)
+│   │   │   ├── notes/      # Bloc-notes + lecture des fichiers Nextcloud
+│   │   │   │   ├── NotesPanel.tsx     # Panneau latéral (façon panneau emoji)
+│   │   │   │   ├── NotesModal.tsx     # Grande modale (montée dans Layout)
+│   │   │   │   └── notesShared.ts     # Extraction du contenu des fichiers
 │   │   │   └── ui/         # Composants UI génériques
 │   │   ├── hooks/          # Hooks (WebSocket, réseau)
 │   │   ├── pages/          # Pages (Mail, Calendar, Contacts, Settings, Admin, Search)
@@ -484,6 +490,14 @@ webmail/
 | GET | `/api/contacts` | Lister les contacts |
 | GET | `/api/contacts/search/autocomplete` | Autocomplétion |
 | POST | `/api/contacts` | Créer un contact |
+
+### Notes
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/notes` | Lister / rechercher ses notes (`?q=`, plein texte français) |
+| POST | `/api/notes` | Créer une note (titre déduit du contenu si omis) |
+| PUT | `/api/notes/:id` | Modifier une note (mise à jour partielle) |
+| DELETE | `/api/notes/:id` | Supprimer une note |
 
 ### Calendrier
 | Méthode | Route | Description |

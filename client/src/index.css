@@ -350,3 +350,12 @@ html.dark .skeleton {
   border-color: #0078D4;
   color: #0078D4;
 }
+
+/* Placeholder de la zone d'édition contentEditable des notes
+   (NotesModal). :empty ne matche qu'un élément réellement vide : dès la
+   première frappe, ou dès qu'un <br> est inséré, le placeholder disparaît. */
+.note-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #A19F9D;
+  pointer-events: none;
+}

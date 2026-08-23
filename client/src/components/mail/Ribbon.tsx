@@ -15,7 +15,7 @@ import {
   Tag, MessagesSquare, ShieldAlert, ShieldOff, Coffee,
   Maximize2, Minimize2,
   FileText, Settings as SettingsIcon, Filter,
-  Clock, BellDot, Cloud,
+  Clock, BellDot, Cloud, StickyNote,
   Search, X as XIcon, AtSign, FolderSearch,
 } from 'lucide-react';
 import { api } from '../../api';
@@ -118,6 +118,8 @@ interface RibbonProps {
   isEmojiPanelOpen?: boolean;
   onToggleGifPanel?: () => void;
   isGifPanelOpen?: boolean;
+  onToggleNotesPanel?: () => void;
+  isNotesPanelOpen?: boolean;
   composeApiRef?: React.MutableRefObject<import('./ComposeModal').ComposeApi | null>;
 
   // Favorites mailbox management (Afficher tab)
@@ -574,6 +576,7 @@ export default function Ribbon({
   isComposing = false, composeEditorRef, onComposeAttachFiles, composeApiRef,
   onToggleEmojiPanel, isEmojiPanelOpen = false,
   onToggleGifPanel, isGifPanelOpen = false,
+  onToggleNotesPanel, isNotesPanelOpen = false,
   accounts = [], onFavoritesChanged,
   splitActive = false, onSwapSplit,
   splitKeepFolderPane = false, onToggleSplitKeepFolderPane,
@@ -1510,7 +1513,7 @@ export default function Ribbon({
           )}
 
           {activeTab === 'inserer' && (
-            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} onOpenTemplatesPicker={onOpenTemplatesPicker} onOpenTemplatesManager={onOpenTemplatesManager} compact />
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} onToggleNotesPanel={onToggleNotesPanel} isNotesPanelOpen={isNotesPanelOpen} accounts={accounts} onOpenTemplatesPicker={onOpenTemplatesPicker} onOpenTemplatesManager={onOpenTemplatesManager} compact />
           )}
 
           {activeTab === 'publipostage' && (
@@ -1626,7 +1629,7 @@ export default function Ribbon({
           )}
 
           {activeTab === 'inserer' && (
-            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} accounts={accounts} onOpenTemplatesPicker={onOpenTemplatesPicker} onOpenTemplatesManager={onOpenTemplatesManager} />
+            <InsererTabContent editorRef={composeEditorRef} onAttachFiles={onComposeAttachFiles} onToggleEmojiPanel={onToggleEmojiPanel} isEmojiPanelOpen={isEmojiPanelOpen} onToggleGifPanel={onToggleGifPanel} isGifPanelOpen={isGifPanelOpen} onToggleNotesPanel={onToggleNotesPanel} isNotesPanelOpen={isNotesPanelOpen} accounts={accounts} onOpenTemplatesPicker={onOpenTemplatesPicker} onOpenTemplatesManager={onOpenTemplatesManager} />
           )}
 
           {activeTab === 'publipostage' && (
@@ -2502,13 +2505,15 @@ function MessageTabContent({ editorRef, compact = false }: { editorRef?: React.R
 // ─────────────────────────────────────────────────────────────────────────────
 // Insérer tab — Outlook-web-style insertion tools
 // ─────────────────────────────────────────────────────────────────────────────
-function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmojiPanelOpen = false, onToggleGifPanel, isGifPanelOpen = false, compact = false, accounts = [], onOpenTemplatesPicker, onOpenTemplatesManager }: {
+function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmojiPanelOpen = false, onToggleGifPanel, isGifPanelOpen = false, onToggleNotesPanel, isNotesPanelOpen = false, compact = false, accounts = [], onOpenTemplatesPicker, onOpenTemplatesManager }: {
   editorRef?: React.RefObject<HTMLDivElement>;
   onAttachFiles?: (files: FileList | File[]) => void;
   onToggleEmojiPanel?: () => void;
   isEmojiPanelOpen?: boolean;
   onToggleGifPanel?: () => void;
   isGifPanelOpen?: boolean;
+  onToggleNotesPanel?: () => void;
+  isNotesPanelOpen?: boolean;
   compact?: boolean;
   accounts?: MailAccount[];
   onOpenTemplatesPicker?: () => void;
@@ -2592,6 +2597,14 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
     if (!onToggleGifPanel) return;
     saveSelection();
     onToggleGifPanel();
+  };
+
+  // Comme pour l'emoji : on mémorise la sélection AVANT d'ouvrir le panneau,
+  // sinon le clic dans le panneau fait perdre le point d'insertion.
+  const handleNotesClick = () => {
+    if (!onToggleNotesPanel) return;
+    saveSelection();
+    onToggleNotesPanel();
   };
 
   const triggerAttach = () => fileInputRef.current?.click();
@@ -2809,6 +2822,9 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
         {onToggleGifPanel && (
           <SimplifiedButton icon={Film} label="GIF" onClick={handleGifClick} active={isGifPanelOpen} />
         )}
+        {onToggleNotesPanel && (
+          <SimplifiedButton icon={StickyNote} label="Notes" onClick={handleNotesClick} active={isNotesPanelOpen} />
+        )}
         <span ref={el => { tableBtnRef.current = el; }} className="inline-flex">
           <SimplifiedButton icon={TableIcon} label="Tableau" onClick={() => { saveSelection(); setShowTableGrid(v => !v); }} />
         </span>
@@ -2867,6 +2883,9 @@ function InsererTabContent({ editorRef, onAttachFiles, onToggleEmojiPanel, isEmo
           <RibbonButton icon={LinkIcon} label="Lien" onClick={() => { saveSelection(); setShowLinkInput(s => !s); }} />
         </span>
         <RibbonButton icon={ImageIcon} label="Image" onClick={insertImage} />
+        {onToggleNotesPanel && (
+          <RibbonButton icon={StickyNote} label="Notes & fichiers" onClick={handleNotesClick} active={isNotesPanelOpen} />
+        )}
       </RibbonGroup>
       <RibbonSeparator />
 

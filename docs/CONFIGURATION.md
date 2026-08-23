@@ -172,8 +172,8 @@ Au clic sur **+ Nouveau compte**, un sélecteur affiche les fournisseurs pris en
 
 | Fournisseur | IMAP | SMTP | Remarques |
 |-------------|------|------|-----------|
-| **style messagerie professionnelle / Microsoft 365** | `style messagerie professionnelle.office365.com:993` | `smtp.office365.com:587` | **OAuth2 obligatoire** (bouton « Se connecter avec Microsoft ») — Basic Auth est désactivé par Microsoft depuis 2022 |
-| **des webmails courants** | `imap.des webmails courants.com:993` | `smtp.des webmails courants.com:465` | IMAP doit être activé ; mot de passe d'application requis |
+| **style messagerie professionnelle / Microsoft 365** | `outlook.office365.com:993` | `smtp.office365.com:587` | **OAuth2 obligatoire** (bouton « Se connecter avec Microsoft ») — Basic Auth est désactivé par Microsoft depuis 2022 |
+| **des webmails courants** | `imap.gmail.com:993` | `smtp.gmail.com:465` | IMAP doit être activé ; mot de passe d'application requis |
 | **Yahoo Mail** | `imap.mail.yahoo.com:993` | `smtp.mail.yahoo.com:465` | Mot de passe d'application requis |
 | **iCloud Mail** | `imap.mail.me.com:993` | `smtp.mail.me.com:587` | Mot de passe d'application Apple ID requis |
 | **O2Switch** | saisie manuelle | saisie manuelle | Active la synchro CalDAV + CardDAV |
@@ -211,9 +211,32 @@ Microsoft a désactivé l'authentification basique IMAP/SMTP en septembre 2022. 
 4. **Configurer l'application**, au choix :
    - Via Portainer : ajoutez les variables dans la stack et redémarrez le conteneur.
    - Via l'UI : **Administration → Comptes mail → Configuration OAuth Microsoft** (panneau dépliable en haut de la liste), remplissez les champs et **Enregistrer**. Prend effet immédiatement sans redémarrage.
-5. **Connecter un compte** : **+ Nouveau compte → style messagerie professionnelle / Microsoft 365 → Se connecter avec Microsoft**. Authentifiez-vous (mot de passe + Microsoft Authenticator), acceptez les permissions, cliquez **Enregistrer**. Le serveur stocke un `refresh_token` chiffré (AES-256-GCM) et rafraîchit automatiquement le jeton d'accès avant chaque opération IMAP/SMTP.
+5. **Connecter un compte** : **+ Nouveau compte → style messagerie professionnelle / Microsoft 365 → Se connecter avec Microsoft**. Authentifiez-vous (mot de passe + Microsoft Authenticator), acceptez les permissions, cliquez **Enregistrer**. Le serveur stocke un `refresh_token` chiffré (AES-256-GCM) et un service de fond renouvelle le jeton d'accès avant son expiration (voir ci-dessous).
 
-Pour reconnecter un compte dont le refresh token a été révoqué (changement de mot de passe, consentement révoqué), rouvrez la fiche du compte et cliquez sur **Reconnecter**.
+#### Fiabilité du lien OAuth
+
+Un jeton d'accès Microsoft vit une heure, et le `refresh_token` qui permet d'en obtenir un nouveau est **à usage unique** : Microsoft en émet un autre à chaque renouvellement et traite le rejeu d'un ancien comme une compromission — il révoque alors toute la famille de jetons, et la boîte doit être reliée à la main. Trois mécanismes protègent ce lien.
+
+**Un seul renouvellement à la fois.** `ensureFreshAccessToken` (`server/src/services/oauth.ts`) sérialise les rafraîchissements par compte : les appels concurrents attendent le même résultat au lieu de partir chacun avec le même `refresh_token`. La ligne du compte est relue à l'intérieur du verrou, et l'écriture est conditionnée au jeton effectivement utilisé, de sorte qu'un écrivain en retard ne puisse pas écraser un jeton plus récent par un plus ancien.
+
+**Un renouvellement anticipé, hors du chemin des requêtes.** Le service `oauthTokenRefresher` (`server/src/services/oauthTokenRefresher.ts`) passe toutes les 5 minutes, en série, et renouvelle les jetons qui expirent dans moins de 20 minutes. Les requêtes HTTP, dont la marge est de 10 minutes, trouvent donc toujours un jeton déjà frais. Le service apparaît dans **Admin → Système → État du système**.
+
+**Un état lisible plutôt qu'une erreur opaque.** Toute erreur de renouvellement est classée et retenue dans `mail_accounts.oauth_status` :
+
+| État | Signification | Ce que fait l'application |
+|------|---------------|---------------------------|
+| `ok` | Dernier renouvellement réussi. | Rien à signaler. |
+| `degraded` | Échec passager : réseau injoignable, HTTP 5xx, throttling Microsoft. | Jetons conservés, nouvelle tentative après un temps de repos qui double à chaque échec (1 min → 30 min). Le jeton encore valide continue d'être servi entre-temps. Badge *Jeton instable*, sans action requise. |
+| `needs_reauth` | Le grant est mort : `invalid_grant`, `AADSTS50173`, `AADSTS700082`, `AADSTS65001`… | L'application **cesse de rejouer** le jeton révoqué — le rejouer aggravait la révocation — et signale la boîte comme à reconnecter. |
+| `config_error` | L'inscription d'application est en cause : `invalid_client`, `AADSTS7000215`… | Pointe la configuration Azure plutôt que d'envoyer relier chaque compte, puisque la cause est commune à tous. |
+
+Par prudence, tout ce qui n'est pas formellement identifié comme définitif reste `degraded` : un faux « à reconnecter » ferait relier des comptes qui n'ont rien. Un `degraded` qui persiste au-delà de 8 échecs consécutifs (environ 2 h) est néanmoins escaladé en `needs_reauth`.
+
+Ces états sont visibles à trois endroits : un badge cliquable dans **Admin → Comptes mail** qui ouvre directement le formulaire de reconnexion, une pastille d'avertissement sur la boîte concernée dans le volet des dossiers côté utilisateur, et un **e-mail d'alerte aux administrateurs** envoyé par le vérificateur d'alertes système — avec rappel tant que l'incident dure, puis e-mail de rétablissement. Chaque boîte à reconnecter donne un incident ; une configuration OAuth en défaut donne un seul incident groupé.
+
+> **Le secret client Azure expire.** Sa durée de vie est de 24 mois au maximum (6 mois par défaut dans le portail). Le jour où il tombe, **tous** les comptes Microsoft passent en `config_error` en même temps — c'est la cause à vérifier en premier devant une panne généralisée. L'application ne suit pas cette date : notez-la, ou utilisez un certificat plutôt qu'un secret.
+
+Pour reconnecter une boîte, rouvrez sa fiche dans **Admin → Comptes mail** et cliquez sur **Reconnecter**, ou cliquez directement sur son badge rouge dans la liste. Une reconnexion réussie remet le compte à l'état sain.
 
 #### Dépannage OAuth Microsoft
 
@@ -224,6 +247,9 @@ Pour reconnecter un compte dont le refresh token a été révoqué (changement d
 | `Non authentifié` / `unauthenticated` lors du retour sur la callback | La redirection top-level depuis Microsoft n'envoie que le cookie de session, pas le Bearer token. | Corrigé : la callback est désormais une route publique (`oauthCallbackRouter`) qui authentifie via `req.session.oauthUserId`. Si vous voyez encore l'erreur, vérifiez que le proxy (NPM / Traefik) transmet bien le cookie `connect.sid` et que `NODE_ENV=production` + `trust proxy` sont actifs en HTTPS. |
 | `invalid_grant` au refresh | Le refresh token a été révoqué (changement de mot de passe MS, consentement retiré, compte désactivé). | Ouvrez la fiche du compte dans Admin → cliquez **Reconnecter**. |
 | `offline_access manquant ou consentement incomplet` | Le consentement admin n'a pas été accordé pour `offline_access`. | Azure → **API permissions** → vérifiez `offline_access` (Microsoft Graph, Delegated) → **Grant admin consent**. |
+| `AADSTS7000215: Invalid client secret provided` — **tous** les comptes tombent en même temps | Le secret client Azure a expiré (24 mois au maximum) ou a été mal recopié : c'est la *Valeur* du secret qu'il faut, pas son *ID*. | Azure → **Certificates & secrets** → nouveau secret → recopiez la **Valeur** dans la configuration OAuth. Les comptes se rétablissent seuls au cycle suivant, sans avoir à les relier. |
+| Badge **Jeton instable** (`degraded`) qui apparaît puis disparaît | Panne réseau passagère ou throttling Microsoft — souvent au démarrage du conteneur, quand `login.microsoftonline.com` n'est pas encore joignable. | Aucune action : le renouvellement est retenté avec un temps de repos croissant. `mail_accounts.oauth_last_error` dit ce qui a échoué. |
+| Une boîte se délie **à chaque mise à jour de l'application** | Symptôme historique du rejeu de `refresh_token` par plusieurs requêtes concurrentes au redémarrage. | Corrigé : verrou par compte et renouvellement anticipé en tâche de fond (voir *Fiabilité du lien OAuth*). Si cela persiste, lisez `oauth_status` et `oauth_last_error` avant toute autre hypothèse. |
 
 ### Paramètres IMAP/SMTP pour o2switch
 

@@ -81,6 +81,32 @@ async function request<T>(url: string, options: RequestInit = {}, _retry = false
   return response.json();
 }
 
+export type NoteColor = 'default' | 'yellow' | 'green' | 'blue' | 'pink' | 'purple' | 'orange';
+
+export interface Note {
+  id: string;
+  title: string;
+  contentHtml: string;
+  /** Projection texte du HTML, calculée par le serveur (recherche + extrait). */
+  contentText: string;
+  color: NoteColor;
+  tags: string[];
+  isPinned: boolean;
+  /** Chemin Nextcloud d'origine si la note a été créée depuis un fichier. */
+  sourcePath: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoteInput {
+  title?: string;
+  contentHtml?: string;
+  color?: NoteColor;
+  tags?: string[];
+  isPinned?: boolean;
+  sourcePath?: string | null;
+}
+
 export const api = {
   // Auth
   login: (email: string, password: string) =>
@@ -673,6 +699,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  // Notes personnelles (bloc-notes intégré, insérable dans un message)
+  listNotes: (q?: string) =>
+    request<Note[]>(`/notes${q && q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`),
+  getNote: (id: string) => request<Note>(`/notes/${id}`),
+  createNote: (data: NoteInput) =>
+    request<Note>('/notes', { method: 'POST', body: JSON.stringify(data) }),
+  updateNote: (id: string, data: NoteInput) =>
+    request<Note>(`/notes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteNote: (id: string) =>
+    request<{ ok: boolean }>(`/notes/${id}`, { method: 'DELETE' }),
 
   // Calendar sharing / publishing
   shareCalendar: (calendarId: string, payload: { userId?: string; email?: string; permission?: 'read' | 'write' | 'busy' | 'titles' }) =>

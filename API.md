@@ -22,6 +22,7 @@ L'API utilise deux méthodes d'authentification :
 - [Calendrier](#calendrier)
 - [Paramètres](#paramètres)
 - [Modèles de mail](#modèles-de-mail)
+- [Notes](#notes)
 - [Administration](#administration)
 - [Nextcloud Files](#nextcloud-files-par-utilisateur)
 - [Dashboard](#dashboard)
@@ -1267,6 +1268,93 @@ Les routes ci-dessus existent en miroir sous `/api/admin/mail-templates` et perm
 
 ---
 
+## Notes
+
+> 🔒 Authentification requise
+
+Bloc-notes personnel, alimenté par le panneau **Insérer → Notes & fichiers** de la fenêtre de composition et par la grande modale « Notes & fichiers » de la barre du haut. Contrairement aux modèles de mail, une note **n'est jamais partagée** : elle appartient à un seul utilisateur, et toutes les routes filtrent sur `user_id`.
+
+Le champ `contentHtml` est **assaini côté serveur** avec la même liste blanche que les modèles de mail (pas de `<script>`, pas de `style` hors attributs autorisés) — une note finit dans le corps d'un e-mail, elle en respecte les contraintes. À chaque écriture, le serveur recalcule `contentText`, la projection texte du HTML, qui alimente la recherche plein texte et l'extrait affiché en liste.
+
+### GET /api/notes
+
+Liste les notes de l'utilisateur, **épinglées d'abord**, puis les plus récemment modifiées.
+
+**Paramètres de requête :**
+
+| Paramètre | Défaut | Description |
+|-----------|--------|-------------|
+| `q` | — | Filtre plein texte sur le titre et le contenu. Combine `websearch_to_tsquery('french', …)` et un repli `ILIKE %q%`, pour que la recherche réponde aussi sur un mot partiel pendant la frappe (`factur` trouve `facture`). |
+| `limit` | `200` | Nombre maximum de notes renvoyées (borné à `500`). |
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "title": "Coordonnées service technique",
+    "contentHtml": "<p>Tel : 02 …</p>",
+    "contentText": "Tel : 02 …",
+    "color": "yellow",
+    "tags": [],
+    "isPinned": true,
+    "sourcePath": null,
+    "createdAt": "2026-…",
+    "updatedAt": "2026-…"
+  }
+]
+```
+
+`color` vaut `default`, `yellow`, `green`, `blue`, `pink`, `purple` ou `orange`. `sourcePath` porte le chemin Nextcloud d'origine quand la note a été créée par *Enregistrer comme note* depuis un fichier ; `null` sinon.
+
+### GET /api/notes/:id
+
+Renvoie une note. `404 Note introuvable` si elle n'existe pas **ou** si elle appartient à un autre utilisateur (aucune distinction, pour ne pas révéler l'existence de la note).
+
+### POST /api/notes
+
+Crée une note.
+
+**Body :**
+```json
+{
+  "title": "Coordonnées service technique",
+  "contentHtml": "<p>Tel : 02 …</p>",
+  "color": "yellow",
+  "tags": [],
+  "isPinned": false,
+  "sourcePath": "/Documents/annuaire.docx"
+}
+```
+
+Tous les champs sont optionnels. **Si `title` est vide, le serveur le déduit** de la première ligne non vide du contenu (tronquée à 120 caractères), ou retombe sur `Note sans titre` — le panneau latéral s'en sert pour créer une note en une frappe, sans demander de titre.
+
+**Réponse 201 :** la note créée (même forme que `GET /api/notes`).
+
+### PUT /api/notes/:id
+
+Met à jour une note. **Tous les champs sont optionnels et seuls ceux fournis sont écrits** : un simple « épingler » n'a pas besoin de renvoyer le corps, et ne le repasse donc pas au sanitizer.
+
+**Body (exemple, épinglage seul) :**
+```json
+{ "isPinned": true }
+```
+
+### DELETE /api/notes/:id
+
+Supprime définitivement une note. `404` si elle n'appartient pas à l'utilisateur.
+
+**Réponse 200 :**
+```json
+{ "ok": true }
+```
+
+**Limites :**
+- `contentHtml` : 500 000 caractères max.
+- `title` : 255 caractères max. `tags` : 20 entrées de 40 caractères max.
+
+---
+
 ## Administration
 
 > 🔒 Authentification requise + rôle `admin`
@@ -1468,10 +1556,18 @@ Liste tous les comptes mail gérés par l'administration.
     "signature_text": "Cordialement",
     "color": "#0078D4",
     "assignment_count": 3,
+    "oauth_provider": null,
+    "oauth_status": "ok",
+    "oauth_last_error": null,
+    "oauth_last_error_at": null,
+    "oauth_token_expires_at": null,
+    "oauth_last_refresh_at": null,
     "created_at": "2026-04-21T10:00:00Z"
   }
 ]
 ```
+
+Les champs `oauth_*` ne sont renseignés que pour les boîtes liées en OAuth (Microsoft 365). `oauth_status` vaut `ok`, `degraded` (échec passager, nouvelle tentative automatique), `needs_reauth` (jeton révoqué — la boîte doit être reconnectée) ou `config_error` (secret client Azure refusé — la cause est commune à tous les comptes). Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#fiabilité-du-lien-oauth).
 
 ### POST /api/admin/mail-accounts
 
@@ -1676,6 +1772,50 @@ Liste les enfants immediats d'un dossier (PROPFIND `Depth: 1`). La racine est `/
 **Erreurs :**
 - `409 NextCloud not linked` — l'utilisateur n'a pas (ou plus) de compte NC actif.
 - `500` — propage le code HTTP WebDAV en cas d'echec PROPFIND.
+
+### GET /api/nextcloud/files/search?q=rapport
+
+Recherche fichiers **et** dossiers dans tout le drive via l'API OCS Unified Search (Nextcloud 20+). Requête de 2 caractères minimum.
+
+Utilisée par le sélecteur de pièces jointes et par l'onglet *Fichiers* du panneau **Notes & fichiers**. La portée dépend du fournisseur de recherche installé côté Nextcloud : **sans l'application *Full text search*, la recherche porte sur les noms de fichiers**, pas sur leur contenu.
+
+**Réponse 200 :**
+```json
+{
+  "items": [
+    { "name": "rapport.pdf", "path": "/Mail/rapport.pdf", "isFolder": false, "size": 245312, "contentType": "application/pdf" }
+  ]
+}
+```
+
+**Erreurs :**
+- `400 Query must be at least 2 characters`
+- `409 NextCloud not linked`
+
+### GET /api/nextcloud/files/search-folders?q=factures
+
+Recherche **dossiers uniquement**, via `PROPFIND Depth: infinity` directement sur WebDAV. Contrairement à `/search`, elle ne dépend pas de l'index de recherche Nextcloud et trouve donc toujours les dossiers, quel que soit l'état de l'indexation. Requête de 2 caractères minimum.
+
+**Réponse 200 :**
+```json
+{ "items": [ { "name": "Factures", "path": "/Mail/2026/Factures", "isFolder": true } ] }
+```
+
+### GET /api/nextcloud/files/get?path=/Mail/rapport.pdf
+
+Télécharge un fichier du drive utilisateur et le renvoie encodé en base64.
+
+Utilisée pour joindre un fichier Nextcloud à un message, et par le panneau **Notes & fichiers** qui en extrait ensuite le contenu **côté navigateur** (texte brut, `.docx` via *mammoth*, `.xlsx` via *xlsx*) — le serveur ne fait aucune conversion.
+
+**Réponse 200 :**
+```json
+{ "filename": "rapport.pdf", "contentType": "application/pdf", "contentBase64": "JVBERi0xLjQK..." }
+```
+
+**Erreurs :**
+- `400 Missing path`
+- `409 NextCloud not linked`
+- `413 File too large` — au-delà de 100 Mo. Le panneau Notes applique en plus un plafond client de **8 Mo** avant d'appeler cette route, l'extraction se faisant en mémoire dans l'onglet.
 
 ### POST /api/nextcloud/files/mkdir
 

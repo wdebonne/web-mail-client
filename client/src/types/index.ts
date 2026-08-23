@@ -28,6 +28,10 @@ export interface MailAccount {
   assigned_display_name?: string;
   send_permission?: 'none' | 'send_as' | 'send_on_behalf';
   assigned_default?: boolean;
+  /** Renseigné pour les boîtes liées en OAuth (Outlook / Microsoft 365). */
+  oauth_provider?: string | null;
+  /** Santé du lien OAuth — voir OAuthAccountStatus côté serveur. */
+  oauth_status?: 'ok' | 'degraded' | 'needs_reauth' | 'config_error';
 }
 
 export interface MailFolder {

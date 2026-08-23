@@ -25,6 +25,7 @@ import { autoResponderRouter } from './routes/autoResponder';
 import { mailTemplateRouter, adminMailTemplateRouter } from './routes/mailTemplates';
 import { rulesRouter, adminRulesRouter } from './routes/rules';
 import { nextcloudFilesRouter } from './routes/nextcloudFiles';
+import { notesRouter } from './routes/notes';
 import { brandingPublicRouter, brandingAdminRouter, BRANDING_DIR, BRANDING_FILES } from './routes/branding';
 import { applicationsRouter } from './routes/applications';
 import { backupRouter } from './routes/backup';
@@ -35,6 +36,7 @@ import { bulkSendRouter, adminBulkSendRouter } from './routes/bulkSend';
 import { startBulkSendProcessor } from './services/bulkSendProcessor';
 import { startScheduledSendProcessor } from './services/scheduledSendProcessor';
 import { startSystemAlertChecker } from './services/systemAlerts';
+import { startOAuthTokenRefresher } from './services/oauthTokenRefresher';
 import fs from 'fs';
 import { authMiddleware } from './middleware/auth';
 import { authLimiter } from './middleware/rateLimit';
@@ -152,6 +154,7 @@ app.use('/api/admin/mail-templates', authMiddleware, adminMailTemplateRouter);
 app.use('/api/rules', authMiddleware, rulesRouter);
 app.use('/api/admin/rules', authMiddleware, adminRulesRouter);
 app.use('/api/nextcloud/files', authMiddleware, nextcloudFilesRouter);
+app.use('/api/notes', authMiddleware, notesRouter);
 app.use('/api/admin/applications', authMiddleware, applicationsRouter);
 app.use('/api/admin/backup', authMiddleware, backupRouter);
 // Proxy d'images des emails : monté sans authMiddleware global car les <img>
@@ -227,6 +230,9 @@ async function start() {
     startBackupScheduler();
     startBulkSendProcessor();
     startScheduledSendProcessor();
+    // Renouvelle les jetons OAuth (Outlook/M365) avant leur expiration, seul et
+    // en série, pour que les requêtes HTTP n’aient jamais à le faire en rafale.
+    startOAuthTokenRefresher();
     // Surveille les services ci-dessus + la sauvegarde auto, et alerte les
     // admins par email en cas d'incident (voir services/systemAlerts.ts).
     startSystemAlertChecker();

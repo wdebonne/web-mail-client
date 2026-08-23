@@ -104,7 +104,63 @@ function formatAgo(iso: string): string {
   return `le ${new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`;
 }
 
-function detectIncidents(settings: Record<string, any>): Incident[] {
+/**
+ * Comptes mail dont le lien OAuth est cassé (voir `oauth_status` dans
+ * services/oauth.ts). Sans cette remontée, un jeton révoqué n'était visible
+ * que le jour où un utilisateur signalait sa boîte vide.
+ *
+ * Un `config_error` vient du secret client Azure ou des scopes : il touche
+ * tous les comptes à la fois, donc il est regroupé en un seul incident — sinon
+ * l'email listerait vingt fois la même cause. Un `needs_reauth` est propre à
+ * un compte et donne un incident par compte, ce qui permet de suivre son
+ * rétablissement individuellement.
+ */
+async function detectOAuthIncidents(): Promise<Incident[]> {
+  let rows: any[];
+  try {
+    const res = await pool.query(
+      `SELECT id, name, email, oauth_provider, oauth_status, oauth_last_error, oauth_last_error_at
+         FROM mail_accounts
+        WHERE oauth_status IN ('needs_reauth', 'config_error')
+        ORDER BY email`
+    );
+    rows = res.rows;
+  } catch (err) {
+    logger.debug({ err }, 'System alert: lecture du statut OAuth impossible');
+    return [];
+  }
+
+  const incidents: Incident[] = [];
+  const configBroken = rows.filter((r) => r.oauth_status === 'config_error');
+  if (configBroken.length > 0) {
+    const first = configBroken[0];
+    incidents.push({
+      key: 'oauth_config',
+      title: 'Configuration OAuth Microsoft en défaut',
+      detail:
+        `${configBroken.length} compte(s) concerné(s) — ${first.oauth_last_error || 'erreur inconnue'}`
+        + (first.oauth_last_error_at ? ` (${formatAgo(new Date(first.oauth_last_error_at).toISOString())})` : '')
+        + '. Le secret client Azure a une durée de vie limitée (24 mois au maximum) :'
+        + ' vérifiez Administration → Comptes mail → Configuration OAuth Microsoft.',
+    });
+  }
+
+  for (const r of rows.filter((x) => x.oauth_status === 'needs_reauth')) {
+    incidents.push({
+      key: `oauth_reauth:${r.id}`,
+      title: `Boîte « ${r.name || r.email} » à reconnecter`,
+      detail:
+        `Le lien ${r.oauth_provider || 'OAuth'} de ${r.email} n'est plus valide`
+        + (r.oauth_last_error_at ? ` (${formatAgo(new Date(r.oauth_last_error_at).toISOString())})` : '')
+        + ` — ${r.oauth_last_error || 'jeton révoqué'}.`
+        + ' Reconnectez-la via Administration → Comptes mail → Modifier → « Se connecter avec Microsoft ».',
+    });
+  }
+
+  return incidents;
+}
+
+async function detectIncidents(settings: Record<string, any>): Promise<Incident[]> {
   const missedTicks = Math.max(2, Number(settings['alerting_missed_ticks']) || 3);
   const incidents: Incident[] = [];
 
@@ -124,6 +180,8 @@ function detectIncidents(settings: Record<string, any>): Incident[] {
       });
     }
   }
+
+  incidents.push(...(await detectOAuthIncidents()));
 
   const backupError = settings['backup_last_auto_error'];
   if (backupError && typeof backupError === 'object' && backupError.message) {
@@ -149,7 +207,7 @@ async function checkAndAlert(): Promise<void> {
 
   const now = Date.now();
   const reminderMs = Math.max(1, Number(settings['alerting_reminder_hours']) || 6) * 3_600_000;
-  const incidents = detectIncidents(settings);
+  const incidents = await detectIncidents(settings);
   const currentKeys = new Set(incidents.map((i) => i.key));
 
   const newOnes: Incident[] = [];

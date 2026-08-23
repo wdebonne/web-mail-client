@@ -264,6 +264,44 @@ Utilisateur → ContactsPage
    Contact apparaît dans contacts normaux
 ```
 
+### Rafraîchissement des jetons OAuth (Microsoft 365)
+
+```
+oauthTokenRefresher (5 min, en série)      Requête HTTP (marge 10 min)
+   expire dans < 20 min ?                        │
+          │                                      │
+          └──────────────┬───────────────────────┘
+                         ▼
+            ensureFreshAccessToken(account)
+                         │
+                 verrou par compte  ◄── les appels concurrents
+                         │               attendent le même résultat
+                         ▼
+              relecture de la ligne en base
+                         │
+              ┌──────────┴──────────┐
+              │ jeton déjà frais ?  │
+              ▼                     ▼
+           on le sert        POST /token (timeout 20 s)
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+                 succès         erreur            erreur
+                    │        transitoire         définitive
+                    ▼               │                │
+        UPDATE gardé sur le         ▼                ▼
+        refresh token utilisé   degraded      needs_reauth /
+        (status = 'ok')         + repos        config_error
+                                exponentiel    (on cesse de rejouer)
+                                                     │
+                                                     ▼
+                                          badge admin + pastille
+                                          utilisateur + e-mail
+                                          via systemAlerts
+```
+
+Le `refresh_token` Microsoft est à usage unique : rejouer un ancien jeton fait révoquer toute la famille côté Microsoft, et la boîte doit alors être reliée à la main. Le verrou par compte, la relecture de la ligne dans le verrou et l'`UPDATE` conditionné au jeton réellement utilisé garantissent qu'un seul renouvellement part à la fois et qu'un écrivain en retard n'écrase jamais un jeton plus récent. Le rafraîchisseur de fond, avec sa marge plus large que celle des requêtes, fait que le chemin HTTP ne renouvelle en pratique jamais lui-même. Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#fiabilité-du-lien-oauth).
+
 ### Synchronisation NextCloud
 
 ```
@@ -301,9 +339,15 @@ mail_accounts
 ├── id (UUID, PK)
 ├── user_id (FK → users)
 ├── name, email, username
-├── password_encrypted (AES-256-GCM)
+├── password_encrypted (AES-256-GCM, NULL si OAuth)
 ├── imap_host, imap_port, imap_secure
 ├── smtp_host, smtp_port, smtp_secure
+├── oauth_provider (microsoft|google, NULL si mot de passe)
+├── oauth_refresh_token_encrypted / oauth_access_token_encrypted
+├── oauth_token_expires_at, oauth_scope
+├── oauth_status (ok|degraded|needs_reauth|config_error)
+├── oauth_last_error, oauth_last_error_at
+├── oauth_last_refresh_at, oauth_refresh_failures
 ├── signature, color
 └── is_default
 
@@ -387,7 +431,23 @@ mail_templates                       mail_template_shares
 ├── is_global (bool)                 ├── group_id (FK, nullable) ─┘
 ├── created_at / updated_at          └── created_at
 └── CHECK (is_global XOR owner)
+
+notes
+├── id (UUID, PK)
+├── user_id (FK → users)             ← strictement privé, jamais partagé
+├── title
+├── content_html                     ← assaini (liste blanche « composition »)
+├── content_text                     ← projection texte, recalculée à l'écriture
+├── color, tags (JSONB), is_pinned
+├── source_path (nullable)           ← chemin NC si créée depuis un fichier
+└── created_at / updated_at
+    + index GIN to_tsvector('french', title || content_text)
 ```
+
+**`notes`** alimente le panneau « Notes & fichiers » du ruban *Insérer* et sa grande
+modale. Le corps est stocké deux fois volontairement : `content_html` est ce qui est
+réinjecté au curseur dans la fenêtre de composition, `content_text` sert à la recherche
+plein texte et à l'extrait de liste — de sorte que SQL n'ait jamais à parser du HTML.
 
 ---
 
@@ -413,7 +473,8 @@ Auth            →  bcryptjs (hachage)
                 →  JWT signé (tokens)
                 →  Sessions PostgreSQL (révocation)
 
-Données         →  AES-256-GCM (mots de passe mail)
+Données         →  AES-256-GCM (mots de passe mail,
+                   jetons OAuth au repos)
                 →  Variables d'environnement (secrets)
 
 Infrastructure  →  Réseau Docker isolé
