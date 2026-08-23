@@ -20,3 +20,8 @@ server/downloads/*.deb
 server/downloads/*.AppImage
 server/downloads/*.dmg
 server/downloads/*.apk
+
+# Kerberos — un keytab est une cle de service du domaine : jamais versionne.
+# Le dossier est monte par docker-compose sur /etc/webmail (lecture seule).
+kerberos/
+*.keytab

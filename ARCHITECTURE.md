@@ -36,12 +36,16 @@ Vue d'ensemble de l'architecture technique de WebMail.
 │  │  │  │Service │ │ CalDAV/  │ │ cPanel │  │    │   │
 │  │  │  │ImapFlow│ │ CardDAV  │ │ UAPI   │  │    │   │
 │  │  │  └────────┘ └──────────┘ └────────┘  │    │   │
-│  │  │  ┌────────┐ ┌────────┐               │    │   │
-│  │  │  │  LDAP  │ │  SSO   │ │ Plugin │     │    │   │
-│  │  │  │Service │ │Service │ │Executor│     │    │   │
-│  │  │  │ldapts  │ │openid- │ └────────┘     │    │   │
-│  │  │  └────────┘ │client  │               │    │   │
-│  │  │             └────────┘               │    │   │
+│  │  │  ┌────────┐ ┌────────┐ ┌──────────┐  │    │   │
+│  │  │  │  LDAP  │ │  SSO   │ │ Kerberos │  │    │   │
+│  │  │  │Service │ │Service │ │  SPNEGO  │  │    │   │
+│  │  │  │ldapts  │ │openid- │ │  GSSAPI  │  │    │   │
+│  │  │  └────────┘ │client  │ │  keytab  │  │    │   │
+│  │  │             └────────┘ └──────────┘  │    │   │
+│  │  │  ┌────────┐                          │    │   │
+│  │  │  │ Plugin │                          │    │   │
+│  │  │  │Executor│                          │    │   │
+│  │  │  └────────┘                          │    │   │
 │  │  └──────────────────────────────────────┘    │   │
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────┼───────────────────────────┘
@@ -71,11 +75,11 @@ Vue d'ensemble de l'architecture technique de WebMail.
     ▼                                ▼
 ┌─────────────┐              ┌──────────────────┐
 │  O2Switch   │    ┌──────────────────┐    ┌─────────────────┐
-│  cPanel API │    │  Serveur LDAP    │    │ Fournisseur SSO │
-│  UAPI v3    │    │  (optionnel)     │    │  (optionnel)    │
+│  cPanel API │    │  Annuaire AD /   │    │ Fournisseur SSO │
+│  UAPI v3    │    │  LDAP (option.)  │    │  (optionnel)    │
 │  (port 2083)│    │  OpenLDAP / AD   │    │  Synology SSO / │
-└─────────────┘    │  ldaps:// ou     │    │  Keycloak /     │
-                   │  ldap://         │    │  Azure AD…      │
+└─────────────┘    │  ldaps:// ldap://│    │  Keycloak /     │
+                   │  Kerberos: keytab│    │  Azure AD…      │
                    └──────────────────┘    │  OIDC / OAuth2  │
                                            └─────────────────┘
 ```
@@ -514,6 +518,46 @@ Infrastructure  →  Réseau Docker isolé
                 →  PostgreSQL non exposé
                 →  Multi-stage build (surface réduite)
 ```
+
+### Méthodes d'authentification
+
+Toutes convergent vers la même sortie — un access token court + un cookie `wm_refresh`
+httpOnly émis par `issueSession()` — et restent activables indépendamment les unes des autres.
+
+| Méthode | Preuve apportée | Second facteur passkey |
+|---------|-----------------|------------------------|
+| Mot de passe local | bcrypt | Oui, si une passkey est enrôlée |
+| LDAP / AD | bind sur l'annuaire | Oui, si une passkey est enrôlée |
+| Passkey seule | WebAuthn (credential découvrable) | — (c'est le facteur) |
+| SSO OpenID Connect | jeton du fournisseur | Non |
+| Kerberos / SPNEGO | ticket du domaine | Non |
+
+### Connexion Windows intégrée (Kerberos / SPNEGO)
+
+```
+Poste joint au domaine                 App                          AD
+  GET /api/auth/kerberos/login  ───────▶
+                                 401 + WWW-Authenticate: Negotiate
+  ◀──── le navigateur demande un ticket HTTP/fqdn tout seul ──────▶ KDC
+  GET … Authorization: Negotiate <tok> ─▶
+                                        acceptSpnego()  ── keytab (hors ligne)
+                                        findLdapUser()  ────────────▶ LDAP
+                                        syncLdapGroups() + issueSession()
+                                 200 { token, user } + cookie wm_refresh
+```
+
+Trois propriétés structurantes :
+
+- **La validation du ticket est hors ligne.** La clé du keytab suffit à le déchiffrer : le
+  serveur ne contacte jamais le KDC, et l'hôte n'a pas besoin d'être joint au domaine.
+- **L'identité vient du domaine, les attributs de l'annuaire.** Le ticket ne porte qu'un
+  identifiant Windows ; c'est le LDAP déjà configuré qui fournit email, nom et `memberOf`, d'où
+  une synchronisation de groupes identique à celle d'un login LDAP.
+- **Le serveur décide s'il annonce `Negotiate`**, à partir de l'IP appelante et des plages CIDR
+  autorisées. Le client ne peut pas savoir s'il est sur le LAN ; le serveur, si.
+
+NTLM est refusé explicitement : son handshake est lié à la connexion TCP et ne survit pas à un
+reverse proxy qui multiplexe les connexions amont.
 
 ---
 

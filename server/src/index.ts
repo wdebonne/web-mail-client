@@ -50,6 +50,7 @@ import { startJunkFilter } from './services/junkFilter';
 import { startCalendarReminderPoller } from './services/calendarReminderPoller';
 import { startNextCloudSyncPoller } from './services/nextcloudSyncPoller';
 import { getWebAuthnConfig } from './services/webauthn';
+import { initKerberos } from './services/kerberos';
 
 const app = express();
 const server = createServer(app);
@@ -212,6 +213,10 @@ async function start() {
   try {
     await initDatabase();
     logger.info('Database initialized');
+
+    // Authentification integree Windows : ecrit krb5.conf et positionne les
+    // variables GSSAPI avant que quoi que ce soit ne charge libkrb5.
+    await initKerberos();
 
     // Initialize Web Push (VAPID)
     await initPushService();

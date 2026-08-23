@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useAuthStore } from '../stores/authStore';
-import { api } from '../api';
-import { Mail, Lock, User, AlertCircle, Fingerprint, KeyRound, LogIn } from 'lucide-react';
+import { useAuthStore, KERBEROS_SUPPRESS_KEY } from '../stores/authStore';
+import { api, kerberosLogin } from '../api';
+import { Mail, Lock, User, AlertCircle, Fingerprint, KeyRound, LogIn, Network } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { startAuthentication } from '@simplewebauthn/browser';
 
@@ -66,6 +66,66 @@ export default function LoginPage() {
     queryFn: api.getSsoConfig,
     staleTime: 60_000,
   });
+
+  // ── Kerberos / SPNEGO — connexion intégrée Windows ────────────────────────
+  // Le serveur ne répond `enabled: true` que si la méthode est utilisable
+  // *depuis cette IP* : hors du réseau autorisé, rien ne s'affiche et rien
+  // n'est tenté.
+  const { data: kerberosData } = useQuery({
+    queryKey: ['kerberos-config'],
+    queryFn: api.getKerberosConfig,
+    staleTime: 60_000,
+  });
+
+  const [kerberosBusy, setKerberosBusy] = useState(false);
+  const [kerberosAutoRunning, setKerberosAutoRunning] = useState(false);
+  const [kerberosError, setKerberosError] = useState('');
+
+  const runKerberosLogin = async (silent: boolean) => {
+    if (silent) setKerberosAutoRunning(true); else setKerberosBusy(true);
+    setKerberosError('');
+    try {
+      const result = await kerberosLogin();
+      if (result.ok) {
+        finalizeLogin(result.token, result.user);
+        return;
+      }
+      // En automatique on ne dit rien : l'immense majorité des échecs sont des
+      // postes hors domaine, pour qui le formulaire habituel est la réponse.
+      if (!silent) setKerberosError(result.error);
+    } finally {
+      setKerberosAutoRunning(false);
+      setKerberosBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!kerberosData?.enabled || !kerberosData.autoLogin) return;
+    if (isRegister || isForgot || pendingToken) return;
+
+    // Une seule tentative par onglet : un échec est stable (poste hors
+    // domaine, site absent de la zone Intranet) et réessayer à chaque
+    // rechargement ne ferait que ralentir la page.
+    let suppressed = false;
+    try {
+      suppressed = sessionStorage.getItem(KERBEROS_SUPPRESS_KEY) === '1';
+    } catch {}
+    if (suppressed) return;
+
+    try {
+      sessionStorage.setItem(KERBEROS_SUPPRESS_KEY, '1');
+    } catch {}
+    void runKerberosLogin(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kerberosData?.enabled, kerberosData?.autoLogin]);
+
+  const handleKerberosClick = () => {
+    // Clic explicite : on lève la suppression posée par la déconnexion.
+    try {
+      sessionStorage.removeItem(KERBEROS_SUPPRESS_KEY);
+    } catch {}
+    void runKerberosLogin(false);
+  };
 
   const appearance = branding?.login_appearance;
   const appName = branding?.app_name || 'WebMail';
@@ -147,6 +207,7 @@ export default function LoginPage() {
   const showRegister = appearance?.showRegister ?? true;
   const showForgotPassword = appearance?.showForgotPassword ?? false;
   const showSso = ssoData?.enabled ?? false;
+  const showKerberos = kerberosData?.enabled ?? false;
   const ssoProviderName = ssoData?.providerName ?? 'SSO';
 
   const handleSsoLogin = () => {
@@ -194,6 +255,19 @@ export default function LoginPage() {
         className="relative bg-white rounded-lg shadow-2xl w-full max-w-md p-8"
         style={cardStyle}
       >
+        {/* Tentative Kerberos automatique : on couvre la carte le temps de
+            l'aller-retour plutôt que d'afficher un formulaire que l'utilisateur
+            n'aura pas le temps de remplir. Échec ⇒ le voile disparaît et la
+            connexion classique reprend la main, sans message d'erreur. */}
+        {kerberosAutoRunning && (
+          <div
+            className="absolute inset-0 z-10 rounded-lg bg-white/95 flex flex-col items-center justify-center gap-3"
+            style={cardStyle.backgroundColor ? { backgroundColor: cardStyle.backgroundColor } : undefined}
+          >
+            <Network size={32} className="text-outlook-blue animate-pulse" />
+            <p className="text-sm text-outlook-text-secondary">Connexion au domaine…</p>
+          </div>
+        )}
         {/* ── Forgot password view ── */}
         {isForgot && (
           <div>
@@ -285,7 +359,7 @@ export default function LoginPage() {
         </div>
 
         <AnimatePresence>
-          {(error || ssoError) && (
+          {(error || ssoError || kerberosError) && (
             <motion.div
               initial={{ opacity: 0, height: 0, marginBottom: 0 }}
               animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
@@ -294,7 +368,7 @@ export default function LoginPage() {
               className="bg-red-50 border border-red-200 rounded-md p-3 flex items-center gap-2 overflow-hidden"
             >
               <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-              <span className="text-red-700 text-sm">{error || ssoError}</span>
+              <span className="text-red-700 text-sm">{error || ssoError || kerberosError}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -320,8 +394,19 @@ export default function LoginPage() {
           </div>
         )}
 
-        {(showPasskey || showSso) && !pendingToken && !isRegister && (
+        {(showPasskey || showSso || showKerberos) && !pendingToken && !isRegister && (
           <>
+            {showKerberos && (
+              <button
+                type="button"
+                onClick={handleKerberosClick}
+                disabled={kerberosBusy}
+                className="w-full border border-outlook-border hover:border-outlook-blue hover:bg-outlook-bg-hover text-outlook-text-primary py-2.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mb-3"
+              >
+                <Network size={18} />
+                {kerberosBusy ? 'Connexion au domaine…' : 'Se connecter avec mon compte Windows'}
+              </button>
+            )}
             {showSso && (
               <button
                 type="button"

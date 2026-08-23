@@ -928,6 +928,254 @@ authRouter.get('/sso/callback', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Kerberos / SPNEGO — authentification intégrée Windows
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** IP réelle de l'appelant (le reverse proxy est déclaré de confiance). */
+function clientIp(req: Request): string {
+  return (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+}
+
+/**
+ * Public : la page de connexion demande si elle doit tenter le Negotiate.
+ *
+ * `enabled` intègre le filtre réseau évalué sur l'IP appelante : c'est le
+ * serveur qui sait si le client est sur le LAN, pas le navigateur. Depuis
+ * l'extérieur, la page reçoit `false` et n'essaie même pas.
+ */
+authRouter.get('/kerberos/config', async (req, res) => {
+  try {
+    const { getKerberosConfig, checkKerberosAvailability, isFromAllowedNetwork } =
+      await import('../services/kerberos');
+    const cfg = await getKerberosConfig();
+
+    if (!cfg.enabled || !checkKerberosAvailability(cfg).available) {
+      return res.json({ enabled: false, autoLogin: false });
+    }
+    if (!isFromAllowedNetwork(clientIp(req), cfg)) {
+      return res.json({ enabled: false, autoLogin: false });
+    }
+    res.json({ enabled: true, autoLogin: cfg.autoLogin });
+  } catch {
+    res.json({ enabled: false, autoLogin: false });
+  }
+});
+
+/**
+ * Handshake SPNEGO puis émission de session.
+ *
+ * Sans en-tête `Authorization`, on répond `401 WWW-Authenticate: Negotiate` :
+ * le navigateur d'un poste du domaine va alors chercher un ticket auprès du
+ * KDC et rejoue la requête tout seul. La réponse finale est du JSON (et non
+ * une redirection comme le SSO OIDC) afin que la page de connexion puisse
+ * tenter le tout en arrière-plan sans jamais clignoter.
+ */
+authRouter.get('/kerberos/login', async (req, res) => {
+  const ip = clientIp(req);
+  const ua = req.headers['user-agent'] || '';
+
+  try {
+    const {
+      getKerberosConfig, checkKerberosAvailability, isFromAllowedNetwork,
+      acceptSpnego, KerberosAuthError,
+    } = await import('../services/kerberos');
+
+    const cfg = await getKerberosConfig();
+    if (!cfg.enabled) {
+      return res.status(404).json({ error: 'Authentification Windows désactivée', code: 'disabled' });
+    }
+
+    const availability = checkKerberosAvailability(cfg);
+    if (!availability.available) {
+      return res.status(503).json({ error: availability.reason, code: 'unavailable' });
+    }
+
+    // Hors du réseau autorisé : on n'annonce même pas `Negotiate`, inutile de
+    // faire chercher un ticket à un poste qui n'en obtiendra jamais.
+    if (!isFromAllowedNetwork(ip, cfg)) {
+      return res.status(404).json({ error: 'Méthode indisponible depuis ce réseau', code: 'network_not_allowed' });
+    }
+
+    // Blacklist IP — même règle que le login par mot de passe et le SSO.
+    const blacklisted = await pool.query(
+      `SELECT id FROM ip_security_list WHERE ip_address = $1 AND list_type = 'blacklist'`,
+      [ip]
+    );
+    if (blacklisted.rows.length > 0) {
+      await pool.query(
+        `INSERT INTO login_attempts (email, ip_address, user_agent, success, block_reason)
+         VALUES ($1, $2, $3, false, 'blacklist')`,
+        ['(kerberos)', ip, ua]
+      );
+      addLog(undefined, 'user.login_blocked', 'auth', req, { method: 'kerberos', reason: 'blacklist' }).catch(() => {});
+      return res.status(403).json({ error: 'Accès refusé depuis cette adresse IP', code: 'ip_blocked' });
+    }
+
+    // ── Étape 1 : le défi ────────────────────────────────────────────────────
+    const header = req.headers.authorization;
+    if (!header?.startsWith('Negotiate ')) {
+      res.setHeader('WWW-Authenticate', 'Negotiate');
+      return res.status(401).json({ error: 'Négociation Kerberos requise', code: 'negotiate' });
+    }
+
+    // ── Étape 2 : validation du ticket ───────────────────────────────────────
+    let spnego: Awaited<ReturnType<typeof acceptSpnego>>;
+    try {
+      spnego = await acceptSpnego(cfg, header.substring('Negotiate '.length).trim());
+    } catch (err: any) {
+      const code = err instanceof KerberosAuthError ? err.code : 'spnego_failed';
+      console.warn('Kerberos handshake refused:', code, err?.message);
+      addLog(undefined, 'user.login_failed', 'auth', req, { method: 'kerberos', reason: code }).catch(() => {});
+      return res.status(401).json({
+        error: err instanceof KerberosAuthError ? err.message : "Le ticket Kerberos n'a pas pu être validé.",
+        code,
+      });
+    }
+
+    // ── Étape 3 : principal → compte applicatif ──────────────────────────────
+    const { getLdapConfig, findLdapUser, syncLdapGroups, escapeLdapFilterValue } =
+      await import('../services/ldap');
+    const ldapCfg = await getLdapConfig();
+
+    let email: string;
+    let displayName: string;
+    let memberOfDns: string[] = [];
+    let ldapResolved = false;
+    let isAdminFromLdap = false;
+
+    if (ldapCfg.enabled) {
+      const filter = cfg.userFilter
+        .replaceAll('{{sam}}', escapeLdapFilterValue(spnego.sam))
+        .replaceAll('{{principal}}', escapeLdapFilterValue(spnego.principal));
+
+      // Un annuaire injoignable ne doit pas ressortir en 500 opaque : le ticket
+      // était valide, c'est la résolution des attributs qui a échoué.
+      let ldapUser: Awaited<ReturnType<typeof findLdapUser>>;
+      try {
+        ldapUser = await findLdapUser(ldapCfg, filter);
+      } catch (err: any) {
+        console.error('Kerberos: LDAP lookup failed:', err);
+        addLog(undefined, 'user.login_failed', 'auth', req, {
+          method: 'kerberos', reason: 'ldap_error', message: err?.message,
+        }).catch(() => {});
+        return res.status(503).json({
+          error: "Le ticket Windows est valide mais l'annuaire LDAP est injoignable. Contactez un administrateur.",
+          code: 'ldap_error',
+        });
+      }
+
+      if (!ldapUser) {
+        addLog(undefined, 'user.login_failed', 'auth', req, {
+          method: 'kerberos', reason: 'ldap_no_match', principal: spnego.principal,
+        }).catch(() => {});
+        return res.status(403).json({
+          error: `Aucun compte d'annuaire ne correspond à ${spnego.principal} (ou il n'a pas d'adresse email).`,
+          code: 'ldap_no_match',
+        });
+      }
+      email = ldapUser.email;
+      displayName = ldapUser.displayName;
+      memberOfDns = ldapUser.memberOfDns;
+      isAdminFromLdap = ldapUser.isAdmin;
+      ldapResolved = true;
+    } else if (cfg.emailDomain) {
+      // Repli sans annuaire : pas de synchronisation de groupes possible.
+      email = `${spnego.sam}@${cfg.emailDomain}`;
+      displayName = spnego.sam;
+    } else {
+      return res.status(503).json({
+        error: "LDAP est désactivé et aucun domaine email de repli n'est configuré : impossible de rattacher le compte Windows à un utilisateur.",
+        code: 'no_user_mapping',
+      });
+    }
+
+    // ── Étape 4 : provisionnement ────────────────────────────────────────────
+    // Avec l'annuaire, le nom et les droits admin suivent le LDAP (identique au
+    // login LDAP). Sans annuaire, on ne touche jamais à `is_admin` : rien ne
+    // permettrait de le recalculer, et l'écraser dégraderait un administrateur.
+    if (ldapResolved) {
+      await pool.query(
+        `INSERT INTO users (email, password_hash, display_name, is_admin, role, is_active)
+         VALUES ($1, '', $2, $3, $4, true)
+         ON CONFLICT (email) DO UPDATE
+           SET display_name = EXCLUDED.display_name,
+               is_admin = EXCLUDED.is_admin,
+               role = EXCLUDED.role,
+               updated_at = NOW()`,
+        [email, displayName, isAdminFromLdap, isAdminFromLdap ? 'admin' : 'user']
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO users (email, password_hash, display_name, is_admin, role, is_active)
+         VALUES ($1, '', $2, false, 'user', true)
+         ON CONFLICT (email) DO UPDATE
+           SET display_name = EXCLUDED.display_name, updated_at = NOW()`,
+        [email, displayName]
+      );
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, display_name, avatar_url, role, is_admin, is_active,
+              language, timezone, theme
+       FROM users WHERE email = $1`,
+      [email]
+    );
+    if (result.rows.length === 0) {
+      return res.status(500).json({ error: 'Provisionnement impossible', code: 'provisioning_failed' });
+    }
+
+    const user = result.rows[0];
+    if (user.is_active === false) {
+      return res.status(403).json({ error: 'Ce compte est désactivé', code: 'account_disabled' });
+    }
+
+    if (ldapResolved) {
+      syncLdapGroups(user.id, memberOfDns, ldapCfg).catch((err) => {
+        console.error('LDAP group sync failed for', email, ':', err);
+      });
+    }
+
+    await pool.query(
+      `INSERT INTO login_attempts (user_id, email, ip_address, user_agent, success)
+       VALUES ($1, $2, $3, $4, true)`,
+      [user.id, email, ip, ua]
+    );
+    addLog(user.id, 'user.login', 'auth', req, {
+      email, method: 'kerberos', principal: spnego.principal,
+    }).catch(() => {});
+
+    // ── Étape 5 : session ────────────────────────────────────────────────────
+    req.session.userId = user.id;
+    req.session.isAdmin = user.is_admin;
+    const { accessToken } = await issueSession(req, res, user.id, user.is_admin);
+
+    // Authentification mutuelle : le client peut vérifier que le serveur
+    // détenait bien la clé du service.
+    if (spnego.responseToken) {
+      res.setHeader('WWW-Authenticate', `Negotiate ${spnego.responseToken}`);
+    }
+
+    res.json({
+      token: accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.display_name,
+        avatarUrl: user.avatar_url,
+        role: user.role,
+        isAdmin: user.is_admin,
+        language: user.language,
+        timezone: user.timezone,
+        theme: user.theme,
+      },
+    });
+  } catch (error: any) {
+    console.error('Kerberos login error:', error);
+    res.status(500).json({ error: 'Erreur serveur', code: 'server_error' });
+  }
+});
+
 /**
  * PWA unlock — the authenticated user proves presence (biometric) to unlock
  * the app after a period of inactivity. Uses the current access token to

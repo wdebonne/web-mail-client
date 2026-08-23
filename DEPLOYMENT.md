@@ -244,6 +244,11 @@ server {
     # Taille max des pièces jointes (25 Mo)
     client_max_body_size 25M;
 
+    # En-têtes volumineux — requis si vous utilisez la connexion Windows
+    # (Kerberos) : le ticket d'un utilisateur membre de nombreux groupes AD
+    # dépasse la limite par défaut, ce qui produit des 400/431 intermittents.
+    large_client_header_buffers 4 32k;
+
     # Proxy vers l'application
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -257,6 +262,10 @@ server {
 
         # Timeout pour les connexions WebSocket
         proxy_read_timeout 86400;
+
+        # Voir large_client_header_buffers ci-dessus (Kerberos).
+        proxy_buffer_size 16k;
+        proxy_buffers 4 16k;
     }
 
     # Cache pour les assets statiques
@@ -284,6 +293,13 @@ proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 proxy_set_header X-Forwarded-Host $host;
+
+# Uniquement si vous utilisez la connexion Windows (Kerberos) : le ticket d'un
+# utilisateur membre de nombreux groupes AD depasse la taille d'en-tete par
+# defaut, avec des 400/431 intermittents a la cle.
+proxy_buffer_size 16k;
+proxy_buffers 4 16k;
+large_client_header_buffers 4 32k;
 ```
 
 Active **Force SSL** et **Websockets Support**. Une fois HTTPS fonctionnel,

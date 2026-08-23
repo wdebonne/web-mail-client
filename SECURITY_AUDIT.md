@@ -299,13 +299,18 @@ La phase 2 (auto-sync) de `syncLdapGroups` créait un groupe applicatif pour **c
 
 > **✅ Résolu (juillet 2026)** — filtre configurable dans **Admin → LDAP → Synchronisation des groupes** : aucun filtre (défaut), préfixe de CN, regex sur le CN, ou OU de base (suffixe du DN). Appliqué avant la phase 2 de `syncLdapGroups` (`ldapGroupMatchesFilter`) : un groupe exclu n'est ni créé ni synchronisé, et l'utilisateur en est retiré à sa prochaine connexion. Les mappings manuels (`ldap_group_mappings`, phase 1) et la détection des admins (phase 3) voient toujours la liste `memberOf` complète. Une regex invalide est rejetée à l'enregistrement (400) et, par prudence, ne synchronise aucun groupe (fail closed). Clés `admin_settings` : `ldap_group_filter_mode`, `ldap_group_filter_value`.
 
-### S4. SSO (OIDC) — le step-up passkey ne s'applique pas *(choix assumé)*
+### S4. Authentification fédérée (SSO OIDC, Kerberos) — le step-up passkey ne s'applique pas *(choix assumé)*
 
-**Fichier :** [server/src/routes/auth.ts](server/src/routes/auth.ts#L836-L924)
+**Fichier :** [server/src/routes/auth.ts](server/src/routes/auth.ts) — callback OIDC et route `/kerberos/login`
 
-Le login par mot de passe ou LDAP exige une preuve passkey dès que l'utilisateur en a enregistré une ([auth.ts](server/src/routes/auth.ts#L330-L339) : `requires2FA` + `pendingToken`). Le callback OIDC, lui, émet la session directement, sans consulter `webauthn_credentials`.
+Le login par mot de passe ou LDAP exige une preuve passkey dès que l'utilisateur en a enregistré une ([auth.ts](server/src/routes/auth.ts#L330-L339) : `requires2FA` + `pendingToken`). Le callback OIDC et le handshake Kerberos, eux, émettent la session directement, sans consulter `webauthn_credentials`.
 
-**Choix assumé, documenté ici :** en flux SSO, la MFA relève du fournisseur d'identité (Synology SSO, Keycloak…), qui applique ses propres politiques (2FA, accès conditionnel). Exiger en plus la passkey locale ferait double emploi et dégraderait l'expérience SSO. Conséquence à connaître : **si le fournisseur n'impose pas de MFA, un compte SSO se connecte sans second facteur, même s'il possède des passkeys locales.** À réévaluer si un besoin de « MFA locale obligatoire » apparaît (ex. option d'administration `sso_require_local_2fa`).
+**Choix assumé, documenté ici :** dans les deux cas, l'authentification a déjà été faite par une autorité externe — le fournisseur d'identité (Synology SSO, Keycloak…) avec ses propres politiques de MFA et d'accès conditionnel, ou le contrôleur de domaine qui a délivré le ticket Kerberos. Exiger en plus la passkey locale ferait double emploi et viderait de son sens la connexion transparente. Conséquence à connaître : **si le fournisseur n'impose pas de MFA, ou si l'ouverture de session Windows se fait par simple mot de passe, le compte se connecte sans second facteur, même s'il possède des passkeys locales.** À réévaluer si un besoin de « MFA locale obligatoire » apparaît (ex. options `sso_require_local_2fa` / `kerberos_require_local_2fa`).
+
+Deux nuances propres à Kerberos, notées ici pour ne pas être re-signalées :
+
+- **Le verrouillage après N échecs (`locked_until`) n'est pas consulté** sur ce chemin, comme sur le chemin SSO. C'est cohérent : ce compteur protège contre le devinage de mot de passe, et présenter un ticket de service valide n'est pas un devinage. Un compte réellement suspendu se désactive via `is_active`, qui est bien vérifié.
+- **Le keytab est un secret équivalent au mot de passe du compte de service.** Il est délibérément conservé hors base (fichier monté en lecture seule, seul son chemin est stocké) : `admin_settings` part dans les sauvegardes, qui deviendraient alors porteuses d'une clé de domaine.
 
 ---
 

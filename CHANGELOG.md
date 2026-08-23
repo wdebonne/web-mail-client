@@ -9,7 +9,25 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+_Rien pour le moment._
+
+---
+
+## [1.25.0] - 2026-08-23
+
 ### Ajouté
+
+- **Connexion Windows intégrée (Kerberos / SPNEGO)** — le chaînon qui manquait entre l'intégration LDAP et une vraie ouverture de session d'entreprise
+  - Sur un poste joint au domaine Active Directory, ouvrir l'application suffit : **ni email, ni mot de passe, ni clic**. Le serveur répond `401 WWW-Authenticate: Negotiate`, le navigateur va chercher un ticket auprès du contrôleur de domaine et rejoue la requête tout seul.
+  - Valider ce ticket est une opération **hors ligne** — la clé du keytab suffit à le déchiffrer. La machine hôte n'a donc **pas besoin d'être jointe au domaine**, ni même de joindre le KDC : un keytab généré sur le DC (`ktpass`) et monté en lecture seule suffit. C'est ce qui rend la fonction utilisable depuis un NAS ou un hôte Docker Linux ordinaire.
+  - Le principal Windows (`jdupont@DOMAINE.LOCAL`) est résolu **via le LDAP déjà configuré** (filtre paramétrable, `{{sam}}` / `{{principal}}`) : adresse email, nom affiché, groupes et droits administrateur sont synchronisés exactement comme lors d'une connexion LDAP. Sans annuaire, un domaine email de repli permet quand même de rattacher le compte, mais sans groupes.
+  - **NTLM est refusé explicitement** : nettement plus faible que Kerberos, et son handshake lié à la connexion TCP ne survit pas à un reverse proxy qui multiplexe les connexions amont. Un refus lisible vaut mieux qu'une authentification qui marche une fois sur deux.
+  - **Restriction par plages CIDR** : c'est le serveur qui décide, à partir de l'IP appelante, s'il annonce `Negotiate`. Hors du réseau interne, `/api/auth/kerberos/config` répond `enabled: false`, la page de connexion ne tente rien et affiche directement le formulaire. Kerberos ne fonctionne que sur le LAN ou via VPN — c'est une limite du protocole, pas de l'implémentation.
+  - Réglages et **diagnostic intégré** dans **Admin → Intégrations → Connexion Windows (Kerberos)** : module natif chargé, keytab lisible, clé de service réellement présente dans le keytab, et **décalage d'horloge avec le contrôleur de domaine** (au-delà de 5 minutes, le KDC rejette tout — c'est la première cause de panne). L'aide affiche les commandes `setspn` / `ktpass` exactes, pré-remplies avec le SPN saisi.
+  - La **déconnexion suspend la reconnexion automatique** jusqu'à la fermeture de l'onglet : sans cela, « Se déconnecter » aurait reconnecté l'utilisateur dans la seconde sur un poste du domaine.
+  - Le module natif `kerberos` est une **dépendance optionnelle**, chargée à la demande : si la compilation échoue, l'application démarre normalement et la fonctionnalité se signale indisponible. Les autres méthodes (mot de passe, LDAP, passkey, SSO) ne sont jamais affectées.
+  - Limites assumées : comme pour le SSO OIDC, une connexion Kerberos **ne déclenche pas** l'étape passkey supplémentaire ; et le keytab reste volontairement un fichier monté plutôt qu'une valeur en base, pour ne pas se retrouver dans les sauvegardes.
+  - API : `GET /api/auth/kerberos/{config,login}`, `GET`/`PUT /api/admin/kerberos/settings`, `POST /api/admin/kerberos/test`. Le `Dockerfile` embarque désormais GSSAPI (`krb5-libs`) et relève `--max-http-header-size` — un ticket AD transporte un PAC qui grossit avec le nombre de groupes et dépasse vite la limite d'en-tête par défaut de 16 Ko.
 
 - **Gestion du courrier indésirable**
   - **Bloquer un expéditeur** en deux clics depuis le menu *Plus* d'un message ou le clic droit dans la liste : une fenêtre propose de bloquer *cet expéditeur* ou *tout le domaine*, avec une case **« déplacer aussi les messages déjà reçus »** (avertissement explicite quand le domaine visé est un fournisseur grand public). Ses prochains messages partent directement dans **Courrier indésirable**.

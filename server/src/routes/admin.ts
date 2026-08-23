@@ -3265,6 +3265,184 @@ adminRouter.post('/sso/test', async (req: AuthRequest, res) => {
 });
 
 // ========================================
+// ---- Kerberos Settings (SPNEGO / Windows) ----
+// ========================================
+
+adminRouter.get('/kerberos/settings', async (_req: AuthRequest, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT key, value FROM admin_settings WHERE key LIKE 'kerberos_%'`
+    );
+    const s: Record<string, any> = {};
+    for (const row of result.rows) s[row.key] = row.value;
+
+    // Aucun secret ici : le keytab reste un fichier monté, seul son chemin est
+    // stocké. Le mettre en base l'exposerait dans les sauvegardes, qui
+    // embarquent `admin_settings`.
+    const { getKerberosConfig, checkKerberosAvailability } = await import('../services/kerberos');
+    const cfg = await getKerberosConfig();
+    const availability = checkKerberosAvailability(cfg);
+
+    res.json({ ...s, _availability: availability });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.put('/kerberos/settings', async (req: AuthRequest, res) => {
+  try {
+    const { normalizeServicePrincipal, getKerberosConfig, applyKerberosEnvironment } =
+      await import('../services/kerberos');
+    const body = req.body as Record<string, any>;
+
+    if (typeof body['kerberos_realm'] === 'string' && body['kerberos_realm'].trim()) {
+      const realm = body['kerberos_realm'].trim();
+      if (!/^[A-Za-z0-9.-]+$/.test(realm)) {
+        return res.status(400).json({ error: 'Realm invalide (lettres, chiffres, points et tirets uniquement)' });
+      }
+      // Kerberos distingue la casse du realm : AD attend les majuscules.
+      body['kerberos_realm'] = realm.toUpperCase();
+    }
+
+    if (typeof body['kerberos_service_principal'] === 'string' && body['kerberos_service_principal'].trim()) {
+      const spn = normalizeServicePrincipal(body['kerberos_service_principal']);
+      if (!/^[A-Za-z0-9_-]+@[A-Za-z0-9.-]+$/.test(spn)) {
+        return res.status(400).json({ error: 'Principal de service invalide — attendu : HTTP/mail.domaine.local ou HTTP@mail.domaine.local' });
+      }
+      body['kerberos_service_principal'] = spn;
+    }
+
+    if (typeof body['kerberos_allowed_cidrs'] === 'string' && body['kerberos_allowed_cidrs'].trim()) {
+      const entries = body['kerberos_allowed_cidrs'].split(/[\s,;]+/).filter(Boolean);
+      const invalid = entries.filter((entry: string) => !isPlausibleCidr(entry));
+      if (invalid.length > 0) {
+        return res.status(400).json({ error: `Réseau autorisé invalide : ${invalid.join(', ')}` });
+      }
+    }
+
+    if (typeof body['kerberos_user_filter'] === 'string' && body['kerberos_user_filter'].trim()) {
+      const filter = body['kerberos_user_filter'];
+      if (!filter.includes('{{sam}}') && !filter.includes('{{principal}}')) {
+        return res.status(400).json({ error: 'Le filtre doit contenir {{sam}} ou {{principal}}' });
+      }
+    }
+
+    const allowed = [
+      'kerberos_enabled', 'kerberos_realm', 'kerberos_kdcs', 'kerberos_service_principal',
+      'kerberos_keytab_path', 'kerberos_user_filter', 'kerberos_email_domain',
+      'kerberos_allowed_cidrs', 'kerberos_auto_login',
+    ];
+    for (const key of allowed) {
+      if (key in body) {
+        await pool.query(
+          `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+          [key, JSON.stringify(body[key])]
+        );
+      }
+    }
+
+    // Le chemin du keytab est relu à chaque handshake : il prend effet tout de
+    // suite. Le realm et les KDC, eux, vivent dans le profil que libkrb5 ne
+    // relit pas — d'où l'avertissement affiché dans l'interface.
+    applyKerberosEnvironment(await getKerberosConfig());
+
+    await addLog(req.userId, 'kerberos.settings_updated', 'security', req, {});
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+/** Validation de forme d'un CIDR IPv4 (`ipMatchesCidr` ne dit pas *pourquoi* ça échoue). */
+function isPlausibleCidr(entry: string): boolean {
+  const [network, bits] = entry.split('/');
+  if (bits !== undefined && !/^(3[0-2]|[12]?\d)$/.test(bits)) return false;
+  const octets = network.split('.');
+  return octets.length === 4 && octets.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255);
+}
+
+/**
+ * Diagnostic complet, dans l'ordre où les choses cassent en pratique :
+ * module natif, keytab, clé de service, décalage d'horloge avec le DC.
+ */
+adminRouter.post('/kerberos/test', async (_req: AuthRequest, res) => {
+  const checks: Array<{ id: string; label: string; ok: boolean; detail: string }> = [];
+  try {
+    const { getKerberosConfig, checkKerberosAvailability, verifyServicePrincipal } =
+      await import('../services/kerberos');
+    const cfg = await getKerberosConfig();
+    const availability = checkKerberosAvailability(cfg);
+
+    checks.push({
+      id: 'module',
+      label: 'Module natif Kerberos',
+      ok: availability.moduleLoaded,
+      detail: availability.moduleLoaded
+        ? 'Chargé'
+        : `Absent — ${availability.moduleError ?? 'installation requise'}`,
+    });
+
+    checks.push({
+      id: 'keytab',
+      label: 'Keytab',
+      ok: availability.keytabFound,
+      detail: availability.keytabFound
+        ? `Lisible : ${availability.keytabPath}`
+        : (availability.keytabPath ? `Introuvable : ${availability.keytabPath}` : 'Aucun chemin configuré'),
+    });
+
+    if (availability.moduleLoaded && availability.keytabFound) {
+      const spnCheck = await verifyServicePrincipal(cfg);
+      checks.push({
+        id: 'spn', label: 'Clé de service (SPN)', ok: spnCheck.ok, detail: spnCheck.message,
+      });
+    } else {
+      checks.push({
+        id: 'spn', label: 'Clé de service (SPN)', ok: false,
+        detail: 'Non testable tant que le module et le keytab ne sont pas en place',
+      });
+    }
+
+    const { getLdapConfig, getDirectoryCurrentTime } = await import('../services/ldap');
+    const ldapCfg = await getLdapConfig();
+    if (ldapCfg.enabled) {
+      const dcTime = await getDirectoryCurrentTime(ldapCfg);
+      if (dcTime) {
+        const skewSeconds = Math.round(Math.abs(dcTime.getTime() - Date.now()) / 1000);
+        checks.push({
+          id: 'clock',
+          label: 'Horloge du serveur',
+          ok: skewSeconds < 300,
+          detail: skewSeconds < 300
+            ? `Décalage de ${skewSeconds} s avec le contrôleur de domaine`
+            : `Décalage de ${skewSeconds} s — au-delà de 300 s le KDC rejette tous les tickets. Synchronisez l'heure (NTP).`,
+        });
+      } else {
+        checks.push({
+          id: 'clock', label: 'Horloge du serveur', ok: true,
+          detail: "L'annuaire ne publie pas son heure — vérification impossible, pensez à contrôler le NTP manuellement",
+        });
+      }
+
+      checks.push({
+        id: 'mapping', label: 'Résolution des comptes', ok: true,
+        detail: `Via LDAP, filtre ${cfg.userFilter}`,
+      });
+    } else {
+      checks.push({
+        id: 'mapping',
+        label: 'Résolution des comptes',
+        ok: !!cfg.emailDomain,
+        detail: cfg.emailDomain
+          ? `LDAP désactivé — repli sur <compte>@${cfg.emailDomain} (aucune synchronisation de groupes)`
+          : 'LDAP désactivé et aucun domaine email de repli : les connexions Windows échoueront',
+      });
+    }
+
+    res.json({ ok: checks.every((c) => c.ok), checks });
+  } catch (e: any) {
+    res.json({ ok: false, checks, error: e.message ?? 'Erreur inconnue' });
+  }
+});
+
+// ========================================
 // ---- Migration IMAP ----
 // ========================================
 

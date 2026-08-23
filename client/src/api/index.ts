@@ -38,6 +38,61 @@ export async function tryRestoreSession(): Promise<boolean> {
   return performRefresh();
 }
 
+export type KerberosLoginResult =
+  | { ok: true; token: string; user: any }
+  | { ok: false; error: string; code?: string };
+
+/**
+ * Connexion intégrée Windows (SPNEGO / Kerberos).
+ *
+ * Délibérément hors de `request()`, pour deux raisons :
+ *  - le navigateur doit poser lui-même l'en-tête `Authorization: Negotiate` en
+ *    réponse au 401 du serveur, ce qu'il ne fera pas si on en envoie déjà un ;
+ *  - un 401 est ici une étape normale du protocole, pas une session expirée :
+ *    il ne doit surtout pas déclencher le refresh ni la purge du token.
+ *
+ * Le handshake n'aboutit que si le poste est joint au domaine **et** que le
+ * site est déclaré de confiance (zone Intranet local / AuthServerAllowlist).
+ * Sinon le navigateur renvoie simplement le 401 au JavaScript, et on retombe
+ * silencieusement sur le formulaire.
+ */
+export async function kerberosLogin(timeoutMs = 8000): Promise<KerberosLoginResult> {
+  // La tentative est automatique au chargement de la page : sans garde-fou, un
+  // KDC ou un annuaire lent bloquerait le formulaire de connexion pour tout le
+  // monde. Au-delà du délai, on abandonne et on affiche la saisie classique.
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/kerberos/login`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      signal: abort.signal,
+    });
+    const body = await res.json().catch(() => null) as
+      | { token?: string; user?: any; error?: string; code?: string }
+      | null;
+
+    if (res.ok && body?.token && body.user) {
+      return { ok: true, token: body.token, user: body.user };
+    }
+    return {
+      ok: false,
+      error: body?.error || 'La connexion au domaine a échoué.',
+      code: body?.code,
+    };
+  } catch (err) {
+    const aborted = err instanceof DOMException && err.name === 'AbortError';
+    return {
+      ok: false,
+      error: aborted ? "Le domaine n'a pas répondu à temps." : 'Serveur injoignable.',
+      code: aborted ? 'timeout' : 'network_error',
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function request<T>(url: string, options: RequestInit = {}, _retry = false): Promise<T> {
   const token = localStorage.getItem('auth_token');
 
@@ -622,6 +677,18 @@ export const api = {
     request<{ ok: boolean; message: string; issuer?: string; authEndpoint?: string }>(
       '/admin/sso/test', { method: 'POST', body: JSON.stringify(data) }
     ),
+
+  // Kerberos / SPNEGO (authentification intégrée Windows)
+  getKerberosConfig: () => request<{ enabled: boolean; autoLogin: boolean }>('/auth/kerberos/config'),
+  getKerberosSettings: () => request<any>('/admin/kerberos/settings'),
+  updateKerberosSettings: (data: any) =>
+    request('/admin/kerberos/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  testKerberos: () =>
+    request<{
+      ok: boolean;
+      checks: Array<{ id: string; label: string; ok: boolean; detail: string }>;
+      error?: string;
+    }>('/admin/kerberos/test', { method: 'POST' }),
 
   // LDAP settings
   getLdapSettings: () => request<any>('/admin/ldap/settings'),

@@ -35,6 +35,7 @@ L'API utilise deux méthodes d'authentification :
 - [Notifications push](#notifications-push)
 - [LDAP](#ldap-admin)
 - [SSO / OpenID Connect](#sso--openid-connect-admin)
+- [Connexion Windows (Kerberos)](#connexion-windows-kerberos)
 - [Codes d'erreur](#codes-derreur)
 
 ---
@@ -3034,6 +3035,112 @@ Teste la connexion au serveur OIDC avec les paramètres fournis (ou ceux sauvega
 ```json
 { "ok": false, "message": "connect ECONNREFUSED 192.168.1.10:5001" }
 ```
+
+---
+
+## Connexion Windows (Kerberos)
+
+Authentification integree Windows via SPNEGO / Kerberos. Sur un poste joint au domaine, le
+navigateur repond seul au defi `Negotiate` : aucune saisie utilisateur.
+
+### GET /api/auth/kerberos/config
+
+Endpoint **public** — indique a la page de connexion si elle doit proposer, voire tenter,
+la connexion Windows.
+
+`enabled` integre le filtre reseau evalue sur l'IP appelante : depuis une adresse hors des
+plages autorisees, la reponse est `false` meme si la fonctionnalite est active.
+
+**Reponse 200 :**
+```json
+{ "enabled": true, "autoLogin": true }
+```
+
+---
+
+### GET /api/auth/kerberos/login
+
+Handshake SPNEGO en deux temps, puis emission de session.
+
+**Flux :**
+1. Sans en-tete `Authorization`, repond `401` + `WWW-Authenticate: Negotiate`.
+2. Le navigateur obtient un ticket aupres du KDC et rejoue la requete avec
+   `Authorization: Negotiate <token>`.
+3. Le serveur valide le ticket avec le keytab (**hors ligne**, sans contacter le KDC).
+4. Le principal est resolu via LDAP (`{{sam}}` / `{{principal}}`) : email, nom, `memberOf`.
+5. Provisionnement, synchronisation des groupes, puis device session + cookie `wm_refresh`.
+
+**Reponse 200 :**
+```json
+{
+  "token": "<access token>",
+  "user": { "id": "…", "email": "jdupont@domaine.local", "displayName": "Jean Dupont", "isAdmin": false }
+}
+```
+> En-tete `WWW-Authenticate: Negotiate <token>` renvoye pour l'authentification mutuelle.
+
+**Erreurs :**
+
+| Statut | `code` | Signification |
+|--------|--------|---------------|
+| `401` | `negotiate` | Etape normale du protocole : defi envoye au navigateur |
+| `401` | `ntlm_rejected` | Le navigateur a propose NTLM — refuse volontairement |
+| `401` | `context_incomplete` | Negociation multi-etapes non supportee |
+| `401` | `spnego_failed` | Ticket invalide, expire, ou horloge decalee |
+| `403` | `ip_blocked` | IP en liste noire |
+| `403` | `ldap_no_match` | Aucun compte d'annuaire ne correspond au principal |
+| `403` | `account_disabled` | Compte desactive dans l'application |
+| `404` | `disabled` / `network_not_allowed` | Methode inactive, ou appelant hors des plages CIDR |
+| `503` | `unavailable` | Module natif absent, keytab illisible ou SPN non configure |
+| `503` | `no_user_mapping` | LDAP desactive et aucun domaine email de repli |
+
+---
+
+### GET /api/admin/kerberos/settings
+
+Retourne les reglages Kerberos, plus un objet `_availability` (module charge, keytab trouve,
+raison de l'indisponibilite le cas echeant). Aucun secret : le keytab est un fichier monte,
+seul son chemin est stocke.
+
+> Requiert `is_admin = true`.
+
+---
+
+### PUT /api/admin/kerberos/settings
+
+Cles acceptees : `kerberos_enabled`, `kerberos_auto_login`, `kerberos_realm`, `kerberos_kdcs`,
+`kerberos_service_principal`, `kerberos_keytab_path`, `kerberos_user_filter`,
+`kerberos_email_domain`, `kerberos_allowed_cidrs`.
+
+Le realm est normalise en majuscules et le SPN accepte les deux notations
+(`HTTP/mail.domaine.local` comme `HTTP@mail.domaine.local`).
+
+**Erreurs :** `400` — realm, SPN, CIDR invalides, ou filtre sans `{{sam}}` ni `{{principal}}`.
+
+> Le chemin du keytab prend effet immediatement ; **le realm et les KDC exigent un redemarrage**
+> du conteneur (libkrb5 ne relit pas son profil).
+
+---
+
+### POST /api/admin/kerberos/test
+
+Diagnostic, dans l'ordre ou les choses cassent en pratique.
+
+**Reponse 200 :**
+```json
+{
+  "ok": false,
+  "checks": [
+    { "id": "module",  "label": "Module natif Kerberos", "ok": true,  "detail": "Charge" },
+    { "id": "keytab",  "label": "Keytab", "ok": true, "detail": "Lisible : /etc/webmail/webmail.keytab" },
+    { "id": "spn",     "label": "Cle de service (SPN)", "ok": true, "detail": "…" },
+    { "id": "clock",   "label": "Horloge du serveur", "ok": false, "detail": "Decalage de 812 s — au-dela de 300 s le KDC rejette tous les tickets." },
+    { "id": "mapping", "label": "Resolution des comptes", "ok": true, "detail": "Via LDAP, filtre (sAMAccountName={{sam}})" }
+  ]
+}
+```
+
+Le decalage d'horloge est mesure contre l'attribut `currentTime` du RootDSE de l'annuaire.
 
 ---
 
