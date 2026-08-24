@@ -44,9 +44,62 @@ async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
     }
 }
 
+// ── Authentification intégrée Windows (Kerberos / SPNEGO) ────────────────────
+
+/// Autorise WebView2 à répondre au défi `401 WWW-Authenticate: Negotiate` du
+/// serveur, c'est-à-dire à présenter le ticket Kerberos du poste sans aucune
+/// saisie.
+///
+/// WebView2 est un processus Chromium distinct du navigateur Edge : il n'hérite
+/// pas de la zone « Intranet local » ni de la stratégie `AuthServerAllowlist`
+/// configurées pour Edge et Chrome. Sans cet argument, l'application de bureau
+/// retombe sur le formulaire de connexion alors que le même serveur fonctionne
+/// en zéro clic dans le navigateur du poste.
+///
+/// Doit être appelé **avant** la création de la première webview : la variable
+/// est lue par le loader WebView2 au moment où il crée son environnement.
+///
+/// L'hôte est repris tel quel de l'URL du serveur injectée au build
+/// (`frontendDist`), et non élargi en `*.domaine.local` : l'application ne
+/// parle qu'à ce serveur, inutile de laisser filer les identifiants ambiants
+/// vers le reste du domaine. La délégation (`--auth-negotiate-delegate-allowlist`)
+/// n'est délibérément pas activée — le serveur valide le ticket, il n'a jamais
+/// besoin d'agir au nom de l'utilisateur auprès d'un tiers.
+#[cfg(target_os = "windows")]
+fn enable_integrated_windows_auth(config: &tauri::Config) {
+    // L'exploitant garde la main : même convention que KRB5_KTNAME / KRB5_CONFIG
+    // côté serveur, une valeur déjà présente dans l'environnement l'emporte.
+    if std::env::var_os("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").is_some() {
+        return;
+    }
+
+    let Some(tauri::utils::config::FrontendDist::Url(url)) = &config.build.frontend_dist else {
+        return; // build local (dossier de fichiers) : rien à autoriser
+    };
+    let Some(host) = url.host_str() else { return };
+
+    // Kerberos exige un SPN, donc un nom DNS : une IP ou un nom court ne
+    // donnera jamais de ticket, autant ne pas poser l'argument.
+    if !host.contains('.') || host.parse::<std::net::IpAddr>().is_ok() {
+        return;
+    }
+
+    std::env::set_var(
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        format!("--auth-server-allowlist={host}"),
+    );
+}
+
 // ── Point d'entrée ───────────────────────────────────────────────────────────
 
 pub fn run() {
+    // Hissé hors de `.run()` : la configuration doit être lue avant que le
+    // constructeur ne crée la webview, sinon l'argument WebView2 arrive trop tard.
+    let context = tauri::generate_context!();
+
+    #[cfg(target_os = "windows")]
+    enable_integrated_windows_auth(context.config());
+
     tauri::Builder::default()
         // Ouvre la fenêtre existante si l'app est déjà en cours d'exécution.
         // Gère aussi la transmission des deep links reçus par la 2e instance.
@@ -176,6 +229,6 @@ pub fn run() {
             get_autostart,
             set_autostart,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running WebMail");
 }

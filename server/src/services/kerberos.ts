@@ -1,4 +1,5 @@
 import fs from 'fs';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 import { pool } from '../database/connection';
@@ -29,7 +30,23 @@ export interface KerberosConfig {
   autoLogin: boolean;          // tentative silencieuse au chargement de la page
 }
 
-const DEFAULT_USER_FILTER = '(sAMAccountName={{sam}})';
+/**
+ * Filtre de résolution du principal Kerberos vers un compte d'annuaire.
+ *
+ * Le second terme écarte les comptes désactivés (bit `ACCOUNTDISABLE` de
+ * `userAccountControl`, via l'OID de comparaison binaire d'Active Directory).
+ * Sans lui, désactiver un compte dans l'AD — le geste naturel d'un départ — ne
+ * suffit pas : le chemin Kerberos ne fait aucun `bind`, contrairement au login
+ * par mot de passe, donc rien ne vérifie l'état du compte. L'accès resterait
+ * ouvert le temps que le ticket de service en cache expire (10 h par défaut),
+ * et la session d'appareil émise dans cet intervalle vivrait 90 jours.
+ *
+ * Syntaxe propre à Active Directory : sur un annuaire qui n'expose pas
+ * `userAccountControl` (OpenLDAP), remplacer ce filtre par
+ * `(sAMAccountName={{sam}})` ou l'équivalent du schéma en place.
+ */
+const DEFAULT_USER_FILTER =
+  '(&(sAMAccountName={{sam}})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))';
 
 /** Découpe une liste saisie en une ligne (virgules, espaces ou retours ligne). */
 function parseList(raw: unknown): string[] {
@@ -365,40 +382,140 @@ export async function acceptSpnego(cfg: KerberosConfig, tokenB64: string): Promi
 // Restriction réseau
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Retire le préfixe IPv6-mapped (`::ffff:192.168.1.5`) posé par Node. */
+/**
+ * Normalise une adresse avant comparaison : retire la zone d'interface
+ * (`fe80::1%eth0`) et ramène les adresses IPv4-mapped (`::ffff:192.168.1.5`,
+ * posées par Node quand la socket écoute en dual-stack) à leur forme IPv4.
+ */
 export function normalizeIp(ip: string): string {
-  const cleaned = ip.trim();
-  const mapped = cleaned.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-  return mapped ? mapped[1] : cleaned;
-}
-
-function ipv4ToInt(ip: string): number | null {
-  const parts = ip.split('.');
-  if (parts.length !== 4) return null;
-  let value = 0;
-  for (const part of parts) {
-    if (!/^\d{1,3}$/.test(part)) return null;
-    const octet = Number(part);
-    if (octet > 255) return null;
-    value = (value << 8) | octet;
+  let cleaned = ip.trim();
+  const zone = cleaned.indexOf('%');
+  if (zone >= 0) cleaned = cleaned.slice(0, zone);
+  if (cleaned.toLowerCase().startsWith('::ffff:') && cleaned.includes('.')) {
+    cleaned = cleaned.slice(7);
   }
-  return value >>> 0;
+  return cleaned;
 }
 
-/** Vrai si `ip` appartient à `cidr` (IPv4 ; accepte aussi une IP nue). */
+/**
+ * Adresse → octets : 4 pour IPv4, 16 pour IPv6. Renvoie `null` si la chaîne
+ * n'est pas une adresse valide.
+ *
+ * Travailler sur les octets plutôt que sur un entier 32 bits est ce qui permet
+ * de traiter les deux familles avec le même code de comparaison de préfixe —
+ * un `/64` IPv6 ne tient pas dans un entier JavaScript.
+ */
+function ipToBytes(raw: string): Uint8Array | null {
+  const ip = normalizeIp(raw);
+
+  if (net.isIPv4(ip)) {
+    const parts = ip.split('.');
+    const bytes = new Uint8Array(4);
+    for (let i = 0; i < 4; i++) {
+      const octet = Number(parts[i]);
+      if (!/^\d{1,3}$/.test(parts[i]) || octet > 255) return null;
+      bytes[i] = octet;
+    }
+    return bytes;
+  }
+
+  if (!net.isIPv6(ip)) return null;
+
+  // Expansion du `::` : au plus une occurrence, et la partie basse peut être
+  // écrite en notation IPv4 (`::ffff:10.0.0.1` déjà traité, mais aussi
+  // `2001:db8::192.168.1.1`).
+  const halves = ip.split('::');
+  if (halves.length > 2) return null;
+
+  const expandTail = (groups: string[]): string[] | null => {
+    if (groups.length === 0) return [];
+    const last = groups[groups.length - 1];
+    if (!last.includes('.')) return groups;
+    if (!net.isIPv4(last)) return null;
+    const o = last.split('.').map(Number);
+    return [
+      ...groups.slice(0, -1),
+      ((o[0] << 8) | o[1]).toString(16),
+      ((o[2] << 8) | o[3]).toString(16),
+    ];
+  };
+
+  const head = expandTail(halves[0] ? halves[0].split(':') : []);
+  const tail = expandTail(halves.length === 2 && halves[1] ? halves[1].split(':') : []);
+  if (head === null || tail === null) return null;
+
+  let groups: string[];
+  if (halves.length === 1) {
+    if (head.length !== 8) return null;
+    groups = head;
+  } else {
+    const missing = 8 - head.length - tail.length;
+    if (missing < 0) return null;
+    groups = [...head, ...Array(missing).fill('0'), ...tail];
+  }
+
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 8; i++) {
+    const value = parseInt(groups[i] || '0', 16);
+    if (Number.isNaN(value) || value < 0 || value > 0xffff) return null;
+    bytes[i * 2] = value >> 8;
+    bytes[i * 2 + 1] = value & 0xff;
+  }
+  return bytes;
+}
+
+/**
+ * Vrai si `ip` appartient à `cidr`, en IPv4 comme en IPv6. Accepte une IP nue
+ * (préfixe implicite : /32 ou /128).
+ *
+ * Les deux familles ne se croisent pas : une adresse IPv6 n'appartient jamais
+ * à un réseau IPv4, et réciproquement. C'est précisément ce qui rendait le
+ * filtre silencieusement inopérant sur un domaine Active Directory, où Windows
+ * privilégie IPv6 quand il est disponible — d'où l'avertissement émis par
+ * `isFromAllowedNetwork`.
+ */
 export function ipMatchesCidr(ip: string, cidr: string): boolean {
-  const [network, bitsRaw] = cidr.split('/');
-  const bits = bitsRaw === undefined ? 32 : Number(bitsRaw);
-  if (!Number.isInteger(bits) || bits < 0 || bits > 32) return false;
+  const [network, bitsRaw] = cidr.trim().split('/');
 
-  const ipInt = ipv4ToInt(normalizeIp(ip));
-  const netInt = ipv4ToInt(network.trim());
-  if (ipInt === null || netInt === null) return false;
+  const ipBytes = ipToBytes(ip);
+  const netBytes = ipToBytes(network);
+  if (ipBytes === null || netBytes === null) return false;
+  if (ipBytes.length !== netBytes.length) return false;   // familles différentes
 
-  if (bits === 0) return true;
-  const mask = (0xffffffff << (32 - bits)) >>> 0;
-  return (ipInt & mask) === (netInt & mask);
+  const maxBits = netBytes.length * 8;
+  const bits = bitsRaw === undefined ? maxBits : Number(bitsRaw);
+  if (!Number.isInteger(bits) || bits < 0 || bits > maxBits) return false;
+
+  const fullBytes = bits >> 3;
+  for (let i = 0; i < fullBytes; i++) {
+    if (ipBytes[i] !== netBytes[i]) return false;
+  }
+
+  const remaining = bits & 7;
+  if (remaining === 0) return true;
+  const mask = (0xff << (8 - remaining)) & 0xff;
+  return (ipBytes[fullBytes] & mask) === (netBytes[fullBytes] & mask);
 }
+
+/** Familles d'adresses couvertes par une liste de CIDR. */
+function cidrFamilies(cidrs: string[]): { v4: boolean; v6: boolean } {
+  let v4 = false;
+  let v6 = false;
+  for (const cidr of cidrs) {
+    const bytes = ipToBytes(cidr.trim().split('/')[0]);
+    if (bytes?.length === 4) v4 = true;
+    else if (bytes?.length === 16) v6 = true;
+  }
+  return { v4, v6 };
+}
+
+/**
+ * Une IP par message, pour ne pas noyer les journaux : le poste qui n'arrive
+ * pas à se connecter réessaie, et l'exploitant n'a besoin de l'information
+ * qu'une fois. Volontairement non borné en taille — le nombre d'adresses
+ * distinctes écartées reste de l'ordre du parc, et le processus redémarre.
+ */
+const _warnedIps = new Set<string>();
 
 /**
  * Une liste vide autorise tout le monde : Kerberos exige de toute façon un
@@ -407,5 +524,22 @@ export function ipMatchesCidr(ip: string, cidr: string): boolean {
  */
 export function isFromAllowedNetwork(ip: string, cfg: KerberosConfig): boolean {
   if (cfg.allowedCidrs.length === 0) return true;
-  return cfg.allowedCidrs.some((cidr) => ipMatchesCidr(ip, cidr));
+  if (cfg.allowedCidrs.some((cidr) => ipMatchesCidr(ip, cidr))) return true;
+
+  // Le cas qui coûte des heures de diagnostic : le poste est bien sur le LAN,
+  // mais il joint le serveur en IPv6 alors que tous les réseaux autorisés sont
+  // déclarés en IPv4. Kerberos ne s'annonce pas, et rien ne l'explique — la
+  // page de connexion est conçue pour échouer en silence.
+  const bytes = ipToBytes(ip);
+  if (bytes?.length === 16 && !_warnedIps.has(ip)) {
+    const families = cidrFamilies(cfg.allowedCidrs);
+    if (!families.v6) {
+      _warnedIps.add(ip);
+      logger.warn(
+        { ip, allowedCidrs: cfg.allowedCidrs },
+        'Kerberos: client joignant le serveur en IPv6 alors que les reseaux autorises sont tous en IPv4 — ajoutez le prefixe IPv6 correspondant dans Admin > Connexion Windows, sinon la connexion integree ne sera jamais proposee a ce poste'
+      );
+    }
+  }
+  return false;
 }

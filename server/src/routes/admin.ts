@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { execSync } from 'child_process';
 import { buildIcs } from '../utils/ical';
 import crypto from 'crypto';
+import net from 'net';
 import nodemailer from 'nodemailer';
 import {
   listAllActiveDeviceSessions,
@@ -3350,12 +3351,23 @@ adminRouter.put('/kerberos/settings', async (req: AuthRequest, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-/** Validation de forme d'un CIDR IPv4 (`ipMatchesCidr` ne dit pas *pourquoi* ça échoue). */
+/**
+ * Validation de forme d'un CIDR, IPv4 ou IPv6 (`ipMatchesCidr` ne dit pas
+ * *pourquoi* ça échoue, d'où ce contrôle séparé à l'enregistrement).
+ *
+ * IPv6 doit être accepté : sur un domaine Active Directory, Windows privilégie
+ * IPv6 quand il est disponible. Le refuser ici revenait à condamner
+ * l'administrateur à un filtre qui n'attrape jamais ces postes.
+ */
 function isPlausibleCidr(entry: string): boolean {
-  const [network, bits] = entry.split('/');
-  if (bits !== undefined && !/^(3[0-2]|[12]?\d)$/.test(bits)) return false;
-  const octets = network.split('.');
-  return octets.length === 4 && octets.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255);
+  const [network, bits] = entry.trim().split('/');
+
+  const family = net.isIPv4(network) ? 4 : net.isIPv6(network) ? 6 : 0;
+  if (family === 0) return false;
+  if (bits === undefined) return true;
+
+  if (!/^\d{1,3}$/.test(bits)) return false;
+  return Number(bits) <= (family === 4 ? 32 : 128);
 }
 
 /**
