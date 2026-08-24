@@ -19,6 +19,7 @@ import {
   subscribeCategories, MailCategory,
 } from '../../utils/categories';
 import type { SwipeAction } from '../../utils/mailPreferences';
+import { FOCUSED_TAB_LABELS, normalizeAddress, type FocusedTab } from '../../utils/focusedInbox';
 import {
   isFavoriteFolder, toggleFavoriteFolder,
   getRecentMoveFolders, getRecentMoveFoldersCount, pushRecentMoveFolder,
@@ -140,6 +141,15 @@ interface MessageListProps {
   onNotJunk?: (message: Email) => void;
   /** La liste affiche-t-elle le dossier Courrier indésirable ? */
   isJunkFolder?: boolean;
+  /** Vue « Prioritaire / Autres » active (boîte de réception uniquement). */
+  focusedSplitActive?: boolean;
+  /** Onglet courant — porté par MailPage pour que les deux instances restent alignées. */
+  focusedTab?: FocusedTab;
+  onChangeFocusedTab?: (tab: FocusedTab) => void;
+  /** Range un message dans l'un des deux onglets. */
+  classifyFocused?: (message: Email) => FocusedTab;
+  /** Force un expéditeur dans un onglet (menu contextuel). */
+  onSetFocusedOverride?: (address: string, tab: FocusedTab) => void;
 }
 
 interface MessageGroup {
@@ -195,6 +205,11 @@ export default function MessageList({
   isVirtualFolder = false,
   onBulkDelete,
   onBlockSender, onNotJunk, isJunkFolder = false,
+  focusedSplitActive = false,
+  focusedTab = 'focused',
+  onChangeFocusedTab,
+  classifyFocused,
+  onSetFocusedOverride,
 }: MessageListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Email } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -299,9 +314,37 @@ export default function MessageList({
     });
   };
 
+  // Partition « Prioritaire / Autres ». Elle s'applique *avant* les filtres
+  // locaux (type, date), le tri et les groupes temporels : ceux-ci opèrent donc
+  // à l'intérieur de l'onglet courant, y compris le groupe « Épinglé ».
+  const focusedPartition = useMemo(() => {
+    if (!focusedSplitActive || !classifyFocused) {
+      return { focused: messages, other: [] as Email[] };
+    }
+    const focused: Email[] = [];
+    const other: Email[] = [];
+    for (const m of messages) {
+      (classifyFocused(m) === 'other' ? other : focused).push(m);
+    }
+    return { focused, other };
+  }, [messages, focusedSplitActive, classifyFocused]);
+
+  // Non lus par onglet — ce sont les non lus **chargés**, pas le total du
+  // dossier : IMAP ne sait pas découper son compteur STATUS par expéditeur.
+  const focusedUnread = useMemo(() => ({
+    focused: focusedPartition.focused.filter(m => !m.flags?.seen).length,
+    other: focusedPartition.other.filter(m => !m.flags?.seen).length,
+  }), [focusedPartition]);
+
+  // Base de l'onglet courant : c'est elle, et non le dossier entier, que le
+  // compteur « filtrés / total » doit prendre comme référence en vue séparée.
+  const currentTabMessages = focusedSplitActive
+    ? (focusedTab === 'other' ? focusedPartition.other : focusedPartition.focused)
+    : messages;
+
   // Filter messages
   const filteredMessages = useMemo(() => {
-    let result = messages;
+    let result = currentTabMessages;
 
     // Type filter
     switch (filterType) {
@@ -330,7 +373,7 @@ export default function MessageList({
     }
 
     return result;
-  }, [messages, filterType, dateFilter, customDate, attachmentMinVisibleBytes]);
+  }, [currentTabMessages, filterType, dateFilter, customDate, attachmentMinVisibleBytes]);
 
   // Select-all helpers — operate on the currently filtered list so the
   // "tout sélectionner" checkbox respects active filters (date / type).
@@ -487,6 +530,8 @@ export default function MessageList({
   };
 
   const activeFilterCount = (filterType !== 'all' ? 1 : 0) + (dateFilter !== 'all' ? 1 : 0);
+
+  const otherTabCount = focusedTab === 'focused' ? focusedPartition.other.length : focusedPartition.focused.length;
 
   if (loading) {
     return (
@@ -729,11 +774,45 @@ export default function MessageList({
               </button>
             )}
             <span className="text-2xs text-outlook-text-disabled ml-auto">
-              {filteredMessages.length}/{messages.length}
+              {filteredMessages.length}/{currentTabMessages.length}
             </span>
           </div>
         )}
       </div>
+
+      {/* Onglets « Prioritaire / Autres » — boîte de réception uniquement */}
+      {focusedSplitActive && (
+        <div
+          role="tablist"
+          aria-label="Affichage de la boîte de réception"
+          className="flex items-center gap-1 px-2 border-b border-outlook-border flex-shrink-0 bg-white"
+        >
+          {(['focused', 'other'] as FocusedTab[]).map((tab) => {
+            const active = focusedTab === tab;
+            const unread = tab === 'focused' ? focusedUnread.focused : focusedUnread.other;
+            return (
+              <button
+                key={tab}
+                role="tab"
+                aria-selected={active}
+                onClick={() => onChangeFocusedTab && onChangeFocusedTab(tab)}
+                className={`relative px-3 py-1.5 text-xs transition-colors border-b-2 -mb-px flex items-center gap-1.5
+                  ${active
+                    ? 'border-outlook-blue text-outlook-blue font-semibold'
+                    : 'border-transparent text-outlook-text-secondary hover:text-outlook-text-primary'}`}
+              >
+                {FOCUSED_TAB_LABELS[tab]}
+                {unread > 0 && (
+                  <span className={`text-2xs px-1.5 py-0.5 rounded-full leading-none
+                    ${active ? 'bg-outlook-blue text-white' : 'bg-outlook-bg-hover text-outlook-text-secondary'}`}>
+                    {unread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Bulk action bar — visible when messages are selected */}
       {selectionMode && selectedUids.size > 0 && (
@@ -784,6 +863,16 @@ export default function MessageList({
                 className="text-xs text-outlook-blue hover:underline mt-2"
               >
                 Effacer les filtres
+              </button>
+            )}
+            {/* Un onglet vide alors que l'autre est plein prête à confusion :
+                on renvoie explicitement vers celui qui contient les messages. */}
+            {focusedSplitActive && activeFilterCount === 0 && otherTabCount > 0 && (
+              <button
+                onClick={() => onChangeFocusedTab && onChangeFocusedTab(focusedTab === 'focused' ? 'other' : 'focused')}
+                className="text-xs text-outlook-blue hover:underline mt-2"
+              >
+                {otherTabCount} message{otherTabCount > 1 ? 's' : ''} dans « {FOCUSED_TAB_LABELS[focusedTab === 'focused' ? 'other' : 'focused']} »
               </button>
             )}
           </div>
@@ -1402,6 +1491,19 @@ export default function MessageList({
           onClick: () => onMove(message.uid, archiveFolder.path, message._accountId, message._folder),
         });
       }
+    }
+
+    // Prioritaire / Autres : l'échappatoire quand le classement automatique se
+    // trompe. L'exception porte sur l'adresse et prime sur toutes les règles.
+    if (focusedSplitActive && onSetFocusedOverride && normalizeAddress(message.from?.address)) {
+      const current = classifyFocused ? classifyFocused(message) : 'focused';
+      const target: FocusedTab = current === 'focused' ? 'other' : 'focused';
+      items.push({ label: '', separator: true, onClick: () => {} });
+      items.push({
+        label: `Toujours afficher dans « ${FOCUSED_TAB_LABELS[target]} »`,
+        icon: target === 'focused' ? <Star size={14} /> : <Inbox size={14} />,
+        onClick: () => onSetFocusedOverride(normalizeAddress(message.from?.address), target),
+      });
     }
 
     // Courrier indésirable : bloquer depuis la liste (le geste le plus direct)

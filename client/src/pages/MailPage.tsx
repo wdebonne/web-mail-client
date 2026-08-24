@@ -50,6 +50,11 @@ import {
   toggleMessageCategory, clearMessageCategories, getMessageCategories,
   subscribeCategories,
 } from '../utils/categories';
+import {
+  getFocusedInboxPrefs, setFocusedInboxPrefs, getFocusedOverrides, setFocusedOverride,
+  subscribeFocusedInbox, classifyMessage, ownDomainsFrom, isInboxFolder,
+  type FocusedTab, type FocusedContext,
+} from '../utils/focusedInbox';
 import { applyCategoryRules } from '../utils/mailRulesEval';
 import { useAuthStore } from '../stores/authStore';
 import { CategoryEditorModal, CategoryManageModal, CategoryPicker } from '../components/mail/CategoryModals';
@@ -254,6 +259,63 @@ export default function MailPage() {
       window.removeEventListener('storage', onStorage);
     };
   }, []);
+
+  // ─── Boîte de réception « Prioritaire / Autres » ──────────────────────────
+  // Le réglage vit dans localStorage (par appareil) et est piloté depuis le
+  // ruban Afficher ; on se contente ici de s'y abonner. Les exceptions, elles,
+  // suivent le compte via prefsSync.
+  const [focusedPrefs, setFocusedPrefs] = useState(() => getFocusedInboxPrefs());
+  const [focusedOverrides, setFocusedOverrides] = useState(() => getFocusedOverrides());
+  useEffect(() => subscribeFocusedInbox(() => {
+    setFocusedPrefs(getFocusedInboxPrefs());
+    setFocusedOverrides(getFocusedOverrides());
+  }), []);
+
+  // La vue séparée ne s'applique qu'à la boîte de réception (et à la boîte
+  // unifiée), jamais aux Envoyés/Brouillons/Corbeille — ni en mode recherche,
+  // où découper les résultats n'aurait pas de sens.
+  const focusedSplitActive =
+    focusedPrefs.mode === 'split'
+    && !isSearchMode
+    && (virtualFolder === 'unified-inbox' || (!virtualFolder && isInboxFolder(selectedFolder)));
+
+  // Carnet d'adresses réduit aux seules adresses — chargé uniquement quand la
+  // vue séparée est active, et gardé longtemps en cache : il ne change pas
+  // souvent et sert à chaque rendu de la liste.
+  const { data: knownSendersData } = useQuery({
+    queryKey: ['contacts', 'known-senders'],
+    queryFn: () => api.getKnownSenders(),
+    enabled: focusedSplitActive,
+    staleTime: 10 * 60 * 1000,
+  });
+  const knownEmails = useMemo(
+    () => new Set((knownSendersData?.emails || []).map((e) => e.toLowerCase())),
+    [knownSendersData],
+  );
+  const ownDomains = useMemo(
+    () => ownDomainsFrom(accounts.map((a) => a.email)),
+    [accounts],
+  );
+  const focusedContext = useMemo<FocusedContext>(
+    () => ({ knownEmails, ownDomains, overrides: focusedOverrides, prefs: focusedPrefs }),
+    [knownEmails, ownDomains, focusedOverrides, focusedPrefs],
+  );
+  const classifyFocused = useCallback(
+    (message: any): FocusedTab => classifyMessage(message, focusedContext),
+    [focusedContext],
+  );
+  const handleChangeFocusedTab = useCallback((tab: FocusedTab) => {
+    setFocusedInboxPrefs({ activeTab: tab });
+  }, []);
+  const handleSetFocusedOverride = useCallback((address: string, tab: FocusedTab) => {
+    setFocusedOverride(address, tab);
+    toast.success(
+      tab === 'focused'
+        ? 'Cet expéditeur ira désormais dans Prioritaire'
+        : 'Cet expéditeur ira désormais dans Autres',
+    );
+  }, []);
+
   const { data: messagesData, isLoading: loadingMessages } = useQuery({
     queryKey: virtualFolder
       ? ['virtual-messages', virtualFolder, prefsVersion, accounts.map((a) => a.id).join(',')]
@@ -531,6 +593,28 @@ export default function MailPage() {
     }
     handleLoadMore();
   }, [loadAllActive, virtualFolder, loadingMessages, loadingMore, hasMoreMessages, handleLoadMore]);
+
+  // Chargement progressif propre à la vue séparée. L'API ne sait pas filtrer par
+  // expéditeur (elle pagine par plage de numéros de séquence IMAP), donc le
+  // découpage ne porte que sur les messages déjà chargés : sans cela, l'onglet
+  // « Autres » peut sembler vide alors que d'autres pages existent. On enchaîne
+  // donc quelques pages, plafonnées par `autoLoadPages`, sans jamais marcher sur
+  // la boucle « Tout charger » qui, elle, va jusqu'au bout.
+  const focusedPagesLoaded = useRef(0);
+  useEffect(() => {
+    focusedPagesLoaded.current = 0;
+  }, [selectedAccount?.id, selectedFolder, virtualFolder, focusedSplitActive]);
+  useEffect(() => {
+    if (!focusedSplitActive || virtualFolder) return;
+    if (loadAllActive) return; // la boucle « Tout charger » s'en charge déjà
+    if (loadingMessages || loadingMore || !hasMoreMessages) return;
+    if (focusedPagesLoaded.current >= focusedPrefs.autoLoadPages) return;
+    focusedPagesLoaded.current += 1;
+    handleLoadMore();
+  }, [
+    focusedSplitActive, virtualFolder, loadAllActive, loadingMessages, loadingMore,
+    hasMoreMessages, focusedPrefs.autoLoadPages, handleLoadMore,
+  ]);
 
   // Progressive unified-view paginator: when on a unified folder with
   // "Tout charger" active, fetch page 2..N for each account and merge the
@@ -2710,6 +2794,11 @@ export default function MailPage() {
             loadingMore={loadingMore}
             onLoadMore={handleLoadMore}
             loadAllActive={loadAllActive}
+            focusedSplitActive={focusedSplitActive}
+            focusedTab={focusedPrefs.activeTab}
+            onChangeFocusedTab={handleChangeFocusedTab}
+            classifyFocused={classifyFocused}
+            onSetFocusedOverride={handleSetFocusedOverride}
             isVirtualFolder={!!virtualFolder}
             onBulkDelete={handleBulkDelete}
             onFavoritesChanged={() => {
@@ -2822,6 +2911,11 @@ export default function MailPage() {
                   loadingMore={loadingMore}
                   onLoadMore={handleLoadMore}
                   loadAllActive={loadAllActive}
+                  focusedSplitActive={focusedSplitActive}
+                  focusedTab={focusedPrefs.activeTab}
+                  onChangeFocusedTab={handleChangeFocusedTab}
+                  classifyFocused={classifyFocused}
+                  onSetFocusedOverride={handleSetFocusedOverride}
                   isVirtualFolder={!!virtualFolder}
                   onBulkDelete={handleBulkDelete}
                   onFavoritesChanged={() => {

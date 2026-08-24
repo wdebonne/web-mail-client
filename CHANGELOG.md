@@ -9,7 +9,18 @@ et ce projet adhère au [Versioning Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
-_Rien pour le moment._
+### Ajouté
+
+- **Boîte de réception « Prioritaire / Autres » (façon Outlook)**
+  - Nouveau bouton **Afficher → Boîte de réception** dans le ruban (rendu classique *et* simplifié) : **Vue combinée** (défaut, liste unique — comportement historique strictement inchangé) ou **Prioritaire et Autres**, qui ajoute un bandeau de deux onglets au-dessus de la liste, chacun avec son nombre de non lus.
+  - Vont en **Prioritaire** : les expéditeurs présents dans le **carnet d'adresses** (contacts créés volontairement + membres des listes de distribution visibles) et ceux du **même domaine qu'un de vos comptes**. Les deux critères sont des cases indépendantes, désactivables séparément.
+  - **Les expéditeurs auto-enregistrés ne comptent pas comme des contacts.** Ouvrir un message crée en base un contact `source = 'sender'` ; les inclure aurait mis en Prioritaire tout expéditeur déjà lu une fois, vidant la fonction de son sens. Le critère « même domaine » **exclut par ailleurs les fournisseurs grand public** (gmail.com, orange.fr…) — sinon un utilisateur hébergé chez Gmail y aurait vu passer tout Gmail.
+  - **Exceptions par expéditeur** : clic droit sur un message → *Toujours afficher dans « Prioritaire » / « Autres »*. Une exception prime sur toutes les autres règles et se retire depuis *Gérer les exceptions* dans le menu du ruban — sans quoi un clic malheureux serait irréversible.
+  - **Portée volontairement étroite** : boîte de réception et boîte unifiée uniquement, jamais les Envoyés / Brouillons / Corbeille / Indésirables ni les sous-dossiers d'INBOX, et jamais en mode recherche.
+  - **Rien n'est déplacé** — contrairement au filtre indésirable, c'est un pur partitionnement d'affichage côté client : repasser en vue combinée restitue instantanément la liste complète. Les filtres locaux (non lus, date, pièces jointes), le tri et les groupes temporels (dont « Épinglé ») s'appliquent **à l'intérieur** de l'onglet courant.
+  - **Persistance dédoublée, à dessein** : le choix de vue (`mail.focusedInbox.v1`) est **propre à l'appareil** — il n'est pas dans la liste des clés synchronisées ; les exceptions (`mail.focusedInbox.overrides.v1`) sont une donnée utilisateur et **suivent le compte** via la synchronisation des préférences et la sauvegarde.
+  - API : `GET /api/contacts/known-senders`, qui ne renvoie que des adresses en minuscules. `GET /api/contacts` ne convenait pas : il renvoie `c.*` — donc les avatars en base64 — et plafonne à 500 lignes. Aucune nouvelle table, aucune migration.
+  - Limites connues : l'API de listage pagine par **plage de numéros de séquence IMAP** et n'accepte ni filtre expéditeur ni recherche, donc le découpage ne porte que sur les messages **déjà chargés**. En vue séparée, quelques pages supplémentaires (5 par défaut, ~250 messages) sont donc enchaînées automatiquement ; au-delà, « Charger plus » reste manuel. Pour la même raison, les pastilles des onglets comptent les non lus **chargés** et non le total du dossier — le compteur `STATUS` d'IMAP ne sait pas se découper par expéditeur. Enfin, **aucun apprentissage** : contrairement à Outlook, les règles sont entièrement lisibles et prévisibles.
 
 ---
 

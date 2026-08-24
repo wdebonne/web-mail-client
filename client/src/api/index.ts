@@ -489,6 +489,12 @@ export const api = {
   deleteContact: (id: string) =>
     request(`/contacts/${id}`, { method: 'DELETE' }),
 
+  // Adresses du carnet d'adresses (contacts créés volontairement + membres des
+  // listes de distribution), en minuscules. Sert au classement Prioritaire /
+  // Autres de la boîte de réception.
+  getKnownSenders: () =>
+    request<{ emails: string[] }>('/contacts/known-senders'),
+
   recordSender: (email: string, name?: string) =>
     request('/contacts/senders/record', { method: 'POST', body: JSON.stringify({ email, name }) }),
 
