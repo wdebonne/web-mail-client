@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // In-memory store: suits the single-instance deployment. If the app is ever
 // scaled to multiple replicas, switch to a shared store (e.g. rate-limit-postgresql).
@@ -42,4 +42,20 @@ export const forgotPasswordLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Trop de demandes de réinitialisation. Réessayez dans une heure.' },
+});
+
+/**
+ * Garde-fou pour l'assistant IA. Une génération occupe le GPU (ou tous les
+ * cœurs) du serveur Ollama pendant plusieurs secondes : sans plafond, un seul
+ * utilisateur qui pilonne le bouton « Résumer » met la file à genoux pour tout
+ * le monde. Le décompte est par utilisateur, pas par IP — derrière un proxy
+ * d'entreprise, tout le monde partage la même adresse.
+ */
+export const aiLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => req.userId ?? ipKeyGenerator(req.ip ?? ''),
+  message: { error: "Trop de requêtes vers l'assistant IA. Patientez quelques minutes." },
 });

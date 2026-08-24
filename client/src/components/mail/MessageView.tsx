@@ -6,7 +6,7 @@ import {
   Paperclip, Download, Archive, Flag, FolderInput, Eye, X, ChevronDown,
   ChevronRight, MessagesSquare, Lock, ShieldCheck, ShieldAlert, ShieldX, KeyRound,
   Maximize2, Minimize2, CloudUpload, Languages, Loader2,
-  Ban, MailX, Inbox, Check,
+  Ban, MailX, Inbox, Check, Sparkles,
 } from 'lucide-react';
 import { Email } from '../../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -16,6 +16,7 @@ import { inspectIncoming, SecurityVerdict } from '../../crypto/inbound';
 import { useSecurityStore } from '../../stores/securityStore';
 import NextcloudFolderPicker from '../ui/NextcloudFolderPicker';
 import { HoverCard } from './ContactHoverCard';
+import { useAiStatus } from '../../hooks/useAiStatus';
 
 const DOMPURIFY_CONFIG = {
   ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'img', 'div', 'span',
@@ -268,6 +269,17 @@ export default function MessageView({
     setTranslationError(null);
     setTranslatedFrom(null);
   }, [message?.uid, message?._accountId]);
+  // Résumé IA — même cycle de vie que la traduction : remis à zéro dès qu'on
+  // change de message, sinon le résumé du précédent resterait affiché.
+  const ai = useAiStatus();
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiSummarizing, setAiSummarizing] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  useEffect(() => {
+    setAiSummary(null);
+    setAiError(null);
+  }, [message?.uid, message?._accountId]);
+
   const effectiveDisplayMode: 'native' | 'stretched' = localDisplayMode ?? mailDisplayMode;
 
   // --- Conversation thread (expandable stack) ---
@@ -473,6 +485,41 @@ export default function MessageView({
       setTranslationError(err instanceof Error ? err.message : 'Traduction impossible');
     } finally {
       setTranslating(false);
+    }
+  };
+
+  /** Texte brut du message, quelle que soit la forme sous laquelle il est arrivé. */
+  const plainBody = (): string => {
+    if (!message) return '';
+    if (message.bodyText?.trim()) return message.bodyText;
+    if (message.bodyHtml) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = message.bodyHtml;
+      return tmp.innerText || tmp.textContent || '';
+    }
+    return '';
+  };
+
+  const handleSummarize = async () => {
+    if (!message) return;
+    if (aiSummary) { setAiSummary(null); return; }
+
+    const body = plainBody();
+    if (!body.trim()) return;
+
+    setAiSummarizing(true);
+    setAiError(null);
+    try {
+      const res = await api.aiSummarize({
+        subject: message.subject,
+        from: message.from?.name || message.from?.address,
+        body,
+      });
+      setAiSummary(res.result);
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : 'Résumé impossible');
+    } finally {
+      setAiSummarizing(false);
     }
   };
 
@@ -1059,6 +1106,20 @@ export default function MessageView({
           {/* Controls row: translate button (all screens) + display-mode toggle (desktop) */}
           {(sanitizedHtml || securePlaintext || message.bodyText) && (
             <div className="flex items-center justify-end mb-2 -mt-1 gap-1.5">
+              {ai.enabled && ai.features.summarize && (
+                <button
+                  type="button"
+                  onClick={handleSummarize}
+                  disabled={aiSummarizing}
+                  className="flex items-center gap-1.5 px-2 py-1 text-2xs text-outlook-text-secondary hover:text-outlook-text-primary hover:bg-outlook-bg-hover border border-outlook-border rounded transition-colors disabled:opacity-50"
+                  title={`Résumer ce message avec ${ai.model}`}
+                >
+                  {aiSummarizing
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <Sparkles size={12} />}
+                  <span>{aiSummarizing ? 'Résumé…' : aiSummary ? 'Masquer le résumé' : 'Résumer'}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleTranslate}
@@ -1091,6 +1152,23 @@ export default function MessageView({
                   <span>{effectiveDisplayMode === 'native' ? 'Étirer' : 'Vue native'}</span>
                 </button>
               )}
+            </div>
+          )}
+          {aiError && (
+            <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              Assistant IA : {aiError}
+            </div>
+          )}
+          {aiSummary && (
+            <div className="mb-3 px-3 py-2.5 bg-violet-50 border border-violet-200 rounded">
+              <div className="flex items-center gap-1.5 text-2xs font-medium text-violet-800 mb-1">
+                <Sparkles size={11} />
+                Résumé généré par {ai.model}
+              </div>
+              <pre className="whitespace-pre-wrap text-sm text-outlook-text-primary font-sans">{aiSummary}</pre>
+              <div className="mt-1.5 text-2xs text-violet-700/80">
+                Texte produit par un modèle : relisez le message avant d'agir.
+              </div>
             </div>
           )}
           {translationError && (

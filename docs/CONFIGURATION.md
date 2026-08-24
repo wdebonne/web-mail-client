@@ -652,8 +652,8 @@ table `admin_settings`.
 | Contrôleurs de domaine | `dc01.domaine.local` | Vide = résolution par enregistrements SRV |
 | Principal de service (SPN) | `HTTP/mail.domaine.local` | La notation `HTTP@mail.domaine.local` est acceptée aussi |
 | Chemin du keytab | `/etc/webmail/webmail.keytab` | Chemin *dans le conteneur* |
-| Réseaux autorisés (CIDR) | `192.168.1.0/24` | Vide = tous. Voir ci-dessous |
-| Filtre LDAP de résolution | `(sAMAccountName={{sam}})` | `{{principal}}` est aussi disponible |
+| Réseaux autorisés (CIDR) | `192.168.1.0/24`, `2001:db8::/32` | IPv4 **et** IPv6. Vide = tous. Voir ci-dessous |
+| Filtre LDAP de résolution | voir ci-dessous | `{{sam}}` et `{{principal}}` sont disponibles |
 | Connexion automatique | activé | Tente le ticket sans clic à l'ouverture de la page |
 
 Le bouton **Lancer le diagnostic** vérifie, dans l'ordre où les choses cassent en pratique :
@@ -669,6 +669,26 @@ les zones Windows), ou renseignez la stratégie `AuthServerAllowlist`. Pour Fire
 Sans cela, le navigateur reçoit le défi `Negotiate` et l'ignore : l'application affiche
 simplement le formulaire de connexion habituel.
 
+#### Application de bureau (Tauri)
+
+L'application de bureau embarque **WebView2**, un processus Chromium distinct du navigateur Edge :
+elle n'hérite pas automatiquement de la zone *Intranet local* ni de `AuthServerAllowlist`.
+
+L'application pose donc elle-même l'argument nécessaire au démarrage, à partir de l'URL du serveur
+avec laquelle elle a été compilée — rien à configurer dans le cas courant. Seul l'hôte exact est
+autorisé, et jamais le domaine entier : les identifiants Windows ne partent pas ailleurs.
+
+Pour reprendre la main (serveur atteint par un alias, plusieurs hôtes), définissez la variable
+d'environnement avant de lancer l'application — si elle est déjà présente, l'application n'y
+touche pas :
+
+```
+WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--auth-server-allowlist=mail.domaine.local
+```
+
+L'argument n'est posé que si l'URL du serveur est un nom DNS : une adresse IP ou un nom court ne
+peut de toute façon pas donner de ticket, faute de SPN correspondant.
+
 ### Réseaux autorisés et accès externe
 
 **Kerberos ne fonctionne que sur le réseau interne** (ou à travers un VPN) : un poste sur
@@ -678,6 +698,17 @@ Renseignez vos plages internes dans *Réseaux autorisés* : le serveur n'annonce
 qu'à ces adresses. Depuis l'extérieur, `GET /api/auth/kerberos/config` répond `enabled: false`,
 la page de connexion ne tente rien et affiche directement le formulaire — mot de passe, LDAP,
 passkey et SSO restent pleinement fonctionnels.
+
+> ⚠️ **Pensez à IPv6.** Windows privilégie IPv6 dès qu'il est disponible : un poste bien sur le
+> LAN peut très bien joindre le serveur en `2001:db8::…`. Si vous ne déclarez que des plages
+> IPv4, ces postes sont écartés du filtre et **la connexion intégrée ne leur est jamais
+> proposée** — sans message d'erreur, puisque l'échec est silencieux par conception. Déclarez le
+> préfixe IPv6 correspondant en plus de la plage IPv4. Le serveur écrit un avertissement dans ses
+> journaux quand il détecte ce cas précis (`client joignant le serveur en IPv6 alors que les
+> reseaux autorises sont tous en IPv4`).
+
+Pour savoir en quoi un poste vous joint réellement : `GET /api/auth/kerberos/config` depuis ce
+poste, et comparez avec l'adresse vue côté serveur dans les journaux d'accès.
 
 ### Résolution du compte applicatif
 
@@ -696,6 +727,27 @@ Session applicative (identique à une connexion LDAP)
 
 Si LDAP est désactivé, un **domaine email de repli** permet de construire l'adresse
 (`jdupont@domaine.local`), mais sans aucune synchronisation de groupes.
+
+#### Filtre de résolution et comptes désactivés
+
+Le filtre par défaut écarte les comptes désactivés dans l'annuaire :
+
+```
+(&(sAMAccountName={{sam}})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))
+```
+
+Ce second terme n'est pas cosmétique. Le chemin Kerberos ne fait **aucun `bind` LDAP**,
+contrairement à la connexion par mot de passe : sans ce filtre, désactiver un compte dans l'AD ne
+suffit pas à couper l'accès. Le poste continue de présenter le ticket qu'il a déjà en cache
+(10 h par défaut), et la session applicative émise pendant ce créneau vaut ensuite 90 jours.
+
+L'OID `1.2.840.113556.1.4.803` est la comparaison binaire d'Active Directory ; le bit `2` est
+`ACCOUNTDISABLE`. Sur un annuaire qui n'expose pas `userAccountControl` (OpenLDAP), remplacez le
+filtre par `(sAMAccountName={{sam}})` ou l'équivalent de votre schéma.
+
+Pour un départ, la désactivation dans l'AD reste néanmoins à doubler d'une révocation des
+sessions dans **Admin → Sécurité → Appareils connectés** si vous voulez couper l'accès
+immédiatement plutôt qu'à l'expiration du ticket.
 
 ### Coexistence avec les autres méthodes
 

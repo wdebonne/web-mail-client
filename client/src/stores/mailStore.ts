@@ -75,6 +75,11 @@ export interface ComposeData {
   inReplyToUid?: number;
   /** Folder of the original message being replied to. Pair with `inReplyToUid`. */
   inReplyToFolder?: string;
+  /** Message d'origine en texte brut, pour que l'assistant IA puisse rédiger une
+   *  réponse. Transmis à part de `bodyHtml` : en mode « réponse à côté du
+   *  message », le brouillon ne contient aucune citation dont on pourrait
+   *  l'extraire. */
+  aiSource?: { subject?: string; from?: string; body: string };
 }
 
 export const useMailStore = create<MailState>((set, get) => ({

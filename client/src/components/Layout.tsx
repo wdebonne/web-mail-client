@@ -215,12 +215,13 @@ export default function Layout({ children }: LayoutProps) {
     ? 'contacts'
     : 'mail';
 
+  // Dire ce qu'on peut taper évite le blocage devant un champ vide.
   const searchPlaceholder =
     searchContext === 'calendar'
-      ? 'Rechercher dans les agendas… (Ctrl+K)'
+      ? 'Rechercher un rendez-vous, un mot… (Ctrl+K)'
       : searchContext === 'contacts'
-      ? 'Rechercher des contacts… (Ctrl+K)'
-      : 'Rechercher des e-mails… (Ctrl+K)';
+      ? 'Rechercher un nom, une adresse… (Ctrl+K)'
+      : 'Rechercher un e-mail : un mot, un expéditeur… (Ctrl+K)';
 
   const primaryNavItems = [
     { path: '/mail', icon: Mail, labelKey: 'nav.mailbox' },
@@ -375,7 +376,10 @@ export default function Layout({ children }: LayoutProps) {
 
                 {!suggestionsLoading && !hasSuggestions && searchQuery.trim().length >= 2 && (
                   <div className="px-4 py-3 text-sm text-outlook-text-secondary">
-                    Aucun résultat pour « {searchQuery} »
+                    Aucune suggestion pour « {searchQuery} »
+                    <div className="text-xs text-outlook-text-disabled mt-0.5">
+                      Appuyez sur Entrée pour lancer une recherche complète.
+                    </div>
                   </div>
                 )}
 
@@ -466,13 +470,18 @@ export default function Layout({ children }: LayoutProps) {
                 <div className="border-t border-outlook-border px-3 py-2 flex gap-2">
                   <button
                     onClick={handleSearch}
-                    className="flex items-center gap-1.5 text-xs text-outlook-blue hover:text-outlook-blue/80 font-medium"
+                    className="flex items-center gap-1.5 text-xs text-outlook-blue hover:text-outlook-blue/80 font-medium min-w-0"
                   >
-                    <Search size={12} />
-                    Rechercher « {searchQuery} »
-                    {searchContext === 'mail' && ' dans les e-mails'}
-                    {searchContext === 'calendar' && ' dans les agendas'}
-                    {searchContext === 'contacts' && ' dans les contacts'}
+                    <Search size={12} className="flex-shrink-0" />
+                    <span className="truncate">
+                      Rechercher « {searchQuery} »
+                      {searchContext === 'mail' && ' dans les e-mails'}
+                      {searchContext === 'calendar' && ' dans les agendas'}
+                      {searchContext === 'contacts' && ' dans les contacts'}
+                    </span>
+                    <kbd className="flex-shrink-0 px-1 py-px rounded border border-outlook-border bg-outlook-bg-hover text-[9px] text-outlook-text-secondary font-sans">
+                      Entrée
+                    </kbd>
                   </button>
                   <div className="flex-1" />
                   <button

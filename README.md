@@ -10,7 +10,7 @@ WebMail est un client de messagerie web complet conçu pour offrir une expérien
 **Fonctionnalités Clés :**
 *   ✅ **Multi-Comptes :** Gestion simultanée de plusieurs boîtes mail IMAP/SMTP (compatibilité o2switch/cPanel).
 *   🖼️ **Interface Pro :** Expérience utilisateur riche avec des catégories personnalisables, le chiffrement PGP/S/MIME et un éditeur HTML avancé.
-*   ⚡ **Fonctionnalités Avancées :** Synchronisation Cloud (préférences), mode hors ligne (PWA) et support de l'IA intégrée via plugins Ollama.
+*   ⚡ **Fonctionnalités Avancées :** Synchronisation Cloud (préférences), mode hors ligne (PWA) et assistant IA auto-hébergé (Ollama) pour résumer, répondre et réécrire.
 *   🖥️ **Applications Natives :** PWA installable + applications Desktop (Windows, Linux, macOS) générées directement depuis le panneau d'administration via Docker ou GitHub Actions.
 
 Pour une analyse détaillée, veuillez consulter les sections suivantes du fichier.
@@ -180,7 +180,7 @@ La langue affichée est choisie selon l’ordre suivant :
 
 ### Système de Plugins
 - 🔌 Architecture extensible
-- 🤖 Plugin Ollama AI inclus (résumé, traduction, rédaction)
+- 🤖 Assistant IA Ollama intégré au produit (résumé, réponse, réécriture) — voir *Administration → Assistant IA*
 - ⚙️ Configuration par plugin
 - 👥 Attribution par utilisateur ou groupe
 
@@ -584,19 +584,50 @@ webmail/
 | GET | `/api/admin/applications/download/:file` | Télécharger un binaire généré |
 | DELETE | `/api/admin/applications/download/:file` | Supprimer un binaire |
 
-## Plugin Ollama AI
+## Assistant IA (Ollama)
 
-Le plugin `ollama-ai` intègre un modèle IA local via Ollama pour :
-- **Résumer** un email
-- **Suggérer** une réponse
-- **Traduire** un texte
-- **Améliorer** la rédaction
+Un modèle de langage auto-hébergé, branché sur la messagerie :
+
+- **Résumer** un email — bouton *Résumer* dans le volet de lecture
+- **Proposer une réponse** — brouillon prêt à relire dans la fenêtre de rédaction
+- **Réécrire** un texte — correction et reformulation du brouillon en cours
+
+Le contenu des emails ne quitte jamais votre infrastructure : les appels partent du
+serveur applicatif vers votre instance Ollama, et le navigateur ne connaît ni l'URL ni
+la clé du serveur de modèles.
 
 ### Configuration
-1. Installer [Ollama](https://ollama.ai)
-2. Télécharger un modèle : `ollama pull llama3`
-3. Dans Administration > Plugins, configurer l'URL Ollama
-4. Attribuer le plugin aux utilisateurs/groupes souhaités
+
+1. Installer [Ollama](https://ollama.com) sur la machine qui portera les modèles, puis
+   récupérer un modèle : `ollama pull llama3.2`
+2. Démarrer Ollama avec `OLLAMA_HOST=0.0.0.0` — par défaut il n'écoute que sur sa boucle
+   locale et refuse toute connexion venue d'ailleurs. Le port 11434 n'a **aucune
+   authentification** : ne l'exposez pas sur Internet.
+3. Dans **Administration → Assistant IA (Ollama)** : renseigner l'URL du serveur, choisir
+   le modèle (le bouton *Lister les modèles* interroge le serveur), puis activer.
+4. Le bouton **Lancer le diagnostic** vérifie, depuis le serveur applicatif, la
+   joignabilité, la présence du modèle et une génération réelle.
+
+> En conteneur Docker, `localhost` désigne le conteneur lui-même : utilisez
+> `http://host.docker.internal:11434` ou l'adresse IP de la machine hôte.
+
+### Réglages disponibles
+
+| Réglage | Rôle |
+|---|---|
+| URL du serveur / Modèle / Clé d'API | Cible Ollama. La clé (facultative) est stockée chiffrée et ne sert que derrière un reverse proxy. |
+| Langue des réponses | Langue de rédaction, quelle que soit celle du message d'origine |
+| Température | Prévisibilité du modèle (0,3–0,5 pour des emails) |
+| Longueur maximale | Plafond de la réponse, en tokens |
+| Délai d'attente | Sans GPU, un modèle 7B met facilement une minute |
+| Texte envoyé au modèle | Troncature des messages longs avant l'envoi |
+| Fonctions proposées | Résumé / réponse / réécriture, activables séparément |
+
+Les appels utilisateur sont plafonnés à 30 requêtes par tranche de 5 minutes et par
+compte : une génération occupe le GPU du serveur Ollama pendant plusieurs secondes.
+
+> Le plugin `ollama-ai` du dossier `plugins/` précédait cette intégration ; il n'est plus
+> utilisé et n'a pas besoin d'être installé.
 
 ## Compatibilité hébergeurs
 

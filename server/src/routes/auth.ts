@@ -35,6 +35,7 @@ import { z } from 'zod';
 import { addLog } from '../services/auditLog';
 import { credentialLimiter, forgotPasswordLimiter } from '../middleware/rateLimit';
 import { hashResetToken } from '../utils/resetToken';
+import { clientIp } from '../utils/clientIp';
 import { checkAndNotifyNewDevice } from '../services/newDeviceAlert';
 
 const PENDING_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'change-me';
@@ -59,7 +60,7 @@ export const authRouter = Router();
 /** Issue an access token + refresh cookie for a freshly-authenticated user. */
 async function issueSession(req: Request, res: Response, userId: string, isAdmin: boolean) {
   const ua = req.headers['user-agent'] || '';
-  const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+  const ip = clientIp(req);
   // Alerte « appareil inconnu » — la détection doit précéder createDeviceSession
   // et registerKnownDevice (l'enregistrement rendrait l'appareil « connu ») ;
   // l'email part en fond.
@@ -129,7 +130,7 @@ async function sendSecurityAlert(recipient: string, email: string, ip: string, a
 authRouter.post('/login', credentialLimiter, async (req, res) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
-    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+    const ip = clientIp(req);
     const ua = req.headers['user-agent'] || '';
 
     // Load security settings
@@ -573,7 +574,7 @@ authRouter.post('/refresh', async (req, res) => {
   }
   try {
     const ua = req.headers['user-agent'] || '';
-    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+    const ip = clientIp(req);
     const rotated = await rotateDeviceSession(presented, ua, ip);
     if (!rotated) {
       res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
@@ -840,7 +841,7 @@ authRouter.get('/sso/callback', async (req, res) => {
 
     if (!cfg.enabled) return res.redirect('/login?sso_error=disabled');
 
-    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
+    const ip = clientIp(req);
     const ua = req.headers['user-agent'] || '';
 
     // Check IP blacklist — same rule as the password login
@@ -933,10 +934,6 @@ authRouter.get('/sso/callback', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** IP réelle de l'appelant (le reverse proxy est déclaré de confiance). */
-function clientIp(req: Request): string {
-  return (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || '';
-}
-
 /**
  * Public : la page de connexion demande si elle doit tenter le Negotiate.
  *

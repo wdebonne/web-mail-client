@@ -1,6 +1,7 @@
 import { Request } from 'express';
 import { pool } from '../database/connection';
 import { logger } from '../utils/logger';
+import { clientIp } from '../utils/clientIp';
 
 export async function addLog(
   userId: string | undefined,
@@ -12,7 +13,7 @@ export async function addLog(
   targetId?: string,
 ) {
   try {
-    const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+    const ip = clientIp(req) || req.socket?.remoteAddress || null;
     const ua = req.headers['user-agent'] || null;
     await pool.query(
       `INSERT INTO admin_logs (user_id, action, category, target_type, target_id, details, ip_address, user_agent)

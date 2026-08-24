@@ -38,6 +38,15 @@ export async function tryRestoreSession(): Promise<boolean> {
   return performRefresh();
 }
 
+/** Un modèle présent sur le serveur Ollama (réponse de /api/tags). */
+export interface AiModel {
+  name: string;
+  size: number | null;
+  parameterSize: string | null;
+  quantization: string | null;
+  modifiedAt: string | null;
+}
+
 export type KerberosLoginResult =
   | { ok: true; token: string; user: any }
   | { ok: false; error: string; code?: string };
@@ -1318,6 +1327,39 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text, targetLang, sourceLang }),
     }),
+
+  // ─── Assistant IA (Ollama) ──────────────────────────────────────────────────
+  // Côté utilisateur : le front ne connaît ni l'URL ni la clé du serveur Ollama,
+  // il demande seulement au backend ce qui est activé.
+  getAiStatus: () =>
+    request<{
+      enabled: boolean;
+      model: string | null;
+      language: string;
+      features: { summarize: boolean; reply: boolean; improve: boolean };
+    }>('/ai/status'),
+  aiSummarize: (data: { subject?: string; from?: string; body: string }) =>
+    request<{ result: string; model: string }>('/ai/summarize', { method: 'POST', body: JSON.stringify(data) }),
+  aiSuggestReply: (data: { subject?: string; from?: string; body: string; tone?: string; instructions?: string }) =>
+    request<{ result: string; model: string }>('/ai/reply', { method: 'POST', body: JSON.stringify(data) }),
+  aiImprove: (data: { text: string; style?: string }) =>
+    request<{ result: string; model: string }>('/ai/improve', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Côté administration
+  getAiSettings: () => request<any>('/admin/ai/settings'),
+  updateAiSettings: (data: any) =>
+    request('/admin/ai/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  listAiModels: (data: any) =>
+    request<{ ok: boolean; models: AiModel[]; error?: string }>(
+      '/admin/ai/models', { method: 'POST', body: JSON.stringify(data) }
+    ),
+  testAi: (data: any) =>
+    request<{
+      ok: boolean;
+      checks: Array<{ id: string; label: string; ok: boolean; detail: string }>;
+      models: AiModel[];
+      error?: string;
+    }>('/admin/ai/test', { method: 'POST', body: JSON.stringify(data) }),
 
   // ─── Bulk send queue ────────────────────────────────────────────────────────
   getBulkSendSettings: () =>

@@ -11,6 +11,7 @@ import {
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
   Download, Send, AlertTriangle, Eye, EyeOff,
   Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn, Activity, Ban, Network,
+  Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -27,6 +28,7 @@ import AdminBackup from '../components/admin/AdminBackup';
 import AdminSystemStatus from '../components/admin/AdminSystemStatus';
 import AdminMigration from '../components/admin/AdminMigration';
 import AdminBulkSend from '../components/admin/AdminBulkSend';
+import AdminAiSettings from '../components/admin/AdminAiSettings';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
@@ -34,7 +36,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'junk' | 'ldap' | 'sso' | 'kerberos';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'junk' | 'ldap' | 'sso' | 'kerberos' | 'ai';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -74,6 +76,7 @@ export default function AdminPage() {
     { id: 'ldap' as const,          icon: Database,        label: 'LDAP',                         group: t('admin.group.integrations') },
     { id: 'sso' as const,           icon: LogIn,           label: 'SSO / OpenID Connect',         group: t('admin.group.integrations') },
     { id: 'kerberos' as const,      icon: Network,         label: 'Connexion Windows (Kerberos)', group: t('admin.group.integrations') },
+    { id: 'ai' as const,            icon: Sparkles,        label: 'Assistant IA (Ollama)',        group: t('admin.group.integrations') },
     // Système
     { id: 'systemstatus' as const,    icon: Activity,       label: 'État du système',             group: t('admin.group.system') },
     { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
@@ -178,6 +181,7 @@ export default function AdminPage() {
             {tab === 'ldap' && <LdapSettings />}
             {tab === 'sso' && <SsoSettings />}
             {tab === 'kerberos' && <KerberosSettings />}
+            {tab === 'ai' && <AdminAiSettings />}
           </div>
         </div>
       </div>
@@ -5456,6 +5460,16 @@ function SsoSettings() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Kerberos / SPNEGO — connexion intégrée Windows
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Doit rester aligné sur DEFAULT_USER_FILTER de server/src/services/kerberos.ts.
+ * Le terme userAccountControl écarte les comptes désactivés dans l'annuaire :
+ * ce chemin d'authentification ne fait aucun bind LDAP, il n'a donc pas d'autre
+ * moyen de voir qu'un compte a été désactivé côté AD.
+ */
+const KERBEROS_DEFAULT_FILTER =
+  '(&(sAMAccountName={{sam}})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))';
+
 function KerberosSettings() {
   const queryClient = useQueryClient();
 
@@ -5465,7 +5479,7 @@ function KerberosSettings() {
   const [kdcs, setKdcs] = useState('');
   const [servicePrincipal, setServicePrincipal] = useState('');
   const [keytabPath, setKeytabPath] = useState('/etc/webmail/webmail.keytab');
-  const [userFilter, setUserFilter] = useState('(sAMAccountName={{sam}})');
+  const [userFilter, setUserFilter] = useState(KERBEROS_DEFAULT_FILTER);
   const [emailDomain, setEmailDomain] = useState('');
   const [allowedCidrs, setAllowedCidrs] = useState('');
   const [availability, setAvailability] = useState<{ available: boolean; reason?: string } | null>(null);
@@ -5484,7 +5498,7 @@ function KerberosSettings() {
       setKdcs(s['kerberos_kdcs'] ?? '');
       setServicePrincipal(s['kerberos_service_principal'] ?? '');
       setKeytabPath(s['kerberos_keytab_path'] ?? '/etc/webmail/webmail.keytab');
-      setUserFilter(s['kerberos_user_filter'] ?? '(sAMAccountName={{sam}})');
+      setUserFilter(s['kerberos_user_filter'] ?? KERBEROS_DEFAULT_FILTER);
       setEmailDomain(s['kerberos_email_domain'] ?? '');
       setAllowedCidrs(s['kerberos_allowed_cidrs'] ?? '');
       setAvailability(s['_availability'] ?? null);
@@ -5616,8 +5630,8 @@ function KerberosSettings() {
           help: 'Fichier monté en lecture seule dans le conteneur. Il n\'est jamais stocké en base, donc jamais inclus dans les sauvegardes.',
         })}
         {field('Réseaux autorisés (CIDR)', allowedCidrs, setAllowedCidrs, {
-          placeholder: '192.168.1.0/24, 10.0.0.0/8',
-          help: 'Séparés par des virgules. Vide = tous les réseaux. Renseignez vos plages internes pour ne pas proposer Kerberos aux accès externes.',
+          placeholder: '192.168.1.0/24, 10.0.0.0/8, 2001:db8::/32',
+          help: 'Séparés par des virgules. Vide = tous les réseaux. Renseignez vos plages internes pour ne pas proposer Kerberos aux accès externes. IPv4 et IPv6 acceptés — pensez à déclarer vos préfixes IPv6 : Windows privilégie IPv6 quand il est disponible, et un poste écarté du filtre ne se voit jamais proposer la connexion intégrée.',
         })}
       </div>
 
@@ -5629,8 +5643,8 @@ function KerberosSettings() {
           exactement comme lors d'une connexion LDAP classique.
         </p>
         {field("Filtre LDAP de résolution", userFilter, setUserFilter, {
-          placeholder: '(sAMAccountName={{sam}})',
-          help: '{{sam}} = nom de connexion court, {{principal}} = principal complet (utilisateur@REALM).',
+          placeholder: KERBEROS_DEFAULT_FILTER,
+          help: "{{sam}} = nom de connexion court, {{principal}} = principal complet (utilisateur@REALM). Le second terme du filtre par défaut écarte les comptes désactivés dans l'annuaire : ce chemin ne fait aucun bind LDAP, donc sans lui un compte désactivé dans l'AD garderait l'accès jusqu'à l'expiration de son ticket. À remplacer par (sAMAccountName={{sam}}) sur un annuaire sans userAccountControl (OpenLDAP).",
         })}
         {field('Domaine email de repli', emailDomain, setEmailDomain, {
           placeholder: 'domaine.local',

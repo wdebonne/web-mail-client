@@ -16,10 +16,13 @@ import {
   Maximize2, Minimize2,
   FileText, Settings as SettingsIcon, Filter,
   Clock, BellDot, Cloud, StickyNote,
-  Search, X as XIcon, AtSign, FolderSearch,
+  Search, X as XIcon,
   Inbox,
 } from 'lucide-react';
 import { api } from '../../api';
+import SearchFilterBar, {
+  type SearchScope, type SearchDatePreset, type SearchAttachment, type SearchReadState,
+} from './SearchFilterBar';
 import NextcloudFilePicker, { type NextcloudFileItem } from '../ui/NextcloudFilePicker';
 import { PublipostageTabContent } from './MailMergePanel';
 import { CategoryPicker } from './CategoryModals';
@@ -191,18 +194,20 @@ interface RibbonProps {
   // Search ribbon tab
   isSearchMode?: boolean;
   searchQuery?: string;
-  searchScope?: 'current-folder' | 'all-folders' | 'mailbox';
+  searchScope?: SearchScope;
   searchAccountId?: string;
-  searchDatePreset?: 'all' | 'today' | 'week' | 'month' | 'year';
-  searchHasAttachment?: 'any' | 'yes' | 'no';
-  searchIsRead?: 'any' | 'read' | 'unread';
+  searchDatePreset?: SearchDatePreset;
+  searchHasAttachment?: SearchAttachment;
+  searchIsRead?: SearchReadState;
   searchFrom?: string;
-  onSearchScopeChange?: (s: 'current-folder' | 'all-folders' | 'mailbox') => void;
+  onSearchScopeChange?: (s: SearchScope) => void;
   onSearchAccountChange?: (id: string) => void;
-  onSearchDatePresetChange?: (p: 'all' | 'today' | 'week' | 'month' | 'year') => void;
-  onSearchHasAttachmentChange?: (v: 'any' | 'yes' | 'no') => void;
-  onSearchIsReadChange?: (v: 'any' | 'read' | 'unread') => void;
+  onSearchDatePresetChange?: (p: SearchDatePreset) => void;
+  onSearchHasAttachmentChange?: (v: SearchAttachment) => void;
+  onSearchIsReadChange?: (v: SearchReadState) => void;
   onSearchFromChange?: (v: string) => void;
+  /** Remet tous les filtres de recherche à leur valeur par défaut, sans quitter la recherche. */
+  onSearchResetFilters?: () => void;
   onSearchClear?: () => void;
   currentFolder?: string;
 }
@@ -267,309 +272,6 @@ function RibbonGroup({ label, children }: { label: string; children: React.React
   );
 }
 
-// ─── Search Tab shared props ──────────────────────────────────────────────────
-interface SearchTabProps {
-  searchScope: 'current-folder' | 'all-folders' | 'mailbox';
-  searchAccountId: string;
-  searchDatePreset: 'all' | 'today' | 'week' | 'month' | 'year';
-  searchHasAttachment: 'any' | 'yes' | 'no';
-  searchIsRead: 'any' | 'read' | 'unread';
-  searchFrom: string;
-  accounts: MailAccount[];
-  onSearchScopeChange?: (s: 'current-folder' | 'all-folders' | 'mailbox') => void;
-  onSearchAccountChange?: (id: string) => void;
-  onSearchDatePresetChange?: (p: 'all' | 'today' | 'week' | 'month' | 'year') => void;
-  onSearchHasAttachmentChange?: (v: 'any' | 'yes' | 'no') => void;
-  onSearchIsReadChange?: (v: 'any' | 'read' | 'unread') => void;
-  onSearchFromChange?: (v: string) => void;
-  onSearchClear?: () => void;
-  currentFolder?: string;
-}
-
-function SearchChip<T extends string>({ label, value, options, onChange }: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  const current = options.find((o) => o.value === value);
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const isActive = value !== options[0].value;
-
-  const handleOpen = () => {
-    if (ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4, left: rect.left });
-    }
-    setOpen((v) => !v);
-  };
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={handleOpen}
-        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-colors whitespace-nowrap
-          ${isActive
-            ? 'bg-outlook-blue text-white border-outlook-blue'
-            : 'bg-outlook-bg-secondary text-outlook-text-primary border-outlook-border hover:border-outlook-blue/50 hover:bg-outlook-bg-hover'
-          }`}
-      >
-        <span className="font-medium text-[10px] opacity-70">{label} :</span>
-        <span>{current?.label}</span>
-        <ChevronDown size={10} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
-      </button>
-      {open && createPortal(
-        <>
-          {/* Overlay closes on click outside — use onMouseDown so option buttons fire first */}
-          <div className="fixed inset-0 z-[9998]" onMouseDown={() => setOpen(false)} />
-          <div
-            className="fixed z-[9999] bg-outlook-bg-secondary border border-outlook-border rounded-lg shadow-xl py-1 min-w-[160px]"
-            style={{ top: pos.top, left: pos.left }}
-          >
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                onMouseDown={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false); }}
-                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center justify-between
-                  ${value === opt.value ? 'text-outlook-blue font-medium' : 'text-outlook-text-primary'}`}
-              >
-                {opt.label}
-                {value === opt.value && <span className="text-outlook-blue">✓</span>}
-              </button>
-            ))}
-          </div>
-        </>,
-        document.body,
-      )}
-    </div>
-  );
-}
-
-// Small radio-style toggle used inside RibbonGroup for the Search tab (classic mode)
-function SearchRadioGroup<T extends string>({ value, options, onChange }: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="flex flex-col justify-center gap-px py-0.5 h-full">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          className={`flex items-center gap-1 px-1.5 py-px rounded text-[10px] leading-tight transition-colors whitespace-nowrap
-            ${value === opt.value ? 'bg-outlook-blue/10 text-outlook-blue font-semibold' : 'text-outlook-text-secondary hover:bg-outlook-bg-hover'}`}
-        >
-          <div className={`w-1.5 h-1.5 rounded-full border flex-shrink-0 ${value === opt.value ? 'bg-outlook-blue border-outlook-blue' : 'border-outlook-text-disabled'}`} />
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SearchTabClassic(props: SearchTabProps) {
-  const {
-    searchScope, searchAccountId, searchDatePreset, searchHasAttachment, searchIsRead,
-    searchFrom, accounts,
-    onSearchScopeChange, onSearchAccountChange, onSearchDatePresetChange,
-    onSearchHasAttachmentChange, onSearchIsReadChange, onSearchFromChange, onSearchClear,
-    currentFolder,
-  } = props;
-
-  const folderShort = currentFolder ? (currentFolder.split('/').pop() || currentFolder) : 'actuel';
-
-  return (
-    <div className="flex items-stretch gap-1 w-full overflow-x-auto h-full">
-      {/* Fermer */}
-      <RibbonGroup label="Recherche">
-        <RibbonButton icon={XIcon} label="Fermer" onClick={() => onSearchClear?.()} danger />
-      </RibbonGroup>
-      <RibbonSeparator />
-
-      {/* Portée */}
-      <RibbonGroup label="Portée">
-        <SearchRadioGroup<'current-folder' | 'all-folders' | 'mailbox'>
-          value={searchScope}
-          options={[
-            { value: 'current-folder', label: `Dossier : ${folderShort}` },
-            { value: 'all-folders', label: 'Toutes les boîtes' },
-            { value: 'mailbox', label: 'Boîte actuelle' },
-          ]}
-          onChange={(v) => onSearchScopeChange?.(v)}
-        />
-      </RibbonGroup>
-      <RibbonSeparator />
-
-      {/* Compte (multi-account only) */}
-      {accounts.length > 1 && (
-        <>
-          <RibbonGroup label="Compte">
-            <SearchRadioGroup<string>
-              value={searchAccountId || '__all__'}
-              options={[
-                { value: '__all__', label: 'Tous les comptes' },
-                ...accounts.slice(0, 3).map((a) => ({ value: a.id, label: getAccountDisplayName(a) })),
-              ]}
-              onChange={(v) => onSearchAccountChange?.(v === '__all__' ? '' : v)}
-            />
-          </RibbonGroup>
-          <RibbonSeparator />
-        </>
-      )}
-
-      {/* Période */}
-      <RibbonGroup label="Période">
-        <SearchRadioGroup<'all' | 'today' | 'week' | 'month' | 'year'>
-          value={searchDatePreset}
-          options={[
-            { value: 'all', label: 'Tout' },
-            { value: 'today', label: "Aujourd'hui" },
-            { value: 'week', label: 'Cette semaine' },
-            { value: 'month', label: 'Ce mois' },
-            { value: 'year', label: 'Cette année' },
-          ]}
-          onChange={(v) => onSearchDatePresetChange?.(v)}
-        />
-      </RibbonGroup>
-      <RibbonSeparator />
-
-      {/* Pièces jointes */}
-      <RibbonGroup label="Pièces jointes">
-        <SearchRadioGroup<'any' | 'yes' | 'no'>
-          value={searchHasAttachment}
-          options={[
-            { value: 'any', label: 'Non filtré' },
-            { value: 'yes', label: 'Avec PJ' },
-            { value: 'no', label: 'Sans PJ' },
-          ]}
-          onChange={(v) => onSearchHasAttachmentChange?.(v)}
-        />
-      </RibbonGroup>
-      <RibbonSeparator />
-
-      {/* Statut */}
-      <RibbonGroup label="Statut">
-        <SearchRadioGroup<'any' | 'read' | 'unread'>
-          value={searchIsRead}
-          options={[
-            { value: 'any', label: 'Non filtré' },
-            { value: 'unread', label: 'Non lu' },
-            { value: 'read', label: 'Lu' },
-          ]}
-          onChange={(v) => onSearchIsReadChange?.(v)}
-        />
-      </RibbonGroup>
-      <RibbonSeparator />
-
-      {/* Expéditeur */}
-      <RibbonGroup label="Expéditeur">
-        <div className="flex items-center gap-1 px-1.5 py-1 bg-outlook-bg-hover border border-outlook-border rounded">
-          <AtSign size={11} className="text-outlook-text-secondary flex-shrink-0" />
-          <input
-            type="text"
-            value={searchFrom}
-            onChange={(e) => onSearchFromChange?.(e.target.value)}
-            placeholder="Expéditeur…"
-            className="w-28 text-[11px] outline-none bg-transparent text-outlook-text-primary placeholder-outlook-text-disabled"
-          />
-          {searchFrom && (
-            <button onMouseDown={() => onSearchFromChange?.('')} className="text-outlook-text-disabled hover:text-outlook-text-secondary">
-              <XIcon size={9} />
-            </button>
-          )}
-        </div>
-      </RibbonGroup>
-    </div>
-  );
-}
-
-function SearchTabSimplified(props: SearchTabProps) {
-  const {
-    searchScope, searchAccountId, searchDatePreset, searchHasAttachment, searchIsRead,
-    accounts,
-    onSearchScopeChange, onSearchAccountChange, onSearchDatePresetChange,
-    onSearchHasAttachmentChange, onSearchIsReadChange, onSearchClear,
-    currentFolder,
-  } = props;
-
-  const scopeLabel = currentFolder ? `Dossier : ${currentFolder.split('/').pop() || currentFolder}` : 'Dossier actuel';
-
-  return (
-    <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-      <button
-        onClick={() => onSearchClear?.()}
-        className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-outlook-danger hover:bg-red-50 transition-colors whitespace-nowrap"
-        title="Fermer la recherche"
-      >
-        <XIcon size={12} />
-        Fermer
-      </button>
-      <SimplifiedSep />
-
-      <SearchChip<'current-folder' | 'all-folders' | 'mailbox'>
-        label="Portée"
-        value={searchScope}
-        options={[
-          { value: 'current-folder', label: scopeLabel },
-          { value: 'all-folders', label: 'Toutes les boîtes' },
-          { value: 'mailbox', label: 'Boîte actuelle' },
-        ]}
-        onChange={(v) => onSearchScopeChange?.(v)}
-      />
-
-      {accounts.length > 1 && (
-        <SearchChip<string>
-          label="Compte"
-          value={searchAccountId || '__all__'}
-          options={[
-            { value: '__all__', label: 'Tous les comptes' },
-            ...accounts.map((a) => ({ value: a.id, label: getAccountDisplayName(a) })),
-          ]}
-          onChange={(v) => onSearchAccountChange?.(v === '__all__' ? '' : v)}
-        />
-      )}
-
-      <SearchChip<'all' | 'today' | 'week' | 'month' | 'year'>
-        label="Période"
-        value={searchDatePreset}
-        options={[
-          { value: 'all', label: 'Tout' },
-          { value: 'today', label: "Aujourd'hui" },
-          { value: 'week', label: 'Cette semaine' },
-          { value: 'month', label: 'Ce mois' },
-          { value: 'year', label: 'Cette année' },
-        ]}
-        onChange={(v) => onSearchDatePresetChange?.(v)}
-      />
-
-      <SearchChip<'any' | 'yes' | 'no'>
-        label="Pièces jointes"
-        value={searchHasAttachment}
-        options={[
-          { value: 'any', label: 'Non filtré' },
-          { value: 'yes', label: 'Avec' },
-          { value: 'no', label: 'Sans' },
-        ]}
-        onChange={(v) => onSearchHasAttachmentChange?.(v)}
-      />
-
-      <SearchChip<'any' | 'read' | 'unread'>
-        label="Statut"
-        value={searchIsRead}
-        options={[
-          { value: 'any', label: 'Non filtré' },
-          { value: 'unread', label: 'Non lu' },
-          { value: 'read', label: 'Lu' },
-        ]}
-        onChange={(v) => onSearchIsReadChange?.(v)}
-      />
-    </div>
-  );
-}
-
 export default function Ribbon({
   onNewMessage, onReply, onReplyAll, onForward, onDelete, onArchive,
   onToggleFlag, onMarkRead, onMarkUnread, onSync,
@@ -613,6 +315,7 @@ export default function Ribbon({
   onSearchHasAttachmentChange,
   onSearchIsReadChange,
   onSearchFromChange,
+  onSearchResetFilters,
   onSearchClear,
   currentFolder,
 }: RibbonProps) {
@@ -1468,24 +1171,26 @@ export default function Ribbon({
     return (
       <div ref={ribbonRef} className="hidden md:flex flex-col flex-shrink-0 bg-white select-none">
         {renderTabBar(() => onChangeRibbonMode('classic'), 'Développer le ruban', false)}
-        <div className="flex items-center px-2 py-0.5 gap-0.5 overflow-x-auto h-9">
+        <div className={`flex items-center px-2 gap-0.5 overflow-x-auto ${activeTab === 'recherche' ? 'py-1 h-11' : 'py-0.5 h-9'}`}>
           {activeTab === 'recherche' && (
-            <SearchTabSimplified
-              searchScope={searchScope}
-              searchAccountId={searchAccountId}
-              searchDatePreset={searchDatePreset}
-              searchHasAttachment={searchHasAttachment}
-              searchIsRead={searchIsRead}
-              searchFrom={searchFrom}
+            <SearchFilterBar
+              variant="compact"
+              scope={searchScope}
+              accountId={searchAccountId}
+              datePreset={searchDatePreset}
+              hasAttachment={searchHasAttachment}
+              isRead={searchIsRead}
+              from={searchFrom}
               accounts={accounts}
-              onSearchScopeChange={onSearchScopeChange}
-              onSearchAccountChange={onSearchAccountChange}
-              onSearchDatePresetChange={onSearchDatePresetChange}
-              onSearchHasAttachmentChange={onSearchHasAttachmentChange}
-              onSearchIsReadChange={onSearchIsReadChange}
-              onSearchFromChange={onSearchFromChange}
-              onSearchClear={onSearchClear}
               currentFolder={currentFolder}
+              onScopeChange={onSearchScopeChange}
+              onAccountChange={onSearchAccountChange}
+              onDatePresetChange={onSearchDatePresetChange}
+              onHasAttachmentChange={onSearchHasAttachmentChange}
+              onIsReadChange={onSearchIsReadChange}
+              onFromChange={onSearchFromChange}
+              onResetFilters={onSearchResetFilters}
+              onClose={onSearchClear}
             />
           )}
           {activeTab === 'accueil' && (
@@ -1714,22 +1419,23 @@ export default function Ribbon({
       {/* Ribbon content — fixed height for standard tabs; auto for search tab */}
         <div className={`flex items-center px-2 py-1 gap-1 overflow-x-auto overflow-y-hidden ${activeTab === 'recherche' ? 'min-h-[72px] h-auto' : 'h-[80px]'}`}>
           {activeTab === 'recherche' && (
-            <SearchTabClassic
-              searchScope={searchScope}
-              searchAccountId={searchAccountId}
-              searchDatePreset={searchDatePreset}
-              searchHasAttachment={searchHasAttachment}
-              searchIsRead={searchIsRead}
-              searchFrom={searchFrom}
+            <SearchFilterBar
+              scope={searchScope}
+              accountId={searchAccountId}
+              datePreset={searchDatePreset}
+              hasAttachment={searchHasAttachment}
+              isRead={searchIsRead}
+              from={searchFrom}
               accounts={accounts}
-              onSearchScopeChange={onSearchScopeChange}
-              onSearchAccountChange={onSearchAccountChange}
-              onSearchDatePresetChange={onSearchDatePresetChange}
-              onSearchHasAttachmentChange={onSearchHasAttachmentChange}
-              onSearchIsReadChange={onSearchIsReadChange}
-              onSearchFromChange={onSearchFromChange}
-              onSearchClear={onSearchClear}
               currentFolder={currentFolder}
+              onScopeChange={onSearchScopeChange}
+              onAccountChange={onSearchAccountChange}
+              onDatePresetChange={onSearchDatePresetChange}
+              onHasAttachmentChange={onSearchHasAttachmentChange}
+              onIsReadChange={onSearchIsReadChange}
+              onFromChange={onSearchFromChange}
+              onResetFilters={onSearchResetFilters}
+              onClose={onSearchClear}
             />
           )}
           {activeTab === 'accueil' && (

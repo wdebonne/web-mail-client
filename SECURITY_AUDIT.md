@@ -312,6 +312,31 @@ Deux nuances propres à Kerberos, notées ici pour ne pas être re-signalées :
 - **Le verrouillage après N échecs (`locked_until`) n'est pas consulté** sur ce chemin, comme sur le chemin SSO. C'est cohérent : ce compteur protège contre le devinage de mot de passe, et présenter un ticket de service valide n'est pas un devinage. Un compte réellement suspendu se désactive via `is_active`, qui est bien vérifié.
 - **Le keytab est un secret équivalent au mot de passe du compte de service.** Il est délibérément conservé hors base (fichier monté en lecture seule, seul son chemin est stocké) : `admin_settings` part dans les sauvegardes, qui deviendraient alors porteuses d'une clé de domaine.
 
+
+### ~~S5. Adresse IP du client falsifiable par en-tête `X-Forwarded-For`~~
+
+**Fichiers :** [server/src/routes/auth.ts](server/src/routes/auth.ts), [server/src/services/auditLog.ts](server/src/services/auditLog.ts)
+
+Six emplacements lisaient le **premier** élément de `X-Forwarded-For` pour déterminer l'IP de l'appelant :
+
+```ts
+(req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || ''
+```
+
+Or le nginx documenté dans [DEPLOYMENT.md](DEPLOYMENT.md) utilise `$proxy_add_x_forwarded_for`, qui **ajoute** l'IP réelle à la valeur reçue au lieu de la remplacer. Un client émettant `X-Forwarded-For: 10.0.0.5` produisait donc l'en-tête `10.0.0.5, <ip réelle>`, et le code retenait la valeur choisie par l'appelant. Conséquences : contournement de la **liste noire d'IP** sur tous les chemins d'authentification, contournement du **filtre réseau Kerberos** (`kerberos_allowed_cidrs`), et adresses falsifiées dans `login_attempts`, le journal d'audit et l'alerte « nouvel appareil ».
+
+Le limiteur de débit n'était pas concerné : `express-rate-limit` s'appuie déjà sur `req.ip`.
+
+> **✅ Résolu (août 2026)** — nouveau helper [server/src/utils/clientIp.ts](server/src/utils/clientIp.ts) qui renvoie `req.ip`. `app.set('trust proxy', 1)` étant positionné avant tout middleware (cf. correctif d'avril 2026), Express résout déjà l'en-tête sur le **dernier** saut — celui ajouté par le reverse proxy, le seul qu'un client ne puisse pas écrire. Appliqué aux six emplacements ; plus aucune lecture directe de `x-forwarded-for` ne subsiste dans `server/src`.
+
+### ~~S6. Kerberos — un compte désactivé dans l'annuaire conservait l'accès~~
+
+**Fichiers :** [server/src/services/kerberos.ts](server/src/services/kerberos.ts), [server/src/services/ldap.ts](server/src/services/ldap.ts)
+
+`findLdapUser` ne filtre pas `userAccountControl`. Sur le chemin mot de passe c'est sans conséquence : un compte désactivé est bloqué par le `bind` LDAP qui échoue. Le chemin Kerberos, lui, **ne fait aucun bind** — le seul garde-fou est le ticket. Désactiver un compte dans l'AD, geste naturel d'un départ, ne coupait donc pas l'accès : le poste continuait de présenter le ticket de service déjà en cache (10 h par défaut), et la session d'appareil émise dans cet intervalle valait ensuite 90 jours.
+
+> **✅ Résolu (août 2026)** — le filtre par défaut `DEFAULT_USER_FILTER` devient `(&(sAMAccountName={{sam}})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))`, qui écarte le bit `ACCOUNTDISABLE`. Il ne s'agit que d'un **défaut** : une installation ayant personnalisé le filtre garde le sien, d'où la mention dans l'aide du champ et dans [docs/CONFIGURATION.md](docs/CONFIGURATION.md), avec la variante pour les annuaires sans `userAccountControl` (OpenLDAP). La révocation immédiate d'un départ passe toujours par **Admin → Sécurité → Appareils connectés** : le filtre ne raccourcit pas les sessions déjà émises.
+
 ---
 
 ## 🟢 Faibles / bonnes pratiques

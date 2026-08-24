@@ -36,6 +36,7 @@ L'API utilise deux méthodes d'authentification :
 - [LDAP](#ldap-admin)
 - [SSO / OpenID Connect](#sso--openid-connect-admin)
 - [Connexion Windows (Kerberos)](#connexion-windows-kerberos)
+- [Assistant IA (Ollama)](#assistant-ia-ollama)
 - [Codes d'erreur](#codes-derreur)
 
 ---
@@ -3141,6 +3142,155 @@ Diagnostic, dans l'ordre ou les choses cassent en pratique.
 ```
 
 Le decalage d'horloge est mesure contre l'attribut `currentTime` du RootDSE de l'annuaire.
+
+---
+
+## Assistant IA (Ollama)
+
+> 🔒 Authentification requise. Les routes `/api/ai/*` sont plafonnees a 30 requetes
+> par tranche de 5 minutes **et par compte** : une generation occupe le serveur
+> Ollama pendant plusieurs secondes.
+
+L'URL du serveur Ollama et sa cle d'API eventuelle ne sortent jamais du backend.
+Le client ne connait que l'etat renvoye par `/api/ai/status`.
+
+### GET /api/ai/status
+
+Etat de l'assistant pour l'utilisateur courant. Sert a afficher (ou masquer) les
+boutons IA de l'interface.
+
+**Reponse 200 :**
+```json
+{
+  "enabled": true,
+  "model": "llama3.2",
+  "language": "fr",
+  "features": { "summarize": true, "reply": true, "improve": true }
+}
+```
+
+### POST /api/ai/summarize
+
+**Body :**
+```json
+{ "subject": "Devis chantier", "from": "Marie Durand", "body": "Bonjour, …" }
+```
+
+**Reponse 200 :**
+```json
+{ "result": "Marie Durand demande…", "model": "llama3.2" }
+```
+
+### POST /api/ai/reply
+
+**Body :**
+```json
+{
+  "subject": "Devis chantier",
+  "from": "Marie Durand",
+  "body": "Bonjour, …",
+  "tone": "professional",
+  "instructions": "propose mardi 14 h"
+}
+```
+
+`tone` : `professional` (defaut) | `formal` | `friendly` | `concise`.
+`instructions` est facultatif — consigne libre de l'utilisateur pour cette reponse.
+
+### POST /api/ai/improve
+
+**Body :**
+```json
+{ "text": "je voudré confirmé le rdv de mardi", "style": "professional" }
+```
+
+`style` accepte les memes valeurs que `tone`.
+
+**Erreurs communes aux trois actions :**
+
+| Code | Cause |
+|------|-------|
+| 400 | Aucun texte a traiter |
+| 403 | Fonction desactivee par l'administrateur |
+| 404 | Modele absent du serveur Ollama |
+| 503 | Assistant desactive |
+| 504 | Ollama n'a pas repondu dans le delai configure |
+| 502 | Serveur Ollama injoignable ou reponse illisible |
+
+---
+
+## Administration — Assistant IA
+
+> 🔒 Administrateur requis
+
+### GET /api/admin/ai/settings
+
+Renvoie les cles `ai_*` de `admin_settings`. La cle d'API est remplacee par la
+sentinelle `"__encrypted__"` — elle n'est jamais renvoyee en clair.
+
+### PUT /api/admin/ai/settings
+
+**Body (toutes les cles sont facultatives) :**
+```json
+{
+  "ai_enabled": true,
+  "ai_url": "http://host.docker.internal:11434",
+  "ai_model": "llama3.2",
+  "ai_api_key": "__encrypted__",
+  "ai_language": "fr",
+  "ai_temperature": 0.4,
+  "ai_max_tokens": 800,
+  "ai_timeout": 120,
+  "ai_max_input_chars": 12000,
+  "ai_feature_summarize": true,
+  "ai_feature_reply": true,
+  "ai_feature_improve": true
+}
+```
+
+`ai_api_key` : la sentinelle `"__encrypted__"` laisse la cle existante intacte, une
+chaine vide la supprime, toute autre valeur est chiffree puis stockee.
+
+**Erreurs :** `400` si l'URL n'est pas un `http(s)://` valide, ou si `ai_enabled`
+passe a `true` sans modele.
+
+### POST /api/admin/ai/models
+
+Liste les modeles presents sur le serveur Ollama (`GET /api/tags` cote Ollama).
+Le body accepte `ai_url`, `ai_model`, `ai_api_key`, `ai_timeout` pour tester une
+configuration **non encore enregistree** ; ce qui manque est repris de la base.
+
+**Reponse 200 :**
+```json
+{
+  "ok": true,
+  "models": [
+    { "name": "llama3.2:latest", "size": 2019393189, "parameterSize": "3.2B", "quantization": "Q4_K_M", "modifiedAt": "2026-08-01T09:12:44Z" }
+  ]
+}
+```
+
+### POST /api/admin/ai/test
+
+Diagnostic complet, execute **depuis le serveur applicatif** : joignabilite,
+modeles disponibles, presence du modele selectionne, puis une generation reelle.
+Meme body que `/api/admin/ai/models`.
+
+**Reponse 200 :**
+```json
+{
+  "ok": false,
+  "checks": [
+    { "id": "reach",    "label": "Serveur Ollama joignable", "ok": true,  "detail": "http://…:11434 — version 0.6.2" },
+    { "id": "models",   "label": "Modeles telecharges", "ok": true, "detail": "llama3.2:latest, mistral:latest" },
+    { "id": "model",    "label": "Modele selectionne (phi3.5)", "ok": false, "detail": "Absent — lancez : ollama pull phi3.5" }
+  ],
+  "models": []
+}
+```
+
+Le diagnostic s'arrete a la premiere etape en echec : les suivantes n'auraient
+rien de fiable a dire.
 
 ---
 
