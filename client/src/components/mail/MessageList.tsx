@@ -20,6 +20,7 @@ import {
 } from '../../utils/categories';
 import type { SwipeAction } from '../../utils/mailPreferences';
 import { FOCUSED_TAB_LABELS, normalizeAddress, type FocusedTab } from '../../utils/focusedInbox';
+import { resolveFolderDisplayName } from '../../utils/folderLabels';
 import {
   isFavoriteFolder, toggleFavoriteFolder,
   getRecentMoveFolders, getRecentMoveFoldersCount, pushRecentMoveFolder,
@@ -133,6 +134,8 @@ interface MessageListProps {
   onFavoritesChanged?: () => void;
   /** True when displaying a virtual folder (unified inbox/sent). The header star is hidden in that case. */
   isVirtualFolder?: boolean;
+  /** Contenu affiché à la place du « Aucun message » par défaut (mode recherche). */
+  emptyState?: React.ReactNode;
   /** Called when the user confirms bulk deletion of the currently selected messages. */
   onBulkDelete?: (messages: Email[]) => void;
   /** Ouvre le dialogue de blocage de l'expéditeur (menu contextuel). */
@@ -203,6 +206,7 @@ export default function MessageList({
   onToggleLoadAll,
   onFavoritesChanged,
   isVirtualFolder = false,
+  emptyState,
   onBulkDelete,
   onBlockSender, onNotJunk, isJunkFolder = false,
   focusedSplitActive = false,
@@ -852,7 +856,9 @@ export default function MessageList({
 
       {/* Grouped message list — scrollable */}
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ overscrollBehavior: 'none' }}>
-        {filteredMessages.length === 0 ? (
+        {filteredMessages.length === 0 && emptyState && activeFilterCount === 0 ? (
+          emptyState
+        ) : filteredMessages.length === 0 ? (
           <div className="text-center text-outlook-text-disabled py-12">
             <p className="text-sm">
               {activeFilterCount > 0 ? 'Aucun message correspondant aux filtres' : 'Aucun message'}
@@ -1602,31 +1608,5 @@ function getFolderDisplayName(folder: string): string {
   return resolveFolderDisplayName(folder);
 }
 
-export function resolveFolderDisplayName(folder: string): string {
-  const names: Record<string, string> = {
-    'INBOX': 'Boîte de réception',
-    'Sent': 'Éléments envoyés',
-    'Sent Items': 'Éléments envoyés',
-    'Drafts': 'Brouillons',
-    'Trash': 'Éléments supprimés',
-    'Deleted': 'Éléments supprimés',
-    'Deleted Items': 'Éléments supprimés',
-    'Junk': 'Courrier indésirable',
-    'Spam': 'Courrier indésirable',
-    'Archive': 'Archives',
-  };
-  // Try leaf segment against common folder names (handles `.` and `/` delimiters).
-  const segments = folder.split(/[./]/);
-  const leaf = segments[segments.length - 1] || folder;
-  const mapped = names[folder] || names[leaf];
-  if (mapped) return mapped;
-
-  // For any nested folder, display only the leaf name (e.g. "test sous" instead of "test.test sous").
-  if (segments.length > 1) return leaf;
-
-  if (folder.toUpperCase().startsWith('INBOX.')) {
-    return folder.substring(6);
-  }
-
-  return folder;
-}
+// Le mapping vit dans utils/folderLabels — réexporté ici pour les imports existants.
+export { resolveFolderDisplayName };

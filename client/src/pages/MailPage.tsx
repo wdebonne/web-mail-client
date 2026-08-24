@@ -58,7 +58,13 @@ import {
 import { applyCategoryRules } from '../utils/mailRulesEval';
 import { useAuthStore } from '../stores/authStore';
 import { CategoryEditorModal, CategoryManageModal, CategoryPicker } from '../components/mail/CategoryModals';
-import { resolveFolderDisplayName } from '../components/mail/MessageList';
+import { resolveFolderDisplayName } from '../utils/folderLabels';
+import SearchFilterBar, {
+  SearchResultsHeader, SearchEmptyState, buildActiveFilterChips, countActiveFilters,
+  scopeValueLabel, SEARCH_FILTER_DEFAULTS,
+  type SearchScope, type SearchDatePreset, type SearchAttachment, type SearchReadState,
+  type SearchFilterState, type SearchFilterHandlers,
+} from '../components/mail/SearchFilterBar';
 import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import type { MailFolder, Email } from '../types';
 
@@ -1863,17 +1869,17 @@ export default function MailPage() {
   const rawSearchQuery = searchParams.get('search') || '';
 
   // Search filter state (mirrors URL params with defaults)
-  const [searchScope, setSearchScope] = useState<'current-folder' | 'all-folders' | 'mailbox'>(
+  const [searchScope, setSearchScope] = useState<SearchScope>(
     () => (searchParams.get('scope') as any) || 'current-folder',
   );
   const [searchAccountId, setSearchAccountId] = useState(() => searchParams.get('sAccount') || '');
-  const [searchDatePreset, setSearchDatePreset] = useState<'all' | 'today' | 'week' | 'month' | 'year'>(
+  const [searchDatePreset, setSearchDatePreset] = useState<SearchDatePreset>(
     () => (searchParams.get('date') as any) || 'all',
   );
-  const [searchHasAttachment, setSearchHasAttachment] = useState<'any' | 'yes' | 'no'>(
+  const [searchHasAttachment, setSearchHasAttachment] = useState<SearchAttachment>(
     () => (searchParams.get('attach') as any) || 'any',
   );
-  const [searchIsRead, setSearchIsRead] = useState<'any' | 'read' | 'unread'>(
+  const [searchIsRead, setSearchIsRead] = useState<SearchReadState>(
     () => (searchParams.get('read') as any) || 'any',
   );
   const [searchFrom, setSearchFrom] = useState(() => searchParams.get('from') || '');
@@ -1990,6 +1996,82 @@ export default function MailPage() {
       folder: e.folder, _accountId: e.account_id, _folder: e.folder,
     })).filter(applyFilters);
   }, [isSearchMode, rawSearchQuery, searchScope, messages, searchResultsData, searchHasAttachment, searchIsRead, searchFrom, dateRangeFromPreset]);
+
+  // ── Pilotage des filtres de recherche ───────────────────────────────────────
+  // Un seul jeu de callbacks pour les trois surfaces : ruban, en-tête de
+  // résultats (pastilles retirables) et écran « rien trouvé ».
+  const searchFilterState: SearchFilterState = {
+    scope: searchScope,
+    accountId: searchAccountId,
+    datePreset: searchDatePreset,
+    hasAttachment: searchHasAttachment,
+    isRead: searchIsRead,
+    from: searchFrom,
+  };
+
+  const searchFilterHandlers: SearchFilterHandlers = useMemo(() => ({
+    onScopeChange: (s) => { setSearchScope(s); updateSearchParam('scope', s === 'current-folder' ? '' : s); },
+    onAccountChange: (id) => { setSearchAccountId(id); updateSearchParam('sAccount', id); },
+    onDatePresetChange: (p) => { setSearchDatePreset(p); updateSearchParam('date', p === 'all' ? '' : p); },
+    onHasAttachmentChange: (v) => { setSearchHasAttachment(v); updateSearchParam('attach', v === 'any' ? '' : v); },
+    onIsReadChange: (v) => { setSearchIsRead(v); updateSearchParam('read', v === 'any' ? '' : v); },
+    onFromChange: (v) => { setSearchFrom(v); updateSearchParam('from', v); },
+  }), [updateSearchParam]);
+
+  /** Remet les filtres à zéro sans quitter la recherche. */
+  const resetSearchFilters = useCallback(() => {
+    setSearchScope(SEARCH_FILTER_DEFAULTS.scope);
+    setSearchAccountId(SEARCH_FILTER_DEFAULTS.accountId);
+    setSearchDatePreset(SEARCH_FILTER_DEFAULTS.datePreset);
+    setSearchHasAttachment(SEARCH_FILTER_DEFAULTS.hasAttachment);
+    setSearchIsRead(SEARCH_FILTER_DEFAULTS.isRead);
+    setSearchFrom(SEARCH_FILTER_DEFAULTS.from);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      ['scope', 'sAccount', 'date', 'attach', 'read', 'from'].forEach((k) => next.delete(k));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  /** Quitte la recherche et revient à la liste normale. */
+  const exitSearch = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      ['search', 'scope', 'sAccount', 'date', 'attach', 'read', 'from'].forEach((k) => next.delete(k));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const searchActiveFilterCount = countActiveFilters(searchFilterState);
+  const searchScopeLabel = scopeValueLabel(searchScope, selectedFolder || undefined);
+  const searchResultCount = searchFilteredMessages !== null ? searchFilteredMessages.length : null;
+  const searchIsLoading = searchLoading && searchScope !== 'current-folder';
+  const searchFoundNothing = isSearchMode && !searchIsLoading && searchResultCount === 0;
+
+  // Zéro résultat dans le dossier courant : on compte en arrière-plan ce que
+  // donnerait la même recherche élargie à tout, pour proposer « Voir les 12
+  // messages trouvés » plutôt qu'un cul-de-sac. Les autres filtres (date,
+  // expéditeur…) sont conservés, sinon le chiffre annoncé ne correspondrait pas
+  // à ce que l'utilisateur verra après avoir cliqué.
+  const searchEverywhereOpts = useMemo(() => {
+    const opts: Parameters<typeof api.search>[1] = { type: 'mail', limit: 100 };
+    if (dateRangeFromPreset.dateFrom) opts.dateFrom = dateRangeFromPreset.dateFrom;
+    if (dateRangeFromPreset.dateTo) opts.dateTo = dateRangeFromPreset.dateTo;
+    if (searchHasAttachment !== 'any') opts.hasAttachment = searchHasAttachment === 'yes' ? 'true' : 'false';
+    if (searchIsRead !== 'any') opts.isRead = searchIsRead === 'read' ? 'true' : 'false';
+    if (searchFrom) opts.from = searchFrom;
+    return opts;
+  }, [dateRangeFromPreset, searchHasAttachment, searchIsRead, searchFrom]);
+
+  const { data: searchElsewhereData } = useQuery({
+    queryKey: ['search-mail-elsewhere', rawSearchQuery, searchEverywhereOpts],
+    queryFn: () => api.search(rawSearchQuery, searchEverywhereOpts),
+    enabled: searchFoundNothing && searchScope !== 'all-folders' && !!rawSearchQuery,
+    staleTime: 30_000,
+  });
+  const searchElsewhereCount: number | null = searchElsewhereData
+    ? (searchElsewhereData.totals?.emails ?? searchElsewhereData.emails?.length ?? 0)
+    : null;
 
   // Shared ref for the compose editor — allows the ribbon's Message tab to drive formatting
   const composeEditorRef = useRef<HTMLDivElement>(null);
@@ -2663,20 +2745,14 @@ export default function MailPage() {
           searchIsRead={searchIsRead}
           searchFrom={searchFrom}
           currentFolder={selectedFolder || undefined}
-          onSearchScopeChange={(s) => { setSearchScope(s); updateSearchParam('scope', s); }}
-          onSearchAccountChange={(id) => { setSearchAccountId(id); updateSearchParam('sAccount', id); }}
-          onSearchDatePresetChange={(p) => { setSearchDatePreset(p); updateSearchParam('date', p === 'all' ? '' : p); }}
-          onSearchHasAttachmentChange={(v) => { setSearchHasAttachment(v); updateSearchParam('attach', v === 'any' ? '' : v); }}
-          onSearchIsReadChange={(v) => { setSearchIsRead(v); updateSearchParam('read', v === 'any' ? '' : v); }}
-          onSearchFromChange={(v) => { setSearchFrom(v); updateSearchParam('from', v); }}
-          onSearchClear={() => {
-            setSearchParams((prev) => {
-              const next = new URLSearchParams(prev);
-              next.delete('search'); next.delete('scope'); next.delete('sAccount');
-              next.delete('date'); next.delete('attach'); next.delete('read'); next.delete('from');
-              return next;
-            }, { replace: true });
-          }}
+          onSearchScopeChange={searchFilterHandlers.onScopeChange}
+          onSearchAccountChange={searchFilterHandlers.onAccountChange}
+          onSearchDatePresetChange={searchFilterHandlers.onDatePresetChange}
+          onSearchHasAttachmentChange={searchFilterHandlers.onHasAttachmentChange}
+          onSearchIsReadChange={searchFilterHandlers.onIsReadChange}
+          onSearchFromChange={searchFilterHandlers.onFromChange}
+          onSearchResetFilters={resetSearchFilters}
+          onSearchClear={exitSearch}
         />
       </div>
 
@@ -2886,19 +2962,44 @@ export default function MailPage() {
               ) : (
                 <>
                   {isSearchMode && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-outlook-blue/5 border-b border-outlook-blue/20 flex-shrink-0">
-                      <Search size={13} className="text-outlook-blue flex-shrink-0" />
-                      <span className="text-xs text-outlook-blue font-medium truncate">
-                        Résultats pour « {rawSearchQuery} »
-                        {searchLoading && searchScope !== 'current-folder' ? ' — Recherche…' : searchFilteredMessages !== null ? ` — ${searchFilteredMessages.length} e-mail${searchFilteredMessages.length !== 1 ? 's' : ''}` : ''}
-                      </span>
-                      <div className="flex-1" />
-                      {searchLoading && searchScope !== 'current-folder' && <div className="w-3 h-3 border border-outlook-blue border-t-transparent rounded-full animate-spin flex-shrink-0" />}
-                    </div>
+                    <SearchResultsHeader
+                      query={rawSearchQuery}
+                      count={searchResultCount}
+                      loading={searchIsLoading}
+                      scopeLabel={searchScopeLabel}
+                      chips={buildActiveFilterChips(searchFilterState, searchFilterHandlers, {
+                        accounts, currentFolder: selectedFolder || undefined,
+                      })}
+                      onClearAll={resetSearchFilters}
+                      onClose={exitSearch}
+                    >
+                      {/* Sur mobile il n'y a pas de ruban : les filtres vivent ici. */}
+                      <div className="md:hidden">
+                        <SearchFilterBar
+                          variant="compact"
+                          {...searchFilterState}
+                          {...searchFilterHandlers}
+                          accounts={accounts}
+                          currentFolder={selectedFolder || undefined}
+                          onResetFilters={searchActiveFilterCount > 0 ? resetSearchFilters : undefined}
+                        />
+                      </div>
+                    </SearchResultsHeader>
                   )}
                 <MessageList
                   messages={visibleMessages}
                   selectedMessage={selectedMessage}
+                  emptyState={isSearchMode ? (
+                    <SearchEmptyState
+                      query={rawSearchQuery}
+                      scopeLabel={searchScopeLabel}
+                      canWiden={searchScope !== 'all-folders'}
+                      elsewhereCount={searchElsewhereCount}
+                      onWiden={() => searchFilterHandlers.onScopeChange?.('all-folders')}
+                      hasFilters={searchActiveFilterCount > 0}
+                      onClearFilters={resetSearchFilters}
+                    />
+                  ) : undefined}
                   loading={loadingMessages || (isSearchMode && searchLoading)}
                   onSelectMessage={handleSelectMessageMobile}
                   {...junkListProps}
