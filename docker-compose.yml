@@ -29,10 +29,20 @@ services:
       - VAPID_CONTACT=${VAPID_CONTACT:-}
       - NEW_MAIL_POLL_INTERVAL_MS=${NEW_MAIL_POLL_INTERVAL_MS:-60000}
       - TAURI_BUILDER_URL=${TAURI_BUILDER_URL:-http://tauri-builder:4000}
+      # Kerberos (connexion Windows integree) - optionnel.
+      # Definir KRB5_KTNAME ou KRB5_CONFIG ici prend le pas sur les reglages
+      # de Admin -> Connexion Windows : a n'utiliser que pour fournir son
+      # propre profil krb5 (domaines avec relations d'approbation, etc.).
+      - KRB5_KTNAME=${KRB5_KTNAME:-}
+      - KRB5_CONFIG=${KRB5_CONFIG:-}
     volumes:
       - ./plugins:/app/plugins
       - ./uploads:/app/server/uploads
       - ./backups:/app/server/backups
+      # Keytab Kerberos genere sur le controleur de domaine (ktpass).
+      # En lecture seule : c'est un secret equivalent au mot de passe du
+      # compte de service. Volontairement hors base, donc hors sauvegardes.
+      - ./kerberos:/etc/webmail:ro
       - app_data:/app/data
       - tauri_downloads:/app/server/downloads
     depends_on:

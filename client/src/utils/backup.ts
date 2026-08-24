@@ -33,6 +33,10 @@ export const BACKUP_KEYS: string[] = [
   // Catégories
   'mail.categories',
   'mail.messageCategories',
+  // Exceptions Prioritaire / Autres — donnée utilisateur, elle suit le compte.
+  // Le réglage de vue lui-même ('mail.focusedInbox.v1') reste volontairement
+  // absent d'ici : il est propre à l'appareil.
+  'mail.focusedInbox.overrides.v1',
   // Organisation des comptes et dossiers
   'mail.accountDisplayNames',
   'mail.accountColors',

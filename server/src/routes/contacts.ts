@@ -132,6 +132,82 @@ contactRouter.get('/', async (req: AuthRequest, res) => {
   }
 });
 
+// ─── Adresses « connues » — support du classement Prioritaire / Autres ───────
+//
+// Renvoie uniquement les adresses, en minuscules : la liste sert à partitionner
+// la boîte de réception côté client, pas à afficher des fiches. `GET /contacts`
+// ne convient pas ici — il renvoie `c.*`, donc `avatar_data` en base64, et
+// plafonne à 500 lignes.
+//
+// Les contacts `source = 'sender'` sont **exclus** : ils sont créés
+// automatiquement à chaque message ouvert (POST /contacts/senders/record), donc
+// les inclure mettrait en « Prioritaire » tout expéditeur déjà lu une fois.
+contactRouter.get('/known-senders', async (req: AuthRequest, res) => {
+  const uid = req.userId as string;
+  const emails = new Set<string>();
+
+  try {
+    const contacts = await pool.query(
+      `SELECT DISTINCT lower(email) AS email
+         FROM contacts
+        WHERE user_id = $1
+          AND email IS NOT NULL
+          AND email <> ''
+          AND COALESCE(source, 'local') <> 'sender'`,
+      [uid]
+    );
+    for (const row of contacts.rows) {
+      if (row.email) emails.add(String(row.email).trim().toLowerCase());
+    }
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'known-senders: contacts query failed');
+    return res.status(500).json({ error: err.message });
+  }
+
+  // Membres des listes de distribution visibles (mêmes règles de partage que
+  // GET /contacts/distribution-lists, avec le même repli hors migration).
+  try {
+    let lists;
+    try {
+      lists = await pool.query(
+        `SELECT dl.members
+           FROM distribution_lists dl
+          WHERE (dl.is_deleted IS NULL OR dl.is_deleted = false) AND (
+            dl.user_id = $1
+            OR (dl.shared_with IS NOT NULL
+                AND (
+                  dl.shared_with::text LIKE $2
+                  OR EXISTS (
+                    SELECT 1 FROM user_groups ug
+                    WHERE ug.user_id = $1
+                      AND dl.shared_with::text LIKE '%"id":"' || ug.group_id::text || '"%'
+                  )
+                ))
+          )`,
+        [uid, `%"id":"${uid}"%`]
+      );
+    } catch {
+      lists = await pool.query(
+        `SELECT members FROM distribution_lists WHERE user_id = $1`,
+        [uid]
+      );
+    }
+    for (const row of lists.rows) {
+      const members = Array.isArray(row.members) ? row.members : [];
+      for (const m of members) {
+        const addr = typeof m === 'string' ? m : m?.email;
+        if (addr) emails.add(String(addr).trim().toLowerCase());
+      }
+    }
+  } catch (err: any) {
+    // Les listes de distribution sont un bonus : leur échec ne doit pas priver
+    // le client du carnet d'adresses.
+    logger.warn({ err: err.message }, 'known-senders: distribution lists skipped');
+  }
+
+  res.json({ emails: Array.from(emails).filter((e) => e.includes('@')) });
+});
+
 // Get single contact
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

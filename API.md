@@ -23,6 +23,7 @@ L'API utilise deux méthodes d'authentification :
 - [Paramètres](#paramètres)
 - [Modèles de mail](#modèles-de-mail)
 - [Notes](#notes)
+- [Courrier indésirable](#courrier-indésirable)
 - [Administration](#administration)
 - [Nextcloud Files](#nextcloud-files-par-utilisateur)
 - [Dashboard](#dashboard)
@@ -34,6 +35,7 @@ L'API utilise deux méthodes d'authentification :
 - [Notifications push](#notifications-push)
 - [LDAP](#ldap-admin)
 - [SSO / OpenID Connect](#sso--openid-connect-admin)
+- [Connexion Windows (Kerberos)](#connexion-windows-kerberos)
 - [Codes d'erreur](#codes-derreur)
 
 ---
@@ -1352,6 +1354,196 @@ Supprime définitivement une note. `404` si elle n'appartient pas à l'utilisate
 **Limites :**
 - `contentHtml` : 500 000 caractères max.
 - `title` : 255 caractères max. `tags` : 20 entrées de 40 caractères max.
+
+---
+
+## Courrier indésirable
+
+> 🔒 Authentification requise
+
+Trois sources de décision, appliquées **dans cet ordre** :
+
+1. **Expéditeurs autorisés** (liste personnelle, liste globale de l'admin, et les contacts si l'option `trustContacts` est active) — un expéditeur autorisé n'est **jamais** classé indésirable, quel que soit le verdict du serveur. C'est le garde-fou qui rend la fonction utilisable sans crainte de perdre un message important.
+2. **Expéditeurs bloqués** (liste personnelle + liste globale) — décision explicite, appliquée telle quelle.
+3. **En-têtes du filtre antispam du serveur** (SpamAssassin, Rspamd, Exchange…), selon le niveau choisi.
+
+Une même valeur ne peut pas être simultanément bloquée et autorisée : l'ajouter dans une liste la retire automatiquement de l'autre, sans quoi la règle « autorisé gagne toujours » rendrait le blocage silencieusement inopérant.
+
+Les motifs sont normalisés en minuscules : `jean@exemple.fr` (`kind: "address"`) ou `exemple.fr` (`kind: "domain"`, stocké **sans** `@`). Les saisies `@exemple.fr` et `Jean Dupont <jean@exemple.fr>` sont acceptées et normalisées.
+
+**Niveaux du filtre serveur :**
+
+| Niveau | Comportement |
+|--------|--------------|
+| `off` | Les en-têtes du serveur sont ignorés ; seules les listes s'appliquent. |
+| `normal` | Classe indésirable si `X-Spam-Flag: YES` ou si le score ≥ **5**. |
+| `strict` | Idem, seuil de score abaissé à **3**. |
+
+Le drapeau prime sur le score : SpamAssassin ne pose `X-Spam-Flag: YES` qu'au-delà du seuil configuré sur le serveur lui-même, le niveau ne sert donc qu'à **durcir** cette décision, jamais à l'assouplir. Le score est extrait de `X-Spam-Status` (`score=…`), à défaut de `X-Spam-Score`, à défaut du nombre d'étoiles de `X-Spam-Level`.
+
+### GET /api/junk/settings
+
+**Réponse 200 :**
+```json
+{
+  "featureEnabled": true,
+  "customized": false,
+  "settings": { "enabled": true, "serverFilter": "normal", "trustContacts": true, "purgeDays": 30 },
+  "defaults": { "enabled": true, "serverFilter": "normal", "trustContacts": true, "purgeDays": 30 }
+}
+```
+
+`featureEnabled` reflète l'interrupteur global de l'administrateur : à `false`, l'onglet disparaît des préférences et plus rien n'est classé automatiquement. `customized` vaut `false` tant que l'utilisateur n'a jamais enregistré de réglage — il hérite alors de `defaults`, et une modification des valeurs par défaut côté admin le suit.
+
+### PUT /api/junk/settings
+
+**Body** (tous les champs obligatoires) :
+```json
+{ "enabled": true, "serverFilter": "strict", "trustContacts": true, "purgeDays": 30 }
+```
+
+`purgeDays` (0–365) vide le dossier indésirable des messages plus anciens — **suppression définitive**, `0` désactive. `enabled: false` conserve les listes mais arrête tout déplacement automatique.
+
+### GET /api/junk/senders
+
+Paramètre optionnel `?type=blocked|safe`. Renvoie les entrées personnelles **et** globales.
+
+**Réponse 200 :**
+```json
+[
+  {
+    "id": "uuid",
+    "listType": "blocked",
+    "kind": "domain",
+    "pattern": "pub-exemple.fr",
+    "global": false,
+    "note": null,
+    "hitCount": 12,
+    "lastHitAt": "2026-…",
+    "createdAt": "2026-…"
+  }
+]
+```
+
+`global: true` marque une entrée posée par un administrateur : elle s'applique en plus des listes de l'utilisateur, qui ne peut pas la retirer (`DELETE` répond `404`). `hitCount` compte les messages effectivement écartés par cette entrée.
+
+### POST /api/junk/senders
+
+```json
+{ "listType": "blocked", "value": "jean@exemple.fr", "note": "démarchage" }
+```
+
+`kind` est déduit de `value`. `400` si la valeur n'est ni une adresse ni un domaine plausible (les domaines à label unique, type `localhost`, sont refusés).
+
+### DELETE /api/junk/senders/:id
+
+`404` si l'entrée n'existe pas, appartient à un autre utilisateur, ou est une entrée globale.
+
+### POST /api/junk/block
+
+Bloque un expéditeur et, si demandé, déplace **immédiatement** ses messages déjà présents. C'est le seul chemin par lequel des messages anciens sont déplacés : le service de fond, lui, ne touche qu'aux nouveaux.
+
+```json
+{
+  "accountId": "uuid",
+  "address": "jean@exemple.fr",
+  "scope": "address",
+  "sweep": true,
+  "folder": "INBOX"
+}
+```
+
+`scope` vaut `address` ou `domain`. Le balayage est ignoré si `folder` est déjà le dossier indésirable.
+
+**Réponse 200 :**
+```json
+{ "success": true, "entry": { "…": "…" }, "moved": 14, "junkFolder": "INBOX.Junk" }
+```
+
+### POST /api/junk/not-junk
+
+Le pendant symétrique : débloque l'adresse **et** son domaine, ajoute l'adresse aux autorisés (`addToSafe`, `true` par défaut) et remet le message en boîte de réception.
+
+```json
+{ "accountId": "uuid", "address": "jean@exemple.fr", "uid": 4211, "folder": "INBOX.Junk", "addToSafe": true }
+```
+
+`uid` et `address` sont tous deux optionnels : sans `uid` on se contente de débloquer, sans `address` on se contente de déplacer.
+
+**Réponse 200 :** `{ "success": true, "unblocked": 1, "restored": true, "address": "jean@exemple.fr" }`
+
+### POST /api/junk/unsubscribe
+
+Désabonnement d'après l'en-tête `List-Unsubscribe` (RFC 2369) du message.
+
+```json
+{ "accountId": "uuid", "uid": 4211, "folder": "INBOX" }
+```
+
+**Réponse 200** — trois issues possibles :
+
+| `outcome` | Signification |
+|-----------|---------------|
+| `done` | La démarche a été effectuée : POST *one-click* (`method: "one-click"`) quand l'expéditeur annonce `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), sinon e-mail envoyé à l'adresse `mailto:` depuis le compte concerné (`method: "mailto"`). |
+| `open` | Seule une page web est proposée : `url` est renvoyée au client, qui l'ouvre dans un onglet — l'utilisateur termine lui-même (souvent un formulaire). |
+| `none` | Le message ne propose aucun mécanisme de désabonnement. |
+
+> 🔒 Le POST *one-click* est la **seule** requête sortante que le serveur émette vers une URL issue d'un e-mail. Elle réutilise la protection anti-SSRF du proxy d'images (résolution DNS filtrée + blocage des IP littérales privées/loopback/link-local). Toutes les autres cibles sont soit envoyées par SMTP, soit rendues au navigateur.
+
+### POST /api/junk/sweep
+
+Applique le filtre aux N derniers messages de la boîte de réception, à la demande — sans lui, un utilisateur qui vient d'activer le filtre ne verrait rien se passer avant le prochain message reçu.
+
+```json
+{ "accountId": "uuid", "limit": 100 }
+```
+
+`limit` : 1–200 (défaut `100`). Le balayage s'exécute même si le classement automatique est en veille (`enabled: false`), puisqu'il est déclenché explicitement.
+
+**Réponse 200 :** `{ "success": true, "examined": 100, "moved": 3 }`
+
+### POST /api/junk/explain
+
+Renvoie le verdict qui serait rendu pour un expéditeur donné — sert à expliquer un classement en langage clair.
+
+```json
+{ "address": "jean@exemple.fr", "headers": { "X-Spam-Status": "Yes, score=7.3 required=5.0" } }
+```
+
+**Réponse 200 :** `{ "junk": true, "reason": "server-score", "detail": "score antispam 7.3" }`
+
+`reason` vaut `blocked-address`, `blocked-domain`, `server-flag`, `server-score`, ou `null` quand le message n'est pas indésirable.
+
+---
+
+## Courrier indésirable *(admin)*
+
+> 🔒 Authentification + rôle administrateur requis
+
+### GET /api/admin/junk/settings
+
+```json
+{
+  "featureEnabled": true,
+  "defaults": { "enabled": true, "serverFilter": "normal", "trustContacts": true, "purgeDays": 30 },
+  "globalCounts": { "blocked": 4, "safe": 2 }
+}
+```
+
+### PUT /api/admin/junk/settings
+
+```json
+{
+  "featureEnabled": true,
+  "defaults": { "enabled": true, "serverFilter": "normal", "trustContacts": true, "purgeDays": 30 }
+}
+```
+
+Les valeurs par défaut ne s'appliquent qu'aux utilisateurs n'ayant **jamais** enregistré leurs propres réglages : les modifier ne réécrit aucun choix existant. `featureEnabled: false` désactive la fonctionnalité pour tout le monde, quels que soient les réglages individuels.
+
+### GET / POST / DELETE /api/admin/junk/senders
+
+Mêmes formats que les routes utilisateur, mais les entrées créées sont **globales** (`user_id NULL`) : elles s'ajoutent aux listes de chaque utilisateur et y apparaissent en lecture seule.
 
 ---
 
@@ -2843,6 +3035,112 @@ Teste la connexion au serveur OIDC avec les paramètres fournis (ou ceux sauvega
 ```json
 { "ok": false, "message": "connect ECONNREFUSED 192.168.1.10:5001" }
 ```
+
+---
+
+## Connexion Windows (Kerberos)
+
+Authentification integree Windows via SPNEGO / Kerberos. Sur un poste joint au domaine, le
+navigateur repond seul au defi `Negotiate` : aucune saisie utilisateur.
+
+### GET /api/auth/kerberos/config
+
+Endpoint **public** — indique a la page de connexion si elle doit proposer, voire tenter,
+la connexion Windows.
+
+`enabled` integre le filtre reseau evalue sur l'IP appelante : depuis une adresse hors des
+plages autorisees, la reponse est `false` meme si la fonctionnalite est active.
+
+**Reponse 200 :**
+```json
+{ "enabled": true, "autoLogin": true }
+```
+
+---
+
+### GET /api/auth/kerberos/login
+
+Handshake SPNEGO en deux temps, puis emission de session.
+
+**Flux :**
+1. Sans en-tete `Authorization`, repond `401` + `WWW-Authenticate: Negotiate`.
+2. Le navigateur obtient un ticket aupres du KDC et rejoue la requete avec
+   `Authorization: Negotiate <token>`.
+3. Le serveur valide le ticket avec le keytab (**hors ligne**, sans contacter le KDC).
+4. Le principal est resolu via LDAP (`{{sam}}` / `{{principal}}`) : email, nom, `memberOf`.
+5. Provisionnement, synchronisation des groupes, puis device session + cookie `wm_refresh`.
+
+**Reponse 200 :**
+```json
+{
+  "token": "<access token>",
+  "user": { "id": "…", "email": "jdupont@domaine.local", "displayName": "Jean Dupont", "isAdmin": false }
+}
+```
+> En-tete `WWW-Authenticate: Negotiate <token>` renvoye pour l'authentification mutuelle.
+
+**Erreurs :**
+
+| Statut | `code` | Signification |
+|--------|--------|---------------|
+| `401` | `negotiate` | Etape normale du protocole : defi envoye au navigateur |
+| `401` | `ntlm_rejected` | Le navigateur a propose NTLM — refuse volontairement |
+| `401` | `context_incomplete` | Negociation multi-etapes non supportee |
+| `401` | `spnego_failed` | Ticket invalide, expire, ou horloge decalee |
+| `403` | `ip_blocked` | IP en liste noire |
+| `403` | `ldap_no_match` | Aucun compte d'annuaire ne correspond au principal |
+| `403` | `account_disabled` | Compte desactive dans l'application |
+| `404` | `disabled` / `network_not_allowed` | Methode inactive, ou appelant hors des plages CIDR |
+| `503` | `unavailable` | Module natif absent, keytab illisible ou SPN non configure |
+| `503` | `no_user_mapping` | LDAP desactive et aucun domaine email de repli |
+
+---
+
+### GET /api/admin/kerberos/settings
+
+Retourne les reglages Kerberos, plus un objet `_availability` (module charge, keytab trouve,
+raison de l'indisponibilite le cas echeant). Aucun secret : le keytab est un fichier monte,
+seul son chemin est stocke.
+
+> Requiert `is_admin = true`.
+
+---
+
+### PUT /api/admin/kerberos/settings
+
+Cles acceptees : `kerberos_enabled`, `kerberos_auto_login`, `kerberos_realm`, `kerberos_kdcs`,
+`kerberos_service_principal`, `kerberos_keytab_path`, `kerberos_user_filter`,
+`kerberos_email_domain`, `kerberos_allowed_cidrs`.
+
+Le realm est normalise en majuscules et le SPN accepte les deux notations
+(`HTTP/mail.domaine.local` comme `HTTP@mail.domaine.local`).
+
+**Erreurs :** `400` — realm, SPN, CIDR invalides, ou filtre sans `{{sam}}` ni `{{principal}}`.
+
+> Le chemin du keytab prend effet immediatement ; **le realm et les KDC exigent un redemarrage**
+> du conteneur (libkrb5 ne relit pas son profil).
+
+---
+
+### POST /api/admin/kerberos/test
+
+Diagnostic, dans l'ordre ou les choses cassent en pratique.
+
+**Reponse 200 :**
+```json
+{
+  "ok": false,
+  "checks": [
+    { "id": "module",  "label": "Module natif Kerberos", "ok": true,  "detail": "Charge" },
+    { "id": "keytab",  "label": "Keytab", "ok": true, "detail": "Lisible : /etc/webmail/webmail.keytab" },
+    { "id": "spn",     "label": "Cle de service (SPN)", "ok": true, "detail": "…" },
+    { "id": "clock",   "label": "Horloge du serveur", "ok": false, "detail": "Decalage de 812 s — au-dela de 300 s le KDC rejette tous les tickets." },
+    { "id": "mapping", "label": "Resolution des comptes", "ok": true, "detail": "Via LDAP, filtre (sAMAccountName={{sam}})" }
+  ]
+}
+```
+
+Le decalage d'horloge est mesure contre l'attribut `currentTime` du RootDSE de l'annuaire.
 
 ---
 

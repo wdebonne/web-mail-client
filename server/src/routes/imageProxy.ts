@@ -175,7 +175,7 @@ function ssrfError(hostname: string): NodeJS.ErrnoException {
  * exclusivement aux adresses retournées ici — validation et connexion partagent
  * donc la même résolution.
  */
-function safeLookup(
+export function safeLookup(
   hostname: string,
   options: dns.LookupOptions,
   callback: (err: NodeJS.ErrnoException | null, address?: string | dns.LookupAddress[], family?: number) => void,

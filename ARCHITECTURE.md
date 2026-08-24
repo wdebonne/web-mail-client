@@ -36,12 +36,16 @@ Vue d'ensemble de l'architecture technique de WebMail.
 │  │  │  │Service │ │ CalDAV/  │ │ cPanel │  │    │   │
 │  │  │  │ImapFlow│ │ CardDAV  │ │ UAPI   │  │    │   │
 │  │  │  └────────┘ └──────────┘ └────────┘  │    │   │
-│  │  │  ┌────────┐ ┌────────┐               │    │   │
-│  │  │  │  LDAP  │ │  SSO   │ │ Plugin │     │    │   │
-│  │  │  │Service │ │Service │ │Executor│     │    │   │
-│  │  │  │ldapts  │ │openid- │ └────────┘     │    │   │
-│  │  │  └────────┘ │client  │               │    │   │
-│  │  │             └────────┘               │    │   │
+│  │  │  ┌────────┐ ┌────────┐ ┌──────────┐  │    │   │
+│  │  │  │  LDAP  │ │  SSO   │ │ Kerberos │  │    │   │
+│  │  │  │Service │ │Service │ │  SPNEGO  │  │    │   │
+│  │  │  │ldapts  │ │openid- │ │  GSSAPI  │  │    │   │
+│  │  │  └────────┘ │client  │ │  keytab  │  │    │   │
+│  │  │             └────────┘ └──────────┘  │    │   │
+│  │  │  ┌────────┐                          │    │   │
+│  │  │  │ Plugin │                          │    │   │
+│  │  │  │Executor│                          │    │   │
+│  │  │  └────────┘                          │    │   │
 │  │  └──────────────────────────────────────┘    │   │
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────┼───────────────────────────┘
@@ -71,11 +75,11 @@ Vue d'ensemble de l'architecture technique de WebMail.
     ▼                                ▼
 ┌─────────────┐              ┌──────────────────┐
 │  O2Switch   │    ┌──────────────────┐    ┌─────────────────┐
-│  cPanel API │    │  Serveur LDAP    │    │ Fournisseur SSO │
-│  UAPI v3    │    │  (optionnel)     │    │  (optionnel)    │
+│  cPanel API │    │  Annuaire AD /   │    │ Fournisseur SSO │
+│  UAPI v3    │    │  LDAP (option.)  │    │  (optionnel)    │
 │  (port 2083)│    │  OpenLDAP / AD   │    │  Synology SSO / │
-└─────────────┘    │  ldaps:// ou     │    │  Keycloak /     │
-                   │  ldap://         │    │  Azure AD…      │
+└─────────────┘    │  ldaps:// ldap://│    │  Keycloak /     │
+                   │  Kerberos: keytab│    │  Azure AD…      │
                    └──────────────────┘    │  OIDC / OAuth2  │
                                            └─────────────────┘
 ```
@@ -176,6 +180,39 @@ Serveur IMAP ──► MailService (ImapFlow)
                       ▼
               UI mise à jour
 ```
+
+### Filtrage du courrier indésirable
+
+```
+                    ┌──────────────────────────────┐
+                    │  junkFilter (service, 2 min) │
+                    │  curseur junk_scan_state     │
+                    └──────────────┬───────────────┘
+                                   │ nouveaux UID INBOX
+                                   ▼
+                      fetchJunkMeta (1 connexion IMAP)
+                      enveloppe + en-têtes X-Spam-* only
+                                   │
+                                   ▼
+    ┌──────────────────────────────────────────────────────┐
+    │ 1. autorisés (junk_senders 'safe' + contacts) ──► NON │
+    │ 2. bloqués   (junk_senders 'blocked')         ──► OUI │
+    │ 3. X-Spam-Flag / score ≥ seuil du niveau      ──► OUI │
+    └──────────────────────────────┬───────────────────────┘
+                                   ▼
+                  moveMessage ──► dossier \Junk du compte
+                                   │
+                                   ▼
+                    WebSocket 'mail-moved' (reason: junk)
+```
+
+Le service est **volontairement indépendant de `newMailPoller`** : celui-ci ne traite que les utilisateurs ayant une souscription push active ou un répondeur automatique, et plafonne à 5 messages par cycle — un filtre greffé dessus aurait été silencieusement inopérant pour la majorité des comptes. Le poller appelle malgré tout `applyJunkFilter` en ligne avant le moteur de règles, pour qu'un message classé indésirable ne déclenche ni notification ni réponse automatique (répondre à un spam confirme l'adresse à l'expéditeur). Les deux chemins partagent le même verrou par compte et le même curseur.
+
+Le curseur `junk_scan_state.last_uid` est **persisté** (et non gardé en mémoire comme celui du poller) pour qu'un redémarrage ne rejoue ni ne saute les messages déjà examinés. Au premier passage sur un compte, seul le repère est posé : déplacer rétroactivement toute une boîte de réception serait la pire des surprises. Un `last_uid` supérieur au plus grand UID observé signale une boîte recréée côté serveur (UIDVALIDITY neuf) et remet le curseur à zéro, sans quoi le compte ne serait plus jamais filtré.
+
+Le chemin du dossier indésirable est résolu par l'attribut IMAP SPECIAL-USE `\Junk`, à défaut par les noms usuels (`Junk`, `Spam`, `Courrier indésirable`, `Pourriel`…), et mis en cache 30 min par compte — un `LIST` complet par message classé serait ruineux. `moveMessage` crée de toute façon la destination manquante.
+
+**Tables** : `junk_senders` (listes bloqués/autorisés, `user_id NULL` = entrée globale de l'admin, deux index uniques partiels selon la portée), `junk_settings` (réglages par utilisateur ; l'absence de ligne = héritage des valeurs par défaut de l'admin), `junk_scan_state` (curseur et date du dernier vidage, par compte).
 
 ### Notifications push natives (Web Push)
 
@@ -481,6 +518,46 @@ Infrastructure  →  Réseau Docker isolé
                 →  PostgreSQL non exposé
                 →  Multi-stage build (surface réduite)
 ```
+
+### Méthodes d'authentification
+
+Toutes convergent vers la même sortie — un access token court + un cookie `wm_refresh`
+httpOnly émis par `issueSession()` — et restent activables indépendamment les unes des autres.
+
+| Méthode | Preuve apportée | Second facteur passkey |
+|---------|-----------------|------------------------|
+| Mot de passe local | bcrypt | Oui, si une passkey est enrôlée |
+| LDAP / AD | bind sur l'annuaire | Oui, si une passkey est enrôlée |
+| Passkey seule | WebAuthn (credential découvrable) | — (c'est le facteur) |
+| SSO OpenID Connect | jeton du fournisseur | Non |
+| Kerberos / SPNEGO | ticket du domaine | Non |
+
+### Connexion Windows intégrée (Kerberos / SPNEGO)
+
+```
+Poste joint au domaine                 App                          AD
+  GET /api/auth/kerberos/login  ───────▶
+                                 401 + WWW-Authenticate: Negotiate
+  ◀──── le navigateur demande un ticket HTTP/fqdn tout seul ──────▶ KDC
+  GET … Authorization: Negotiate <tok> ─▶
+                                        acceptSpnego()  ── keytab (hors ligne)
+                                        findLdapUser()  ────────────▶ LDAP
+                                        syncLdapGroups() + issueSession()
+                                 200 { token, user } + cookie wm_refresh
+```
+
+Trois propriétés structurantes :
+
+- **La validation du ticket est hors ligne.** La clé du keytab suffit à le déchiffrer : le
+  serveur ne contacte jamais le KDC, et l'hôte n'a pas besoin d'être joint au domaine.
+- **L'identité vient du domaine, les attributs de l'annuaire.** Le ticket ne porte qu'un
+  identifiant Windows ; c'est le LDAP déjà configuré qui fournit email, nom et `memberOf`, d'où
+  une synchronisation de groupes identique à celle d'un login LDAP.
+- **Le serveur décide s'il annonce `Negotiate`**, à partir de l'IP appelante et des plages CIDR
+  autorisées. Le client ne peut pas savoir s'il est sur le LAN ; le serveur, si.
+
+NTLM est refusé explicitement : son handshake est lié à la connexion TCP et ne survit pas à un
+reverse proxy qui multiplexe les connexions amont.
 
 ---
 

@@ -1,6 +1,6 @@
 # WebMail - Client Mail Professionnel Moderne
 
-![Version](https://img.shields.io/badge/version-1.24.0-blue)
+![Version](https://img.shields.io/badge/version-1.25.0-blue)
 ![Licence](https://img.shields.io/badge/licence-AGPL--3.0-green)
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20PostgreSQL-informational)
 
@@ -72,6 +72,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🔔 **Indicateurs de mails non lus dans la sidebar** : à côté de chaque dossier (et de chaque favori, ainsi que des boîtes unifiées), trois indicateurs **indépendants et combinables** — *(1)* le **nombre** entre parenthèses à la fin du nom (par défaut, façon Outlook), *(2)* le **nom du dossier en gras**, et *(3)* une **pastille rouge**. La portée est configurable : **boîte de réception uniquement**, **favoris uniquement**, **les deux**, ou **tous les dossiers**. Réglages depuis le bouton **Non lus** du ruban (onglet **Afficher**) ou depuis **Paramètres → Apparence**.
 - ⏰ **Envoi programmé + « Annuler l'envoi »** : flèche accolée au bouton *Envoyer* → *Dans 1 heure / Ce soir 18h / Demain 8h / date libre* (identité d'expéditeur figée à la programmation, y compris *envoyer de la part de*). Entrée **Programmés** dans le volet des dossiers avec annulation / « annuler et modifier ». Réglage optionnel **Annuler l'envoi** (0/10/20/30 s) dans *Paramètres → Messagerie* : un toast après envoi propose de rouvrir la composition pendant le délai choisi. Indisponible avec S/MIME/PGP et hors-ligne.
 - 🔁 **Envois récurrents (rapports périodiques)** : via *Choisir la date et l'heure…*, option **Répéter** *tous les jours / toutes les semaines / tous les mois* avec date de fin optionnelle. Le mensuel reste cloué au jour d'origine (un rapport du 31 tombe le dernier jour des mois courts), les occurrences manquées pendant un arrêt du serveur ne sont pas rattrapées en rafale, et le panneau **Programmés** affiche le badge de récurrence, la prochaine et la dernière occurrence (annulation = arrêt de la série).
+- 📥 **Boîte de réception Prioritaire / Autres** (façon Outlook) : depuis le ruban **Afficher → Boîte de réception**, deux vues au choix — *Vue combinée* (défaut, liste unique) ou *Prioritaire et Autres*, qui ajoute deux onglets au-dessus de la liste avec le nombre de non lus de chacun. Va en **Prioritaire** ce qui vient de vos **contacts enregistrés** (les membres de vos listes de distribution compris) et du **même domaine que vos comptes** — les deux critères se décochent séparément. Les expéditeurs simplement enregistrés à la lecture d'un message ne comptent pas comme des contacts. Clic droit → *Toujours afficher dans…* crée une **exception** par expéditeur, qui prime sur tout et se retire depuis *Gérer les exceptions*. Le découpage ne s'applique qu'à la **boîte de réception** (et à la boîte unifiée), jamais aux Envoyés/Brouillons/Corbeille, et **ne déplace aucun message** : c'est un affichage, réversible instantanément. Le choix de vue est **propre à l'appareil** ; les exceptions, elles, suivent le compte et entrent dans la sauvegarde.
+- 🚫 **Courrier indésirable** : **Bloquer l'expéditeur** en deux clics (cet expéditeur ou tout le domaine, avec option *déplacer aussi les messages déjà reçus*) depuis le menu *Plus* ou le clic droit, et le geste symétrique **« Ce n'est pas indésirable »** qui débloque, autorise et remet le message en boîte de réception. **Filtre serveur** en trois niveaux (*Désactivé / Normal / Strict*) s'appuyant sur les en-têtes `X-Spam-*` posés par SpamAssassin, Rspamd ou Exchange — aucun apprentissage local. La **liste des autorisés prime toujours**, avec l'option *Toujours faire confiance à mes contacts*. **Désabonnement en un clic** quand le message annonce un `List-Unsubscribe` (POST one-click RFC 8058, sinon e-mail `mailto:`, sinon ouverture de la page). Réglages dans **Paramètres → Courrier indésirable** (dont le vidage automatique du dossier et un bouton *Nettoyer maintenant*), valeurs par défaut et listes globales dans **Admin → Courrier indésirable**. Le tri automatique ne concerne que les **nouveaux** messages : rien n'est déplacé rétroactivement sans action explicite.
 - 🗒️ **Bloc-notes intégré + lecture des fichiers Nextcloud** : panneau latéral **Notes & fichiers** ouvert depuis l'onglet **Insérer** du ruban (même comportement que le panneau Emojis, insertion au curseur). Onglet *Notes* — recherche, création rapide, insertion en un clic, copie, épinglage. Onglet *Fichiers* (si un compte Nextcloud est lié) — navigation et recherche dans le drive, puis **récupération du contenu** pour le coller dans le message : texte / Markdown / CSV / JSON, **.docx** (via *mammoth*), **.xlsx / .ods** en tableau, images en data URI ; plus *Copier le texte*, *Joindre le fichier* et *Enregistrer comme note*. Une **grande modale** (bouton bloc-notes dans la barre du haut, à gauche de l'indicateur de cache) offre la même chose en plein écran avec un éditeur de note complet, depuis n'importe quelle page ; hors composition, elle propose *Nouveau message avec cette note*. Le raccourci de la barre du haut se masque depuis **Paramètres → Apparence → Barre du haut**. Le texte des PDF n'est pas extrait (aperçu natif du navigateur, texte sélectionnable, fichier joignable).
 
 ### Interface style messagerie professionnelle Web
@@ -220,6 +222,8 @@ La langue affichée est choisie selon l’ordre suivant :
 - 🔄 **Migration IMAP intégrée** (*Admin → Intégrations → Migration IMAP*) : wizard en 4 étapes pour transférer des boîtes mail d'un serveur IMAP vers un autre (ex. Microsoft 365 → O2switch) sans outil externe. Test de connexion des deux serveurs, sélection des dossiers à migrer avec comptage d'emails, exécution en arrière-plan avec progression en temps réel via WebSocket (barre dossiers + barre emails). Préservation des flags (lu/non-lu, étoilé) et des dates d'origine. Rapport final détaillé. Pré-configuré pour `outlook.office365.com`.
 
 - 🗂️ **Intégration LDAP / Active Directory** (*Admin → Intégrations → LDAP*) : authentification déléguée à un annuaire d'entreprise (OpenLDAP, Active Directory, Nextcloud LDAP…). L'application fonctionne en mode local par défaut ; la bascule LDAP se fait depuis l'interface admin sans redémarrage. **Auto-provisionnement** des utilisateurs à la première connexion. **Synchronisation automatique des groupes** à chaque connexion : création du groupe dans l'application si absent, liaison si déjà existant, retrait si l'utilisateur en est sorti côté LDAP. **Droits administrateur automatiques** basés sur le CN du groupe LDAP (liste configurable : `admin`, `administrateur`…) avec révocation immédiate à la prochaine connexion. Fallback sur mot de passe local configurable. Mot de passe du compte de service chiffré AES-256-GCM. Test de connexion intégré. Mappings manuels avancés pour les cas complexes (plusieurs OU à même CN). Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#ldap).
+
+- 🪟 **Connexion Windows intégrée — Kerberos / SPNEGO** (*Admin → Intégrations → Connexion Windows*) : sur un poste joint au domaine Active Directory, l'utilisateur ouvre l'application et **il est déjà connecté** — ni email, ni mot de passe, ni clic. Le serveur répond `401 WWW-Authenticate: Negotiate` et le navigateur présente tout seul un ticket Kerberos. La validation étant **hors ligne** (keytab généré sur le DC via `ktpass`), la machine hôte n'a pas à être jointe au domaine ni à joindre le KDC. Le principal Windows est résolu **via le LDAP déjà configuré** : adresse, nom affiché, groupes et droits admin sont synchronisés comme lors d'une connexion LDAP. **NTLM est refusé** explicitement (plus faible, et incompatible avec un reverse proxy). Restriction par **plages CIDR** : hors du réseau interne, la page de connexion n'essaie même pas et affiche le formulaire habituel — mot de passe, passkey et SSO restent intacts. **Diagnostic intégré** (module, keytab, SPN, décalage d'horloge avec le DC). Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#connexion-windows-kerberos--spnego).
 
 - 🔐 **SSO / OpenID Connect** (*Admin → Intégrations → SSO / OpenID Connect*) : authentification unique via n'importe quel fournisseur OIDC — **Synology SSO Server**, Keycloak, Azure AD, etc. Un bouton « Se connecter avec SSO » apparaît sur la page de connexion ; si l'utilisateur a déjà une session active chez le fournisseur (ex. DSM ouvert dans le navigateur), la connexion se fait **sans aucune saisie**. Les autres méthodes (mot de passe, passkey) restent disponibles simultanément. **Auto-provisionnement** des utilisateurs à la première connexion SSO. Discovery OIDC automatique (`/.well-known/openid-configuration`). Support des certificats auto-signés. Client Secret chiffré AES-256-GCM. Test de connexion intégré. Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md#sso--openid-connect).
 
@@ -489,6 +493,7 @@ webmail/
 |---------|-------|-------------|
 | GET | `/api/contacts` | Lister les contacts |
 | GET | `/api/contacts/search/autocomplete` | Autocomplétion |
+| GET | `/api/contacts/known-senders` | Adresses du carnet d'adresses (classement Prioritaire / Autres) |
 | POST | `/api/contacts` | Créer un contact |
 
 ### Notes
@@ -498,6 +503,19 @@ webmail/
 | POST | `/api/notes` | Créer une note (titre déduit du contenu si omis) |
 | PUT | `/api/notes/:id` | Modifier une note (mise à jour partielle) |
 | DELETE | `/api/notes/:id` | Supprimer une note |
+
+### Courrier indésirable
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/junk/settings` | Réglages effectifs + valeurs par défaut de l'admin |
+| PUT | `/api/junk/settings` | Modifier ses réglages |
+| GET | `/api/junk/senders` | Listes bloqués / autorisés (`?type=blocked\|safe`) |
+| POST | `/api/junk/senders` | Ajouter une adresse ou un domaine |
+| DELETE | `/api/junk/senders/:id` | Retirer une entrée personnelle |
+| POST | `/api/junk/block` | Bloquer un expéditeur (+ balayage optionnel) |
+| POST | `/api/junk/not-junk` | Débloquer, autoriser et remettre en boîte de réception |
+| POST | `/api/junk/unsubscribe` | Désabonnement `List-Unsubscribe` |
+| POST | `/api/junk/sweep` | Appliquer le filtre aux messages déjà reçus |
 
 ### Calendrier
 | Méthode | Route | Description |

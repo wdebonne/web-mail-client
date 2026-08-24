@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronRight, LogOut, Coffee, Bell, FileText, Filter, Package,
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
   Download, Send, AlertTriangle, Eye, EyeOff,
-  Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn, Activity,
+  Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn, Activity, Ban, Network,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -20,6 +20,7 @@ import AdminCalendarManagement from '../components/admin/AdminCalendarManagement
 import AdminAutoResponders from '../components/admin/AdminAutoResponders';
 import AdminMailTemplates from '../components/admin/AdminMailTemplates';
 import AdminRulesManagement from '../components/admin/AdminRulesManagement';
+import AdminJunkPanel from '../components/admin/AdminJunkPanel';
 import AdminApplications from '../components/admin/AdminApplications';
 import AdminSmtpSettings from '../components/admin/AdminSmtpSettings';
 import AdminBackup from '../components/admin/AdminBackup';
@@ -33,7 +34,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'ldap' | 'sso';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'junk' | 'ldap' | 'sso' | 'kerberos';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -61,6 +62,7 @@ export default function AdminPage() {
     { id: 'rules' as const,             icon: Filter,     label: t('admin.tab.rules'),               group: t('admin.group.mail') },
     { id: 'distributionlists' as const, icon: BookOpen,   label: 'Listes de distribution',           group: t('admin.group.mail') },
     { id: 'bulksend' as const,          icon: Send,       label: 'Envoi en masse',                   group: t('admin.group.mail') },
+    { id: 'junk' as const,              icon: Ban,        label: 'Courrier indésirable',             group: t('admin.group.mail') },
     // Calendrier
     { id: 'calendars' as const,      icon: Calendar,        label: t('admin.tab.calendars'),      group: t('admin.group.calendar') },
     // Intégrations
@@ -71,6 +73,7 @@ export default function AdminPage() {
     { id: 'applications' as const,  icon: Package,         label: t('admin.tab.applications'),   group: t('admin.group.integrations') },
     { id: 'ldap' as const,          icon: Database,        label: 'LDAP',                         group: t('admin.group.integrations') },
     { id: 'sso' as const,           icon: LogIn,           label: 'SSO / OpenID Connect',         group: t('admin.group.integrations') },
+    { id: 'kerberos' as const,      icon: Network,         label: 'Connexion Windows (Kerberos)', group: t('admin.group.integrations') },
     // Système
     { id: 'systemstatus' as const,    icon: Activity,       label: 'État du système',             group: t('admin.group.system') },
     { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
@@ -171,8 +174,10 @@ export default function AdminPage() {
             {tab === 'backup' && <AdminBackup />}
             {tab === 'migration' && <AdminMigration />}
             {tab === 'bulksend' && <AdminBulkSend />}
+            {tab === 'junk' && <AdminJunkPanel />}
             {tab === 'ldap' && <LdapSettings />}
             {tab === 'sso' && <SsoSettings />}
+            {tab === 'kerberos' && <KerberosSettings />}
           </div>
         </div>
       </div>
@@ -5444,6 +5449,270 @@ function SsoSettings() {
           <code className="bg-gray-100 px-1 rounded">{window.location.origin}/api/auth/sso/callback</code>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Kerberos / SPNEGO — connexion intégrée Windows
+// ─────────────────────────────────────────────────────────────────────────────
+function KerberosSettings() {
+  const queryClient = useQueryClient();
+
+  const [enabled, setEnabled] = useState(false);
+  const [autoLogin, setAutoLogin] = useState(true);
+  const [realm, setRealm] = useState('');
+  const [kdcs, setKdcs] = useState('');
+  const [servicePrincipal, setServicePrincipal] = useState('');
+  const [keytabPath, setKeytabPath] = useState('/etc/webmail/webmail.keytab');
+  const [userFilter, setUserFilter] = useState('(sAMAccountName={{sam}})');
+  const [emailDomain, setEmailDomain] = useState('');
+  const [allowedCidrs, setAllowedCidrs] = useState('');
+  const [availability, setAvailability] = useState<{ available: boolean; reason?: string } | null>(null);
+  const [testResult, setTestResult] = useState<
+    { ok: boolean; checks: Array<{ id: string; label: string; ok: boolean; detail: string }>; error?: string } | null
+  >(null);
+  const [testing, setTesting] = useState(false);
+
+  useQuery({
+    queryKey: ['kerberos-settings'],
+    queryFn: api.getKerberosSettings,
+    onSuccess: (s: any) => {
+      setEnabled(!!s['kerberos_enabled']);
+      setAutoLogin(s['kerberos_auto_login'] !== false);
+      setRealm(s['kerberos_realm'] ?? '');
+      setKdcs(s['kerberos_kdcs'] ?? '');
+      setServicePrincipal(s['kerberos_service_principal'] ?? '');
+      setKeytabPath(s['kerberos_keytab_path'] ?? '/etc/webmail/webmail.keytab');
+      setUserFilter(s['kerberos_user_filter'] ?? '(sAMAccountName={{sam}})');
+      setEmailDomain(s['kerberos_email_domain'] ?? '');
+      setAllowedCidrs(s['kerberos_allowed_cidrs'] ?? '');
+      setAvailability(s['_availability'] ?? null);
+    },
+  } as any);
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.updateKerberosSettings({
+      kerberos_enabled: enabled,
+      kerberos_auto_login: autoLogin,
+      kerberos_realm: realm,
+      kerberos_kdcs: kdcs,
+      kerberos_service_principal: servicePrincipal,
+      kerberos_keytab_path: keytabPath,
+      kerberos_user_filter: userFilter,
+      kerberos_email_domain: emailDomain,
+      kerberos_allowed_cidrs: allowedCidrs,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kerberos-settings'] });
+      toast.success('Configuration Kerberos enregistrée');
+    },
+    onError: (e: any) => toast.error(e.message ?? 'Erreur'),
+  });
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      setTestResult(await api.testKerberos());
+    } catch (e: any) {
+      setTestResult({ ok: false, checks: [], error: e.message ?? 'Erreur' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const toggle = (label: string, value: boolean, setter: (v: boolean) => void, help: string) => (
+    <div className="flex items-start justify-between py-3 border-b border-outlook-border last:border-0">
+      <div className="flex-1 pr-4">
+        <div className="text-sm font-medium text-outlook-text-primary">{label}</div>
+        <div className="text-xs text-outlook-text-secondary mt-0.5">{help}</div>
+      </div>
+      <button
+        type="button"
+        onClick={() => setter(!value)}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${value ? 'bg-outlook-blue' : 'bg-gray-300'}`}
+      >
+        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  );
+
+  const field = (label: string, value: string, setter: (v: string) => void, opts?: { placeholder?: string; help?: string }) => (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-outlook-text-primary mb-1">{label}</label>
+      {opts?.help && <p className="text-xs text-outlook-text-secondary mb-1">{opts.help}</p>}
+      <input
+        type="text"
+        value={value}
+        onChange={e => setter(e.target.value)}
+        placeholder={opts?.placeholder}
+        className="w-full px-3 py-2 border border-outlook-border rounded-md text-sm focus:outline-none focus:border-outlook-blue focus:ring-1 focus:ring-outlook-blue"
+      />
+    </div>
+  );
+
+  const fqdn = servicePrincipal.includes('@') ? servicePrincipal.split('@')[1] : 'mail.domaine.local';
+  const serviceAccount = 'svc_webmail';
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Network size={20} />
+        <div>
+          <h2 className="text-lg font-semibold">Connexion Windows (Kerberos)</h2>
+          <p className="text-sm text-outlook-text-secondary">
+            Les postes joints au domaine ouvrent l'application sans saisir email ni mot de passe.
+          </p>
+        </div>
+      </div>
+
+      {enabled && availability && !availability.available && (
+        <div className="flex items-start gap-2 p-3 rounded-md text-sm bg-red-50 border border-red-200 text-red-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <div>
+            <div className="font-medium">Activé, mais inutilisable en l'état</div>
+            <div className="text-xs mt-0.5">{availability.reason}</div>
+            <div className="text-xs mt-1 opacity-80">
+              Les autres méthodes de connexion continuent de fonctionner normalement.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs text-blue-900">
+        <strong>Comment ça marche :</strong> le serveur répond « Negotiate » au navigateur, qui va
+        chercher tout seul un ticket auprès du contrôleur de domaine. Valider ce ticket se fait
+        <strong> hors ligne</strong>, avec un keytab : la machine qui héberge l'application n'a pas
+        besoin d'être jointe au domaine, ni même de joindre le KDC.
+        <div className="mt-2">
+          <strong>Kerberos ne fonctionne que sur le réseau interne</strong> (ou via VPN). Depuis
+          l'extérieur, la page de connexion n'essaie même pas et affiche le formulaire habituel.
+        </div>
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-4">
+        {toggle('Activer la connexion Windows', enabled, setEnabled,
+          'Ajoute le bouton « Se connecter avec mon compte Windows ». Les autres méthodes restent disponibles.')}
+        {toggle('Connexion automatique', autoLogin, setAutoLogin,
+          "Tente le ticket dès l'ouverture de la page, sans clic. Un échec retombe silencieusement sur le formulaire.")}
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-4">
+        {field('Realm Kerberos', realm, setRealm, {
+          placeholder: 'DOMAINE.LOCAL',
+          help: 'Nom du domaine en MAJUSCULES. Kerberos y est sensible à la casse.',
+        })}
+        {field('Contrôleurs de domaine (KDC)', kdcs, setKdcs, {
+          placeholder: 'dc01.domaine.local, dc02.domaine.local',
+          help: 'Séparés par des virgules. Laissez vide pour la résolution automatique par enregistrements SRV.',
+        })}
+        {field('Principal de service (SPN)', servicePrincipal, setServicePrincipal, {
+          placeholder: 'HTTP/mail.domaine.local',
+          help: "Le nom d'hôte doit être exactement celui tapé dans la barre d'adresse — une IP ou un alias non déclaré casse le handshake.",
+        })}
+        {field('Chemin du keytab', keytabPath, setKeytabPath, {
+          placeholder: '/etc/webmail/webmail.keytab',
+          help: 'Fichier monté en lecture seule dans le conteneur. Il n\'est jamais stocké en base, donc jamais inclus dans les sauvegardes.',
+        })}
+        {field('Réseaux autorisés (CIDR)', allowedCidrs, setAllowedCidrs, {
+          placeholder: '192.168.1.0/24, 10.0.0.0/8',
+          help: 'Séparés par des virgules. Vide = tous les réseaux. Renseignez vos plages internes pour ne pas proposer Kerberos aux accès externes.',
+        })}
+      </div>
+
+      <div className="bg-white border border-outlook-border rounded-lg p-4">
+        <h3 className="text-sm font-semibold mb-1">Rattachement au compte applicatif</h3>
+        <p className="text-xs text-outlook-text-secondary mb-3">
+          Le ticket donne un identifiant Windows ; l'annuaire LDAP fournit l'adresse email, le nom
+          affiché et les groupes. Les groupes et les droits administrateur sont synchronisés
+          exactement comme lors d'une connexion LDAP classique.
+        </p>
+        {field("Filtre LDAP de résolution", userFilter, setUserFilter, {
+          placeholder: '(sAMAccountName={{sam}})',
+          help: '{{sam}} = nom de connexion court, {{principal}} = principal complet (utilisateur@REALM).',
+        })}
+        {field('Domaine email de repli', emailDomain, setEmailDomain, {
+          placeholder: 'domaine.local',
+          help: "Utilisé uniquement si LDAP est désactivé : l'adresse devient <compte>@<domaine>, sans synchronisation de groupes.",
+        })}
+      </div>
+
+      {testResult && (
+        <div className="space-y-2">
+          {testResult.error && (
+            <div className="p-3 rounded-md text-sm bg-red-50 border border-red-200 text-red-800">
+              {testResult.error}
+            </div>
+          )}
+          {testResult.checks.map((check) => (
+            <div
+              key={check.id}
+              className={`flex items-start gap-2 p-3 rounded-md text-sm ${check.ok ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}
+            >
+              {check.ok ? <CheckCircle size={16} className="mt-0.5 shrink-0" /> : <XCircle size={16} className="mt-0.5 shrink-0" />}
+              <div>
+                <div className="font-medium">{check.label}</div>
+                <div className="text-xs mt-0.5 opacity-90">{check.detail}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testing}
+          className="flex items-center gap-2 px-4 py-2 border border-outlook-border rounded-md text-sm hover:bg-outlook-bg-hover disabled:opacity-50"
+        >
+          <TestTube size={16} />
+          {testing ? 'Diagnostic en cours…' : 'Lancer le diagnostic'}
+        </button>
+        <button
+          type="button"
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          className="flex items-center gap-2 px-4 py-2 bg-outlook-blue hover:bg-outlook-blue-hover text-white rounded-md text-sm disabled:opacity-50"
+        >
+          <CheckCircle size={16} />
+          {saveMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+
+      <div className="bg-gray-50 border border-outlook-border rounded-md p-4 text-xs text-outlook-text-secondary space-y-3">
+        <div>
+          <strong className="text-outlook-text-primary">1. Sur le contrôleur de domaine</strong> —
+          créez un compte de service (sans expiration de mot de passe), puis, en PowerShell
+          administrateur :
+          <pre className="bg-gray-100 rounded p-2 mt-1 overflow-x-auto">{`setspn -S HTTP/${fqdn} ${serviceAccount}
+
+ktpass -princ HTTP/${fqdn}@${realm || 'DOMAINE.LOCAL'} \`
+       -mapuser ${serviceAccount}@${realm || 'DOMAINE.LOCAL'} \`
+       -pass * -crypto AES256-SHA1 \`
+       -ptype KRB5_NT_PRINCIPAL -out webmail.keytab`}</pre>
+        </div>
+        <div>
+          <strong className="text-outlook-text-primary">2. Sur le serveur</strong> — copiez
+          <code className="bg-gray-100 px-1 rounded mx-1">webmail.keytab</code> dans le dossier monté
+          sur <code className="bg-gray-100 px-1 rounded">{keytabPath || '/etc/webmail'}</code>,
+          restreignez ses permissions, puis redémarrez le conteneur.
+        </div>
+        <div>
+          <strong className="text-outlook-text-primary">3. Sur les postes</strong> — par stratégie de
+          groupe, ajoutez <code className="bg-gray-100 px-1 rounded">{fqdn}</code> à la zone
+          <em> Intranet local</em> (Edge / Chrome), ou renseignez la stratégie
+          <code className="bg-gray-100 px-1 rounded mx-1">AuthServerAllowlist</code>. Pour Firefox :
+          <code className="bg-gray-100 px-1 rounded mx-1">network.negotiate-auth.trusted-uris</code>.
+        </div>
+        <div className="text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+          <strong>À savoir :</strong> le realm et les KDC ne sont relus qu'au démarrage —
+          redémarrez le conteneur après les avoir modifiés. Le chemin du keytab, lui, prend effet
+          immédiatement. Enfin, une horloge décalée de plus de 5 minutes par rapport au domaine
+          fait rejeter tous les tickets : le diagnostic ci-dessus le vérifie.
+        </div>
+      </div>
     </div>
   );
 }

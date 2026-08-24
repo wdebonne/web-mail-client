@@ -3,6 +3,9 @@ import { persist } from 'zustand/middleware';
 import { User } from '../types';
 import { api, tryRestoreSession } from '../api';
 
+/** Coupe la tentative Kerberos automatique après une déconnexion explicite. */
+export const KERBEROS_SUPPRESS_KEY = 'kerberos_suppress_auto';
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -73,6 +76,13 @@ export const useAuthStore = create<AuthState>()(
           await api.logout();
         } catch {}
         localStorage.removeItem('auth_token');
+        // Sans ce drapeau, la connexion Windows automatique reconnecterait
+        // l'utilisateur dans la seconde : « Se déconnecter » n'aurait aucun
+        // effet visible sur un poste du domaine. Levé jusqu'à la fermeture de
+        // l'onglet, ou dès que l'utilisateur reclique explicitement le bouton.
+        try {
+          sessionStorage.setItem(KERBEROS_SUPPRESS_KEY, '1');
+        } catch {}
         set({ user: null, token: null });
       },
 

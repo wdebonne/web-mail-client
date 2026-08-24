@@ -83,7 +83,7 @@ const LDAP_FILTER_ESCAPES: Record<string, string> = {
   '\x00': '\\00',
 };
 
-function escapeLdapFilterValue(value: string): string {
+export function escapeLdapFilterValue(value: string): string {
   return value.replace(/[\\*()\x00]/g, (ch) => LDAP_FILTER_ESCAPES[ch]);
 }
 
@@ -150,6 +150,43 @@ export async function testLdapConnection(cfg: LdapConfig): Promise<{ ok: boolean
     return { ok: true, message: 'Connexion réussie', userCount: searchEntries.length };
   } catch (err: any) {
     return { ok: false, message: err.message ?? 'Erreur inconnue' };
+  } finally {
+    await client.unbind().catch(() => {});
+  }
+}
+
+/**
+ * Heure du contrôleur de domaine, lue sur le RootDSE (attribut `currentTime`,
+ * exposé par Active Directory).
+ *
+ * Sert au diagnostic Kerberos : un décalage d'horloge de plus de 5 minutes
+ * fait rejeter tous les tickets par le KDC, et c'est de loin la première cause
+ * de panne. Renvoie `null` si l'annuaire ne publie pas l'attribut (OpenLDAP)
+ * ou n'est pas joignable — l'appelant traite alors le test comme non concluant.
+ */
+export async function getDirectoryCurrentTime(cfg: LdapConfig): Promise<Date | null> {
+  const client = buildClient(cfg);
+  try {
+    await client.bind(cfg.bindDn, cfg.bindPassword);
+    const { searchEntries } = await client.search('', {
+      scope: 'base',
+      filter: '(objectClass=*)',
+      attributes: ['currentTime'],
+    });
+
+    const raw = firstValue(searchEntries[0]?.['currentTime']);
+    if (!raw) return null;
+
+    // Format GeneralizedTime : 20260823141530.0Z
+    const parts = raw.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
+    if (!parts) return null;
+
+    return new Date(Date.UTC(
+      Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]),
+      Number(parts[4]), Number(parts[5]), Number(parts[6])
+    ));
+  } catch {
+    return null;
   } finally {
     await client.unbind().catch(() => {});
   }
@@ -263,16 +300,36 @@ export async function syncLdapGroups(userId: string, memberOfDns: string[], cfg:
   );
 }
 
-export async function authenticateLdapUser(
+/** Première valeur d'un attribut LDAP, qui peut être scalaire ou tableau. */
+function firstValue(raw: unknown): string | undefined {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value === undefined || value === null) return undefined;
+  const str = String(value).trim();
+  return str.length > 0 ? str : undefined;
+}
+
+/**
+ * Recherche une entrée d'annuaire avec le compte de service et la convertit en
+ * `LdapUser`, **sans vérifier de mot de passe**.
+ *
+ * Partagé par le login LDAP classique et par la résolution du principal
+ * Kerberos, qui a déjà prouvé l'identité côté domaine et n'a plus besoin que
+ * des attributs (mail, displayName, memberOf).
+ *
+ * `preferredEmail` prime sur l'attribut `mail` : le login par mot de passe
+ * continue d'utiliser l'adresse saisie, afin que la clé `users.email` reste
+ * identique à celle des comptes déjà provisionnés. Kerberos, lui, n'a pas
+ * d'adresse à proposer et prend donc l'attribut `mail` de l'annuaire.
+ */
+export async function findLdapUser(
   cfg: LdapConfig,
-  email: string,
-  password: string
+  filter: string,
+  preferredEmail?: string
 ): Promise<LdapUser | null> {
   const client = buildClient(cfg);
   try {
     await client.bind(cfg.bindDn, cfg.bindPassword);
 
-    const filter = cfg.userFilter.replaceAll('{{email}}', escapeLdapFilterValue(email));
     const { searchEntries } = await client.search(cfg.baseDn, {
       scope: 'sub',
       filter,
@@ -283,28 +340,43 @@ export async function authenticateLdapUser(
     if (searchEntries.length === 0) return null;
 
     const entry = searchEntries[0];
-    const userDn = entry.dn;
-
-    const userClient = buildClient(cfg);
-    try {
-      await userClient.bind(userDn, password);
-    } catch (err) {
-      if (err instanceof InvalidCredentialsError) return null;
-      throw err;
-    } finally {
-      await userClient.unbind().catch(() => {});
-    }
 
     const memberOf = entry['memberOf'];
     const memberOfDns = (Array.isArray(memberOf) ? memberOf : memberOf ? [memberOf] : []).map(String);
 
-    const isAdmin = isAdminByGroups(memberOfDns, cfg);
+    const email = preferredEmail ?? firstValue(entry['mail']);
+    if (!email) return null;
 
-    const rawName = entry[cfg.displayNameAttr];
-    const displayName = Array.isArray(rawName) ? rawName[0] : rawName ?? email;
-
-    return { dn: userDn, email, displayName: String(displayName), isAdmin, memberOfDns };
+    return {
+      dn: entry.dn,
+      email,
+      displayName: firstValue(entry[cfg.displayNameAttr]) ?? email,
+      isAdmin: isAdminByGroups(memberOfDns, cfg),
+      memberOfDns,
+    };
   } finally {
     await client.unbind().catch(() => {});
   }
+}
+
+export async function authenticateLdapUser(
+  cfg: LdapConfig,
+  email: string,
+  password: string
+): Promise<LdapUser | null> {
+  const filter = cfg.userFilter.replaceAll('{{email}}', escapeLdapFilterValue(email));
+  const user = await findLdapUser(cfg, filter, email);
+  if (!user) return null;
+
+  const userClient = buildClient(cfg);
+  try {
+    await userClient.bind(user.dn, password);
+  } catch (err) {
+    if (err instanceof InvalidCredentialsError) return null;
+    throw err;
+  } finally {
+    await userClient.unbind().catch(() => {});
+  }
+
+  return user;
 }

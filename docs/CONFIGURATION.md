@@ -580,3 +580,141 @@ Redirection vers l'application → connexion automatique
 ### Coexistence avec les autres méthodes
 
 Le SSO est **additif** : le bouton SSO s'ajoute à la page de login sans remplacer le formulaire mot de passe ni les passkeys. Chaque utilisateur peut utiliser la méthode de son choix indépendamment.
+
+---
+
+## Connexion Windows (Kerberos / SPNEGO)
+
+Sur un poste **joint au domaine Active Directory**, l'utilisateur ouvre l'application et il est
+déjà connecté : aucune saisie, aucun clic. C'est le même mécanisme que l'intranet d'entreprise —
+le serveur répond `401 WWW-Authenticate: Negotiate`, et le navigateur va chercher tout seul un
+ticket Kerberos auprès du contrôleur de domaine.
+
+Se configure dans **Admin → Intégrations → Connexion Windows (Kerberos)**.
+
+### Ce que ça n'exige pas
+
+Valider un ticket est une opération **hors ligne** : la clé du keytab suffit à le déchiffrer.
+
+- La machine qui héberge l'application **n'a pas besoin d'être jointe au domaine**.
+- Elle **n'a pas besoin de joindre le KDC** pendant le fonctionnement.
+- Elle peut donc rester un NAS ou un hôte Docker Linux ordinaire.
+
+### Ce que ça exige
+
+| Prérequis | Pourquoi |
+|-----------|----------|
+| Un **keytab** généré sur le DC | Contient la clé qui déchiffre les tickets de service |
+| Un **FQDN** résolvable, utilisé tel quel dans la barre d'adresse | Le ticket est émis pour ce nom précis ; une IP ou un alias non déclaré casse le handshake |
+| Le site déclaré **de confiance** dans le navigateur | Sans cela, le navigateur ignore le défi `Negotiate` |
+| Une **horloge synchronisée** (< 5 min d'écart avec le DC) | Au-delà, le KDC rejette tous les tickets |
+| **LDAP configuré** (recommandé) | Fournit l'adresse email, le nom affiché et les groupes |
+| Un serveur sous **Linux** | Le module natif n'accepte des tickets que via GSSAPI ; c'est le cas de l'image Docker, mais pas d'un `npm run dev` sous Windows |
+
+### 1. Sur le contrôleur de domaine
+
+Créez un compte de service dédié (mot de passe sans expiration), puis, en PowerShell
+administrateur :
+
+```powershell
+setspn -S HTTP/mail.domaine.local svc_webmail
+
+ktpass -princ HTTP/mail.domaine.local@DOMAINE.LOCAL `
+       -mapuser svc_webmail@DOMAINE.LOCAL `
+       -pass * -crypto AES256-SHA1 `
+       -ptype KRB5_NT_PRINCIPAL -out webmail.keytab
+```
+
+> `ktpass` **change le mot de passe du compte** de service. Générez le keytab une bonne fois, et
+> régénérez-le si vous réinitialisez ce mot de passe plus tard.
+
+### 2. Sur le serveur
+
+Copiez `webmail.keytab` dans le dossier `./kerberos` monté par `docker-compose.yml` (il arrive
+dans le conteneur sur `/etc/webmail`, en lecture seule), restreignez ses permissions, puis
+redémarrez la pile :
+
+```bash
+mkdir -p kerberos && cp webmail.keytab kerberos/
+chmod 600 kerberos/webmail.keytab
+docker compose up -d
+```
+
+Le keytab est un secret équivalent au mot de passe du compte de service. Il reste **délibérément
+un fichier**, jamais une valeur en base : il échappe ainsi aux sauvegardes, qui embarquent la
+table `admin_settings`.
+
+### 3. Paramètres dans l'interface admin
+
+| Paramètre | Exemple | Notes |
+|-----------|---------|-------|
+| Realm Kerberos | `DOMAINE.LOCAL` | **En majuscules** — Kerberos y est sensible |
+| Contrôleurs de domaine | `dc01.domaine.local` | Vide = résolution par enregistrements SRV |
+| Principal de service (SPN) | `HTTP/mail.domaine.local` | La notation `HTTP@mail.domaine.local` est acceptée aussi |
+| Chemin du keytab | `/etc/webmail/webmail.keytab` | Chemin *dans le conteneur* |
+| Réseaux autorisés (CIDR) | `192.168.1.0/24` | Vide = tous. Voir ci-dessous |
+| Filtre LDAP de résolution | `(sAMAccountName={{sam}})` | `{{principal}}` est aussi disponible |
+| Connexion automatique | activé | Tente le ticket sans clic à l'ouverture de la page |
+
+Le bouton **Lancer le diagnostic** vérifie, dans l'ordre où les choses cassent en pratique :
+module natif chargé, keytab lisible, clé de service présente dans le keytab, décalage d'horloge
+avec le contrôleur de domaine, et mode de résolution des comptes.
+
+### 4. Sur les postes clients
+
+Par stratégie de groupe, ajoutez le FQDN à la zone **Intranet local** (Edge et Chrome partagent
+les zones Windows), ou renseignez la stratégie `AuthServerAllowlist`. Pour Firefox, la clé est
+`network.negotiate-auth.trusted-uris`.
+
+Sans cela, le navigateur reçoit le défi `Negotiate` et l'ignore : l'application affiche
+simplement le formulaire de connexion habituel.
+
+### Réseaux autorisés et accès externe
+
+**Kerberos ne fonctionne que sur le réseau interne** (ou à travers un VPN) : un poste sur
+Internet ne peut pas joindre le KDC. C'est une limite du protocole.
+
+Renseignez vos plages internes dans *Réseaux autorisés* : le serveur n'annonce alors `Negotiate`
+qu'à ces adresses. Depuis l'extérieur, `GET /api/auth/kerberos/config` répond `enabled: false`,
+la page de connexion ne tente rien et affiche directement le formulaire — mot de passe, LDAP,
+passkey et SSO restent pleinement fonctionnels.
+
+### Résolution du compte applicatif
+
+Le ticket ne fournit qu'un identifiant Windows (`jdupont@DOMAINE.LOCAL`). C'est l'annuaire LDAP
+qui donne l'adresse email, le nom affiché et les groupes :
+
+```
+Ticket → jdupont@DOMAINE.LOCAL
+        ↓  filtre (sAMAccountName=jdupont)
+LDAP   → mail, displayName, memberOf
+        ↓
+Provisionnement + synchronisation des groupes + droits admin
+        ↓
+Session applicative (identique à une connexion LDAP)
+```
+
+Si LDAP est désactivé, un **domaine email de repli** permet de construire l'adresse
+(`jdupont@domaine.local`), mais sans aucune synchronisation de groupes.
+
+### Coexistence avec les autres méthodes
+
+Comme le SSO, Kerberos est **additif**. Une nuance à connaître : comme pour le SSO OIDC, une
+connexion Kerberos **ne déclenche pas** l'étape passkey supplémentaire — le domaine a déjà
+authentifié l'utilisateur. Le login par mot de passe, lui, conserve son second facteur.
+
+La déconnexion suspend la connexion automatique jusqu'à la fermeture de l'onglet : sans cela,
+« Se déconnecter » reconnecterait l'utilisateur dans la seconde sur un poste du domaine.
+
+### Dépannage
+
+| Symptôme | Cause probable | Correctif |
+|----------|----------------|-----------|
+| Diagnostic : « Module natif absent » | `kerberos` n'a pas pu se compiler | Reconstruire l'image (`docker compose build --no-cache`) |
+| Diagnostic : « Clé de service » en échec | SPN absent du keytab, ou keytab périmé | Vérifier `setspn -L svc_webmail`, régénérer le keytab |
+| Le navigateur propose NTLM | Site joint par IP ou alias, ou hors zone Intranet | Utiliser le FQDN du SPN, ajouter le site à la zone Intranet local |
+| Rien ne se passe, formulaire classique | Site non déclaré de confiance | Stratégie de groupe (zone Intranet / `AuthServerAllowlist`) |
+| Erreurs 400 / 431 intermittentes | PAC volumineux (utilisateur membre de nombreux groupes) | Élargir les buffers du reverse proxy — voir DEPLOYMENT.md |
+| Tous les tickets refusés | Horloge décalée de plus de 5 minutes | Synchroniser l'heure du serveur (NTP) |
+| Realm modifié sans effet | libkrb5 ne relit pas son profil | Redémarrer le conteneur |
+| « Pas disponible sous Windows » | Serveur lancé hors conteneur, sur un poste Windows | Tester dans l'image Docker : GSSAPI n'existe pas côté accepteur sous Windows |

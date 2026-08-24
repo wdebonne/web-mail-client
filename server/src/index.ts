@@ -33,6 +33,7 @@ import { imageProxyRouter } from './routes/imageProxy';
 import { translateRouter } from './routes/translate';
 import { startBackupScheduler } from './services/backupScheduler';
 import { bulkSendRouter, adminBulkSendRouter } from './routes/bulkSend';
+import { junkRouter, adminJunkRouter } from './routes/junk';
 import { startBulkSendProcessor } from './services/bulkSendProcessor';
 import { startScheduledSendProcessor } from './services/scheduledSendProcessor';
 import { startSystemAlertChecker } from './services/systemAlerts';
@@ -45,9 +46,11 @@ import { setupWebSocket } from './services/websocket';
 import { PluginManager } from './plugins/manager';
 import { initPushService } from './services/push';
 import { startNewMailPoller } from './services/newMailPoller';
+import { startJunkFilter } from './services/junkFilter';
 import { startCalendarReminderPoller } from './services/calendarReminderPoller';
 import { startNextCloudSyncPoller } from './services/nextcloudSyncPoller';
 import { getWebAuthnConfig } from './services/webauthn';
+import { initKerberos } from './services/kerberos';
 
 const app = express();
 const server = createServer(app);
@@ -165,6 +168,8 @@ app.use('/api/proxy/image', imageProxyRouter);
 app.use('/api/translate', authMiddleware, translateRouter);
 app.use('/api/bulk-send', authMiddleware, bulkSendRouter);
 app.use('/api/admin/bulk-send', authMiddleware, adminBulkSendRouter);
+app.use('/api/junk', authMiddleware, junkRouter);
+app.use('/api/admin/junk', authMiddleware, adminJunkRouter);
 
 // 404 for any /api path not matched above — must stay after every API router.
 // Without it, the production SPA catch-all matched GET /api/* without ever
@@ -209,6 +214,10 @@ async function start() {
     await initDatabase();
     logger.info('Database initialized');
 
+    // Authentification integree Windows : ecrit krb5.conf et positionne les
+    // variables GSSAPI avant que quoi que ce soit ne charge libkrb5.
+    await initKerberos();
+
     // Initialize Web Push (VAPID)
     await initPushService();
 
@@ -230,6 +239,10 @@ async function start() {
     startBackupScheduler();
     startBulkSendProcessor();
     startScheduledSendProcessor();
+    // Classe les nouveaux messages indésirables (listes d'expéditeurs +
+    // en-têtes du filtre antispam du serveur). Indépendant du poller de
+    // nouveaux mails, qui ne couvre que les comptes abonnés au push.
+    startJunkFilter();
     // Renouvelle les jetons OAuth (Outlook/M365) avant leur expiration, seul et
     // en série, pour que les requêtes HTTP n’aient jamais à le faire en rafale.
     startOAuthTokenRefresher();

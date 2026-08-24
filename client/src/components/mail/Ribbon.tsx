@@ -17,6 +17,7 @@ import {
   FileText, Settings as SettingsIcon, Filter,
   Clock, BellDot, Cloud, StickyNote,
   Search, X as XIcon, AtSign, FolderSearch,
+  Inbox,
 } from 'lucide-react';
 import { api } from '../../api';
 import NextcloudFilePicker, { type NextcloudFileItem } from '../ui/NextcloudFilePicker';
@@ -49,6 +50,11 @@ import {
   type UnreadIndicatorPrefs, type UnreadIndicatorScope,
   UNREAD_INDICATORS_CHANGED_EVENT, UNREAD_SCOPE_LABELS,
 } from '../../utils/mailPreferences';
+import {
+  getFocusedInboxPrefs, setFocusedInboxPrefs, getFocusedOverrides, removeFocusedOverride,
+  parseOverrideKey, subscribeFocusedInbox, FOCUSED_TAB_LABELS,
+  type FocusedInboxPrefs,
+} from '../../utils/focusedInbox';
 
 type RibbonTab = 'accueil' | 'afficher' | 'message' | 'inserer' | 'publipostage' | 'recherche';
 type RibbonMode = 'classic' | 'simplified';
@@ -623,6 +629,8 @@ export default function Ribbon({
   const [showMailDisplayMenu, setShowMailDisplayMenu] = useState(false);
   const [showRecentFoldersMenu, setShowRecentFoldersMenu] = useState(false);
   const [showUnreadMenu, setShowUnreadMenu] = useState(false);
+  const [showFocusedMenu, setShowFocusedMenu] = useState(false);
+  const [showFocusedExceptions, setShowFocusedExceptions] = useState(false);
   // Folder pane font size — synced with the global event so two ribbons stay
   // in sync if multiple windows/tabs are open.
   const [folderFontSize, setFolderFontSizeState] = useState<FolderPaneFontSize>(() => getFolderPaneFontSize());
@@ -644,6 +652,21 @@ export default function Ribbon({
     setUnreadIndicatorPrefs(patch);
     setUnreadPrefsState((p) => ({ ...p, ...patch }));
   };
+
+  // Vue « Prioritaire / Autres » de la boîte de réception. Le ruban lit et écrit
+  // directement la préférence : l'événement du module suffit à tenir la liste
+  // des messages alignée, aucune prop n'est nécessaire.
+  const [focusedPrefs, setFocusedPrefsState] = useState<FocusedInboxPrefs>(() => getFocusedInboxPrefs());
+  const [focusedOverrides, setFocusedOverridesState] = useState(() => getFocusedOverrides());
+  useEffect(() => subscribeFocusedInbox(() => {
+    setFocusedPrefsState(getFocusedInboxPrefs());
+    setFocusedOverridesState(getFocusedOverrides());
+  }), []);
+  const updateFocusedPrefs = (patch: Partial<FocusedInboxPrefs>) => {
+    setFocusedInboxPrefs(patch);
+    setFocusedPrefsState((p) => ({ ...p, ...patch }));
+  };
+  const focusedOverrideCount = Object.keys(focusedOverrides).length;
   const tabMenuBtnRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuBtnRef = useRef<HTMLButtonElement>(null);
   const favoritesMenuBtnRef = useRef<HTMLButtonElement>(null);
@@ -656,6 +679,7 @@ export default function Ribbon({
   const mailDisplayMenuBtnRef = useRef<HTMLButtonElement>(null);
   const recentFoldersMenuBtnRef = useRef<HTMLButtonElement>(null);
   const unreadMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const focusedMenuBtnRef = useRef<HTMLButtonElement>(null);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0 });
   const [attachmentMenuPos, setAttachmentMenuPos] = useState({ top: 0, left: 0 });
   const [favoritesMenuPos, setFavoritesMenuPos] = useState({ top: 0, left: 0 });
@@ -668,6 +692,7 @@ export default function Ribbon({
   const [mailDisplayMenuPos, setMailDisplayMenuPos] = useState({ top: 0, left: 0 });
   const [recentFoldersMenuPos, setRecentFoldersMenuPos] = useState({ top: 0, left: 0 });
   const [unreadMenuPos, setUnreadMenuPos] = useState({ top: 0, left: 0 });
+  const [focusedMenuPos, setFocusedMenuPos] = useState({ top: 0, left: 0 });
   const ribbonRef = useRef<HTMLDivElement>(null);
   // Re-render favorites menu when toggled
   const [favPrefsVersion, setFavPrefsVersion] = useState(0);
@@ -819,6 +844,15 @@ export default function Ribbon({
       setRecentFoldersMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
     setShowRecentFoldersMenu(v => !v);
+  };
+
+  const openFocusedMenu = (e?: React.MouseEvent) => {
+    const el = (e?.currentTarget as HTMLElement) || focusedMenuBtnRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setFocusedMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowFocusedMenu(v => !v);
   };
 
   const openUnreadMenu = (e?: React.MouseEvent) => {
@@ -1107,6 +1141,142 @@ export default function Ribbon({
                 </button>
               );
             })}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Boîte de réception — vue combinée / Prioritaire & Autres */}
+      {showFocusedMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowFocusedMenu(false)} />
+          <div
+            className="fixed bg-white border border-outlook-border rounded-md shadow-lg py-1 z-[9999] min-w-80"
+            style={{ top: focusedMenuPos.top, left: focusedMenuPos.left }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Boîte de réception
+            </div>
+            {[
+              { id: 'combined' as const, label: 'Vue combinée', hint: 'Tous les mails dans une seule liste.' },
+              { id: 'split' as const, label: 'Prioritaire et Autres', hint: 'Deux onglets : vos contacts d’un côté, le reste de l’autre.' },
+            ].map((opt) => {
+              const active = focusedPrefs.mode === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => { updateFocusedPrefs({ mode: opt.id }); setShowFocusedMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-start gap-2"
+                >
+                  <span className="w-4 flex items-center justify-center text-outlook-blue mt-0.5">
+                    {active ? '✓' : ''}
+                  </span>
+                  <span className="flex flex-col">
+                    <span>{opt.label}</span>
+                    <span className="text-[11px] text-outlook-text-disabled">{opt.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+
+            <div className="border-t border-outlook-border my-1" />
+            <div className="px-3 py-1 text-[10px] font-semibold text-outlook-text-disabled uppercase tracking-wide">
+              Ce qui va dans « Prioritaire »
+            </div>
+            {[
+              { key: 'trustContacts' as const, label: 'Mes contacts enregistrés' },
+              { key: 'trustOwnDomain' as const, label: 'Le même domaine que mes comptes' },
+            ].map((opt) => (
+              <label
+                key={opt.key}
+                className={`w-full px-3 py-1.5 text-sm flex items-center gap-2 ${focusedPrefs.mode === 'split' ? 'hover:bg-outlook-bg-hover cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={focusedPrefs[opt.key]}
+                  disabled={focusedPrefs.mode !== 'split'}
+                  onChange={(e) => updateFocusedPrefs({ [opt.key]: e.target.checked } as Partial<FocusedInboxPrefs>)}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-outlook-blue focus:ring-outlook-blue"
+                />
+                <span>{opt.label}</span>
+              </label>
+            ))}
+
+            <div className="border-t border-outlook-border my-1" />
+            <button
+              onClick={() => { setShowFocusedMenu(false); setShowFocusedExceptions(true); }}
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-outlook-bg-hover flex items-center gap-2"
+            >
+              <span className="w-4" />
+              <span>Gérer les exceptions{focusedOverrideCount > 0 ? ` (${focusedOverrideCount})` : ''}…</span>
+            </button>
+            <p className="px-3 py-1.5 text-[11px] text-outlook-text-disabled">
+              Réglage propre à cet appareil. Les exceptions, elles, vous suivent.
+            </p>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Exceptions Prioritaire / Autres */}
+      {showFocusedExceptions && createPortal(
+        <>
+          <div className="fixed inset-0 bg-black/30 z-[9998]" onClick={() => setShowFocusedExceptions(false)} />
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-lg shadow-xl border border-outlook-border w-full max-w-md pointer-events-auto flex flex-col max-h-[70vh]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-outlook-border">
+                <h3 className="text-sm font-semibold text-outlook-text-primary">
+                  Exceptions Prioritaire / Autres
+                </h3>
+                <button
+                  onClick={() => setShowFocusedExceptions(false)}
+                  className="p-1 rounded text-outlook-text-secondary hover:bg-outlook-bg-hover"
+                  title="Fermer"
+                >
+                  <XIcon size={15} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {focusedOverrideCount === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-outlook-text-disabled">
+                    Aucune exception. Clic droit sur un message → « Toujours afficher dans… »
+                    pour en créer une.
+                  </p>
+                ) : (
+                  Object.entries(focusedOverrides).map(([key, tab]) => {
+                    const { kind, pattern } = parseOverrideKey(key);
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center gap-2 px-4 py-2 border-b border-outlook-border last:border-b-0"
+                      >
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm text-outlook-text-primary truncate">{pattern}</span>
+                          <span className="block text-[11px] text-outlook-text-disabled">
+                            {kind === 'domain' ? 'Domaine entier' : 'Adresse'} → {FOCUSED_TAB_LABELS[tab]}
+                          </span>
+                        </span>
+                        <button
+                          onClick={() => removeFocusedOverride(key)}
+                          className="p-1 rounded text-outlook-text-secondary hover:bg-red-50 hover:text-red-600"
+                          title="Supprimer cette exception"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="px-4 py-3 border-t border-outlook-border flex justify-end">
+                <button
+                  onClick={() => setShowFocusedExceptions(false)}
+                  className="px-3 py-1.5 text-sm rounded bg-outlook-blue text-white hover:bg-outlook-blue/90"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
           </div>
         </>,
         document.body
@@ -1428,6 +1598,16 @@ export default function Ribbon({
                 <span className="text-xs whitespace-nowrap">Non lus</span>
                 <ChevronDown size={10} />
               </button>
+              <button
+                ref={focusedMenuBtnRef}
+                onClick={(e) => openFocusedMenu(e)}
+                className={`flex items-center gap-1 rounded transition-colors px-2 py-1 hover:bg-outlook-bg-hover cursor-pointer ${showFocusedMenu || focusedPrefs.mode === 'split' ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                title="Boîte de réception — vue combinée ou Prioritaire / Autres"
+              >
+                <Inbox size={14} />
+                <span className="text-xs whitespace-nowrap">Boîte de réception</span>
+                <ChevronDown size={10} />
+              </button>
               <SimplifiedSep />
               <button
                 ref={conversationsMenuBtnRef}
@@ -1721,6 +1901,19 @@ export default function Ribbon({
                     <BellDot size={18} />
                     <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
                       Non lus <ChevronDown size={8} />
+                    </span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    ref={focusedMenuBtnRef}
+                    onClick={(e) => openFocusedMenu(e)}
+                    className={`flex flex-col items-center gap-0.5 rounded transition-colors px-2 py-1 min-w-[48px] hover:bg-outlook-bg-hover cursor-pointer ${showFocusedMenu || focusedPrefs.mode === 'split' ? 'bg-outlook-blue/10 text-outlook-blue' : ''}`}
+                    title="Boîte de réception — vue combinée ou Prioritaire / Autres"
+                  >
+                    <Inbox size={18} />
+                    <span className="text-[10px] leading-tight text-center whitespace-nowrap flex items-center gap-0.5">
+                      Boîte de réception <ChevronDown size={8} />
                     </span>
                   </button>
                 </div>
