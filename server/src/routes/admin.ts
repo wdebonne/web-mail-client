@@ -3501,3 +3501,126 @@ adminRouter.post('/migration/start', async (req: AuthRequest, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ========================================
+// ---- Assistant IA (Ollama) ----
+// ========================================
+
+/**
+ * Construit la configuration à tester à partir du formulaire non encore
+ * enregistré, en retombant sur les valeurs en base pour ce qui n'a pas été
+ * saisi. Sans ça, l'administrateur devrait enregistrer une URL fausse avant de
+ * pouvoir découvrir qu'elle est fausse.
+ */
+async function aiConfigFromBody(body: Record<string, any>) {
+  const { getAiConfig, normalizeUrl, AI_DEFAULTS } = await import('../services/aiService');
+  const saved = await getAiConfig();
+
+  const asNumber = (value: unknown, fallback: number) => {
+    const parsed = typeof value === 'number' ? value : parseFloat(String(value ?? ''));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  return {
+    ...saved,
+    url: normalizeUrl(typeof body['ai_url'] === 'string' && body['ai_url'].trim() ? body['ai_url'] : saved.url || AI_DEFAULTS.url),
+    model: typeof body['ai_model'] === 'string' && body['ai_model'].trim() ? body['ai_model'].trim() : saved.model,
+    apiKey: (typeof body['ai_api_key'] === 'string' && body['ai_api_key'] && body['ai_api_key'] !== '__encrypted__')
+      ? body['ai_api_key']
+      : saved.apiKey,
+    timeoutMs: Math.min(600, Math.max(5, asNumber(body['ai_timeout'], saved.timeoutMs / 1000))) * 1000,
+  };
+}
+
+adminRouter.get('/ai/settings', async (_req: AuthRequest, res) => {
+  try {
+    const { AI_DEFAULTS } = await import('../services/aiService');
+    const result = await pool.query(`SELECT key, value FROM admin_settings WHERE key LIKE 'ai_%'`);
+    const s: Record<string, any> = {};
+    for (const row of result.rows) s[row.key] = row.value;
+    // La clé d'API ne repart jamais en clair vers le navigateur.
+    if (s['ai_api_key']) s['ai_api_key'] = '__encrypted__';
+    res.json({ ...s, _defaults: AI_DEFAULTS });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+adminRouter.put('/ai/settings', async (req: AuthRequest, res) => {
+  try {
+    const { AI_SETTING_KEYS, normalizeUrl, getAiConfig } = await import('../services/aiService');
+    const body = req.body as Record<string, any>;
+
+    if (typeof body['ai_url'] === 'string' && body['ai_url'].trim()) {
+      const url = normalizeUrl(body['ai_url']);
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return res.status(400).json({ error: 'URL Ollama invalide — attendu : http://hote:11434' });
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return res.status(400).json({ error: 'URL Ollama invalide — seuls http:// et https:// sont acceptés' });
+      }
+      body['ai_url'] = url;
+    }
+
+    if (typeof body['ai_model'] === 'string') body['ai_model'] = body['ai_model'].trim();
+
+    // Un modèle vide couperait toutes les fonctions sans rien dire à personne.
+    // On regarde la valeur effective : rien n'oblige le formulaire à renvoyer le
+    // champ modèle en même temps que l'activation.
+    if (body['ai_enabled'] === true) {
+      const effectiveModel = 'ai_model' in body ? body['ai_model'] : (await getAiConfig()).model;
+      if (!effectiveModel) {
+        return res.status(400).json({ error: 'Choisissez un modèle avant d\'activer l\'assistant.' });
+      }
+    }
+
+    for (const key of AI_SETTING_KEYS) {
+      if (key === 'ai_api_key') continue;
+      if (key in body) {
+        await pool.query(
+          `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+          [key, JSON.stringify(body[key])]
+        );
+      }
+    }
+
+    // Chaîne vide = l'administrateur retire la clé ; sentinelle = il n'y a pas
+    // touché ; autre chose = nouvelle clé à chiffrer.
+    if ('ai_api_key' in body && body['ai_api_key'] !== '__encrypted__') {
+      const value = typeof body['ai_api_key'] === 'string' && body['ai_api_key']
+        ? encrypt(body['ai_api_key'])
+        : '';
+      await pool.query(
+        `INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+        ['ai_api_key', JSON.stringify(value)]
+      );
+    }
+
+    await addLog(req.userId, 'ai.settings_updated', 'system', req, {});
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+/** Liste les modèles déjà téléchargés, pour alimenter la liste déroulante. */
+adminRouter.post('/ai/models', async (req: AuthRequest, res) => {
+  try {
+    const { listModels } = await import('../services/aiService');
+    const cfg = await aiConfigFromBody(req.body ?? {});
+    res.json({ ok: true, models: await listModels(cfg as any) });
+  } catch (e: any) {
+    res.json({ ok: false, models: [], error: e.message ?? 'Erreur' });
+  }
+});
+
+adminRouter.post('/ai/test', async (req: AuthRequest, res) => {
+  try {
+    const { diagnose } = await import('../services/aiService');
+    const cfg = await aiConfigFromBody(req.body ?? {});
+    res.json(await diagnose(cfg as any));
+  } catch (e: any) {
+    res.json({ ok: false, checks: [], models: [], error: e.message ?? 'Erreur' });
+  }
+});

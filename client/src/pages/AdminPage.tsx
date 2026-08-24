@@ -11,6 +11,7 @@ import {
   BookOpen, Share2, RotateCcw, AtSign, User, Camera,
   Download, Send, AlertTriangle, Eye, EyeOff,
   Lock, LockOpen, ShieldAlert, ListX, ListChecks, LogIn, Activity, Ban, Network,
+  Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUIStore } from '../stores/uiStore';
@@ -27,6 +28,7 @@ import AdminBackup from '../components/admin/AdminBackup';
 import AdminSystemStatus from '../components/admin/AdminSystemStatus';
 import AdminMigration from '../components/admin/AdminMigration';
 import AdminBulkSend from '../components/admin/AdminBulkSend';
+import AdminAiSettings from '../components/admin/AdminAiSettings';
 import NotificationPreferencesEditor from '../components/notifications/NotificationPreferencesEditor';
 import {
   getDefaultNotificationPrefs, mergeNotificationPrefs,
@@ -34,7 +36,7 @@ import {
 } from '../utils/notificationPrefs';
 import { APP_VERSION } from '../utils/version';
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'junk' | 'ldap' | 'sso' | 'kerberos';
+type Tab = 'dashboard' | 'users' | 'groups' | 'mailaccounts' | 'calendars' | 'autoresponders' | 'mailtemplates' | 'rules' | 'o2switch' | 'plugins' | 'nextcloud' | 'applications' | 'logs' | 'system' | 'systemstatus' | 'loginAppearance' | 'devices' | 'notifications' | 'distributionlists' | 'smtp' | 'security' | 'backup' | 'migration' | 'bulksend' | 'junk' | 'ldap' | 'sso' | 'kerberos' | 'ai';
 
 export default function AdminPage() {
   const { t } = useTranslation();
@@ -74,6 +76,7 @@ export default function AdminPage() {
     { id: 'ldap' as const,          icon: Database,        label: 'LDAP',                         group: t('admin.group.integrations') },
     { id: 'sso' as const,           icon: LogIn,           label: 'SSO / OpenID Connect',         group: t('admin.group.integrations') },
     { id: 'kerberos' as const,      icon: Network,         label: 'Connexion Windows (Kerberos)', group: t('admin.group.integrations') },
+    { id: 'ai' as const,            icon: Sparkles,        label: 'Assistant IA (Ollama)',        group: t('admin.group.integrations') },
     // Système
     { id: 'systemstatus' as const,    icon: Activity,       label: 'État du système',             group: t('admin.group.system') },
     { id: 'security' as const,        icon: ShieldAlert,    label: 'Sécurité',                    group: t('admin.group.system') },
@@ -178,6 +181,7 @@ export default function AdminPage() {
             {tab === 'ldap' && <LdapSettings />}
             {tab === 'sso' && <SsoSettings />}
             {tab === 'kerberos' && <KerberosSettings />}
+            {tab === 'ai' && <AdminAiSettings />}
           </div>
         </div>
       </div>

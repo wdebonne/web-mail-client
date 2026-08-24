@@ -23,6 +23,7 @@ import {
 } from '../../utils/signatures';
 import { attachImageEditing } from '../../utils/imageEditing';
 import { SaveAsTemplateDialog } from './MailTemplates';
+import AiComposeAssistant from './AiComposeAssistant';
 import toast from 'react-hot-toast';
 
 interface ComposeModalProps {
@@ -236,6 +237,46 @@ export default function ComposeModal({
       setSuggestions([]);
       setActiveField(null);
     }
+  };
+
+  // ── Assistant IA ────────────────────────────────────────────────────────────
+  // Le texte du modèle arrive en clair : il est échappé avant d'entrer dans un
+  // éditeur `contentEditable`, sinon un mail piégé pourrait faire produire au
+  // modèle du balisage qui s'exécuterait dans le brouillon.
+  const escapeHtml = (text: string) =>
+    text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  /**
+   * Brouillon de l'utilisateur, citation exclue. Faire réécrire le message
+   * d'origine avec sa réponse produirait une bouillie ; on ne garde que ce
+   * qu'il a tapé au-dessus.
+   */
+  const draftTextWithoutQuote = (): string => {
+    const el = editorRef.current;
+    if (!el) return '';
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('blockquote').forEach(node => node.remove());
+    // Les citations générées par Répondre / Transférer portent ces bordures.
+    clone.querySelectorAll('div[style]').forEach(node => {
+      const style = node.getAttribute('style') || '';
+      if (style.includes('border-left:2px solid #0078D4') || style.includes('border-top:1px solid #E1DFDD')) {
+        node.remove();
+      }
+    });
+    return (clone.innerText || clone.textContent || '').trim();
+  };
+
+  /** Insère le texte retenu en tête du brouillon, au-dessus de la citation. */
+  const insertAiText = (text: string) => {
+    const html = `<div>${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
+    const el = editorRef.current;
+    if (!el) {
+      setBodyHtml(prev => html + prev);
+      return;
+    }
+    el.innerHTML = html + el.innerHTML;
+    setBodyHtml(el.innerHTML);
+    el.focus();
   };
 
   const handleAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -741,6 +782,12 @@ export default function ComposeModal({
 
       {/* Editor toolbar */}
       {!hideInlineToolbar && <RichTextToolbar editorRef={editorRef} />}
+      {/* Assistant IA — masqué de lui-même si l'administrateur ne l'a pas activé */}
+      <AiComposeAssistant
+        source={initialData.aiSource}
+        getDraftText={draftTextWithoutQuote}
+        onInsert={insertAiText}
+      />
       {/* Editor */}
       <div
         ref={editorRef}

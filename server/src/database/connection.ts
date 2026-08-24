@@ -564,7 +564,18 @@ export async function initDatabase() {
         ('attachment_visibility_min_kb', '10', 'Hide attachments smaller than this size in KB'),
         ('default_language', '"fr"', 'Default language'),
         ('allow_registration', 'false', 'Allow self-registration'),
-        ('plugins_enabled', 'true', 'Enable plugin system')
+        ('plugins_enabled', 'true', 'Enable plugin system'),
+        ('ai_enabled', 'false', 'Enable the Ollama AI assistant'),
+        ('ai_url', '"http://localhost:11434"', 'Ollama server base URL'),
+        ('ai_model', '"llama3.2"', 'Ollama model used for every AI action'),
+        ('ai_language', '"fr"', 'Language the assistant answers in'),
+        ('ai_temperature', '0.4', 'Sampling temperature (0 = deterministic)'),
+        ('ai_max_tokens', '800', 'Max tokens generated per AI answer'),
+        ('ai_timeout', '120', 'Ollama request timeout in seconds'),
+        ('ai_max_input_chars', '12000', 'Max characters of email text sent to the model'),
+        ('ai_feature_summarize', 'true', 'Allow AI email summaries'),
+        ('ai_feature_reply', 'true', 'Allow AI reply drafting'),
+        ('ai_feature_improve', 'true', 'Allow AI rewriting in the composer')
       ON CONFLICT (key) DO NOTHING;
 
       -- Web Push subscriptions (native notifications)

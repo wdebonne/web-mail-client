@@ -1497,6 +1497,17 @@ export default function MailPage() {
     }
   };
 
+  /** Texte brut d'un message, pour l'assistant IA (il ne sait pas lire du HTML). */
+  const plainBodyOf = (message: any): string => {
+    if (message?.bodyText?.trim()) return message.bodyText;
+    if (message?.bodyHtml) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = message.bodyHtml;
+      return tmp.innerText || tmp.textContent || '';
+    }
+    return '';
+  };
+
   const handleReply = (message: any, replyAll: boolean = false) => {
     const replyTo = message.from ? [message.from] : [];
     const replyCC = replyAll && message.cc ? message.cc : [];
@@ -1523,6 +1534,11 @@ export default function MailPage() {
       accountId: accountId || selectedAccount?.id,
       inReplyToUid: message.uid,
       inReplyToFolder: folder,
+      aiSource: {
+        subject: message.subject,
+        from: message.from?.name || message.from?.address,
+        body: plainBodyOf(message),
+      },
     });
   };
 
@@ -1545,6 +1561,11 @@ export default function MailPage() {
         ${message.bodyHtml || message.bodyText || ''}
       </div>`,
       accountId: accountId || selectedAccount?.id,
+      aiSource: {
+        subject: message.subject,
+        from: message.from?.name || message.from?.address,
+        body: plainBodyOf(message),
+      },
     });
   };
 
