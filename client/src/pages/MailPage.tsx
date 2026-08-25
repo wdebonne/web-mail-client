@@ -883,6 +883,14 @@ export default function MailPage() {
         }
       }
       useMailStore.setState({ messages: updated });
+
+      // La liste visible est rétablie, mais le cache local a déjà oublié ces
+      // messages et on ne peut pas les y réinsérer depuis le store. Un delta
+      // forcé rétablit la vérité : sans `force`, il constaterait un dossier
+      // structurellement inchangé — la suppression ayant échoué côté serveur —
+      // et ne redescendrait rien avant le balayage suivant.
+      void runDeltaSync({ force: true }).catch(() => {});
+
       const n = failed.length;
       toast.error(`${n} message${n > 1 ? 's' : ''} n'ont pas pu être supprimés`);
     }
@@ -1108,6 +1116,9 @@ export default function MailPage() {
 
     if (errorCount > 0) {
       useMailStore.setState({ messages: snapshot });
+      // Même raison que dans `flushPendingDeletes` : le cache local les a
+      // oubliés, seul un relevé forcé peut les y ramener.
+      void runDeltaSync({ force: true }).catch(() => {});
       // Restore unseen counters for all groups on error
       for (const { accountId, folder, count } of unseenAdjustments) {
         queryClient.setQueryData(['folder-status', accountId], (old: any) => {
@@ -1567,52 +1578,63 @@ export default function MailPage() {
     const withOrigin = (full: any) =>
       message._accountId ? { ...full, _accountId: message._accountId, _folder: message._folder } : full;
 
-    // Chargement du message complet. En ligne, on passe toujours par
-    // `getMessage` : c'est lui qui rend fidèlement le message, images inline
-    // comprises, là où le corps mis en cache est une extraction allégée
-    // destinée à la recherche et à la lecture hors-ligne.
-    if (isOnline) {
-      try {
-        const full = await api.getMessage(accountId, message.uid, folder);
-        openMessageTab(withOrigin(full));
+    // La requête réseau part **avant** toute autre chose : rien ne doit
+    // retarder son départ, surtout pas une lecture de cache.
+    let networkSettled = false;
+    const networkPromise: Promise<any> = (
+      isOnline
+        ? api.getMessage(accountId, message.uid, folder)
+        : Promise.resolve(null)
+    )
+      .catch(() => null)
+      .finally(() => { networkSettled = true; });
 
-        // Le corps rendu alimente aussi le cache : un message ouvert devient
-        // cherchable dans son contenu sans attendre le remplissage de fond.
-        void offlineDB
-          .putBodies(accountId, folder, [{
-            uid: message.uid,
-            bodyText: full.bodyText || '',
-            bodyHtml: full.bodyHtml || '',
-            attachments: (full.attachments || []).map((a: any) => ({
-              filename: a.filename,
-              contentType: a.contentType,
-              size: a.size,
-              contentId: a.contentId,
-              inline: !!a.contentId,
-            })),
-          }])
-          .catch(() => { /* non bloquant */ });
-        return;
-      } catch {
-        // On retombe sur le cache ci-dessous plutôt que de laisser un volet vide.
-      }
-    }
-
-    // Hors-ligne, ou serveur injoignable : le corps mis en cache prend le relais.
+    // 1. Peinture immédiate depuis le cache local, quand il détient déjà ce
+    //    corps. Une lecture IndexedDB coûte quelques millisecondes là où un
+    //    aller-retour IMAP en coûte plusieurs centaines : le texte du message
+    //    s'affiche sans attente, au lieu d'un volet vide.
     try {
       const cached = await offlineDB.getBody(accountId, folder, message.uid);
-      if (cached) {
+      // Si le réseau a déjà répondu entre-temps, ne pas repeindre par-dessus
+      // avec la version allégée — ce serait un retour en arrière visible.
+      if (cached && !networkSettled) {
         openMessageTab(withOrigin({
           ...message,
           bodyText: cached.bodyText,
           bodyHtml: cached.bodyHtml,
           attachments: cached.attachments || [],
-          fromCache: true,
+          ...(isOnline ? {} : { fromCache: true }),
         }));
       }
     } catch {
-      /* rien de plus à proposer */
+      /* le réseau prend le relais */
     }
+
+    // 2. Puis la version du serveur, qui remplace la précédente. Elle seule
+    //    porte les images inline et le contenu des pièces jointes : le corps en
+    //    cache est une extraction allégée, faite pour la recherche et la
+    //    lecture hors-ligne, pas pour le rendu fidèle.
+    const full = await networkPromise;
+    if (!full) return;
+
+    openMessageTab(withOrigin(full));
+
+    // Le corps rendu alimente aussi le cache : un message ouvert devient
+    // cherchable dans son contenu sans attendre le remplissage de fond.
+    void offlineDB
+      .putBodies(accountId, folder, [{
+        uid: message.uid,
+        bodyText: full.bodyText || '',
+        bodyHtml: full.bodyHtml || '',
+        attachments: (full.attachments || []).map((a: any) => ({
+          filename: a.filename,
+          contentType: a.contentType,
+          size: a.size,
+          contentId: a.contentId,
+          inline: !!a.contentId,
+        })),
+      }])
+      .catch(() => { /* non bloquant */ });
   };
 
   /** Texte brut d'un message, pour l'assistant IA (il ne sait pas lire du HTML). */
