@@ -58,6 +58,123 @@ function parseAddressFromHeaders(headerBlock: string): { address: string; name: 
   return null;
 }
 
+/**
+ * FETCH query shared by every path that produces a message summary: the folder
+ * listing and the incremental-sync endpoints. A single definition is what
+ * guarantees a message served from the local cache and one served from a live
+ * listing can never be shaped differently.
+ */
+const MESSAGE_SUMMARY_QUERY = {
+  uid: true,
+  flags: true,
+  envelope: true,
+  bodyStructure: true,
+  size: true,
+} as const;
+
+/** Bit values used to ship IMAP flags compactly during incremental sync. */
+export const FLAG_SEEN = 1;
+export const FLAG_FLAGGED = 2;
+export const FLAG_ANSWERED = 4;
+export const FLAG_DRAFT = 8;
+
+/** Hard ceiling on a cached body part. Past this it is noise for search and
+ *  dead weight in the browser's storage quota. */
+const MAX_BODY_BYTES = 512 * 1024;
+
+export interface FolderSyncState {
+  /** Kept as a string: imapflow exposes UIDVALIDITY as a BigInt, and narrowing
+   *  it to a Number would silently corrupt large values. Compare as strings. */
+  uidValidity: string;
+  uidNext: number;
+  messages: number;
+  highestModseq?: string;
+}
+
+export interface FolderUidFlags extends FolderSyncState {
+  /** `[uid, bitmask]` pairs, sorted by UID. */
+  uids: Array<[number, number]>;
+}
+
+export interface AttachmentMeta {
+  filename: string;
+  contentType: string;
+  size: number;
+  contentId?: string;
+  inline: boolean;
+}
+
+export interface MessageBody {
+  uid: number;
+  bodyText: string;
+  bodyHtml: string;
+  attachments: AttachmentMeta[];
+  /** True when a body part hit {@link MAX_BODY_BYTES} and was cut short. */
+  truncated: boolean;
+}
+
+interface BodyPartPick {
+  html?: { part: string; charset?: string };
+  text?: { part: string; charset?: string };
+  attachments: AttachmentMeta[];
+}
+
+/**
+ * Walk an imapflow BODYSTRUCTURE to decide what is worth downloading: the best
+ * text/html and text/plain parts, plus **metadata only** for everything else.
+ * Attachment bytes are never fetched - that is the whole point of this pass.
+ */
+function walkBodyStructure(node: any, pick: BodyPartPick, isRoot = false): void {
+  if (!node) return;
+
+  if (Array.isArray(node.childNodes) && node.childNodes.length > 0) {
+    for (const child of node.childNodes) walkBodyStructure(child, pick, false);
+    return;
+  }
+
+  // A non-multipart message has no `part` on its root node; its body is part 1.
+  const part: string | undefined = node.part || (isRoot ? '1' : undefined);
+  if (!part) return;
+
+  const type = String(node.type || '').toLowerCase();
+  const disposition = String(node.disposition || '').toLowerCase();
+  const filename = node.dispositionParameters?.filename || node.parameters?.name;
+  const isTextBody =
+    (type === 'text/html' || type === 'text/plain') && disposition !== 'attachment';
+
+  if (!isTextBody) {
+    pick.attachments.push({
+      filename: filename || 'sans-nom',
+      contentType: type || 'application/octet-stream',
+      size: Number(node.size) || 0,
+      ...(node.id ? { contentId: String(node.id).replace(/^<|>$/g, '') } : {}),
+      inline: disposition === 'inline',
+    });
+    return;
+  }
+
+  const charset = node.parameters?.charset;
+  if (type === 'text/html') {
+    if (!pick.html) pick.html = { part, charset };
+  } else if (!pick.text) {
+    pick.text = { part, charset };
+  }
+}
+
+/**
+ * Decode a raw body part. Node 20+ official images ship with full ICU, so
+ * TextDecoder handles the legacy charsets that still show up in mail
+ * (ISO-8859-1, windows-1252, koi8-r...) without pulling in a dependency.
+ */
+function decodeCharset(buffer: Buffer, charset?: string): string {
+  const label = (charset || 'utf-8').trim().toLowerCase();
+  try {
+    return new TextDecoder(label).decode(buffer);
+  } catch {
+    return buffer.toString('utf8');
+  }
+}
+
 interface MailAccount {
   email: string;
   name: string;
@@ -258,67 +375,16 @@ export class MailService {
         // the raw From/Sender/Reply-To headers in a second pass to fill them in.
         const missingFromUids: number[] = [];
 
-        for await (const msg of client.fetch(range, {
-          uid: true,
-          flags: true,
-          envelope: true,
-          bodyStructure: true,
-          size: true,
-        })) {
-          const envelope = msg.envelope!;
-          const from = pickFirstAddress(envelope.from)
-            || pickFirstAddress((envelope as any).sender)
-            || pickFirstAddress((envelope as any).replyTo);
-          if (!from) missingFromUids.push(msg.uid);
-          messages.push({
-            uid: msg.uid,
-            messageId: envelope.messageId,
-            subject: envelope.subject,
-            from,
-            to: envelope.to?.map((addr: any) => ({
-              address: addr.address,
-              name: addr.name,
-            })),
-            cc: envelope.cc?.map((addr: any) => ({
-              address: addr.address,
-              name: addr.name,
-            })),
-            date: envelope.date,
-            flags: {
-              seen: msg.flags!.has('\\Seen'),
-              flagged: msg.flags!.has('\\Flagged'),
-              answered: msg.flags!.has('\\Answered'),
-              draft: msg.flags!.has('\\Draft'),
-            },
-            hasAttachments: this.hasAttachments(msg.bodyStructure),
-            largestAttachmentSize: this.getLargestAttachmentSize(msg.bodyStructure),
-            size: msg.size,
-            snippet: '',
-          });
+        for await (const msg of client.fetch(range, MESSAGE_SUMMARY_QUERY)) {
+          const summary = this.toMessageSummary(msg);
+          if (!summary.from) missingFromUids.push(msg.uid);
+          messages.push(summary);
         }
 
         // Second pass: for messages whose IMAP envelope had no usable address
         // (malformed RFC-2822 group syntax, missing FROM, etc.), parse the raw
         // From/Sender/Reply-To headers so the UI no longer shows "Inconnu".
-        if (missingFromUids.length > 0) {
-          try {
-            const uidSet = missingFromUids.join(',');
-            for await (const hMsg of client.fetch(uidSet, {
-              uid: true,
-              headers: ['from', 'sender', 'reply-to', 'return-path'],
-            } as any, { uid: true })) {
-              const raw = (hMsg as any).headers;
-              if (!raw) continue;
-              const headerText = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw);
-              const addr = parseAddressFromHeaders(headerText);
-              if (!addr) continue;
-              const target = messages.find((m) => m.uid === hMsg.uid);
-              if (target && !target.from) target.from = addr;
-            }
-          } catch (err) {
-            logger.warn({ err }, '[mail] header fallback fetch failed');
-          }
-        }
+        await this.fillMissingSenders(client, messages, missingFromUids);
 
         return {
           messages: messages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
@@ -1154,6 +1220,303 @@ export class MailService {
       await client.logout();
     }
   }
+  /**
+   * Project an imapflow FETCH result into the message summary shape the client
+   * consumes. Shared by `getMessages` and the incremental-sync endpoints so a
+   * message that arrives from the local cache and one that arrives from a live
+   * listing are indistinguishable.
+   */
+  private toMessageSummary(msg: any) {
+    const envelope: any = msg.envelope || {};
+    const flags: Set<string> = msg.flags || new Set<string>();
+    const from = pickFirstAddress(envelope.from)
+      || pickFirstAddress(envelope.sender)
+      || pickFirstAddress(envelope.replyTo);
+
+    return {
+      uid: msg.uid,
+      messageId: envelope.messageId,
+      subject: envelope.subject,
+      from,
+      to: envelope.to?.map((addr: any) => ({
+        address: addr.address,
+        name: addr.name,
+      })),
+      cc: envelope.cc?.map((addr: any) => ({
+        address: addr.address,
+        name: addr.name,
+      })),
+      date: envelope.date,
+      flags: {
+        seen: flags.has('\\Seen'),
+        flagged: flags.has('\\Flagged'),
+        answered: flags.has('\\Answered'),
+        draft: flags.has('\\Draft'),
+      },
+      hasAttachments: this.hasAttachments(msg.bodyStructure),
+      largestAttachmentSize: this.getLargestAttachmentSize(msg.bodyStructure),
+      size: msg.size,
+      snippet: '',
+    };
+  }
+
+  /**
+   * For messages whose IMAP envelope yielded no usable address (malformed
+   * RFC-2822 group syntax, missing FROM, unusual encoding), parse the raw
+   * From/Sender/Reply-To headers so the UI no longer shows "Inconnu".
+   * Reuses the caller's already-open connection and mailbox lock.
+   */
+  private async fillMissingSenders(client: ImapFlow, messages: any[], missingFromUids: number[]) {
+    if (missingFromUids.length === 0) return;
+    try {
+      const uidSet = missingFromUids.join(',');
+      for await (const hMsg of client.fetch(uidSet, {
+        uid: true,
+        headers: ['from', 'sender', 'reply-to', 'return-path'],
+      } as any, { uid: true })) {
+        const raw = (hMsg as any).headers;
+        if (!raw) continue;
+        const headerText = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw);
+        const addr = parseAddressFromHeaders(headerText);
+        if (!addr) continue;
+        const target = messages.find((m) => m.uid === hMsg.uid);
+        if (target && !target.from) target.from = addr;
+      }
+    } catch (err) {
+      logger.warn({ err }, '[mail] header fallback fetch failed');
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Synchronisation incrémentale
+  //
+  // Ces primitives sont **sans état** côté serveur : c'est le client qui
+  // conserve, pour chaque dossier, le dernier UIDVALIDITY/UIDNEXT observé et la
+  // liste des UID qu'il détient. Le serveur répond seulement « voici l'état
+  // actuel » ; le calcul du delta se fait là où l'ancien état est connu, ce qui
+  // évite une table de synchro par utilisateur et rend la reprise après
+  // interruption naturelle.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * STATUS de chaque dossier sélectionnable, sur **une seule connexion IMAP**.
+   *
+   * C'est la sonde bon marché de la synchro : UIDNEXT ne fait que croître, donc
+   * s'il est inchangé aucun message n'a été ajouté ; combiné à un nombre de
+   * messages inchangé, cela exclut aussi toute suppression. Le raccourci est
+   * exact, pas heuristique — et il permet de ne rien demander de plus pour la
+   * grande majorité des dossiers, à chaque cycle.
+   */
+  async getFoldersSyncState(only?: string[]): Promise<Record<string, FolderSyncState>> {
+    const wanted = only?.length ? new Set(only) : null;
+    const client = this.createImapClient();
+    const out: Record<string, FolderSyncState> = {};
+    try {
+      await client.connect();
+      const folders = await client.list();
+      for (const f of folders) {
+        if (wanted && !wanted.has(f.path)) continue;
+        // Skip non-selectable containers (e.g. "[Gmail]") — STATUS returns NO.
+        const flags = f.flags ? Array.from(f.flags) : [];
+        if (flags.includes('\\Noselect') || flags.includes('\\NonExistent')) continue;
+        try {
+          const s: any = await client.status(f.path, {
+            uidValidity: true,
+            uidNext: true,
+            messages: true,
+            highestModseq: true,
+          });
+          out[f.path] = {
+            uidValidity: String(s?.uidValidity ?? ''),
+            uidNext: Number(s?.uidNext) || 0,
+            messages: Number(s?.messages) || 0,
+            ...(s?.highestModseq != null ? { highestModseq: String(s.highestModseq) } : {}),
+          };
+        } catch {
+          // Une défaillance sur un dossier ne doit pas casser tout le balayage.
+        }
+      }
+      return out;
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * UID + drapeaux de **tous** les messages d'un dossier, en une seule commande.
+   *
+   * Les drapeaux voyagent en masque binaire : pour 10 000 messages,
+   * `[[4102,3],…]` pèse ~120 Ko contre ~900 Ko avec des objets nommés. C'est ce
+   * qui rend acceptable la vérification d'un dossier entier à chaque delta sans
+   * dépendre de CONDSTORE, que beaucoup de serveurs n'annoncent pas.
+   */
+  async listFolderUidFlags(folder: string): Promise<FolderUidFlags> {
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const mailbox: any = client.mailbox || {};
+        const uids: Array<[number, number]> = [];
+
+        if ((Number(mailbox.exists) || 0) > 0) {
+          for await (const msg of client.fetch('1:*', { uid: true, flags: true })) {
+            const flags: Set<string> = msg.flags || new Set<string>();
+            let bits = 0;
+            if (flags.has('\\Seen')) bits |= FLAG_SEEN;
+            if (flags.has('\\Flagged')) bits |= FLAG_FLAGGED;
+            if (flags.has('\\Answered')) bits |= FLAG_ANSWERED;
+            if (flags.has('\\Draft')) bits |= FLAG_DRAFT;
+            uids.push([msg.uid, bits]);
+          }
+        }
+        uids.sort((a, b) => a[0] - b[0]);
+
+        return {
+          uidValidity: String(mailbox.uidValidity ?? ''),
+          uidNext: Number(mailbox.uidNext) || 0,
+          messages: Number(mailbox.exists) || 0,
+          ...(mailbox.highestModseq != null ? { highestModseq: String(mailbox.highestModseq) } : {}),
+          uids,
+        };
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * Enveloppes d'un lot d'UID précis, sur une seule connexion IMAP.
+   * Forme de retour strictement identique à celle de `getMessages`.
+   */
+  async fetchEnvelopes(folder: string, uids: number[]) {
+    if (uids.length === 0) return [];
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const messages: any[] = [];
+        const missingFromUids: number[] = [];
+
+        for await (const msg of client.fetch(uids.join(','), MESSAGE_SUMMARY_QUERY, { uid: true })) {
+          const summary = this.toMessageSummary(msg);
+          if (!summary.from) missingFromUids.push(msg.uid);
+          messages.push(summary);
+        }
+
+        await this.fillMissingSenders(client, messages, missingFromUids);
+        return messages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * Télécharge une partie texte et la décode. Le flux est toujours consommé
+   * jusqu'au bout même quand on tronque : interrompre la lecture laisserait la
+   * connexion IMAP sur une réponse partiellement lue.
+   */
+  private async downloadTextPart(
+    client: ImapFlow,
+    uid: number,
+    pick?: { part: string; charset?: string },
+  ): Promise<{ value: string; truncated: boolean }> {
+    if (!pick) return { value: '', truncated: false };
+    try {
+      // `maxBytes` fait couper imapflow lui-même : sur une partie texte
+      // anormalement grosse, les octets excédentaires ne traversent jamais le
+      // réseau, au lieu d'être téléchargés puis jetés.
+      const dl: any = await client.download(String(uid), pick.part, {
+        uid: true,
+        maxBytes: MAX_BODY_BYTES,
+      });
+      if (!dl?.content) return { value: '', truncated: false };
+
+      const chunks: Buffer[] = [];
+      let kept = 0;
+      for await (const chunk of dl.content) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        chunks.push(buf);
+        kept += buf.length;
+      }
+
+      const expected = Number(dl.meta?.expectedSize) || 0;
+      const charset = dl.meta?.charset || pick.charset;
+      return {
+        value: decodeCharset(Buffer.concat(chunks), charset),
+        truncated: expected > kept,
+      };
+    } catch (err) {
+      logger.warn({ err, uid, part: pick.part }, '[mail] body part download failed');
+      return { value: '', truncated: false };
+    }
+  }
+
+  /**
+   * Corps texte + HTML d'un lot d'UID, **sans jamais rapatrier les octets des
+   * pièces jointes** — seulement leurs métadonnées.
+   *
+   * Volontairement distinct de `getMessage`, qui fait `source: true` puis
+   * `simpleParser` : sur un message de 8 Mo dont le corps fait 12 Ko, celui-ci
+   * télécharge 12 Ko. Appliqué à des milliers de messages, la différence est ce
+   * qui rend le cache complet réalisable.
+   *
+   * Ce chemin alimente le cache et l'index de recherche. L'ouverture d'un
+   * message par l'utilisateur continue de passer par `getMessage`, qui garde le
+   * rendu fidèle avec ses images inline : une extraction imparfaite sur un
+   * message exotique dégrade la recherche, jamais l'affichage.
+   */
+  async fetchBodies(folder: string, uids: number[]): Promise<MessageBody[]> {
+    if (uids.length === 0) return [];
+    const client = this.createImapClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        // Passe 1 — la structure seule, pour savoir quoi télécharger.
+        const picks = new Map<number, BodyPartPick>();
+        for await (const msg of client.fetch(
+          uids.join(','),
+          { uid: true, bodyStructure: true, size: true } as any,
+          { uid: true },
+        )) {
+          const pick: BodyPartPick = { attachments: [] };
+          walkBodyStructure((msg as any).bodyStructure, pick, true);
+          picks.set(msg.uid, pick);
+        }
+
+        // Passe 2 — les seules parties texte, séquentiellement : imapflow
+        // sérialise les commandes sur une connexion, et deux `download`
+        // concurrents s'y bloqueraient mutuellement.
+        const out: MessageBody[] = [];
+        for (const uid of uids) {
+          const pick = picks.get(uid);
+          if (!pick) continue;
+          const html = await this.downloadTextPart(client, uid, pick.html);
+          const text = await this.downloadTextPart(client, uid, pick.text);
+          out.push({
+            uid,
+            bodyText: text.value,
+            bodyHtml: html.value,
+            attachments: pick.attachments,
+            truncated: html.truncated || text.truncated,
+          });
+        }
+        return out;
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
 }
 
 export interface JunkMeta {

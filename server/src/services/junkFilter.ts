@@ -3,6 +3,7 @@ import { logger } from '../utils/logger';
 import { decrypt } from '../utils/encryption';
 import { MailService, JunkMeta } from './mail';
 import { markServiceStarted, markServiceStopped, markServiceTick } from './serviceStatus';
+import { forgetCachedEmail } from '../utils/emailCache';
 
 /**
  * Filtre « courrier indésirable ».
@@ -434,6 +435,9 @@ export async function applyJunkFilter(
     if (!junkFolder) junkFolder = await resolveJunkFolder(service, account.id);
     try {
       await service.moveMessage('INBOX', meta.uid, junkFolder);
+      // Le message n'est plus dans INBOX : sans cette purge, sa ligne de cache
+      // y survivrait et continuerait de remonter dans les recherches.
+      await forgetCachedEmail(account.id, 'INBOX', meta.uid);
       moved.push(meta.uid);
       logger.info(
         { accountId: account.id, uid: meta.uid, reason: verdict.reason },

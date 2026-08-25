@@ -1,6 +1,7 @@
 import { pool } from '../database/connection';
 import { logger } from '../utils/logger';
 import { MailService } from './mail';
+import { forgetCachedEmail } from '../utils/emailCache';
 
 /**
  * Mail rules engine — Outlook-style "Rules" applied to incoming messages.
@@ -373,6 +374,8 @@ async function runAction(
     case 'moveToFolder': {
       if (!action.folder) return;
       await service.moveMessage('INBOX', uid, action.folder);
+      // Le message quitte INBOX : sa ligne de cache doit partir avec lui.
+      await forgetCachedEmail(accountRow.id, 'INBOX', uid);
       return;
     }
     case 'copyToFolder': {
@@ -387,10 +390,12 @@ async function runAction(
       } catch {
         await service.deleteMessage('INBOX', uid);
       }
+      await forgetCachedEmail(accountRow.id, 'INBOX', uid);
       return;
     }
     case 'permanentlyDelete': {
       await service.deleteMessage('INBOX', uid);
+      await forgetCachedEmail(accountRow.id, 'INBOX', uid);
       return;
     }
     case 'markAsRead': {

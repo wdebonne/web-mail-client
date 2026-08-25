@@ -158,7 +158,12 @@ export async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_cached_emails_account ON cached_emails(account_id);
       CREATE INDEX IF NOT EXISTS idx_cached_emails_folder ON cached_emails(account_id, folder);
       CREATE INDEX IF NOT EXISTS idx_cached_emails_date ON cached_emails(date DESC);
-      CREATE INDEX IF NOT EXISTS idx_cached_emails_search ON cached_emails USING GIN(to_tsvector('french', coalesce(subject,'') || ' ' || coalesce(from_name,'') || ' ' || coalesce(body_text,'')));
+      -- L'index tsvector qui vivait ici n'a jamais servi : /api/search interroge
+      -- la table en ILIKE '%...%', que Postgres ne peut pas satisfaire avec un
+      -- index de recherche plein texte. Il ne coûtait que du temps d'écriture.
+      -- Il est remplacé plus bas par des index trigrammes, eux réellement
+      -- utilisables par un ILIKE (voir le bloc pg_trgm en fin d'initialisation).
+      DROP INDEX IF EXISTS idx_cached_emails_search;
 
       -- Remove pre-existing duplicate rows before adding the unique index.
       DELETE FROM cached_emails
@@ -1196,6 +1201,29 @@ export async function initDatabase() {
         ('junk_default_purge_days',   '30',       'Vidage automatique du dossier Indésirables après N jours (0 = jamais)')
       ON CONFLICT (key) DO NOTHING;
     `);
+
+    // ── Index trigrammes pour la recherche serveur ──────────────────────
+    // pg_trgm est une extension « trusted » depuis PostgreSQL 13 : le
+    // propriétaire de la base peut la créer sans être superutilisateur, et
+    // l'image postgres:16-alpine embarque contrib. Une base gérée par un
+    // hébergeur peut malgré tout refuser — on dégrade alors proprement, la
+    // recherche continue de fonctionner, simplement en parcours séquentiel.
+    try {
+      await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+      await client.query(
+        `CREATE INDEX IF NOT EXISTS idx_cached_emails_subject_trgm
+           ON cached_emails USING gin (subject gin_trgm_ops)`,
+      );
+      await client.query(
+        `CREATE INDEX IF NOT EXISTS idx_cached_emails_sender_trgm
+           ON cached_emails USING gin (from_name gin_trgm_ops, from_address gin_trgm_ops)`,
+      );
+    } catch (err) {
+      logger.warn(
+        { err },
+        'pg_trgm indisponible : la recherche serveur restera en parcours séquentiel',
+      );
+    }
 
     logger.info('Database schema created/updated successfully');
   } finally {

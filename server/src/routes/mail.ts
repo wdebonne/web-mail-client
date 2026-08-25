@@ -184,9 +184,12 @@ mailRouter.get('/accounts/:accountId/messages/:uid', async (req: AuthRequest, re
     // Fallback to cache
     try {
       const { accountId, uid } = req.params;
+      const folder = (req.query.folder as string) || 'INBOX';
+      // Le dossier fait partie de l'identité d'un message : un même UID existe
+      // dans plusieurs dossiers, et l'omettre renvoyait parfois le mauvais.
       const cached = await pool.query(
-        'SELECT * FROM cached_emails WHERE account_id = $1 AND uid = $2',
-        [accountId, parseInt(uid)]
+        'SELECT * FROM cached_emails WHERE account_id = $1 AND uid = $2 AND folder = $3',
+        [accountId, parseInt(uid), folder]
       );
       if (cached.rows.length > 0) {
         return res.json({ ...cached.rows[0], fromCache: true });

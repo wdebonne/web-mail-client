@@ -39,37 +39,67 @@ WebMail est une **Progressive Web App** (PWA) complète qui permet :
 
 ## Cache local des dossiers et messages
 
-En complément du cache Workbox (réseau/assets), l'application entretient un **cache applicatif** dans IndexedDB qui pré-charge toute l'arborescence de vos boîtes mail pour rendre l'affichage instantané et permettre la consultation hors-ligne des messages déjà vus.
+Le poste conserve dans IndexedDB **l'intégralité** des messages de toutes les boîtes — en-têtes *et* corps. C'est cette base qui sert l'affichage des listes et la recherche : le réseau n'intervient plus que pour constater ce qui a changé.
 
-### Fonctionnement
+Les **octets des pièces jointes** ne sont pas pré-téléchargés : ils représentent l'essentiel du poids et presque rien de la valeur d'usage. Seules leurs métadonnées (nom, type, taille) sont en cache ; le fichier est récupéré à l'ouverture.
 
-- Démarré automatiquement ~4 secondes après la connexion (si le réseau est disponible), via [`syncAllCache()`](../client/src/services/cacheService.ts).
-- Parcourt chaque **compte mail** → chaque **dossier** (hors `\All` et `\Junk`) :
-  1. L'arborescence du compte est stockée dans la store IndexedDB `folders`.
-  2. La première page de chaque dossier est récupérée et les messages (sujet, expéditeur, date, snippet, métadonnées pièces jointes) sont stockés dans la store `emails`.
-- L'horodatage de la dernière synchro globale est persisté dans la store `meta` (clé `lastSync`).
-- Les **corps HTML complets** et les **octets de pièces jointes** ne sont pas pré-téléchargés — ils atterrissent en cache uniquement quand l'utilisateur ouvre le message / télécharge la pièce jointe.
+### Deux tâches, à ne pas confondre
 
-### Synchronisation incrémentale
+| Tâche | Durée | Rôle |
+|-------|-------|------|
+| **Delta** (`runDeltaSync`) | quelques secondes, toutes les 60 s | Constate ce qui a changé et ne rapatrie que cela |
+| **Remplissage** (`runBackfill`) | minutes à heures, une fois | Descend l'historique complet à la première synchro ou à l'ajout d'une boîte |
 
-Pour éviter de retélécharger l'intégralité du cache à chaque rafraîchissement de page, le service conserve une empreinte par dossier (`meta` → clé `folder:<accountId>:<path>`) contenant `syncedAt` + un fingerprint basé sur la liste triée `uid:seen:flagged` des messages.
+Chacune a sa propre barre de progression dans l'indicateur et dans *Réglages → Cache local* — une jauge qui sauterait de 3 % à 100 % ne voudrait rien dire.
 
-| Situation                                             | Action côté client                                   |
-|-------------------------------------------------------|------------------------------------------------------|
-| Dossier synchronisé depuis moins de **10 min**        | Sauté (aucun appel réseau)                           |
-| Dossier plus ancien mais **empreinte identique**      | Date rafraîchie, aucune écriture IndexedDB           |
-| Dossier plus ancien avec **empreinte différente**     | Messages réécrits dans IndexedDB                     |
-| Appel manuel avec `syncAllCache({ force: true })`     | Toutes les fraîcheurs sont ignorées                  |
+### Le delta
 
-La parallélisation est bornée à `FOLDER_CONCURRENCY = 4` dossiers simultanés. Le message de fin résume l'activité (*« Cache mis à jour — N actualisé(s), M inchangé(s) »* ou *« Cache déjà à jour »*).
+Un cycle commence par un `STATUS` par compte, sur **une seule connexion IMAP** (`POST /api/sync/accounts/:id/state`). La suite dépend de ce qu'il révèle :
 
-### Hydratation instantanée de la liste
+| Constat | Conclusion | Coût |
+|---------|-----------|------|
+| `uidValidity` différent | Le dossier a été renuméroté | Purge de **ce dossier seul**, puis remplissage |
+| CONDSTORE et `highestModseq` inchangé, nombre de messages inchangé | Rien n'a bougé, drapeaux compris | **Aucune requête** |
+| `uidNext` **et** nombre de messages inchangés | Ni ajout ni suppression possible | Relevé des drapeaux, espacé à 15 min |
+| Sinon | Ajouts et/ou suppressions | Relevé des UID, puis en-têtes des nouveaux |
 
-Lors d'un changement de dossier (ou au rechargement de la page), [`MailPage.tsx`](../client/src/pages/MailPage.tsx) lit synchroniquement `offlineDB.getEmails(accountId, folder)` et peuple le store `mailStore` **avant même que la requête réseau ne démarre**. L'utilisateur voit donc instantanément les messages déjà connus ; la requête React Query se déclenche en parallèle et ne fait que rafraîchir la liste si le serveur renvoie autre chose. Trois optimisations s'ajoutent :
+`uidNext` ne fait que croître : le voir inchangé **prouve** qu'aucun message n'a été ajouté ; combiné à un nombre de messages inchangé, cela exclut aussi toute suppression. Le raccourci est exact, pas heuristique.
 
-- `placeholderData: keepPreviousData` côté React Query — la liste précédente reste affichée pendant le rafraîchissement au lieu de clignoter en état vide ;
-- `staleTime: 2 min` — naviguer entre dossiers récemment consultés ne déclenche aucun appel réseau ;
-- les identifiants IndexedDB sont **toujours** au format composite `{accountId}-{folder}-{uid}` (côté `MailPage` et `cacheService`) afin d'éviter les collisions inter-dossiers (un même UID peut exister dans Boîte de réception et Brouillons).
+Le relevé des UID renvoie des couples `[uid, masque]`, les drapeaux tenant sur 4 bits (1 Seen, 2 Flagged, 4 Answered, 8 Draft) : pour 10 000 messages, ~120 Ko au lieu de ~900 Ko avec des objets nommés. C'est ce qui rend supportable la vérification d'un dossier entier sans dépendre de CONDSTORE, que beaucoup de serveurs n'annoncent pas. **Le serveur ne conserve aucun état de synchronisation** : c'est le poste, qui connaît l'état précédent, qui calcule la différence.
+
+### Le remplissage
+
+En-têtes par lots de 500, corps par lots de 25, en rendant la main au navigateur entre chaque lot. La progression est persistée après *chaque* lot : fermer l'onglet ne coûte que le lot en cours. Un bouton **Suspendre / Reprendre** est disponible, et la tâche s'arrête d'elle-même hors connexion.
+
+La récupération des corps lit la `BODYSTRUCTURE` et **ne télécharge que les parties texte** : sur un message de 8 Mo dont le corps fait 12 Ko, elle coûte 12 Ko. Ce corps allégé alimente le cache et l'index ; l'ouverture d'un message par l'utilisateur continue de passer par `getMessage`, qui rend fidèlement le message avec ses images inline.
+
+### Mise à jour de l'application
+
+Le schéma IndexedDB (v3) évolue en **ajoutant** magasins et index, sans jamais reconstruire l'existant. Une passe de rattrapage complète en tâche de fond les enregistrements hérités d'une version antérieure, en relisant sur place les corps déjà en cache. Une mise à jour ne provoque donc **aucun retéléchargement**.
+
+La clé `meta.tokenizerVersion` est distincte de la version du schéma : changer les règles de tokenisation invalide l'index de recherche sans invalider les données, et déclenche une ré-indexation locale.
+
+### Magasins IndexedDB
+
+| Magasin | Clé | Contenu |
+|---------|-----|---------|
+| `emails` | `{accountId}-{folder}-{uid}` | En-tête, aperçu, termes indexés |
+| `bodies` | idem | Corps texte + HTML, métadonnées de pièces jointes |
+| `syncState` | `[accountId, folder]` | `uidValidity`, `uidNext`, file de remplissage |
+
+Les corps sont dans un magasin **séparé** : afficher une liste de 50 messages ne doit jamais désérialiser 50 corps HTML, quel que soit le volume stocké. L'identifiant reste composite car un même UID peut exister dans plusieurs dossiers.
+
+### Affichage de la liste
+
+[`MailPage.tsx`](../client/src/pages/MailPage.tsx) lit une page directement dans IndexedDB, au curseur sur l'index `[accountId, folder, sortDate]` — sans jamais charger le dossier entier. Le delta est déclenché derrière, en arrière-plan, et ne prévient l'interface que s'il a constaté un changement. Tant qu'un dossier n'est pas rapatrié, le chemin réseau d'origine reste utilisé.
+
+`placeholderData: keepPreviousData` conserve la liste précédente pendant un rafraîchissement plutôt que de clignoter en état vide.
+
+### Quota et éviction
+
+Compter **30 à 60 Ko par message** avec son corps, plus environ 1,6 Ko d'index : une boîte de 50 000 messages occupe quelques giga-octets. Le stockage est marqué **persistant** (`navigator.storage.persist()`) dès la première synchro — sans cette marque, le navigateur peut évincer l'origine sous pression disque et réduire à néant des heures de remplissage.
+
+Au-delà de 85 % du quota, les **corps** les plus anciens sont évincés ; jamais les en-têtes, qui sont légers et sont ce qui fait vivre l'affichage, alors qu'un corps se retélécharge à l'ouverture. Le message reste listable et trouvable par son objet.
 
 ### Pagination & chargement complet d'une boîte mail
 
@@ -148,6 +178,7 @@ Le Service Worker lui-même est écrit en TypeScript dans [`client/src/sw.ts`](.
 | Images | **Cache First** | Cache 7 jours, fallback réseau |
 | Polices | **Cache First** | Cache 30 jours |
 | API GET | **Network First** | Réseau d'abord, fallback cache |
+| **`/api/mail/**`** | **Aucune** | Volontairement non mis en cache HTTP : IndexedDB contient les mêmes messages, corps compris, et sait les indexer, les trier et les évincer. Servir une liste périmée depuis un cache HTTP contredirait le protocole de synchronisation incrémentale. |
 | **`/api/calendar/events*`** | **Network First, sans stockage** | Route dédiée avec `cacheWillUpdate: () => null` — les réponses ne sont jamais persistées afin d'éviter qu'un refetch ne serve une version périmée après une mutation (drag & drop, édition). |
 | API POST/PUT/DELETE | **Network Only** | Réseau uniquement (ou queue offline) |
 

@@ -19,7 +19,13 @@ import AdminPage from './pages/AdminPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import SearchPage from './pages/SearchPage';
 import { listenForNotificationClicks } from './pwa/push';
-import { syncAllCache, refreshCacheStats, isCacheFresh } from './services/cacheService';
+import {
+  runDeltaSync,
+  runBackfill,
+  startCacheLoop,
+  reindexInBackground,
+  refreshCacheStats,
+} from './services/cacheService';
 import { startPrefsSync } from './services/prefsSync';
 import { startAppBadgeService, requestAppBadgeRefresh } from './services/appBadgeService';
 import { isTauri, updateTrayBadge, useTauriCompose, useTauriDeepLink } from './hooks/useTauri';
@@ -72,17 +78,28 @@ function App() {
     });
   }, [navigate]);
 
-  // Kick off a background cache sync a few seconds after the user is logged in,
-  // so the first mail interactions are already served from IndexedDB.
-  // Skip when the cache is already fresh (< 15 min) to avoid redundant API calls.
+  // Démarrage du cache local, une fois l'utilisateur connecté.
+  //
+  // Plus de test de fraîcheur ici : le delta est devenu si bon marché (un
+  // STATUS par compte, et rien de plus si rien n'a bougé) qu'il n'y a plus rien
+  // à économiser en le sautant. La boucle prend ensuite le relais et remplace
+  // le rafraîchissement périodique de la liste.
   useEffect(() => {
     if (!user || !isOnline) return;
     refreshCacheStats().catch(() => {});
-    const t = window.setTimeout(async () => {
-      if (await isCacheFresh().catch(() => false)) return;
-      syncAllCache().catch(() => {});
+
+    const t = window.setTimeout(() => {
+      // Rattrapage des enregistrements hérités d'une version antérieure du
+      // cache : rien n'est retéléchargé, les corps déjà présents sont relus.
+      void reindexInBackground();
+      void runDeltaSync().then(() => runBackfill()).catch(() => {});
     }, 1000);
-    return () => window.clearTimeout(t);
+
+    const stopLoop = startCacheLoop();
+    return () => {
+      window.clearTimeout(t);
+      stopLoop();
+    };
   }, [user, isOnline]);
 
   // Synchronise UI customisations (renames, ordering, colours, layout, signatures…)
