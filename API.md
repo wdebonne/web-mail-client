@@ -31,6 +31,7 @@ L'API utilise deux méthodes d'authentification :
 - [O2Switch cPanel](#o2switch-cpanel)
 - [Plugins](#plugins)
 - [Recherche unifiée](#recherche)
+- [Synchronisation du cache](#synchronisation-du-cache)
 - [Sauvegarde & restauration](#sauvegarde--restauration-admin)
 - [Notifications push](#notifications-push)
 - [LDAP](#ldap-admin)
@@ -2496,12 +2497,14 @@ Attribue un plugin à un utilisateur ou groupe.
 
 ### GET /api/search
 
-Recherche globale dans les emails mis en cache, les contacts et les événements de calendrier. La recherche e-mail s'effectue sur la table `cached_emails` (ILIKE). Pour une recherche en temps réel sur les messages IMAP non cachés, préférez le filtrage client-side disponible dans la vue Mail (`/mail?search=`).
+Recherche globale dans les emails mis en cache, les contacts et les événements de calendrier. La recherche e-mail s'effectue sur la table `cached_emails` en `ILIKE`, appuyée par des index trigrammes (`pg_trgm`).
+
+> ⚠️ **Portée limitée aux en-têtes.** `cached_emails` ne contient ni corps ni pièces jointes : cette route ne peut trouver que sur l'objet, l'expéditeur et les destinataires. La recherche dans le **contenu** des messages est assurée côté client sur le cache local complet du poste (voir [Synchronisation du cache](#synchronisation-du-cache) et `docs/PWA.md`). L'interface n'appelle cette route qu'en repli, tant qu'un dossier de la portée demandée n'est pas entièrement rapatrié localement.
 
 **Query params :**
 | Paramètre | Type | Défaut | Description |
 |-----------|------|--------|-------------|
-| `q` | string | — | **Requis.** Terme de recherche (min. 2 caractères). Recherche dans objet, expéditeur, corps du mail ; titre, description, lieu pour les événements ; nom, prénom, email, entreprise pour les contacts. |
+| `q` | string | — | **Requis.** Terme de recherche (min. 2 caractères). Recherche dans objet et expéditeur du mail (**pas le corps**, voir l'avertissement ci-dessus) ; titre, description, lieu pour les événements ; nom, prénom, email, entreprise pour les contacts. |
 | `type` | string | `all` | Portée : `all` \| `mail` \| `contacts` \| `events` |
 | `limit` | number | `20` | Nombre maximum de résultats par type (max `100`) |
 | `offset` | number | `0` | Décalage pour la pagination |
@@ -2569,6 +2572,89 @@ Recherche globale dans les emails mis en cache, les contacts et les événements
 **Erreurs :**
 - `200` avec tableaux vides — terme de recherche trop court (< 2 caractères).
 - `500` — erreur base de données.
+
+---
+
+## Synchronisation du cache
+
+> 🔒 Authentification requise
+
+Primitives permettant au client d'entretenir son cache local complet (en-têtes **et** corps de tous les messages) sans tout retélécharger à chaque fois.
+
+Ces routes sont **sans état côté serveur** : aucune table de synchronisation n'est créée ni maintenue. Le serveur répond « voici l'état actuel du dossier » ; c'est le client, qui détient l'état précédent dans IndexedDB, qui calcule la différence. Ce partage rend la synchronisation naturellement reprenable après interruption, et permet à plusieurs appareils du même utilisateur d'avancer à des rythmes différents sans interférer.
+
+L'accès passe par `getAccountForUser` : possession directe, attribution de boîte et partage sont tous honorés.
+
+### POST /api/sync/accounts/:accountId/state
+
+Sonde bon marché : un `STATUS` IMAP par dossier, sur **une seule connexion**. C'est le point d'entrée de tout cycle de synchronisation.
+
+**Body :** `{ "folders": ["INBOX", "Sent"] }` — facultatif ; omis, tous les dossiers sélectionnables sont renvoyés (ce qui permet aussi de découvrir un nouveau dossier).
+
+**Réponse `200` :**
+```json
+{
+  "folders": {
+    "INBOX": { "uidValidity": "1418733411", "uidNext": 4507, "messages": 3204, "highestModseq": "98140" }
+  }
+}
+```
+
+`uidValidity` et `highestModseq` sont des **chaînes** : IMAP les expose en 64 bits, et les convertir en `Number` corromprait silencieusement les grandes valeurs. Comparez-les en chaîne. `highestModseq` n'est présent que si le serveur IMAP annonce CONDSTORE.
+
+**Comment l'exploiter :** `uidNext` ne fait que croître. L'y voir inchangé prouve qu'aucun message n'a été ajouté ; combiné à un nombre de messages inchangé, cela exclut aussi toute suppression. Un `uidValidity` différent signifie que le dossier a été renuméroté — son cache local doit être purgé, **lui seul**.
+
+### GET /api/sync/accounts/:accountId/uidflags
+
+UID et drapeaux de **tous** les messages d'un dossier, en une commande.
+
+**Query params :** `folder` (défaut `INBOX`).
+
+**Réponse `200` :**
+```json
+{
+  "uidValidity": "1418733411", "uidNext": 4507, "messages": 3204,
+  "uids": [[4102, 3], [4103, 0], [4104, 1]]
+}
+```
+
+Chaque couple est `[uid, masque]`, le masque combinant `1` Seen, `2` Flagged, `4` Answered, `8` Draft. Pour 10 000 messages cela pèse ~120 Ko, contre ~900 Ko avec des objets nommés — c'est ce qui rend supportable la vérification d'un dossier entier sans dépendre de CONDSTORE.
+
+Le client en déduit par différence d'ensembles ce qui a été **supprimé** (UID connus absents de la réponse), **ajouté** (UID nouveaux) et **relu ailleurs** (masque différent).
+
+### POST /api/sync/accounts/:accountId/envelopes
+
+En-têtes d'un lot d'UID précis.
+
+**Body :** `{ "folder": "INBOX", "uids": [4505, 4506] }` — **500 UID maximum**.
+
+**Réponse `200` :** `{ "folder": "INBOX", "messages": [...] }`, où chaque élément a **exactement la forme** de ceux de `GET /api/mail/accounts/:id/messages`. C'est délibéré : un message servi depuis le cache local et un message servi par un listage direct doivent être indiscernables dans la liste.
+
+### POST /api/sync/accounts/:accountId/bodies
+
+Corps texte et HTML d'un lot d'UID, **sans les octets des pièces jointes**.
+
+**Body :** `{ "folder": "INBOX", "uids": [4505] }` — **25 UID maximum** (le téléchargement se fait partie par partie).
+
+**Réponse `200` :**
+```json
+{
+  "folder": "INBOX",
+  "bodies": [{
+    "uid": 4505,
+    "bodyText": "Bonjour…",
+    "bodyHtml": "<p>Bonjour…</p>",
+    "attachments": [{ "filename": "devis.pdf", "contentType": "application/pdf", "size": 84213, "inline": false }],
+    "truncated": false
+  }]
+}
+```
+
+La route lit la `BODYSTRUCTURE` et ne rapatrie que les parties texte : sur un message de 8 Mo dont le corps fait 12 Ko, elle coûte 12 Ko. Les pièces jointes ne sont décrites que par leurs métadonnées ; leurs octets se récupèrent via `GET /api/mail/accounts/:id/messages/:uid`.
+
+`truncated` vaut `true` au-delà de 512 Ko de texte pour une partie — au-delà, c'est du bruit pour l'indexation et du poids inutile.
+
+> Cette extraction alimente le cache et l'index de recherche. **L'ouverture d'un message par l'utilisateur continue de passer par `GET /api/mail/accounts/:id/messages/:uid`**, qui rend fidèlement le message avec ses images inline. Une extraction imparfaite sur un message exotique dégrade donc la recherche, jamais l'affichage.
 
 ---
 

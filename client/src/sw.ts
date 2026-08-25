@@ -111,10 +111,16 @@ registerRoute(
 );
 
 // Runtime caches for API endpoints
-registerRoute(
-  ({ url }) => url.pathname.startsWith('/api/mail/'),
-  new NetworkFirst({ cacheName: 'mail-cache', networkTimeoutSeconds: 10 }),
-);
+//
+// `/api/mail/**` n'est volontairement plus mis en cache ici. Ce cache HTTP
+// n'avait ni plafond d'entrées ni durée de vie : il grossissait sans limite, et
+// « Purger le cache » ne le vidait même pas. Surtout, il fait désormais double
+// emploi avec IndexedDB, qui contient les mêmes messages — corps compris —
+// mais sait les indexer, les trier et les évincer intelligemment.
+//
+// Pire : servir une liste de messages périmée depuis ce cache contredirait le
+// protocole de synchronisation incrémentale, qui raisonne sur l'état réel du
+// dossier. Le hors-ligne est assuré par les replis IndexedDB de MailPage.
 registerRoute(
   ({ url }) => url.pathname.startsWith('/api/contacts/'),
   new StaleWhileRevalidate({ cacheName: 'contacts-cache' }),
@@ -151,7 +157,14 @@ self.addEventListener('install', () => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      await self.clients.claim();
+      // Récupère l'espace déjà accumulé par l'ancien cache `/api/mail/**` chez
+      // les utilisateurs existants — il pouvait peser plusieurs centaines de Mo.
+      await caches.delete('mail-cache').catch(() => false);
+    })(),
+  );
 });
 
 // --- Web Push handling --------------------------------------------------

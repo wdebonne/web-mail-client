@@ -1,58 +1,82 @@
 import { create } from 'zustand';
 import type { CacheStats } from '../pwa/offlineDB';
 
-export type CachePhase = 'idle' | 'accounts' | 'folders' | 'messages' | 'done' | 'error';
+export type TaskPhase = 'idle' | 'running' | 'done' | 'error';
+
+/**
+ * Deux tâches de nature très différentes cohabitent, et les confondre donnerait
+ * une barre de progression illisible :
+ *
+ *  - le **delta** est court et fréquent (quelques secondes, toutes les minutes) ;
+ *  - le **backfill** est long et rare (la première synchro d'une boîte, ou
+ *    l'ajout d'un compte), s'interrompt et reprend.
+ *
+ * Chacune a donc son propre état.
+ */
+export interface CacheTaskState {
+  running: boolean;
+  phase: TaskPhase;
+  /** Libellé court de l'action en cours (« Réception — Fred Pro »). */
+  label: string;
+  /** Progression de 0 à 100. */
+  progress: number;
+  processed: number;
+  total: number;
+  error: string | null;
+}
+
+const idleTask = (): CacheTaskState => ({
+  running: false,
+  phase: 'idle',
+  label: '',
+  progress: 0,
+  processed: 0,
+  total: 0,
+  error: null,
+});
+
+export type CacheTaskName = 'delta' | 'backfill';
 
 interface CacheState {
-  isRunning: boolean;
-  phase: CachePhase;
-  /** Short label describing the current action (e.g. "Dossier Inbox — Fred Pro"). */
-  currentLabel: string;
-  /** Progress from 0 to 100. */
-  progress: number;
-  /** Number of items processed during the current sync. */
-  processedItems: number;
-  totalItems: number;
-  lastError: string | null;
+  delta: CacheTaskState;
+  backfill: CacheTaskState;
+  /** Backfill suspendu par l'utilisateur — respecté entre deux lots. */
+  backfillPaused: boolean;
   lastSyncAt: string | null;
   stats: CacheStats | null;
 
-  setRunning: (running: boolean) => void;
-  update: (patch: Partial<Omit<CacheState, keyof ReturnType<typeof actionsShape>>>) => void;
+  patchTask: (task: CacheTaskName, patch: Partial<CacheTaskState>) => void;
+  resetTask: (task: CacheTaskName) => void;
+  setBackfillPaused: (paused: boolean) => void;
   setStats: (stats: CacheStats | null) => void;
   reset: () => void;
 }
 
-// Phantom helper so TS understands which keys are actions vs data.
-const actionsShape = () => ({
-  setRunning: (_: boolean) => {},
-  update: (_: any) => {},
-  setStats: (_: any) => {},
-  reset: () => {},
-});
-
 export const useCacheStore = create<CacheState>((set) => ({
-  isRunning: false,
-  phase: 'idle',
-  currentLabel: '',
-  progress: 0,
-  processedItems: 0,
-  totalItems: 0,
-  lastError: null,
+  delta: idleTask(),
+  backfill: idleTask(),
+  backfillPaused: false,
   lastSyncAt: null,
   stats: null,
 
-  setRunning: (running) => set({ isRunning: running }),
-  update: (patch) => set(patch as any),
+  patchTask: (task, patch) =>
+    set((state) => ({ [task]: { ...state[task], ...patch } }) as Partial<CacheState>),
+
+  resetTask: (task) => set({ [task]: idleTask() } as Partial<CacheState>),
+
+  setBackfillPaused: (paused) => set({ backfillPaused: paused }),
+
   setStats: (stats) => set({ stats, lastSyncAt: stats?.lastSync ?? null }),
+
   reset: () =>
     set({
-      isRunning: false,
-      phase: 'idle',
-      currentLabel: '',
-      progress: 0,
-      processedItems: 0,
-      totalItems: 0,
-      lastError: null,
+      delta: idleTask(),
+      backfill: idleTask(),
+      backfillPaused: false,
     }),
 }));
+
+/** Vrai si l'une ou l'autre des tâches travaille — pour l'indicateur global. */
+export function isCacheBusy(state: Pick<CacheState, 'delta' | 'backfill'>): boolean {
+  return state.delta.running || state.backfill.running;
+}

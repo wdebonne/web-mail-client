@@ -123,7 +123,9 @@ La langue affichée est choisie selon l’ordre suivant :
   - **Expéditeur** : champ libre pour filtrer par nom ou adresse
   - Disponible en mode **Classique** (boutons radio compacts dans des groupes) et en mode **Simplifié** (chips cliquables avec dropdown)
   - Bouton **Fermer** qui annule la recherche et restaure la liste complète du dossier
-- ⚡ **Architecture hybride** : la recherche dans le **dossier actuel** s'effectue toujours en **client-side** sur les messages IMAP déjà chargés (résultats immédiats, toujours à jour). La recherche **cross-boîtes** interroge la table `cached_emails` côté serveur.
+- ⚡ **Recherche locale** : les trois portées sont servies depuis le **cache complet du poste** (IndexedDB), index inversé à correspondance par préfixe et normalisation sans accents — « factu » trouve « Facture », « reunion » trouve « Réunion ».
+- 🎯 **Couverture** : objet, expéditeur, **destinataires y compris en copie**, **corps du message** et **nom des fichiers joints** (« devis » retrouve `Devis-2026-Toiture.pdf`). Le contenu des pièces jointes n'est pas indexé.
+- 🛟 **Repli serveur** : tant qu'un dossier de la portée demandée n'est pas entièrement rapatrié (première synchro en cours, boîte partagée jamais ouverte), la requête part sur `GET /api/search`, qui interroge `cached_emails` — en-têtes uniquement. Annoncer un résultat local comme exhaustif alors qu'il ne l'est pas serait pire que d'être lent.
 - 🔧 **API enrichie** : `GET /api/search` accepte désormais `folder`, `accountId`, `dateFrom`, `dateTo`, `from`, `hasAttachment`, `isRead`, `offset` et retourne les `totals` par catégorie.
 
 ### Contacts

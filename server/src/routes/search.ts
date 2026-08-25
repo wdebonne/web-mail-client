@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../database/connection';
+import { accountAccessPredicate } from '../utils/accountAccess';
 
 export const searchRouter = Router();
 
@@ -29,8 +30,15 @@ searchRouter.get('/', async (req: AuthRequest, res) => {
 
     if (!type || type === 'all' || type === 'mail') {
       const conditions: string[] = [
-        `ma.user_id = $1`,
-        `(ce.subject ILIKE $2 OR ce.from_name ILIKE $2 OR ce.from_address ILIKE $2 OR ce.body_text ILIKE $2)`,
+        // Honore possession directe, attribution de boîte et partage — comme
+        // getAccountForUser. Filtrer sur le seul `user_id` rendait les boîtes
+        // partagées introuvables alors qu'elles sont consultables.
+        accountAccessPredicate('ma', '$1'),
+        // `ce.body_text` n'est jamais renseigné par cacheMessages : la clause
+        // qui l'interrogeait ici ne pouvait rien trouver, et empêchait
+        // l'utilisation des index trigrammes. La recherche dans le contenu est
+        // désormais assurée localement, sur le cache complet du poste.
+        `(ce.subject ILIKE $2 OR ce.from_name ILIKE $2 OR ce.from_address ILIKE $2)`,
       ];
       const params: any[] = [req.userId, `%${query}%`];
       let idx = 3;

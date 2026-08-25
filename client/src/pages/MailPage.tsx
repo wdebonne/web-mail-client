@@ -8,7 +8,9 @@ import { useMailStore, ComposeData } from '../stores/mailStore';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useUIStore } from '../stores/uiStore';
-import { offlineDB } from '../pwa/offlineDB';
+import { offlineDB, makeEmailId } from '../pwa/offlineDB';
+import { onDeltaApplied, runDeltaSync } from '../services/cacheService';
+import { searchLocal } from '../services/localSearch';
 import FolderPane from '../components/mail/FolderPane';
 import MessageList from '../components/mail/MessageList';
 import MessageView from '../components/mail/MessageView';
@@ -69,6 +71,12 @@ import FolderPickerDialog from '../components/mail/FolderPickerDialog';
 import type { MailFolder, Email } from '../types';
 
 type AttachmentActionMode = 'preview' | 'download' | 'menu' | 'nextcloud';
+
+/**
+ * Taille d'une page lue dans le cache local. Alignée sur la pagination IMAP du
+ * serveur (50 messages) pour que le passage de l'un à l'autre soit invisible.
+ */
+const LOCAL_PAGE_SIZE = 50;
 
 export default function MailPage() {
   const isOnline = useNetworkStatus();
@@ -367,31 +375,56 @@ export default function MailPage() {
       }
 
       if (!selectedAccount) return { messages: [], total: 0, page: 1 };
-      // Try the network first; if it fails (offline / server hiccup), fall back
-      // to IndexedDB so the UI keeps working with whatever has been cached.
+      const accountId = selectedAccount.id;
+      const folder = selectedFolder;
+
+      // Le cache local est désormais la source d'affichage. Il est complet,
+      // trié, et répond sans aller-retour réseau — c'est ce qui rend
+      // l'ouverture d'un dossier instantanée. Le réseau ne sert plus qu'à
+      // confirmer, via le delta déclenché juste derrière.
+      const [state, local] = await Promise.all([
+        offlineDB.getSyncState(accountId, folder).catch(() => undefined),
+        offlineDB.getFolderPage(accountId, folder, { limit: LOCAL_PAGE_SIZE }).catch(() => []),
+      ]);
+
+      // Une page locale ne fait autorité que si le dossier est entièrement
+      // rapatrié, ou si elle est pleine — auquel cas les messages les plus
+      // récents y sont forcément tous.
+      const localAuthoritative =
+        !!state?.uidValidity && (state.backfillDone || local.length >= LOCAL_PAGE_SIZE);
+
+      if (localAuthoritative) {
+        void runDeltaSync({ priorityFolder: { accountId, folder } }).catch(() => {});
+        return {
+          messages: local,
+          total: state?.messageCount ?? local.length,
+          page: 1,
+          fromCache: true,
+        };
+      }
+
+      // Dossier pas encore rapatrié : on garde le chemin réseau d'origine, et
+      // on alimente le cache au passage.
       try {
-        const result = await api.getMessages(selectedAccount.id, selectedFolder);
+        const result = await api.getMessages(accountId, folder);
         if (result.messages) {
-          // Fire-and-forget: writing to IndexedDB must never block the UI.
-          // The list is rendered as soon as the network response arrives;
-          // the cache update happens in the background.
-          void offlineDB.cacheEmails(result.messages.map((m: any) => ({
+          void offlineDB.putEnvelopes(result.messages.map((m: any) => ({
             ...m,
-            // Composite id: account + folder + uid avoids cross-folder collisions
-            // (the same UID can exist in multiple folders).
-            id: `${selectedAccount.id}-${selectedFolder}-${m.uid}`,
-            accountId: selectedAccount.id,
-            folder: selectedFolder,
+            id: makeEmailId(accountId, folder, m.uid),
+            accountId,
+            folder,
           }))).catch(() => { /* cache failure is non-fatal */ });
         }
         return result;
       } catch {
-        const cached = await offlineDB.getEmails(selectedAccount.id, selectedFolder);
-        return { messages: cached, total: cached.length, page: 1 };
+        return { messages: local, total: local.length, page: 1, fromCache: true };
       }
     },
     enabled: !isSearchMode && (virtualFolder ? accounts.length > 0 : !!selectedAccount),
-    refetchInterval: isOnline && !isSearchMode ? 30000 : false,
+    // Plus de sondage périodique : la boucle de synchronisation vérifie l'état
+    // des dossiers (un STATUS par compte) et ne prévient l'interface, via
+    // `onDeltaApplied` ci-dessous, que si quelque chose a réellement changé.
+    refetchInterval: false,
     // Keep the previous folder's messages visible during refetch so navigation
     // feels instantaneous instead of flashing an empty list.
     placeholderData: keepPreviousData,
@@ -405,6 +438,23 @@ export default function MailPage() {
       setMessages(messagesData.messages || [], messagesData.total || 0, messagesData.page || 1);
     }
   }, [messagesData]);
+
+  // Rafraîchissement piloté par la synchronisation incrémentale : on ne
+  // réinterroge que les dossiers que le delta a vus changer.
+  useEffect(() => {
+    return onDeltaApplied(({ changed }) => {
+      for (const change of changed) {
+        queryClient.invalidateQueries({
+          queryKey: ['messages', change.accountId, change.folder],
+        });
+      }
+      // Les vues unifiées agrègent plusieurs comptes : dès qu'un dossier bouge,
+      // leur contenu peut changer.
+      if (changed.length) {
+        queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+      }
+    });
+  }, [queryClient]);
 
   // Real-time refresh: when the server emits WebSocket events, update the
   // local caches *surgically* instead of invalidating the queries — a full
@@ -422,11 +472,16 @@ export default function MailPage() {
       console.debug('[ws] new-mail', data);
       // Folder counts always benefit from a refresh (cheap).
       queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
-      // For the active list: only schedule a non-disruptive refetch if no
-      // auto-load loop is in progress.
+
+      // La liste se lit depuis IndexedDB : invalider la requête ne servirait à
+      // rien tant que le message n'y est pas — il ne ferait que relire la même
+      // page locale. On déclenche donc un delta, qui va le chercher ; c'est lui
+      // qui préviendra ensuite l'interface via `onDeltaApplied`.
       if (!loadAllActive && !loadingMore) {
-        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
-        queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+        const accountId: string | undefined = data?.accountId;
+        void runDeltaSync(
+          accountId ? { priorityFolder: { accountId, folder: data?.folder || 'INBOX' } } : {},
+        ).catch(() => {});
       }
     },
     'mail-moved': (data) => {
@@ -444,7 +499,7 @@ export default function MailPage() {
           return { ...old, messages: filtered, total: Math.max(0, (old.total ?? filtered.length) - 1) };
         });
         // 2) Same surgical removal in the unified/virtual views.
-        removeMessageFromVirtualCaches(uid, accountId, srcFolder);
+        forgetMessageLocally(uid, accountId, srcFolder);
         // 3) If this is the folder currently displayed, sync the Zustand
         //    store too (the visible list is read from there).
         if (selectedAccount?.id === accountId && selectedFolder === srcFolder) {
@@ -466,7 +521,7 @@ export default function MailPage() {
           if (filtered.length === old.messages.length) return old;
           return { ...old, messages: filtered, total: Math.max(0, (old.total ?? filtered.length) - 1) };
         });
-        removeMessageFromVirtualCaches(uid, accountId, folder);
+        forgetMessageLocally(uid, accountId, folder);
         if (selectedAccount?.id === accountId && selectedFolder === folder) {
           removeMessage(uid, accountId, folder);
         }
@@ -491,7 +546,7 @@ export default function MailPage() {
           if (filtered.length === old.messages.length) return old;
           return { ...old, messages: filtered, total: Math.max(0, (old.total ?? filtered.length) - 1) };
         });
-        removeMessageFromVirtualCaches(uid, accountId, folder);
+        forgetMessageLocally(uid, accountId, folder);
         if (selectedAccount?.id === accountId && selectedFolder === folder) {
           removeMessage(uid, accountId, folder);
         }
@@ -516,36 +571,9 @@ export default function MailPage() {
     if (n > 0) bumpPrefs();
   }, [messagesData, rulesForCategorization, selectedAccount, selectedFolder, authUser, bumpPrefs]);
 
-  // Hydrate the message list from IndexedDB the instant the user switches to a
-  // folder, without waiting for the network round-trip. The React-Query refetch
-  // will overwrite the list once the server replies; until then the user sees
-  // the cached messages immediately. This is what gives the app its "instant"
-  // feel after a reload or when navigating between folders.
-  useEffect(() => {
-    if (virtualFolder || !selectedAccount) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const cached = await offlineDB.getEmails(selectedAccount.id, selectedFolder);
-        if (cancelled) return;
-        // Only inject the cache if React-Query hasn't already produced data for
-        // this folder (otherwise we'd clobber the freshly fetched list).
-        const existing = queryClient.getQueryData<any>(['messages', selectedAccount.id, selectedFolder]);
-        if (existing && Array.isArray(existing.messages) && existing.messages.length) return;
-        if (cached.length) {
-          const sorted = [...cached].sort(
-            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-          );
-          setMessages(sorted as any, sorted.length, 1);
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAccount?.id, selectedFolder, virtualFolder]);
+  // L'hydratation séparée depuis IndexedDB a disparu : la requête de liste
+  // ci-dessus lit désormais le cache local en premier, ce qui rend ce
+  // pré-remplissage redondant — et évite qu'il entre en concurrence avec elle.
 
   // Pagination — "Charger plus de messages" appends the next page from the server
   // (the IMAP listing returns 50 messages per page, newest first).
@@ -556,15 +584,31 @@ export default function MailPage() {
     setLoadingMore(true);
     try {
       const nextPage = (currentPage || 1) + 1;
-      const res = await api.getMessages(selectedAccount.id, selectedFolder, nextPage);
+      const accountId = selectedAccount.id;
+      const folder = selectedFolder;
+
+      // Dossier entièrement en cache : la page suivante est un simple curseur
+      // sur l'index local. C'est ce qui rend « Tout charger » quasi gratuit,
+      // là où il enchaînait auparavant une requête IMAP par page.
+      const state = await offlineDB.getSyncState(accountId, folder).catch(() => undefined);
+      if (state?.backfillDone) {
+        const page = await offlineDB.getFolderPage(accountId, folder, {
+          limit: LOCAL_PAGE_SIZE,
+          offset: messages.length,
+        });
+        appendMessages(page, state.messageCount ?? totalMessages, nextPage);
+        return;
+      }
+
+      const res = await api.getMessages(accountId, folder, nextPage);
       const fetched = res.messages || [];
       if (fetched.length > 0) {
         // Non-blocking cache write — do not delay appending messages to the UI.
-        void offlineDB.cacheEmails(fetched.map((m: any) => ({
+        void offlineDB.putEnvelopes(fetched.map((m: any) => ({
           ...m,
-          id: `${selectedAccount.id}-${selectedFolder}-${m.uid}`,
-          accountId: selectedAccount.id,
-          folder: selectedFolder,
+          id: makeEmailId(accountId, folder, m.uid),
+          accountId,
+          folder,
         }))).catch(() => { /* cache failure is non-fatal */ });
       }
       appendMessages(fetched, res.total ?? totalMessages, nextPage);
@@ -573,7 +617,7 @@ export default function MailPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, hasMoreMessages, selectedAccount, selectedFolder, currentPage, totalMessages, appendMessages]);
+  }, [loadingMore, hasMoreMessages, selectedAccount, selectedFolder, currentPage, totalMessages, messages.length, appendMessages]);
 
   // "Tout charger" — auto-fetch every remaining page so the user can search across
   // the full mailbox/folder. Works for both single-folder and unified views; the
@@ -701,6 +745,9 @@ export default function MailPage() {
       const accId = accountId || selectedAccount?.id;
       const fld = folder || selectedFolder;
       if (!accId || !fld) return;
+      // La liste se lit depuis IndexedDB : l'état de lecture doit y être écrit
+      // tout de suite, sinon revenir sur le dossier réafficherait « non lu ».
+      void offlineDB.updateFlags(accId, fld, [{ uid, flags: { seen: isRead } }]).catch(() => {});
       const queryKey = ['folder-status', accId];
       const previous = queryClient.getQueryData(queryKey);
       queryClient.setQueryData(queryKey, (old: any) => {
@@ -728,16 +775,32 @@ export default function MailPage() {
       const fld = folder || selectedFolder;
       return accId ? api.toggleFlag(accId, uid, isFlagged, fld) : Promise.resolve();
     },
-    onSuccess: (_, { uid, isFlagged }) => {
+    onSuccess: (_, { uid, isFlagged, accountId, folder }) => {
       updateMessageFlags(uid, { flagged: isFlagged });
+      const accId = accountId || selectedAccount?.id;
+      const fld = folder || selectedFolder;
+      if (!accId || !fld) return;
+      void offlineDB.updateFlags(accId, fld, [{ uid, flags: { flagged: isFlagged } }]).catch(() => {});
     },
   });
 
-  /** Surgically drop a message from every cached `virtual-messages` query so
-   *  the unified inbox / unified sent / favourites views update immediately
-   *  after a delete/move/archive — without triggering a full re-pagination
-   *  (which would be expensive when the « Tout charger » mode is active). */
-  const removeMessageFromVirtualCaches = useCallback((uid: number, accountId?: string, folder?: string) => {
+  /**
+   * Point unique par lequel un message disparu (supprimé, déplacé, archivé) est
+   * oublié partout : les vues unifiées déjà chargées **et** le cache local.
+   *
+   * Oublier le cache local n'est pas optionnel depuis que la liste se lit
+   * depuis IndexedDB : sans cela, quitter le dossier et y revenir ferait
+   * réapparaître le message jusqu'au delta suivant.
+   *
+   * Les vues unifiées sont mises à jour chirurgicalement plutôt qu'invalidées :
+   * une re-pagination complète coûterait cher quand « Tout charger » est actif.
+   */
+  const forgetMessageLocally = useCallback((uid: number, accountId?: string, folder?: string) => {
+    if (accountId && folder) {
+      void offlineDB.deleteEmails(accountId, folder, [uid]).catch(() => {
+        /* le delta rattrapera */
+      });
+    }
     queryClient.setQueriesData<any>({ queryKey: ['virtual-messages'] }, (old: any) => {
       if (!old || !Array.isArray(old.messages)) return old;
       const filtered = old.messages.filter((m: any) => {
@@ -820,6 +883,14 @@ export default function MailPage() {
         }
       }
       useMailStore.setState({ messages: updated });
+
+      // La liste visible est rétablie, mais le cache local a déjà oublié ces
+      // messages et on ne peut pas les y réinsérer depuis le store. Un delta
+      // forcé rétablit la vérité : sans `force`, il constaterait un dossier
+      // structurellement inchangé — la suppression ayant échoué côté serveur —
+      // et ne redescendrait rien avant le balayage suivant.
+      void runDeltaSync({ force: true }).catch(() => {});
+
       const n = failed.length;
       toast.error(`${n} message${n > 1 ? 's' : ''} n'ont pas pu être supprimés`);
     }
@@ -856,7 +927,7 @@ export default function MailPage() {
     const selAccId = (sel as any)?._accountId;
     const wasViewingDeleted = !!(sel && sel.uid === uid && (!accId || !selAccId || selAccId === accId));
     removeMessage(uid, accId, fld);
-    removeMessageFromVirtualCaches(uid, accId, fld);
+    forgetMessageLocally(uid, accId, fld);
     if (wasViewingDeleted) { mobileSelectionTokenRef.current++; setMobileView('list'); selectMessage(null); }
 
     // Optimistic unseen counter decrement for unread messages
@@ -874,7 +945,7 @@ export default function MailPage() {
     // Reset inactivity timer.
     if (deleteTimerRef.current !== null) clearTimeout(deleteTimerRef.current);
     deleteTimerRef.current = setTimeout(() => { void flushPendingDeletes(); }, FLUSH_DELAY_MS);
-  }, [queryClient, removeMessage, removeMessageFromVirtualCaches, flushPendingDeletes]);
+  }, [queryClient, removeMessage, forgetMessageLocally, flushPendingDeletes]);
 
   // Confirmation dialog state (delete) — decoupled from the mutation so the
   // user can cancel without triggering any IMAP call.
@@ -1008,7 +1079,7 @@ export default function MailPage() {
       const accId = (m as any)._accountId || selectedAccount?.id;
       const fld = (m as any)._folder || selectedFolder;
       removeMessage(m.uid, accId, fld);
-      removeMessageFromVirtualCaches(m.uid, accId, fld);
+      forgetMessageLocally(m.uid, accId, fld);
     }
 
     // Optimistic unseen counter decrements per group
@@ -1045,6 +1116,9 @@ export default function MailPage() {
 
     if (errorCount > 0) {
       useMailStore.setState({ messages: snapshot });
+      // Même raison que dans `flushPendingDeletes` : le cache local les a
+      // oubliés, seul un relevé forcé peut les y ramener.
+      void runDeltaSync({ force: true }).catch(() => {});
       // Restore unseen counters for all groups on error
       for (const { accountId, folder, count } of unseenAdjustments) {
         queryClient.setQueryData(['folder-status', accountId], (old: any) => {
@@ -1057,7 +1131,7 @@ export default function MailPage() {
       const n = selectedMessages.length;
       toast.success(`${n} message${n > 1 ? 's' : ''} supprimé${n > 1 ? 's' : ''}`);
     }
-  }, [selectedAccount, selectedFolder, queryClient, removeMessage, removeMessageFromVirtualCaches]);
+  }, [selectedAccount, selectedFolder, queryClient, removeMessage, forgetMessageLocally]);
 
   // Move mutation
   const moveMutation = useMutation({
@@ -1082,7 +1156,7 @@ export default function MailPage() {
     },
     onSuccess: (_data, { uid, accountId, fromFolder }) => {
       toast.success('Message déplacé');
-      removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, fromFolder || selectedFolder);
+      forgetMessageLocally(uid, accountId || selectedAccount?.id, fromFolder || selectedFolder);
     },
     onError: (err: any, _vars, ctx: any) => {
       if (ctx?.removedMessage) {
@@ -1135,10 +1209,14 @@ export default function MailPage() {
       setBlockTarget(null);
       if (selectedMessage?.uid === blockTarget.uid) selectMessage(null);
       removeMessage(blockTarget.uid, origin.accountId, origin.folder);
-      removeMessageFromVirtualCaches(blockTarget.uid, origin.accountId, origin.folder);
+      forgetMessageLocally(blockTarget.uid, origin.accountId, origin.folder);
       if (sweep) {
-        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
-        queryClient.invalidateQueries({ queryKey: ['virtual-messages'], refetchType: 'active' });
+        // Le balayage a déplacé d'autres messages côté serveur : seul un delta
+        // peut le constater. Invalider la requête ne ferait que relire la même
+        // page locale, désormais incomplète.
+        void runDeltaSync({
+          priorityFolder: { accountId: origin.accountId, folder: origin.folder },
+        }).catch(() => {});
       }
       queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
       const label = scope === 'domain' ? `@${result.entry.pattern}` : result.entry.pattern;
@@ -1152,7 +1230,7 @@ export default function MailPage() {
     } finally {
       setBlockBusy(false);
     }
-  }, [blockTarget, originOf, selectedMessage, selectMessage, removeMessage, removeMessageFromVirtualCaches, queryClient]);
+  }, [blockTarget, originOf, selectedMessage, selectMessage, removeMessage, forgetMessageLocally, queryClient]);
 
   /** « Ce n'est pas indésirable » : débloque, met en liste sûre, et remonte le message. */
   const handleNotJunk = useCallback(async (message: any) => {
@@ -1171,14 +1249,18 @@ export default function MailPage() {
       });
       if (selectedMessage?.uid === message.uid) selectMessage(null);
       removeMessage(message.uid, origin.accountId, origin.folder);
-      removeMessageFromVirtualCaches(message.uid, origin.accountId, origin.folder);
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+      forgetMessageLocally(message.uid, origin.accountId, origin.folder);
+      // Le message réapparaît dans la boîte de réception : c'est une arrivée,
+      // que seul un delta peut rapatrier dans le cache local.
+      void runDeltaSync({
+        priorityFolder: { accountId: origin.accountId, folder: 'INBOX' },
+      }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ['folders'], refetchType: 'active' });
       toast.success('Message remis dans la boîte de réception');
     } catch (err: any) {
       toast.error(err?.message || 'La restauration a échoué');
     }
-  }, [originOf, selectedMessage, selectMessage, removeMessage, removeMessageFromVirtualCaches, queryClient]);
+  }, [originOf, selectedMessage, selectMessage, removeMessage, forgetMessageLocally, queryClient]);
 
   /**
    * Désabonnement d'une lettre d'information. Renvoie true quand la démarche a
@@ -1246,7 +1328,7 @@ export default function MailPage() {
       const where = data?.destFolder ? ` (${data.destFolder})` : '';
       toast.success(`Message archivé${where}`);
       queryClient.invalidateQueries({ queryKey: ['folders'] });
-      removeMessageFromVirtualCaches(uid, accountId || selectedAccount?.id, fromFolder || selectedFolder);
+      forgetMessageLocally(uid, accountId || selectedAccount?.id, fromFolder || selectedFolder);
     },
     onError: (err: any, _vars, ctx: any) => {
       if (ctx?.removedMessage) {
@@ -1453,9 +1535,9 @@ export default function MailPage() {
         if (variables?.inReplyToUid) {
           updateMessageFlags(variables.inReplyToUid, { answered: true });
         }
-        // Refresh the message list to pick up the server-side flag change.
-        queryClient.invalidateQueries({ queryKey: ['messages'] });
-        queryClient.invalidateQueries({ queryKey: ['virtual-messages'] });
+        // Le serveur a posé le drapeau « répondu » et déposé une copie dans
+        // les envoyés : un delta va chercher les deux.
+        void runDeltaSync().catch(() => {});
       }
     },
     onError: (error: any) => {
@@ -1490,17 +1572,69 @@ export default function MailPage() {
       markReadMutation.mutate({ uid: message.uid, isRead: true, accountId, folder });
     }
 
-    // Load full message
-    if (accountId && isOnline) {
-      try {
-        const full = await api.getMessage(accountId, message.uid, folder);
-        // Preserve origin tags when in unified view
-        const enriched = message._accountId
-          ? { ...full, _accountId: message._accountId, _folder: message._folder }
-          : full;
-        openMessageTab(enriched);
-      } catch {}
+    if (!accountId) return;
+
+    // Préserve les marqueurs d'origine en vue unifiée.
+    const withOrigin = (full: any) =>
+      message._accountId ? { ...full, _accountId: message._accountId, _folder: message._folder } : full;
+
+    // La requête réseau part **avant** toute autre chose : rien ne doit
+    // retarder son départ, surtout pas une lecture de cache.
+    let networkSettled = false;
+    const networkPromise: Promise<any> = (
+      isOnline
+        ? api.getMessage(accountId, message.uid, folder)
+        : Promise.resolve(null)
+    )
+      .catch(() => null)
+      .finally(() => { networkSettled = true; });
+
+    // 1. Peinture immédiate depuis le cache local, quand il détient déjà ce
+    //    corps. Une lecture IndexedDB coûte quelques millisecondes là où un
+    //    aller-retour IMAP en coûte plusieurs centaines : le texte du message
+    //    s'affiche sans attente, au lieu d'un volet vide.
+    try {
+      const cached = await offlineDB.getBody(accountId, folder, message.uid);
+      // Si le réseau a déjà répondu entre-temps, ne pas repeindre par-dessus
+      // avec la version allégée — ce serait un retour en arrière visible.
+      if (cached && !networkSettled) {
+        openMessageTab(withOrigin({
+          ...message,
+          bodyText: cached.bodyText,
+          bodyHtml: cached.bodyHtml,
+          attachments: cached.attachments || [],
+          ...(isOnline ? {} : { fromCache: true }),
+        }));
+      }
+    } catch {
+      /* le réseau prend le relais */
     }
+
+    // 2. Puis la version du serveur, qui remplace la précédente. Elle seule
+    //    porte les images inline et le contenu des pièces jointes : le corps en
+    //    cache est une extraction allégée, faite pour la recherche et la
+    //    lecture hors-ligne, pas pour le rendu fidèle.
+    const full = await networkPromise;
+    if (!full) return;
+
+    openMessageTab(withOrigin(full));
+
+    // Le corps rendu alimente aussi le cache : un message ouvert devient
+    // cherchable dans son contenu sans attendre le remplissage de fond.
+    void offlineDB
+      .putBodies(accountId, folder, [{
+        uid: message.uid,
+        bodyText: full.bodyText || '',
+        bodyHtml: full.bodyHtml || '',
+        attachments: (full.attachments || []).map((a: any) => ({
+          filename: a.filename,
+          contentType: a.contentType,
+          size: a.size,
+          contentId: a.contentId,
+          inline: !!a.contentId,
+        })),
+      }])
+      .catch(() => { /* non bloquant */ });
   };
 
   /** Texte brut d'un message, pour l'assistant IA (il ne sait pas lire du HTML). */
@@ -1936,10 +2070,48 @@ export default function MailPage() {
     return opts;
   }, [isSearchMode, searchScope, searchAccountId, selectedAccount?.id, dateRangeFromPreset, searchHasAttachment, searchIsRead, searchFrom]);
 
+  // Recherche locale — les trois portées sont servies depuis IndexedDB, qui
+  // contient aussi les corps : contrairement à la recherche serveur, elle
+  // trouve dans le contenu des messages.
+  const localSearchScopeAccount =
+    searchScope === 'all-folders' ? searchAccountId || undefined : searchAccountId || selectedAccount?.id;
+
+  const { data: localSearchData, isLoading: localSearchLoading } = useQuery({
+    queryKey: [
+      'local-search',
+      rawSearchQuery,
+      searchScope,
+      localSearchScopeAccount,
+      searchScope === 'current-folder' ? selectedFolder : null,
+      virtualFolder,
+    ],
+    queryFn: () =>
+      searchLocal(rawSearchQuery, {
+        scope: searchScope,
+        accountId: localSearchScopeAccount,
+        // Une vue unifiée n'est pas un dossier IMAP : la restriction par
+        // dossier n'a pas de sens et exclurait tous les résultats.
+        folder: searchScope === 'current-folder' && !virtualFolder ? selectedFolder : undefined,
+        limit: 200,
+      }),
+    enabled: isSearchMode && !!rawSearchQuery,
+    staleTime: 30_000,
+  });
+
+  /** Le cache local couvre toute la portée : il fait autorité, pas de réseau. */
+  const localSearchAuthoritative = !!localSearchData?.complete;
+
+  // Repli serveur — uniquement quand le cache local ne couvre pas encore la
+  // portée demandée (dossier en cours de remplissage, boîte partagée pas encore
+  // synchronisée). Sinon la requête n'est même pas émise.
   const { data: searchResultsData, isLoading: searchLoading } = useQuery({
     queryKey: ['search-mail', rawSearchQuery, searchOpts],
     queryFn: () => api.search(rawSearchQuery, searchOpts!),
-    enabled: isSearchMode && !!rawSearchQuery && searchScope !== 'current-folder',
+    enabled:
+      isSearchMode
+      && !!rawSearchQuery
+      && searchScope !== 'current-folder'
+      && !localSearchAuthoritative,
     staleTime: 30_000,
   });
 
@@ -1972,6 +2144,12 @@ export default function MailPage() {
       return true;
     };
 
+    // Cache local complet pour cette portée : résultats instantanés, et la
+    // correspondance porte aussi sur le contenu des messages.
+    if (localSearchAuthoritative && localSearchData) {
+      return localSearchData.messages.filter(applyFilters);
+    }
+
     if (searchScope === 'current-folder') {
       // Filter already-loaded IMAP messages (always works, no cache dependency)
       return messages.filter((m: any) => {
@@ -1995,7 +2173,7 @@ export default function MailPage() {
       hasAttachments: e.has_attachments, snippet: e.snippet || '',
       folder: e.folder, _accountId: e.account_id, _folder: e.folder,
     })).filter(applyFilters);
-  }, [isSearchMode, rawSearchQuery, searchScope, messages, searchResultsData, searchHasAttachment, searchIsRead, searchFrom, dateRangeFromPreset]);
+  }, [isSearchMode, rawSearchQuery, searchScope, messages, searchResultsData, localSearchData, localSearchAuthoritative, searchHasAttachment, searchIsRead, searchFrom, dateRangeFromPreset]);
 
   // ── Pilotage des filtres de recherche ───────────────────────────────────────
   // Un seul jeu de callbacks pour les trois surfaces : ruban, en-tête de
@@ -2045,7 +2223,8 @@ export default function MailPage() {
   const searchActiveFilterCount = countActiveFilters(searchFilterState);
   const searchScopeLabel = scopeValueLabel(searchScope, selectedFolder || undefined);
   const searchResultCount = searchFilteredMessages !== null ? searchFilteredMessages.length : null;
-  const searchIsLoading = searchLoading && searchScope !== 'current-folder';
+  const searchIsLoading =
+    localSearchLoading || (searchLoading && searchScope !== 'current-folder' && !localSearchAuthoritative);
   const searchFoundNothing = isSearchMode && !searchIsLoading && searchResultCount === 0;
 
   // Zéro résultat dans le dossier courant : on compte en arrière-plan ce que
@@ -2479,7 +2658,12 @@ export default function MailPage() {
   }, [selectedMessage, selectedAccount]);
 
   const handleSync = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['messages'] });
+    // Bouton explicite : on force un vrai relevé, sans se fier aux raccourcis
+    // d'optimisation, et on rafraîchit les compteurs de dossiers.
+    void runDeltaSync({
+      force: true,
+      ...(selectedAccount ? { priorityFolder: { accountId: selectedAccount.id, folder: selectedFolder } } : {}),
+    }).catch(() => {});
     queryClient.invalidateQueries({ queryKey: ['folders'] });
     toast.success('Synchronisation lancée');
   }, [queryClient]);

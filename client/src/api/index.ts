@@ -102,6 +102,34 @@ export async function kerberosLogin(timeoutMs = 8000): Promise<KerberosLoginResu
   }
 }
 
+export interface SyncFolderState {
+  /** Comparé en chaîne : UIDVALIDITY est un entier 32 bits non signé. */
+  uidValidity: string;
+  uidNext: number;
+  messages: number;
+  /** Présent seulement si le serveur IMAP annonce CONDSTORE. */
+  highestModseq?: string;
+}
+
+export interface SyncUidFlags extends SyncFolderState {
+  /** `[uid, masque]` — 1 Seen, 2 Flagged, 4 Answered, 8 Draft. */
+  uids: Array<[number, number]>;
+}
+
+export interface SyncBody {
+  uid: number;
+  bodyText: string;
+  bodyHtml: string;
+  attachments: Array<{
+    filename: string;
+    contentType: string;
+    size: number;
+    contentId?: string;
+    inline: boolean;
+  }>;
+  truncated: boolean;
+}
+
 async function request<T>(url: string, options: RequestInit = {}, _retry = false): Promise<T> {
   const token = localStorage.getItem('auth_token');
 
@@ -343,6 +371,37 @@ export const api = {
 
   getMessage: (accountId: string, uid: number, folder: string) =>
     request<any>(`/mail/accounts/${accountId}/messages/${uid}?folder=${encodeURIComponent(folder)}`),
+
+  // ─── Synchronisation incrémentale du cache local ────────────────────────
+  // Primitives sans état : le serveur dit « voici l'état actuel », le client
+  // compare avec ce qu'il détient. Voir server/src/routes/sync.ts.
+
+  /** Sonde bon marché : un STATUS par dossier, sur une seule connexion IMAP. */
+  syncFolderState: (accountId: string, folders?: string[]) =>
+    request<{ folders: Record<string, SyncFolderState> }>(
+      `/sync/accounts/${accountId}/state`,
+      { method: 'POST', body: JSON.stringify(folders?.length ? { folders } : {}) },
+    ),
+
+  /** UID + drapeaux de tout le dossier, en masque binaire. */
+  syncUidFlags: (accountId: string, folder: string) =>
+    request<SyncUidFlags>(
+      `/sync/accounts/${accountId}/uidflags?folder=${encodeURIComponent(folder)}`,
+    ),
+
+  /** En-têtes d'un lot d'UID (500 max) — même forme que getMessages. */
+  syncEnvelopes: (accountId: string, folder: string, uids: number[]) =>
+    request<{ folder: string; messages: any[] }>(
+      `/sync/accounts/${accountId}/envelopes`,
+      { method: 'POST', body: JSON.stringify({ folder, uids }) },
+    ),
+
+  /** Corps d'un lot d'UID (25 max), sans les octets des pièces jointes. */
+  syncBodies: (accountId: string, folder: string, uids: number[]) =>
+    request<{ folder: string; bodies: SyncBody[] }>(
+      `/sync/accounts/${accountId}/bodies`,
+      { method: 'POST', body: JSON.stringify({ folder, uids }) },
+    ),
 
   sendMail: (data: any) => {
     const normalizeRecipients = (list?: any[]) =>

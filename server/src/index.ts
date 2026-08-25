@@ -12,6 +12,7 @@ import { logger } from './utils/logger';
 import { db, pool, initDatabase } from './database/connection';
 import { authRouter } from './routes/auth';
 import { mailRouter } from './routes/mail';
+import { syncRouter } from './routes/sync';
 import { contactRouter } from './routes/contacts';
 import { calendarRouter } from './routes/calendar';
 import { calendarPublicRouter } from './routes/calendarPublic';
@@ -136,6 +137,7 @@ app.get('/api/health', async (_req, res) => {
 // options, SSO). Sensitive routes add stricter per-route limiters in auth.ts.
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/mail', authMiddleware, mailRouter);
+app.use('/api/sync', authMiddleware, syncRouter);
 app.use('/api/contacts', authMiddleware, contactRouter);
 app.use('/api/calendar', authMiddleware, calendarRouter);
 app.use('/api/public/calendar', calendarPublicRouter);
