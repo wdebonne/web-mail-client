@@ -74,6 +74,17 @@ export interface Email {
   hasAttachments: boolean;
   largestAttachmentSize?: number;
   attachments?: Attachment[];
+  /**
+   * Images incorporées au corps, référencées par `cid:` dans le HTML.
+   * Rapatriées avec le corps et conservées en base64 : un message à signature
+   * illustrée s'affiche donc complet dès la lecture du cache.
+   */
+  inlineImages?: Array<{
+    contentId: string;
+    contentType: string;
+    data: string;
+    size: number;
+  }>;
   size: number;
   headers?: {
     inReplyTo?: string;

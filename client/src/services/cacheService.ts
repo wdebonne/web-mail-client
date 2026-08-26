@@ -110,6 +110,32 @@ function bitsToFlags(bits: number) {
   };
 }
 
+/**
+ * Rang de priorité d'un dossier pour le remplissage du cache.
+ *
+ * L'ordre naturel des clés IndexedDB est alphabétique : « Archive » passait
+ * donc avant « INBOX », et la boîte de réception — la seule que l'utilisateur
+ * regarde en attendant — finissait de se remplir en dernier. On ordonne ici par
+ * usage réel, pas par nom.
+ */
+function folderPriority(folder: string, tree: any[]): number {
+  const entry = tree.find((f: any) => f?.path === folder);
+  const specialUse: string = entry?.specialUse || '';
+  const flags: string[] = Array.isArray(entry?.flags) ? entry.flags : [];
+  const has = (flag: string) => specialUse === flag || flags.includes(flag);
+
+  // INBOX n'a pas de `specialUse` sur beaucoup de serveurs : on le reconnaît au
+  // chemin, en tolérant les préfixes de type « INBOX.Truc » (Courier, Dovecot).
+  const path = folder.toUpperCase();
+  if (path === 'INBOX') return 0;
+  if (has('\\Sent')) return 1;
+  if (has('\\Drafts')) return 2;
+  if (path.startsWith('INBOX.') || path.startsWith('INBOX/')) return 3;
+  if (has('\\Trash')) return 6;
+  if (has('\\Archive')) return 5;
+  return 4;
+}
+
 function shouldSkipFolder(folder: any): boolean {
   if (!folder) return true;
   const flags: string[] = Array.isArray(folder.flags) ? folder.flags : [];
@@ -451,6 +477,24 @@ async function doBackfill(): Promise<void> {
       });
       return;
     }
+
+    // Boîtes de réception d'abord, puis Envoyés, Brouillons, sous-dossiers,
+    // et enfin Archive et Corbeille. À volume égal, c'est ce qui rend le cache
+    // utile le plus tôt.
+    const trees = new Map<string, any[]>();
+    for (const { state } of work) {
+      if (!trees.has(state.accountId)) {
+        trees.set(state.accountId, await getFolderTree(state.accountId));
+      }
+    }
+    work.sort((a, b) => {
+      const pa = folderPriority(a.state.folder, trees.get(a.state.accountId) || []);
+      const pb = folderPriority(b.state.folder, trees.get(b.state.accountId) || []);
+      if (pa !== pb) return pa - pb;
+      // À priorité égale, le plus petit dossier d'abord : il se termine vite et
+      // fait avancer la progression de façon perceptible.
+      return a.remaining - b.remaining;
+    });
 
     const grandTotal = work.reduce((acc, w) => acc + w.remaining, 0);
     let processed = 0;

@@ -12,6 +12,7 @@ import { Email } from '../../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../../api';
+import { buildInlineImageMap, resolveInlineImages } from '../../services/inlineImages';
 import { inspectIncoming, SecurityVerdict } from '../../crypto/inbound';
 import { useSecurityStore } from '../../stores/securityStore';
 import NextcloudFolderPicker from '../ui/NextcloudFolderPicker';
@@ -78,13 +79,19 @@ async function fetchImageSignatures(urls: string[]): Promise<void> {
   }
 }
 
-async function sanitizeEmailHtml(raw: string): Promise<string> {
+async function sanitizeEmailHtml(raw: string, message?: any): Promise<string> {
   const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
   const clean = DOMPurify.sanitize(raw, DOMPURIFY_CONFIG);
   const doc = new DOMParser().parseFromString(clean, 'text/html');
 
   const isExternal = (u: string) =>
     (u.startsWith('http://') || u.startsWith('https://')) && !u.startsWith(proxyBase);
+
+  // Images incorporées. `<img src="cid:xxx">` ne veut rien dire pour un
+  // navigateur : sans cette résolution, tout message à signature ou en-tête
+  // illustré s'affichait avec des images cassées. Elle vient avant le
+  // traitement des images distantes, un `cid:` n'ayant rien à faire au proxy.
+  resolveInlineImages(doc, buildInlineImageMap(message));
 
   // Collecte des URLs externes (img src + url() dans style inline) pour signature.
   const externalUrls: string[] = [];
@@ -321,14 +328,24 @@ export default function MessageView({
   };
 
   // Sanitisation asynchrone (la signature HMAC des images passe par l'API).
+  //
+  // La dépendance ne peut pas se limiter au corps : quand la version du serveur
+  // remplace celle peinte depuis le cache, le HTML peut être identique alors
+  // que les images incorporées, elles, viennent d'arriver. Sans ce compteur,
+  // elles resteraient invisibles jusqu'au changement de message.
+  const inlineSourceCount =
+    (message?.inlineImages?.length || 0)
+    + (message?.attachments?.filter((a: any) => a?.contentId && a?.content).length || 0);
+
   const [sanitizedHtml, setSanitizedHtml] = useState('');
   useEffect(() => {
     let cancelled = false;
     const raw = message?.bodyHtml;
     if (!raw) { setSanitizedHtml(''); return; }
-    sanitizeEmailHtml(raw).then((html) => { if (!cancelled) setSanitizedHtml(html); });
+    sanitizeEmailHtml(raw, message).then((html) => { if (!cancelled) setSanitizedHtml(html); });
     return () => { cancelled = true; };
-  }, [message?.bodyHtml]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message?.bodyHtml, inlineSourceCount]);
 
   // Même chose pour chaque message du fil de discussion, indexé par threadKeyOf.
   const [threadHtml, setThreadHtml] = useState<Record<string, string>>({});
@@ -337,7 +354,7 @@ export default function MessageView({
     let cancelled = false;
     (async () => {
       const entries = await Promise.all(sortedThread.map(async (m) => {
-        const html = m.bodyHtml ? await sanitizeEmailHtml(m.bodyHtml) : '';
+        const html = m.bodyHtml ? await sanitizeEmailHtml(m.bodyHtml, m) : '';
         return [threadKeyOf(m), html] as const;
       }));
       if (!cancelled) setThreadHtml(Object.fromEntries(entries));

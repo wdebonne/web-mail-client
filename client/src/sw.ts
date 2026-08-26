@@ -102,8 +102,12 @@ registerRoute(
     plugins: [
       new CacheableResponsePlugin({ statuses: [200] }),
       new ExpirationPlugin({
-        maxEntries: 1000,
-        maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
+        // Plafonds nettement relevés : à 1 000 entrées et 7 jours, revenir sur
+        // un message d'il y a dix jours retéléchargeait toutes ses images, et
+        // une seule lettre d'information illustrée suffisait à évincer le
+        // reste. Le poste a de la place ; le temps d'affichage, lui, se voit.
+        maxEntries: 20000,
+        maxAgeSeconds: 180 * 24 * 60 * 60, // 6 mois
         purgeOnQuotaError: true,
       }),
     ],

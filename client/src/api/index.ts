@@ -116,6 +116,15 @@ export interface SyncUidFlags extends SyncFolderState {
   uids: Array<[number, number]>;
 }
 
+/** Image incorporée au corps, référencée par `cid:` dans le HTML. */
+export interface SyncInlineImage {
+  contentId: string;
+  contentType: string;
+  /** Octets en base64, prêts à devenir une URL `data:` sans reconversion. */
+  data: string;
+  size: number;
+}
+
 export interface SyncBody {
   uid: number;
   bodyText: string;
@@ -127,6 +136,7 @@ export interface SyncBody {
     contentId?: string;
     inline: boolean;
   }>;
+  inlineImages: SyncInlineImage[];
   truncated: boolean;
 }
 

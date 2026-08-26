@@ -1604,6 +1604,9 @@ export default function MailPage() {
           bodyText: cached.bodyText,
           bodyHtml: cached.bodyHtml,
           attachments: cached.attachments || [],
+          // Les images incorporées viennent avec le corps : la peinture depuis
+          // le cache est donc complète, signatures illustrées comprises.
+          inlineImages: cached.inlineImages || [],
           ...(isOnline ? {} : { fromCache: true }),
         }));
       }

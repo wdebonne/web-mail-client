@@ -336,6 +336,9 @@ export const offlineDB = {
       truncated?: boolean;
       /** Texte extrait des pièces jointes bureautiques, s'il a pu l'être. */
       attachmentText?: string;
+      /** Images `cid:` du corps, conservées en base64 pour un affichage
+       *  immédiat : aucune reconversion à la lecture. */
+      inlineImages?: Array<{ contentId: string; contentType: string; data: string; size: number }>;
     }>,
   ) {
     if (!bodies?.length) return;
@@ -361,7 +364,14 @@ export const offlineDB = {
       // Une réécriture venue du remplissage de fond n'en a pas : sans cette
       // garde, elle effacerait un travail d'extraction déjà fait.
       const attachmentText = body.attachmentText ?? previous?.attachmentText ?? '';
-      const totalBytes = bytes + attachmentText.length * 2;
+      // Même garde que pour le texte extrait : une réécriture qui ne porte pas
+      // d'images ne doit pas effacer celles déjà rapatriées.
+      const inlineImages = body.inlineImages ?? previous?.inlineImages ?? [];
+      const inlineBytes = inlineImages.reduce(
+        (acc: number, img: any) => acc + (Number(img?.size) || 0),
+        0,
+      );
+      const totalBytes = bytes + attachmentText.length * 2 + inlineBytes;
       delta += totalBytes - (Number(previous?.bytes) || 0);
 
       await bodyStore.put({
@@ -373,6 +383,7 @@ export const offlineDB = {
         bodyHtml,
         attachments: body.attachments || [],
         attachmentText,
+        inlineImages,
         truncated: !!body.truncated,
         cachedAt,
         bytes: totalBytes,

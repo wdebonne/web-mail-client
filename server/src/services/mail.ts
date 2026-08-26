@@ -82,6 +82,19 @@ export const FLAG_DRAFT = 8;
  *  dead weight in the browser's storage quota. */
 const MAX_BODY_BYTES = 512 * 1024;
 
+/**
+ * Taille maximale d'une image incorporée rapatriée avec le corps.
+ *
+ * Les images `cid:` sont des logos et des signatures : quelques dizaines de Ko.
+ * Le plafond écarte les cas où un expéditeur incorpore une photo pleine
+ * résolution, qui coûterait autant qu'une pièce jointe ordinaire alors que
+ * l'intérêt pour l'affichage est le même.
+ */
+const MAX_INLINE_IMAGE_BYTES = 256 * 1024;
+
+/** Total des images incorporées rapatriées pour un même message. */
+const MAX_INLINE_IMAGES_TOTAL = 1024 * 1024;
+
 export interface FolderSyncState {
   /** Kept as a string: imapflow exposes UIDVALIDITY as a BigInt, and narrowing
    *  it to a Number would silently corrupt large values. Compare as strings. */
@@ -104,19 +117,45 @@ export interface AttachmentMeta {
   inline: boolean;
 }
 
+/**
+ * Image incorporée au corps du message, référencée par `cid:` dans le HTML.
+ *
+ * Rapatriée avec le corps, contrairement aux pièces jointes ordinaires : sans
+ * elle, un message à signature illustrée s'affiche avec des images cassées, et
+ * la mettre en cache est ce qui rend sa réouverture instantanée et sa lecture
+ * hors-ligne fidèle.
+ */
+export interface InlineImage {
+  /** Identifiant sans les chevrons, tel qu'il apparaît après `cid:`. */
+  contentId: string;
+  contentType: string;
+  /** Octets encodés en base64. */
+  data: string;
+  size: number;
+}
+
 export interface MessageBody {
   uid: number;
   bodyText: string;
   bodyHtml: string;
   attachments: AttachmentMeta[];
+  inlineImages: InlineImage[];
   /** True when a body part hit {@link MAX_BODY_BYTES} and was cut short. */
   truncated: boolean;
+}
+
+interface InlinePick {
+  part: string;
+  contentId: string;
+  contentType: string;
+  size: number;
 }
 
 interface BodyPartPick {
   html?: { part: string; charset?: string };
   text?: { part: string; charset?: string };
   attachments: AttachmentMeta[];
+  inline: InlinePick[];
 }
 
 /**
@@ -143,13 +182,23 @@ function walkBodyStructure(node: any, pick: BodyPartPick, isRoot = false): void 
     (type === 'text/html' || type === 'text/plain') && disposition !== 'attachment';
 
   if (!isTextBody) {
+    const contentId = node.id ? String(node.id).replace(/^<|>$/g, '') : undefined;
+    const size = Number(node.size) || 0;
+
     pick.attachments.push({
       filename: filename || 'sans-nom',
       contentType: type || 'application/octet-stream',
-      size: Number(node.size) || 0,
-      ...(node.id ? { contentId: String(node.id).replace(/^<|>$/g, '') } : {}),
+      size,
+      ...(contentId ? { contentId } : {}),
       inline: disposition === 'inline',
     });
+
+    // Une image porteuse d'un Content-ID est référencée par `cid:` dans le
+    // HTML : sans ses octets, le message s'affiche avec une image cassée. On la
+    // rapatrie donc avec le corps, sous plafond de taille.
+    if (contentId && type.startsWith('image/') && size > 0 && size <= MAX_INLINE_IMAGE_BYTES) {
+      pick.inline.push({ part, contentId, contentType: type, size });
+    }
     return;
   }
 
@@ -1459,8 +1508,37 @@ export class MailService {
   }
 
   /**
+   * Octets bruts d'une partie MIME, pour les seules images incorporées.
+   * Renvoie `null` plutôt que de lever : une image manquante ne doit jamais
+   * empêcher la mise en cache du corps auquel elle appartient.
+   */
+  private async downloadBinaryPart(
+    client: ImapFlow,
+    uid: number,
+    part: string,
+  ): Promise<Buffer | null> {
+    try {
+      const dl: any = await client.download(String(uid), part, {
+        uid: true,
+        maxBytes: MAX_INLINE_IMAGE_BYTES,
+      });
+      if (!dl?.content) return null;
+      const chunks: Buffer[] = [];
+      for await (const chunk of dl.content) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return Buffer.concat(chunks);
+    } catch (err) {
+      logger.warn({ err, uid, part }, '[mail] inline image download failed');
+      return null;
+    }
+  }
+
+  /**
    * Corps texte + HTML d'un lot d'UID, **sans jamais rapatrier les octets des
-   * pièces jointes** — seulement leurs métadonnées.
+   * pièces jointes** — seulement leurs métadonnées. Les images incorporées
+   * (`cid:`) font exception : elles font partie du rendu du message, pas de ses
+   * annexes, et pèsent quelques dizaines de Ko.
    *
    * Volontairement distinct de `getMessage`, qui fait `source: true` puis
    * `simpleParser` : sur un message de 8 Mo dont le corps fait 12 Ko, celui-ci
@@ -1486,7 +1564,7 @@ export class MailService {
           { uid: true, bodyStructure: true, size: true } as any,
           { uid: true },
         )) {
-          const pick: BodyPartPick = { attachments: [] };
+          const pick: BodyPartPick = { attachments: [], inline: [] };
           walkBodyStructure((msg as any).bodyStructure, pick, true);
           picks.set(msg.uid, pick);
         }
@@ -1500,11 +1578,28 @@ export class MailService {
           if (!pick) continue;
           const html = await this.downloadTextPart(client, uid, pick.html);
           const text = await this.downloadTextPart(client, uid, pick.text);
+
+          const inlineImages: InlineImage[] = [];
+          let inlineTotal = 0;
+          for (const image of pick.inline) {
+            if (inlineTotal + image.size > MAX_INLINE_IMAGES_TOTAL) break;
+            const bytes = await this.downloadBinaryPart(client, uid, image.part);
+            if (!bytes) continue;
+            inlineImages.push({
+              contentId: image.contentId,
+              contentType: image.contentType,
+              data: bytes.toString('base64'),
+              size: bytes.byteLength,
+            });
+            inlineTotal += bytes.byteLength;
+          }
+
           out.push({
             uid,
             bodyText: text.value,
             bodyHtml: html.value,
             attachments: pick.attachments,
+            inlineImages,
             truncated: html.truncated || text.truncated,
           });
         }
