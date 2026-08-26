@@ -334,6 +334,8 @@ export const offlineDB = {
       bodyHtml?: string;
       attachments?: any[];
       truncated?: boolean;
+      /** Texte extrait des pièces jointes bureautiques, s'il a pu l'être. */
+      attachmentText?: string;
     }>,
   ) {
     if (!bodies?.length) return;
@@ -354,7 +356,13 @@ export const offlineDB = {
       const bytes = (bodyText.length + bodyHtml.length) * 2;
 
       const previous: any = await bodyStore.get(id);
-      delta += bytes - (Number(previous?.bytes) || 0);
+
+      // Le texte des pièces jointes n'est extrait qu'à l'ouverture d'un message.
+      // Une réécriture venue du remplissage de fond n'en a pas : sans cette
+      // garde, elle effacerait un travail d'extraction déjà fait.
+      const attachmentText = body.attachmentText ?? previous?.attachmentText ?? '';
+      const totalBytes = bytes + attachmentText.length * 2;
+      delta += totalBytes - (Number(previous?.bytes) || 0);
 
       await bodyStore.put({
         id,
@@ -364,9 +372,10 @@ export const offlineDB = {
         bodyText,
         bodyHtml,
         attachments: body.attachments || [],
+        attachmentText,
         truncated: !!body.truncated,
         cachedAt,
-        bytes,
+        bytes: totalBytes,
       });
 
       const email: any = await emailStore.get(id);
@@ -380,6 +389,7 @@ export const offlineDB = {
           bodyText,
           bodyHtml,
           attachmentNames: (body.attachments || []).map((a: any) => a?.filename),
+          attachmentText,
         });
         email.snippet = makeSnippet(bodyText, bodyHtml);
         email.hasBody = true;
@@ -438,6 +448,9 @@ export const offlineDB = {
           bodyText: body?.bodyText,
           bodyHtml: body?.bodyHtml,
           attachmentNames: (body?.attachments || []).map((a: any) => a?.filename),
+          // Relu depuis le cache : une ré-indexation ne re-télécharge ni
+          // ne ré-extrait quoi que ce soit.
+          attachmentText: body?.attachmentText,
         });
         if (body) {
           rec.snippet = makeSnippet(body.bodyText, body.bodyHtml);

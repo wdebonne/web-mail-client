@@ -11,6 +11,7 @@ import { useUIStore } from '../stores/uiStore';
 import { offlineDB, makeEmailId } from '../pwa/offlineDB';
 import { onDeltaApplied, runDeltaSync } from '../services/cacheService';
 import { searchLocal } from '../services/localSearch';
+import { extractAttachmentText, hasExtractableAttachment } from '../services/attachmentText';
 import FolderPane from '../components/mail/FolderPane';
 import MessageList from '../components/mail/MessageList';
 import MessageView from '../components/mail/MessageView';
@@ -1621,20 +1622,36 @@ export default function MailPage() {
 
     // Le corps rendu alimente aussi le cache : un message ouvert devient
     // cherchable dans son contenu sans attendre le remplissage de fond.
-    void offlineDB
-      .putBodies(accountId, folder, [{
+    //
+    // Le texte des documents joints est extrait ici, et nulle part ailleurs :
+    // leurs octets viennent d'être téléchargés pour l'affichage, donc les
+    // indexer ne coûte pas un octet de réseau de plus. Les extraire pendant le
+    // remplissage obligerait à rapatrier toutes les pièces jointes de la boîte.
+    //
+    // Le tout est détaché : ni l'extraction ni l'écriture ne doivent retarder
+    // l'affichage du message, déjà peint ci-dessus.
+    void (async () => {
+      const attachments = (full.attachments || []).map((a: any) => ({
+        filename: a.filename,
+        contentType: a.contentType,
+        size: a.size,
+        contentId: a.contentId,
+        inline: !!a.contentId,
+      }));
+
+      let attachmentText = '';
+      if (hasExtractableAttachment(full.attachments)) {
+        attachmentText = await extractAttachmentText(full.attachments).catch(() => '');
+      }
+
+      await offlineDB.putBodies(accountId, folder, [{
         uid: message.uid,
         bodyText: full.bodyText || '',
         bodyHtml: full.bodyHtml || '',
-        attachments: (full.attachments || []).map((a: any) => ({
-          filename: a.filename,
-          contentType: a.contentType,
-          size: a.size,
-          contentId: a.contentId,
-          inline: !!a.contentId,
-        })),
-      }])
-      .catch(() => { /* non bloquant */ });
+        attachments,
+        ...(attachmentText ? { attachmentText } : {}),
+      }]);
+    })().catch(() => { /* non bloquant */ });
   };
 
   /** Texte brut d'un message, pour l'assistant IA (il ne sait pas lire du HTML). */

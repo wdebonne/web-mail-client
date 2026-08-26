@@ -14,10 +14,27 @@
  * données : les corps sont déjà en cache localement, une ré-indexation les relit
  * sur place au lieu de les retélécharger.
  */
-export const TOKENIZER_VERSION = 2; // 2 : ajout des destinataires en copie et des noms de pièces jointes
+export const TOKENIZER_VERSION = 3; // 3 : ajout du contenu des pièces jointes bureautiques
 
-/** Plafond de termes retenus par message — au-delà, l'index coûte plus qu'il ne rapporte. */
-export const MAX_TERMS_PER_MESSAGE = 200;
+/**
+ * Plafond de termes retenus par message.
+ *
+ * Porté de 200 à 300 avec l'indexation du contenu des pièces jointes : sans
+ * cette marge, un corps un peu long aurait saturé la liste et le texte du
+ * document joint n'y serait jamais entré. Le surcoût est d'environ 800 octets
+ * d'index par message — négligeable au regard des corps eux-mêmes.
+ */
+export const MAX_TERMS_PER_MESSAGE = 300;
+
+/**
+ * Part du plafond garantie au contenu des documents joints.
+ *
+ * Sans cette réserve, un corps un peu bavard consommait tout le budget et le
+ * texte du document n'entrait jamais dans l'index — la fonction aurait paru
+ * marcher sur les messages courts et échouer sur les autres, sans logique
+ * apparente. Le reliquat non utilisé revient au corps, et réciproquement.
+ */
+const ATTACHMENT_TERM_QUOTA = 100;
 
 const MIN_TERM_LENGTH = 2;
 
@@ -116,6 +133,11 @@ export interface TermSource {
   bodyHtml?: string | null;
   /** Noms de fichiers joints — « retrouve-moi le mail avec le devis ». */
   attachmentNames?: Array<string | null | undefined> | null;
+  /**
+   * Texte extrait des pièces jointes bureautiques (docx, xlsx…), rempli à
+   * l'ouverture du message. Voir `services/attachmentText.ts`.
+   */
+  attachmentText?: string | null;
 }
 
 /**
@@ -144,14 +166,41 @@ export function buildTerms(source: TermSource): string[] {
 
   const body = tokenize(readableBody(source.bodyText, source.bodyHtml).slice(0, MAX_INDEXED_CHARS));
 
+  // Le contenu des documents joints est tokenisé à part plutôt que concaténé au
+  // corps : chacun voit son temps de calcul borné, et la répartition du plafond
+  // ci-dessous peut alors réserver une part à chacun.
+  const attached = tokenize((source.attachmentText || '').slice(0, MAX_INDEXED_CHARS));
+
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const term of [...head, ...body]) {
-    if (seen.has(term)) continue;
-    seen.add(term);
-    out.push(term);
-    if (out.length >= MAX_TERMS_PER_MESSAGE) break;
-  }
+
+  /** Ajoute jusqu'à `limit` termes inédits, sans dépasser le plafond global. */
+  const take = (terms: string[], limit: number) => {
+    let added = 0;
+    for (const term of terms) {
+      if (out.length >= MAX_TERMS_PER_MESSAGE || added >= limit) return;
+      if (seen.has(term)) continue;
+      seen.add(term);
+      out.push(term);
+      added += 1;
+    }
+  };
+
+  // 1. L'identité du message d'abord : objet, correspondants, noms de fichiers.
+  //    Court, et c'est ce que les gens tapent en premier.
+  take(head, MAX_TERMS_PER_MESSAGE);
+
+  // 2. Le corps, amputé de la part réservée aux documents joints.
+  const remaining = MAX_TERMS_PER_MESSAGE - out.length;
+  const reserved = Math.min(attached.length, ATTACHMENT_TERM_QUOTA, remaining);
+  take(body, remaining - reserved);
+
+  // 3. Les documents joints, qui récupèrent aussi ce que le corps n'a pas pris.
+  take(attached, MAX_TERMS_PER_MESSAGE);
+
+  // 4. Et le corps reprend l'éventuel reliquat.
+  take(body, MAX_TERMS_PER_MESSAGE);
+
   return out;
 }
 
