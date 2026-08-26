@@ -18,6 +18,13 @@ export default defineConfig({
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'],
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // PDF.js est exclu du précache. Il ne sert qu'à indexer le contenu des
+        // PDF joints, ce qui n'arrive qu'à l'ouverture d'un message — donc en
+        // ligne. Le précacher imposerait ~530 Ko à l'installation à tous les
+        // utilisateurs, y compris ceux qui ne reçoivent jamais de PDF, pour une
+        // disponibilité hors-ligne dont la fonction n'a aucun usage. Il est
+        // récupéré à la demande, puis gardé par le cache HTTP du navigateur.
+        globIgnores: ['**/pdf-*.js', '**/pdf.worker*.mjs'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
       },
       manifest: {

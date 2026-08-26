@@ -13,11 +13,22 @@
  * projet et servent à l'aperçu des pièces jointes ; elles sont chargées en
  * import dynamique, donc absentes du bundle principal.
  *
- * Le PDF n'est volontairement pas traité : un PDF scanné n'a aucune couche
- * texte, et les documents scannés sont justement ceux qu'on cherche le plus.
- * Une couverture qui marcherait une fois sur deux se lirait comme une
- * recherche cassée, pas comme une fonction aux limites connues.
+ * Le PDF est traité pour sa **couche texte** uniquement. Les multifonctions
+ * récentes océrisent à la numérisation, si bien qu'un PDF scanné en possède une
+ * dans la grande majorité des cas ; celui qui n'en a pas ressort simplement
+ * vide, sans erreur. Aucun OCR n'est fait ici : il coûterait une dizaine de Mo
+ * de bibliothèque et plusieurs secondes par page.
+ *
+ * PDF.js est utilisé en version corrigée de l'avis GHSA-hq66-cqwq-w95j
+ * (exécution de JavaScript à l'ouverture d'un PDF malveillant), et configuré
+ * pour n'extraire que du texte : ni script, ni rendu, ni `eval`. Dans un client
+ * mail, les pièces jointes viennent d'expéditeurs quelconques — c'est le seul
+ * réglage défendable.
  */
+
+// Le worker est référencé par URL : Vite l'émet comme fichier séparé, il n'est
+// téléchargé qu'au premier PDF rencontré.
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 
 /** Fichiers plus gros que cela : le coût d'extraction dépasse le bénéfice. */
 const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
@@ -30,6 +41,10 @@ const MAX_TEXT_PER_MESSAGE = 256 * 1024;
 
 /** Nombre de feuilles parcourues dans un classeur — au-delà, on plafonne. */
 const MAX_SHEETS = 10;
+
+/** Pages de PDF parcourues. Un rapport de 400 pages n'apporte rien de plus
+ *  à l'index que ses premières dizaines, et coûterait des secondes. */
+const MAX_PDF_PAGES = 50;
 
 export interface IndexableAttachment {
   filename?: string;
@@ -45,7 +60,7 @@ function extensionOf(filename?: string): string {
   return dot === -1 ? '' : filename.slice(dot + 1).toLowerCase();
 }
 
-type Kind = 'docx' | 'sheet' | 'plain' | null;
+type Kind = 'docx' | 'sheet' | 'pdf' | 'plain' | null;
 
 /**
  * Format reconnu, d'après le type MIME **et** l'extension : les serveurs de
@@ -66,6 +81,7 @@ export function kindOf(contentType?: string, filename?: string): Kind {
   ) {
     return 'sheet';
   }
+  if (type.includes('pdf') || ext === 'pdf') return 'pdf';
   if (type.startsWith('text/') || ext === 'txt' || ext === 'md' || ext === 'log') return 'plain';
   return null;
 }
@@ -101,6 +117,8 @@ async function extractOne(att: IndexableAttachment, kind: Kind): Promise<string>
     return (value || '').slice(0, MAX_TEXT_PER_ATTACHMENT);
   }
 
+  if (kind === 'pdf') return extractPdf(bytes);
+
   if (kind === 'sheet') {
     const XLSX = await import('xlsx');
     const workbook = XLSX.read(bytes, { type: 'array' });
@@ -119,6 +137,69 @@ async function extractOne(att: IndexableAttachment, kind: Kind): Promise<string>
   }
 
   return '';
+}
+
+/**
+ * Couche texte d'un PDF.
+ *
+ * Rien n'est rendu et aucun script n'est exécuté : on ouvre le document, on
+ * demande le contenu textuel de chaque page, et on referme. `isEvalSupported`
+ * est désactivé, le moteur de scripting n'est jamais chargé, et les polices ne
+ * sont pas résolues — autant de surface d'attaque en moins face à un PDF venu
+ * d'un expéditeur inconnu.
+ *
+ * Un PDF sans couche texte (numérisation non océrisée) renvoie une chaîne vide.
+ * Ce n'est pas une erreur : le message reste trouvable par son objet, ses
+ * correspondants, son corps et le nom du fichier.
+ */
+async function extractPdf(bytes: Uint8Array): Promise<string> {
+  const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+  const task = pdfjs.getDocument({
+    data: bytes,
+    isEvalSupported: false,
+    disableAutoFetch: true,
+    disableFontFace: true,
+    useSystemFonts: false,
+    verbosity: 0,
+  });
+
+  try {
+    const doc = await task.promise;
+    const pageCount = Math.min(Number(doc.numPages) || 0, MAX_PDF_PAGES);
+    const parts: string[] = [];
+    let total = 0;
+
+    for (let i = 1; i <= pageCount; i += 1) {
+      const page = await doc.getPage(i);
+      try {
+        const content = await page.getTextContent();
+        const text = (content.items || [])
+          .map((item: any) => (typeof item?.str === 'string' ? item.str : ''))
+          .join(' ');
+        if (text.trim()) {
+          parts.push(text);
+          total += text.length;
+        }
+      } finally {
+        page.cleanup();
+      }
+      if (total >= MAX_TEXT_PER_ATTACHMENT) break;
+    }
+
+    return parts.join('\n').slice(0, MAX_TEXT_PER_ATTACHMENT);
+  } finally {
+    // Toujours par la tâche de chargement : `PDFDocumentProxy` n'expose plus de
+    // `destroy()` depuis PDF.js 6, seulement `cleanup()`. Sans cet appel, le
+    // worker garde le document en mémoire — rédhibitoire quand on enchaîne les
+    // pièces jointes d'une boîte entière.
+    try {
+      await task.destroy();
+    } catch {
+      /* le document n'a jamais été ouvert */
+    }
+  }
 }
 
 /**
